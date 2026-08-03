@@ -34,14 +34,20 @@ import {
   fetchEarnings,
   fetchImpersonationAlerts,
   fetchIncognito,
+  fetchNicheTrendingTweets,
   fetchRisingAccounts,
   fetchVisitorCount,
   setIncognito,
   type EarningsData,
   type ImpersonationAlert,
+  type NicheTrendingTweet,
   type RisingAccount,
 } from '../services/insightsService';
 import { fetchMyMarket, type MyMarket } from '../services/usernameMarketService';
+import {
+  effectiveSubscriptionTier,
+  isSubscriptionActiveFor,
+} from '../utils/subscriptionTier';
 
 /**
  * Studio créateur — ce que l'abonnement rapporte, et ce qu'il reste à faire.
@@ -78,17 +84,35 @@ interface Summary {
   incognito: boolean;
   alerts: ImpersonationAlert[];
   rising: RisingAccount[];
+  nicheTweets: NicheTrendingTweet[];
   market: MyMarket | null;
+}
+
+interface InsightFailures {
+  impersonation: string | null;
+  rising: string | null;
+  niche: string | null;
 }
 
 const EMPTY: Summary = {
   earnings: null, sales: null, queue: [], bestHours: [],
-  visitors: null, incognito: false, alerts: [], rising: [], market: null,
+  visitors: null, incognito: false, alerts: [], rising: [], nicheTweets: [], market: null,
+};
+
+const NO_INSIGHT_FAILURES: InsightFailures = {
+  impersonation: null,
+  rising: null,
+  niche: null,
 };
 
 /** Valeur d'une promesse tenue, repli sinon. */
 function settled<T>(result: PromiseSettledResult<any>, fallback: T): T {
   return result.status === 'fulfilled' && result.value != null ? (result.value as T) : fallback;
+}
+
+function failure(result: PromiseSettledResult<any>): string | null {
+  if (result.status === 'fulfilled') return null;
+  return result.reason?.message || 'Service momentanément indisponible.';
 }
 
 export default function CreatorStudioScreen({ navigation }: Props) {
@@ -97,12 +121,15 @@ export default function CreatorStudioScreen({ navigation }: Props) {
   const { user } = useAuth();
 
   const [summary, setSummary] = useState<Summary>(EMPTY);
+  const [insightFailures, setInsightFailures] = useState<InsightFailures>(NO_INSIGHT_FAILURES);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingIncognito, setSavingIncognito] = useState(false);
 
-  const tier = String((user as any)?.subscription_tier || 'free');
+  const tier = effectiveSubscriptionTier(!!user?.premium, user?.subscription_tier);
   const isPro = tier === 'pro';
+  const hasInsights = tier !== 'free'
+    && isSubscriptionActiveFor(tier, user?.subscription_expires_at);
 
   const load = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -114,6 +141,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       fetchIncognito(),
       fetchImpersonationAlerts('open'),
       fetchRisingAccounts({ limit: 6 }),
+      fetchNicheTrendingTweets({ days: 7, limit: 3 }),
       fetchMyMarket(),
     ]);
 
@@ -126,7 +154,13 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       incognito: settled<boolean>(results[5], false),
       alerts: settled<ImpersonationAlert[]>(results[6], []),
       rising: settled<RisingAccount[]>(results[7], []),
-      market: settled<MyMarket | null>(results[8], null),
+      nicheTweets: settled<NicheTrendingTweet[]>(results[8], []),
+      market: settled<MyMarket | null>(results[9], null),
+    });
+    setInsightFailures({
+      impersonation: failure(results[6]),
+      rising: failure(results[7]),
+      niche: failure(results[8]),
     });
     setLoading(false);
   }, [isPro]);
@@ -257,7 +291,25 @@ export default function CreatorStudioScreen({ navigation }: Props) {
 
           <RisingCard
             accounts={summary.rising}
+            failureMessage={insightFailures.rising}
+            hasAccess={hasInsights}
             onPress={() => navigation.navigate('ProfileInsights', { tab: 'rising' })}
+          />
+
+          <StudioCard
+            icon="pulse"
+            tone="cyan"
+            title="Tweets qui percent dans ta niche"
+            subtitle={!hasInsights
+              ? 'Réservé aux abonnés Plus et Pro'
+              : insightFailures.niche
+                ? 'Radar indisponible · touche pour réessayer'
+                : summary.nicheTweets.length
+                  ? `@${summary.nicheTweets[0].tweet.author.username} accélère · ${summary.nicheTweets.length} signal(s)`
+                  : 'Aucun signal récent · le radar continue de chercher'}
+            badge={summary.nicheTweets.length || undefined}
+            trailing={hasInsights ? undefined : 'PLUS'}
+            onPress={() => navigation.navigate('ProfileInsights', { tab: 'niche' })}
           />
 
           <StudioCard
@@ -274,10 +326,15 @@ export default function CreatorStudioScreen({ navigation }: Props) {
             icon="shield-half"
             tone={firstAlert ? 'danger' : 'cyan'}
             title="Alerte usurpation"
-            subtitle={firstAlert
-              ? `@${firstAlert.suspect.username} — ${firstAlert.reasons.length} signal(s) concordant(s)`
-              : 'Aucun compte suspect détecté'}
+            subtitle={!hasInsights
+              ? 'Réservé aux abonnés Plus et Pro'
+              : insightFailures.impersonation
+                ? 'Veille indisponible · touche pour réessayer'
+                : firstAlert?.suspect
+                  ? `@${firstAlert.suspect.username} — ${firstAlert.reasons.length} signal(s) concordant(s)`
+                  : 'Aucun compte suspect détecté après le dernier scan'}
             badge={summary.alerts.length || undefined}
+            trailing={hasInsights ? undefined : 'PLUS'}
             onPress={() => navigation.navigate('ProfileInsights', { tab: 'impersonation' })}
           />
 
@@ -588,9 +645,11 @@ function VisitorsCard({
 }
 
 function RisingCard({
-  accounts, onPress,
+  accounts, failureMessage, hasAccess, onPress,
 }: {
   accounts: RisingAccount[];
+  failureMessage: string | null;
+  hasAccess: boolean;
   onPress: () => void;
 }) {
   return (
@@ -602,9 +661,13 @@ function RisingCard({
         <View style={styles.cardTexts}>
           <Text style={styles.cardTitle}>Comptes qui montent</Text>
           <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {accounts.length
-              ? `Dans ton univers · @${accounts[0].user.username} en tête`
-              : 'Personne ne décolle dans ton univers cette semaine'}
+            {!hasAccess
+              ? 'Réservé aux abonnés Plus et Pro'
+              : failureMessage
+                ? 'Radar indisponible · touche pour réessayer'
+                : accounts.length
+                  ? `Dans ton univers · @${accounts[0].user.username} en tête`
+                  : 'Aucun signal récent · le radar continue de chercher'}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />

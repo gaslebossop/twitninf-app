@@ -167,7 +167,9 @@ export type MainStackParamList = {
   PaidContentSales: undefined;
   ScheduledPosts: undefined;
   /** `tab` : onglet ouvert d'emblée, quand on arrive depuis le studio. */
-  ProfileInsights: { tab?: 'visitors' | 'impersonation' | 'rising' | 'velocity' } | undefined;
+  ProfileInsights: {
+    tab?: 'visitors' | 'impersonation' | 'rising' | 'niche' | 'velocity';
+  } | undefined;
   UsernameMarket: undefined;
   /** `content` : texte actuel, pour ne pas rouvrir l'éditeur sur un champ vide. */
   EditTweet: { tweetId: string; content?: string };

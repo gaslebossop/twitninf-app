@@ -1,4 +1,11 @@
 import { apiService } from './api';
+import {
+  InsightsError,
+  finiteNumber,
+  unwrapInsightsResponse,
+} from './insightsContract';
+
+export { InsightsError } from './insightsContract';
 
 /**
  * Renseignements réservés aux abonnés : visiteurs de profil, veille
@@ -114,39 +121,62 @@ export interface VelocityAlert {
   tweet_age_minutes: number;
 }
 
-export class InsightsError extends Error {}
-
-function unwrap(response: any, fallback: string) {
-  if (response?.success) return response.data;
-  throw new InsightsError(response?.message || fallback);
+export interface NicheTrendingTweet {
+  tweet: {
+    id: string;
+    content: string;
+    created_at: string;
+    media_urls: string[];
+    hashtags: string[];
+    author: {
+      id: string;
+      username: string;
+      full_name: string;
+      avatar: string | null;
+      verified: boolean;
+      verification_style?: string | null;
+      premium?: boolean;
+      subscription_tier?: string | null;
+    };
+  };
+  engagements: number;
+  likes: number;
+  retweets: number;
+  replies: number;
+  /** Multiple du rythme normal observé pour ce tweet. */
+  velocity_ratio: number;
+  /** Affinité avec l'univers du compte connecté, comprise entre 0 et 1. */
+  niche_affinity: number;
+  reasons: string[];
+  window_hours: number;
 }
 
 // ── Visiteurs ──────────────────────────────────────────────────────────────
 
 export async function fetchVisitors(days?: number): Promise<VisitorsData> {
   const response = await apiService.get(`${BASE}/visitors`, days ? { days } : undefined);
-  return unwrap(response, 'Visiteurs indisponibles.');
+  return unwrapInsightsResponse(response, 'Visiteurs indisponibles.');
 }
 
 export async function fetchVisitorCount(): Promise<{ count: number; window_days: number }> {
   const response = await apiService.get(`${BASE}/visitors/count`);
-  return unwrap(response, 'Compteur indisponible.');
+  return unwrapInsightsResponse(response, 'Compteur indisponible.');
 }
 
 export async function fetchEarnings(days = 30): Promise<EarningsData> {
   const response = await apiService.get(`${BASE}/earnings`, { days });
-  return unwrap(response, 'Revenus indisponibles.');
+  return unwrapInsightsResponse(response, 'Revenus indisponibles.');
 }
 
 export async function fetchIncognito(): Promise<boolean> {
   const response = await apiService.get(`${BASE}/visitors/incognito`);
-  return Boolean(unwrap(response, 'Réglage indisponible.').enabled);
+  return Boolean(unwrapInsightsResponse<any>(response, 'Réglage indisponible.').enabled);
 }
 
 /** Voir sans être vu — la contrepartie, pas une option secondaire. */
 export async function setIncognito(enabled: boolean): Promise<boolean> {
   const response = await apiService.put(`${BASE}/visitors/incognito`, { enabled });
-  return Boolean(unwrap(response, 'Réglage impossible.').enabled);
+  return Boolean(unwrapInsightsResponse<any>(response, 'Réglage impossible.').enabled);
 }
 
 // ── Usurpation ─────────────────────────────────────────────────────────────
@@ -155,24 +185,24 @@ export async function fetchImpersonationAlerts(
   status: 'open' | 'reported' | 'dismissed' | 'all' = 'open',
 ): Promise<ImpersonationAlert[]> {
   const response = await apiService.get(`${BASE}/impersonation`, { status });
-  return unwrap(response, 'Alertes indisponibles.');
+  return unwrapInsightsResponse(response, 'Alertes indisponibles.', 'array');
 }
 
 /** Relance le scan — utile juste après un changement d'avatar ou de pseudo. */
 export async function rescanImpersonation(): Promise<ImpersonationAlert[]> {
   const response = await apiService.post(`${BASE}/impersonation/scan`);
-  return unwrap(response, 'Scan impossible.');
+  return unwrapInsightsResponse(response, 'Scan impossible.', 'array');
 }
 
 /** Écartée une fois, une alerte ne revient jamais. */
 export async function dismissAlert(alertId: string): Promise<void> {
   const response = await apiService.post(`${BASE}/impersonation/${alertId}/dismiss`);
-  unwrap(response, 'Action impossible.');
+  unwrapInsightsResponse(response, 'Action impossible.');
 }
 
 export async function reportAlert(alertId: string, details?: string): Promise<{ report_id: string }> {
   const response = await apiService.post(`${BASE}/impersonation/${alertId}/report`, { details });
-  return unwrap(response, 'Signalement impossible.');
+  return unwrapInsightsResponse(response, 'Signalement impossible.');
 }
 
 // ── Radar et décollage ─────────────────────────────────────────────────────
@@ -182,12 +212,61 @@ export async function fetchRisingAccounts(params?: {
   limit?: number;
 }): Promise<RisingAccount[]> {
   const response = await apiService.get(`${BASE}/rising`, params);
-  return unwrap(response, 'Radar indisponible.');
+  return unwrapInsightsResponse(response, 'Radar indisponible.', 'array');
 }
 
 export async function fetchVelocityAlerts(limit?: number): Promise<VelocityAlert[]> {
   const response = await apiService.get(`${BASE}/velocity`, limit ? { limit } : undefined);
-  return unwrap(response, 'Historique indisponible.');
+  return unwrapInsightsResponse(response, 'Historique indisponible.', 'array');
+}
+
+/** Tweets qui accélèrent dans l'univers du compte connecté, pas ses propres tweets. */
+export async function fetchNicheTrendingTweets(params?: {
+  days?: number;
+  limit?: number;
+}): Promise<NicheTrendingTweet[]> {
+  const response = await apiService.get(`${BASE}/niche-trending`, params);
+  const data = unwrapInsightsResponse<any[]>(
+    response,
+    'Tweets de ta niche indisponibles.',
+    'array',
+  );
+
+  // PostgreSQL peut sérialiser certains agrégats numériques en chaînes.
+  // Les convertir ici évite des ratios « NaN » ou des additions textuelles
+  // dans les cartes, tout en conservant un contrat unique pour les écrans.
+  return data.map((entry) => {
+    if (!entry?.tweet?.id || !entry?.tweet?.author?.id || !entry?.tweet?.author?.username) {
+      throw new InsightsError(
+        'Le serveur a renvoyé un tweet incomplet. Réessaie après la prochaine mise à jour.',
+        'invalid_response',
+      );
+    }
+
+    return {
+      ...entry,
+      tweet: {
+        ...entry.tweet,
+        content: String(entry.tweet.content || ''),
+        media_urls: Array.isArray(entry.tweet.media_urls) ? entry.tweet.media_urls.map(String) : [],
+        hashtags: Array.isArray(entry.tweet.hashtags) ? entry.tweet.hashtags.map(String) : [],
+        author: {
+          ...entry.tweet.author,
+          full_name: String(entry.tweet.author.full_name || entry.tweet.author.username),
+          avatar: entry.tweet.author.avatar || null,
+          verified: Boolean(entry.tweet.author.verified),
+        },
+      },
+      engagements: finiteNumber(entry.engagements),
+      likes: finiteNumber(entry.likes),
+      retweets: finiteNumber(entry.retweets),
+      replies: finiteNumber(entry.replies),
+      velocity_ratio: finiteNumber(entry.velocity_ratio),
+      niche_affinity: Math.max(0, Math.min(1, finiteNumber(entry.niche_affinity))),
+      reasons: Array.isArray(entry.reasons) ? entry.reasons.map(String) : [],
+      window_hours: finiteNumber(entry.window_hours, 24),
+    };
+  });
 }
 
 /** « il y a 3 j » — les listes de renseignements sont lues en diagonale. */

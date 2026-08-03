@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,9 +19,11 @@ import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetri
 import { colors, radius } from '../theme';
 import {
   REASON_LABELS,
+  InsightsError,
   dismissAlert,
   fetchImpersonationAlerts,
   fetchIncognito,
+  fetchNicheTrendingTweets,
   fetchRisingAccounts,
   fetchVelocityAlerts,
   fetchVisitors,
@@ -30,6 +32,7 @@ import {
   rescanImpersonation,
   setIncognito,
   type ImpersonationAlert,
+  type NicheTrendingTweet,
   type RisingAccount,
   type VelocityAlert,
   type VisitorsData,
@@ -45,12 +48,13 @@ import {
  * trop.
  */
 
-type Tab = 'visitors' | 'impersonation' | 'rising' | 'velocity';
+type Tab = 'visitors' | 'impersonation' | 'rising' | 'niche' | 'velocity';
 
 const TAB_LABELS: Record<Tab, string> = {
   visitors: 'Visiteurs',
   impersonation: 'Usurpation',
   rising: 'Radar',
+  niche: 'Ta niche',
   velocity: 'Décollages',
 };
 
@@ -65,20 +69,32 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
   const [tab, setTab] = useState<Tab>(route?.params?.tab || 'visitors');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<InsightsError | null>(null);
 
   const [visitors, setVisitors] = useState<VisitorsData | null>(null);
   const [incognito, setIncognitoState] = useState(false);
   const [alerts, setAlerts] = useState<ImpersonationAlert[]>([]);
   const [rising, setRising] = useState<RisingAccount[]>([]);
+  const [nicheTweets, setNicheTweets] = useState<NicheTrendingTweet[]>([]);
   const [velocity, setVelocity] = useState<VelocityAlert[]>([]);
+  const requestSequence = useRef(0);
+
+  // Un même écran peut rester monté dans la pile. Revenir depuis le Studio
+  // avec un autre onglet doit donc mettre à jour l'état, pas seulement lire
+  // le paramètre lors du tout premier rendu.
+  useEffect(() => {
+    const requested = route?.params?.tab;
+    if (requested) setTab((current) => requested === current ? current : requested);
+  }, [route?.params?.tab]);
 
   /**
    * Chaque onglet charge ce qui le concerne, à l'ouverture.
    * Tout charger d'un coup ferait quatre requêtes pour un écran dont on ne
    * consulte souvent qu'un seul volet.
    */
-  const load = useCallback(async (target: Tab) => {
+  const load = useCallback(async (target: Tab, foreground = true) => {
+    const sequence = ++requestSequence.current;
+    if (foreground) setLoading(true);
     setError(null);
     try {
       if (target === 'visitors') {
@@ -86,27 +102,44 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
           fetchVisitors(),
           fetchIncognito().catch(() => false),
         ]);
+        if (sequence !== requestSequence.current) return;
         setVisitors(data);
         setIncognitoState(mode);
       } else if (target === 'impersonation') {
-        setAlerts(await fetchImpersonationAlerts('open'));
+        const data = await fetchImpersonationAlerts('open');
+        if (sequence !== requestSequence.current) return;
+        setAlerts(data);
       } else if (target === 'rising') {
-        setRising(await fetchRisingAccounts({ limit: 25 }));
+        const data = await fetchRisingAccounts({ days: 7, limit: 25 });
+        if (sequence !== requestSequence.current) return;
+        setRising(data);
+      } else if (target === 'niche') {
+        const data = await fetchNicheTrendingTweets({ days: 7, limit: 25 });
+        if (sequence !== requestSequence.current) return;
+        setNicheTweets(data);
       } else {
-        setVelocity(await fetchVelocityAlerts(30));
+        const data = await fetchVelocityAlerts(30);
+        if (sequence !== requestSequence.current) return;
+        setVelocity(data);
       }
     } catch (e: any) {
-      setError(e?.message || 'Données indisponibles.');
+      if (sequence !== requestSequence.current) return;
+      setError(e instanceof InsightsError
+        ? e
+        : new InsightsError(e?.message || 'Données indisponibles.'));
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current && foreground) setLoading(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { setLoading(true); load(tab); }, [load, tab]));
+  useFocusEffect(useCallback(() => {
+    load(tab);
+    return () => { requestSequence.current += 1; };
+  }, [load, tab]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load(tab);
+    await load(tab, false);
     setRefreshing(false);
   }, [load, tab]);
 
@@ -157,10 +190,13 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
 
   const onRescan = async () => {
     setLoading(true);
+    setError(null);
     try {
       setAlerts(await rescanImpersonation());
     } catch (e: any) {
-      setError(e?.message || 'Scan impossible.');
+      setError(e instanceof InsightsError
+        ? e
+        : new InsightsError(e?.message || 'Scan impossible.'));
     } finally {
       setLoading(false);
     }
@@ -213,7 +249,32 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
           }
         >
-          {!!error && <Text style={styles.error}>{error}</Text>}
+          {!!error && (
+            <View style={styles.errorCard}>
+              <Ionicons
+                name={error.kind === 'premium_required' ? 'lock-closed' : 'cloud-offline-outline'}
+                size={18}
+                color={colors.red}
+              />
+              <View style={styles.errorTexts}>
+                <Text style={styles.errorTitle}>
+                  {error.kind === 'premium_required' ? 'Fonction Premium' : 'Chargement impossible'}
+                </Text>
+                <Text style={styles.error}>{error.message}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => error.kind === 'premium_required'
+                  ? navigation.navigate('Settings')
+                  : load(tab)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.retryText}>
+                  {error.kind === 'premium_required' ? 'Voir' : 'Réessayer'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {tab === 'visitors' && visitors && (
             <>
@@ -244,7 +305,7 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
                 />
               </View>
 
-              {visitors.visitors.length === 0 ? (
+              {!error && visitors.visitors.length === 0 ? (
                 <Text style={styles.empty}>Personne n'est passé cette semaine.</Text>
               ) : visitors.visitors.map((entry) => (
                 <TouchableOpacity
@@ -277,7 +338,7 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               </View>
 
-              {alerts.length === 0 ? (
+              {!error && alerts.length === 0 ? (
                 <Text style={styles.empty}>Aucun compte suspect détecté.</Text>
               ) : alerts.map((alert) => (
                 <View key={alert.id} style={styles.alertCard}>
@@ -339,7 +400,7 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
           )}
 
           {tab === 'rising' && (
-            rising.length === 0 ? (
+            !error && rising.length === 0 ? (
               <Text style={styles.empty}>
                 Rien à signaler cette semaine. Le radar compare la croissance récente à la taille
                 des comptes — un gros compte qui gagne des abonnés n'y apparaît pas.
@@ -366,8 +427,59 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
             ))
           )}
 
+          {tab === 'niche' && (
+            !error && nicheTweets.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="pulse-outline" size={22} color={colors.textMuted} />
+                <Text style={styles.emptyTitle}>Pas encore de signal dans ta niche</Text>
+                <Text style={styles.empty}>
+                  Le radar cherche les tweets récents qui accélèrent chez les comptes proches de
+                  tes abonnements. Suis quelques créateurs de ton univers pour affiner les résultats.
+                </Text>
+              </View>
+            ) : nicheTweets.map((entry) => (
+              <TouchableOpacity
+                key={entry.tweet.id}
+                style={styles.alertCard}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('TweetDetail', { tweetId: entry.tweet.id })}
+              >
+                <View style={styles.nicheAuthorRow}>
+                  <Avatar
+                    size={34}
+                    username={entry.tweet.author.username}
+                    uri={entry.tweet.author.avatar || undefined}
+                  />
+                  <View style={styles.userTexts}>
+                    <Text style={styles.userName} numberOfLines={1}>
+                      {entry.tweet.author.full_name || entry.tweet.author.username}
+                    </Text>
+                    <Text style={styles.userHandle} numberOfLines={1}>
+                      @{entry.tweet.author.username} · {relativeDay(entry.tweet.created_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.ratioPill}>
+                    <Ionicons name="pulse" size={12} color={colors.accentBright} />
+                    <Text style={styles.ratioText}>
+                      ×{Math.max(1, Math.round(entry.velocity_ratio * 10) / 10)}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.cardBody, styles.nicheBody]} numberOfLines={4}>
+                  {entry.tweet.content}
+                </Text>
+                <Text style={styles.cardStat}>
+                  {entry.engagements} interactions en {entry.window_hours} h
+                  {entry.niche_affinity > 0
+                    ? ` · ${Math.round(entry.niche_affinity * 100)} % d’affinité`
+                    : ''}
+                </Text>
+              </TouchableOpacity>
+            ))
+          )}
+
           {tab === 'velocity' && (
-            velocity.length === 0 ? (
+            !error && velocity.length === 0 ? (
               <Text style={styles.empty}>
                 Aucun décollage pour l'instant. On te préviendra dès qu'un de tes tweets ira
                 nettement plus vite que ton rythme habituel.
@@ -431,8 +543,29 @@ const styles = StyleSheet.create({
 
   content: { paddingHorizontal: 16, paddingTop: 8 },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  error: { color: colors.red, fontSize: 13, marginBottom: 12 },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.red,
+    backgroundColor: colors.redMuted,
+    marginBottom: 14,
+  },
+  errorTexts: { flex: 1, marginHorizontal: 10 },
+  errorTitle: { color: colors.red, fontSize: 13, fontWeight: '700' },
+  error: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  retryBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: radius.round,
+    backgroundColor: colors.surfaceElevated,
+  },
+  retryText: { color: colors.textPrimary, fontSize: 11, fontWeight: '700' },
   empty: { color: colors.textMuted, fontSize: 13, lineHeight: 19, paddingVertical: 18 },
+  emptyState: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 28 },
+  emptyTitle: { color: colors.textSecondary, fontSize: 14, fontWeight: '700', marginTop: 9 },
   explain: { color: colors.textMuted, fontSize: 12, lineHeight: 17, flex: 1, marginRight: 10 },
 
   summaryCard: {
@@ -544,6 +677,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
+  nicheAuthorRow: { flexDirection: 'row', alignItems: 'center' },
+  nicheBody: { marginTop: 12 },
   ratioPill: {
     flexDirection: 'row',
     alignItems: 'center',
