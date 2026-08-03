@@ -27,7 +27,13 @@ module.exports = ({ config }) => {
       deploymentTarget: "15.1",
       infoPlist: {
         NSCameraUsageDescription: "L'application a besoin d'accéder à la caméra pour diffuser en direct.",
-        NSMicrophoneUsageDescription: "L'application a besoin d'accéder au microphone pour diffuser en direct."
+        NSMicrophoneUsageDescription: "L'application a besoin d'accéder au microphone pour diffuser en direct.",
+        // DIAGNOSTIC TEMPORAIRE : isoler si ATS bloque la connexion sur le
+        // build unsigned (Safari/Expo Go n'appliquent pas les mêmes règles
+        // ATS qu'un binaire compilé). À retirer dès la cause confirmée.
+        NSAppTransportSecurity: {
+          NSAllowsArbitraryLoads: true
+        }
       }
     },
     android: {
