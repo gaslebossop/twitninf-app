@@ -15,6 +15,9 @@ import ContentModerationScreen from '../screens/ContentModerationScreen';
 import CommunityReviewScreen from '../screens/CommunityReviewScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AccountStatsScreen from '../screens/AccountStatsScreen';
+import PredictiveAnalyticsScreen from '../screens/PredictiveAnalyticsScreen';
+import SupportScreen from '../screens/SupportScreen';
+import SupportTicketScreen from '../screens/SupportTicketScreen';
 import MonetizationScreen from '../screens/MonetizationScreen';
 import NewEconomyScreen from '../screens/NewEconomyScreen';
 import TradingScreen from '../screens/TradingScreen';
@@ -69,6 +72,8 @@ export type MainStackParamList = {
     replyTo?: string;
     /** Renvoyé par `RecordVideo` : la prise revient s'attacher au tweet. */
     recordedVideoUri?: string;
+    /** Texte pré-rempli — idée du radar de tendances ouverte depuis une notification. */
+    prefill?: string;
   };
   CreateTweetABTest: {
     parentTweetId?: string;
@@ -145,6 +150,11 @@ export type MainStackParamList = {
     username?: string;
     initialTab?: 'followers' | 'following';
   };
+  CommunityReview: undefined;
+  /** `draft` : texte pré-rempli, quand on arrive depuis une notification d'idée. */
+  PredictiveAnalytics: { draft?: string } | undefined;
+  Support: undefined;
+  SupportTicket: { ticketId: string };
 };
 
 const MainStack = createStackNavigator<MainStackParamList>();
@@ -665,6 +675,26 @@ function MainNavigatorInner() {
           presentation: 'card',
           headerShown: false,
         }}
+      />
+
+      {/* Analytics prédictifs (avantage Pro) — on y navigue entre onglets et on
+          y teste des brouillons : une carte, pas une feuille modale. */}
+      <MainStack.Screen
+        name="PredictiveAnalytics"
+        component={PredictiveAnalyticsScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Support par ticket */}
+      <MainStack.Screen
+        name="Support"
+        component={SupportScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="SupportTicket"
+        component={SupportTicketScreen}
+        options={{ headerShown: false }}
       />
 
     </MainStack.Navigator>

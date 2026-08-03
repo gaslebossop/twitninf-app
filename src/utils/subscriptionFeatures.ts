@@ -120,6 +120,26 @@ export const SUBSCRIPTION_FEATURES: SubscriptionFeature[] = [
     minTier: 'pro',
     highlight: true,
   },
+  {
+    icon: 'trending-up',
+    title: 'Analytics prédictifs',
+    text: 'Avant de publier, on t\'estime la portée et l\'engagement probable de ton tweet. Et si un sujet proche du tien décolle en ce moment, une notif t\'arrive avec une idée de tweet prête à publier.',
+    minTier: 'pro',
+    highlight: true,
+  },
+  {
+    icon: 'bulb',
+    title: 'Co-pilote IA',
+    text: 'Reformulation, ton et accroche suggérés en temps réel pendant que tu écris.',
+    minTier: 'pro',
+    highlight: true,
+  },
+  {
+    icon: 'headset',
+    title: 'Support prioritaire',
+    text: 'Un ticket dédié, traité en priorité, pour toute question ou souci sur ton compte.',
+    minTier: 'pro',
+  },
 ];
 
 /** Avantages inclus dans un palier donné. */

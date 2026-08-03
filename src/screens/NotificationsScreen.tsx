@@ -46,6 +46,12 @@ interface SimpleNotification {
   sender?: NotificationSender;
   tweet?: { content: string; id: string; image?: string };
   content?: { reason?: string; score?: number;[key: string]: any };
+  /**
+   * Porte le sous-type des notifications `system` via `kind` — le serveur évite
+   * ainsi d'ajouter une valeur à l'ENUM `type` pour chaque nouveau cas
+   * (voir `Notification.createFollowRequestNotification` côté API).
+   */
+  metadata?: { kind?: string; ticket_id?: string; idea?: string;[key: string]: any };
 }
 
 type FilterKey = 'all' | 'verified' | 'mentions';
@@ -332,6 +338,21 @@ export default function NotificationsScreen() {
       await handleMarkAsRead(notification.id);
     }
     const content = notification.content || {};
+    const kind = notification.metadata?.kind;
+
+    // Idée de tweet du radar de tendances : on ouvre le composeur avec le texte
+    // proposé déjà dedans. L'intérêt d'un sujet qui perce est périssable —
+    // atterrir sur un écran de statistiques ferait perdre le moment.
+    if (kind === 'trend_idea' && notification.metadata?.idea) {
+      navigation.navigate('CreateTweet', { prefill: String(notification.metadata.idea) });
+      return;
+    }
+
+    if (kind === 'support_reply' && notification.metadata?.ticket_id) {
+      navigation.navigate('SupportTicket', { ticketId: String(notification.metadata.ticket_id) });
+      return;
+    }
+
     if (content.conversation_id) {
       navigation.navigate('ConversationThread', {
         conversationId: String(content.conversation_id),

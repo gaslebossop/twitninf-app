@@ -295,6 +295,20 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             )}
 
             {renderActionButton(
+              'Analytics prédictifs',
+              'Estimez la portée d\'un tweet avant de le publier (Pro)',
+              'trending-up-outline',
+              () => navigation.navigate('PredictiveAnalytics')
+            )}
+
+            {renderActionButton(
+              'Support',
+              'Ouvrir un ticket — traitement prioritaire avec le palier Pro',
+              'headset-outline',
+              () => navigation.navigate('Support')
+            )}
+
+            {renderActionButton(
               'Debug notifs locales',
               'Voir les rappels 12h/16h/20h planifiés',
               'notifications-outline',

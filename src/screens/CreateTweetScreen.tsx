@@ -38,6 +38,7 @@ import {
 } from '../utils/subscriptionTier';
 import { useOffline } from '../contexts/OfflineContext';
 import DraftsSheet from '../components/DraftsSheet';
+import AiCopilotSheet from '../components/AiCopilotSheet';
 import { countDrafts, saveDraft, deleteDraft, TweetDraft } from '../services/draftsService';
 import { serializeOverlays, type VideoOverlay } from '../utils/videoFilters';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
@@ -49,6 +50,8 @@ interface CreateTweetScreenProps {
       parentTweetId?: string;
       replyTo?: string;
       quoteTweetId?: string;
+      /** Texte pré-rempli — idée du radar de tendances ouverte depuis une notification. */
+      prefill?: string;
     };
   };
 }
@@ -82,7 +85,20 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
 
   // Lu ici et pas plus bas : le brouillon en cours a besoin de son contexte
   // (réponse / citation) pour être réenregistré au bon endroit.
-  const { parentTweetId, replyTo, quoteTweetId } = route.params || {};
+  const { parentTweetId, replyTo, quoteTweetId, prefill } = route.params || {};
+
+  /**
+   * Texte pré-rempli (idée du radar). Posé une seule fois et uniquement sur un
+   * composeur vierge : réappliquer le `prefill` à chaque rendu écraserait ce que
+   * l'utilisateur est en train de réécrire par-dessus la suggestion.
+   */
+  const prefillApplied = useRef(false);
+  useEffect(() => {
+    if (!prefill || prefillApplied.current) return;
+    prefillApplied.current = true;
+    setContent(prefill);
+    setCharCount(prefill.length);
+  }, [prefill]);
 
   // Limite selon l'abonnement de l'auteur : 280 par défaut, 1 000 pour un
   // abonné actif. Le serveur revalide (voir `api/src/utils/tweetLimits.js`) —
@@ -112,6 +128,13 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   // Brouillons — même population que la limite étendue : c'est l'abonnement
   // qui ouvre les deux.
   const canUseDrafts = isExtendedLimit;
+
+  /**
+   * Co-pilote IA — même porte que la traduction : Pro, et Pro actif. Le serveur
+   * refuse (403) sinon, autant ne pas afficher le bouton.
+   */
+  const canUseCopilot = canUseTranslation;
+  const [copilotVisible, setCopilotVisible] = useState(false);
 
   const { enabled: offlineEnabled, online, queue: queueTweet } = useOffline();
   const [draftsVisible, setDraftsVisible] = useState(false);
@@ -617,6 +640,18 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
               )}
             </View>
 
+            {/* Co-pilote : n'apparaît qu'avec du texte sur lequel travailler. */}
+            {canUseCopilot && !!content.trim() && (
+              <TouchableOpacity
+                style={styles.draftAction}
+                onPress={() => setCopilotVisible(true)}
+                activeOpacity={0.7}
+                accessibilityLabel="Ouvrir le co-pilote de rédaction"
+              >
+                <Ionicons name="bulb-outline" size={19} color={textColor} />
+              </TouchableOpacity>
+            )}
+
             {canUseDrafts && (
               <>
                 {/* Enregistrer : n'apparaît qu'avec du texte à sauver. */}
@@ -936,6 +971,17 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
             refreshDraftCount();
           }}
           onPick={handlePickDraft}
+        />
+      )}
+
+      {canUseCopilot && (
+        <AiCopilotSheet
+          visible={copilotVisible}
+          content={content}
+          onClose={() => setCopilotVisible(false)}
+          // Passe par `handleContentChange` et non `setContent` : le compteur de
+          // caractères et l'état du bouton Publier en dépendent.
+          onApply={handleContentChange}
         />
       )}
     </View>
