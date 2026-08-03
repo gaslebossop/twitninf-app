@@ -32,6 +32,7 @@ content/
 # Development guides and test files
 *.md
 *.js
+!tests/*.test.js
 *.ipa
 *.zip
 App.tsx
@@ -48,4 +49,3 @@ currentprice-error-final-fix.md
 !babel.config.js
 !metro.config.js
 !App.tsx
-

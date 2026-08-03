@@ -21,10 +21,10 @@ export const EventBanner: React.FC<EventBannerProps> = ({
   onClose,
 }) => {
   const { activeEvent, hasActiveEvent } = useEvents();
-  const { styles, theme, hasEffect, getAnimation } = useEventStyles();
+  const { styles: eventStyles, theme, hasEffect } = useEventStyles();
   
   // Vérification de la disponibilité des hooks
-  if (!styles || !theme) {
+  if (!eventStyles || !theme) {
     console.warn('⚠️ EventBanner: Styles or theme is undefined');
     return null;
   }
@@ -133,6 +133,7 @@ export const EventBanner: React.FC<EventBannerProps> = ({
     <Animated.View
       style={[
         styles.eventBanner,
+        eventStyles.eventBanner,
         {
           opacity: fadeAnim,
           transform: [
@@ -145,9 +146,9 @@ export const EventBanner: React.FC<EventBannerProps> = ({
       <TouchableOpacity
         onPress={onPress}
         style={[
-          styles.eventBanner,
-          hasEffect('glow') && styles.glow,
-          hasEffect('shimmer') && styles.shimmer,
+          styles.touchable,
+          hasEffect('glow') && eventStyles.glow,
+          hasEffect('shimmer') && eventStyles.shimmer,
         ]}
         activeOpacity={0.8}
       >
@@ -157,7 +158,7 @@ export const EventBanner: React.FC<EventBannerProps> = ({
             <Ionicons
               name={getEventIcon() as any}
               size={20}
-              color={getColor('primary')}
+              color={theme.colors.primary}
               style={styles.eventIcon}
             />
           </View>
@@ -182,7 +183,7 @@ export const EventBanner: React.FC<EventBannerProps> = ({
               <Ionicons
                 name="close"
                 size={16}
-                color={getColor('text')}
+                color={theme.colors.text}
               />
             </TouchableOpacity>
           )}
@@ -195,7 +196,7 @@ export const EventBanner: React.FC<EventBannerProps> = ({
               styles.shimmerOverlay,
               {
                 opacity: shimmerAnim,
-                backgroundColor: getColor('accent'),
+                backgroundColor: theme.colors.accent,
               },
             ]}
           />
@@ -210,6 +211,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 8,
     borderRadius: 12,
+    overflow: 'hidden',
+  },
+  touchable: {
     overflow: 'hidden',
   },
   eventBannerContent: {

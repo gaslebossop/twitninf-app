@@ -160,7 +160,7 @@ export default function PremiumProfileEffects({
               ]}
             >
               <LinearGradient
-                colors={FLOW_RING_COLORS}
+                colors={FLOW_RING_COLORS as any}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{ width: '100%', height: '100%' }}
@@ -191,7 +191,7 @@ export default function PremiumProfileEffects({
     <View style={[styles.wrap, { width: size, height: size, borderRadius: size / 2 }]}>
       <Animated.View style={[StyleSheet.absoluteFillObject, pulseStyle]} pointerEvents="none">
         <LinearGradient
-          colors={colors}
+          colors={colors as any}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[StyleSheet.absoluteFillObject, { borderRadius: size / 2 }]}

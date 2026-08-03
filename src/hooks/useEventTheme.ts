@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEvents } from '../contexts/EventContext';
-import { EventTheme } from '../services/eventService';
+import type { EventThemeConfig as EventDefinition } from '../themes/eventThemes';
 
 interface ThemeColors {
   primary: string;
@@ -35,7 +35,7 @@ const useEventTheme = () => {
   /**
    * Convertir un thème d'événement en configuration de couleurs
    */
-  const convertEventThemeToColors = (theme: EventTheme): ThemeColors => {
+  const convertEventThemeToColors = (theme: EventDefinition): ThemeColors => {
     const colors = theme.colors || [];
     
     // Définir des couleurs par défaut basées sur le slug du thème
@@ -130,7 +130,7 @@ const useEventTheme = () => {
   /**
    * Appliquer un thème d'événement
    */
-  const applyEventTheme = async (theme: EventTheme) => {
+  const applyEventTheme = async (theme: EventDefinition) => {
     try {
       // Sauvegarder le thème actuel de l'utilisateur s'il n'est pas déjà sauvé
       if (!originalUserTheme) {

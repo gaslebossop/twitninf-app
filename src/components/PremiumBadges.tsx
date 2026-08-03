@@ -191,7 +191,7 @@ export default function PremiumBadges({
       ]}
     >
       <LinearGradient
-        colors={config.colors}
+        colors={config.colors as any}
         style={[styles.badgeGradient, { borderRadius: sizeConfig.size }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -214,7 +214,7 @@ export default function PremiumBadges({
           ]}
         >
           <Ionicons 
-            name={config.icon} 
+            name={config.icon as keyof typeof Ionicons.glyphMap}
             size={sizeConfig.size} 
             color="#ffffff"
             style={styles.badgeIcon}

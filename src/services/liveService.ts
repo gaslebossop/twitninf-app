@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import tokenStore from './tokenStore';
+import { resolveServerUrl } from '../config/serverUrl';
 
 /**
  * Serveur de stream (ingestion RTMPS, lecture HLS, chat du live).
@@ -13,13 +14,12 @@ import tokenStore from './tokenStore';
  * domaine en dur — voir la note équivalente dans `config/api.ts`, même
  * raison : le dépôt est destiné à devenir public.
  */
-if (!process.env.EXPO_PUBLIC_STREAM_SERVER) {
-  throw new Error(
-    "EXPO_PUBLIC_STREAM_SERVER manquant. Créer un fichier .env à la racine " +
-    'du projet avec EXPO_PUBLIC_STREAM_SERVER=... (voir .env.example).',
-  );
-}
-const STREAM_SERVER = process.env.EXPO_PUBLIC_STREAM_SERVER;
+const resolvedStreamServer = resolveServerUrl(
+  process.env.EXPO_PUBLIC_STREAM_SERVER,
+  'EXPO_PUBLIC_STREAM_SERVER',
+  'https://stream.invalid',
+);
+const STREAM_SERVER = resolvedStreamServer.url;
 
 /**
  * Le socket porte le jeton d'accès : le serveur en tire l'identité de

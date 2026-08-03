@@ -6,21 +6,22 @@
  * ce qu'un simple `git grep` suffit à retrouver. Elle vient désormais de
  * `EXPO_PUBLIC_API_URL` — voir `.env.example` à la racine du projet.
  *
- * `EXPO_PUBLIC_*` est inliné par Metro au moment du bundle (voir
- * `@expo/metro-config` dans metro.config.js), donc la valeur doit exister
- * AVANT de lancer un build, que ce soit en local (`.env` non versionné) ou en
- * CI (voir l'étape dédiée dans `.github/workflows/ios-build.yml`).
+ * `EXPO_PUBLIC_*` est inliné par Metro au moment du bundle. Sans `.env`,
+ * l'application démarre volontairement en mode hors ligne plutôt que de
+ * planter avant le premier rendu.
  */
-if (!process.env.EXPO_PUBLIC_API_URL) {
-  throw new Error(
-    "EXPO_PUBLIC_API_URL manquant. Créer un fichier .env à la racine du " +
-    'projet avec EXPO_PUBLIC_API_URL=... (voir .env.example), puis relancer.',
-  );
-}
+import { resolveServerUrl } from './serverUrl';
+
+const resolvedApiUrl = resolveServerUrl(
+  process.env.EXPO_PUBLIC_API_URL,
+  'EXPO_PUBLIC_API_URL',
+  'https://api.invalid',
+);
 
 export const API_CONFIG = {
   // URL de base de l'API
-  BASE_URL: process.env.EXPO_PUBLIC_API_URL,
+  BASE_URL: resolvedApiUrl.url,
+  IS_CONFIGURED: resolvedApiUrl.configured,
 
   // Timeout des requêtes
   TIMEOUT: 15000,

@@ -9,11 +9,11 @@ import ConnectedLayout from './ConnectedLayout';
 
 interface ConnectedPageProps {
   children: React.ReactNode;
-  activeTab?: 'tweets' | 'search' | 'notifications' | 'messages' | 'profile';
+  activeTab?: 'tweets' | 'search' | 'notifications' | 'trading' | 'profile';
   showNavbar?: boolean;
   backgroundColor?: string;
   scrollable?: boolean;
-  refreshControl?: React.ReactElement;
+  refreshControl?: React.ReactElement<React.ComponentProps<typeof RefreshControl>>;
   contentContainerStyle?: any;
 }
 

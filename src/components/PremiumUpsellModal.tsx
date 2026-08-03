@@ -93,7 +93,7 @@ function AuroraBackdrop({ active, gradient }: { active: boolean; gradient: reado
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Animated.View style={[styles.blob, styles.blobTop, { transform: [{ rotate: slow }] }]}>
         <LinearGradient
-          colors={[withAlpha(gradient[0], 0.55), withAlpha(gradient[1], 0.3), 'transparent']}
+          colors={[withAlpha(gradient[0], 0.55), withAlpha(gradient[1], 0.3), 'transparent'] as any}
           start={{ x: 0.1, y: 0 }}
           end={{ x: 0.9, y: 1 }}
           style={StyleSheet.absoluteFill}
@@ -101,7 +101,7 @@ function AuroraBackdrop({ active, gradient }: { active: boolean; gradient: reado
       </Animated.View>
       <Animated.View style={[styles.blob, styles.blobRight, { transform: [{ rotate: fast }] }]}>
         <LinearGradient
-          colors={[withAlpha(gradient[2], 0.4), 'transparent']}
+          colors={[withAlpha(gradient[2], 0.4), 'transparent'] as any}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
@@ -124,7 +124,7 @@ function GradientText({
 }) {
   return (
     <MaskedView maskElement={<Text style={style}>{children}</Text>}>
-      <LinearGradient colors={gradient as string[]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0.6 }}>
+      <LinearGradient colors={gradient as unknown as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0.6 }}>
         {/* Le texte transparent donne sa forme au dégradé sans se voir. */}
         <Text style={[style, { opacity: 0 }]}>{children}</Text>
       </LinearGradient>
@@ -238,12 +238,12 @@ export default function PremiumUpsellModal({
       <View style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
-        <Animated.View style={[styles.card, { maxHeight: SCREEN_H * 0.9 }, cardStyle]}>
+        <Animated.View style={[styles.card, { maxHeight: SCREEN_H * 0.9 }, cardStyle as any]}>
           <AuroraBackdrop active={visible && !singleTier} gradient={gradient} />
 
           {/* Liseré dégradé : c'est lui qui « signe » la carte. */}
           <LinearGradient
-            colors={[withAlpha(gradient[0], 0.9), withAlpha(gradient[1], 0.5), withAlpha(gradient[2], 0.8)]}
+            colors={[withAlpha(gradient[0], 0.9), withAlpha(gradient[1], 0.5), withAlpha(gradient[2], 0.8)] as any}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.cardBorder}
@@ -261,7 +261,7 @@ export default function PremiumUpsellModal({
           >
             <View style={styles.kickerRow}>
               <LinearGradient
-                colors={gradient as string[]}
+                colors={gradient as unknown as [string, string, ...string[]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.kickerBadge}
@@ -284,7 +284,7 @@ export default function PremiumUpsellModal({
             {/* ── Prix ── */}
             <View style={styles.priceCard}>
               <LinearGradient
-                colors={[withAlpha(gradient[1], 0.18), 'transparent']}
+                colors={[withAlpha(gradient[1], 0.18), 'transparent'] as any}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
@@ -334,7 +334,7 @@ export default function PremiumUpsellModal({
                   >
                     {active && (
                       <LinearGradient
-                        colors={gradient as string[]}
+                        colors={gradient as unknown as [string, string, ...string[]]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={[StyleSheet.absoluteFill, { borderRadius: 12, opacity: 0.22 }]}
@@ -390,7 +390,7 @@ export default function PremiumUpsellModal({
               style={[styles.cta, (!enough || !price) && { opacity: 0.45 }]}
             >
               <LinearGradient
-                colors={gradient as string[]}
+                colors={gradient as unknown as [string, string, ...string[]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
@@ -414,7 +414,7 @@ export default function PremiumUpsellModal({
                 ]}
               >
                 <LinearGradient
-                  colors={['transparent', withAlpha('#ffffff', 0.55), 'transparent']}
+                  colors={['transparent', withAlpha('#ffffff', 0.55), 'transparent'] as any}
                   start={{ x: 0, y: 0.5 }}
                   end={{ x: 1, y: 0.5 }}
                   style={StyleSheet.absoluteFill}

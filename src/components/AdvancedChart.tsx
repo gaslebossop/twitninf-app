@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { LineChart, AreaChart, BarChart } from 'react-native-chart-kit';
+import { LineChart, BarChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -321,13 +321,15 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({ data, timeframe, currency
           withInnerLines={false}
           showBarTops={false}
           fromZero
+          yAxisLabel=""
+          yAxisSuffix=""
         />
       );
     }
 
     if (chartType === 'area') {
       return (
-        <AreaChart
+        <LineChart
           data={chartData}
           width={chartWidth}
           height={220}
@@ -335,6 +337,7 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({ data, timeframe, currency
           style={styles.chart}
           withInnerLines={true}
           withOuterLines={false}
+          bezier
         />
       );
     }

@@ -37,7 +37,15 @@ function rowUnlocked(userTier: SubscriptionTier, row: TierRow): boolean {
   return canUseFeature(userTier, r);
 }
 
-const PREMIUM_THEMES = [
+const PREMIUM_THEMES: Array<{
+  id: string;
+  name: string;
+  description: string;
+  colors: string[];
+  icon: string;
+  free: boolean;
+  minTier?: 'plus' | 'pro';
+}> = [
   {
     id: 'default',
     name: 'Défaut',
@@ -240,7 +248,7 @@ export default function PremiumThemeSelector({
       onPress={() => handleThemeSelect(theme.id)}
     >
       <LinearGradient
-        colors={theme.colors}
+        colors={theme.colors as any}
         style={styles.themePreview}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -321,7 +329,7 @@ export default function PremiumThemeSelector({
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Premium */}
       <LinearGradient
-        colors={['#ff6b6b', '#ff8e53', '#ffad5a']}
+        colors={['#ff6b6b', '#ff8e53', '#ffad5a'] as any}
         style={styles.header}
       >
         <Ionicons name="color-palette" size={32} color="#ffffff" />
@@ -361,7 +369,7 @@ export default function PremiumThemeSelector({
       {userTier === 'free' && (
         <TouchableOpacity style={styles.premiumCTA}>
           <LinearGradient
-            colors={['#667eea', '#764ba2']}
+            colors={['#667eea', '#764ba2'] as any}
             style={styles.ctaGradient}
           >
             <Ionicons name="diamond" size={24} color="#ffffff" />

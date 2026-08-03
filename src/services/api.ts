@@ -68,7 +68,9 @@ class ApiService {
     // Initialiser le token au démarrage
     this.initializeToken();
     // Preconnect pour reduire la latence du premier stream IA
-    this.ensureSearchSummarySocketConnected().catch(() => {});
+    if (API_CONFIG.IS_CONFIGURED) {
+      this.ensureSearchSummarySocketConnected().catch(() => {});
+    }
   }
 
   private async ensureSearchSummarySocketConnected(): Promise<any> {

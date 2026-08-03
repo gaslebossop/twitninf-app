@@ -116,7 +116,13 @@ export default function EventManagementScreen() {
         description: theme.description,
         icon: theme.icon,
         colors: theme.colors,
-        effects: theme.effects,
+        effects: {
+          glow: Boolean(theme.effects.glow),
+          shimmer: Boolean(theme.effects.shimmer),
+          pulse: Boolean(theme.effects.pulse),
+          particles: Boolean(theme.effects.particles),
+          sparkles: Boolean(theme.effects.sparkles),
+        },
         preview: {
           primaryColor: theme.colors.primary,
           secondaryColor: theme.colors.secondary,

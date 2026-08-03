@@ -170,7 +170,7 @@ export default function PremiumTweetHolo({
 
   return (
     <View style={styles.holo} pointerEvents="none">
-      <Animated.View style={[StyleSheet.absoluteFill, ambientStyle]}>
+      <Animated.View style={[StyleSheet.absoluteFill, ambientStyle as any]}>
         <Svg width="100%" height="100%">
           <Defs>
             {/* Le noyau est descendu à 18 % de la hauteur : centré sur 0, la

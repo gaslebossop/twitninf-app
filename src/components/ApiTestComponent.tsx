@@ -426,12 +426,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
   },
-  userItem: {
-    color: '#ffffff',
-    fontSize: 14,
-    marginBottom: 5,
-    paddingLeft: 10,
-  },
 });
 
 export default ApiTestComponent;

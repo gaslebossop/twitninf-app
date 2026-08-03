@@ -11,6 +11,7 @@ import {
   TextInput,
   Dimensions,
   Platform,
+  TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -64,7 +65,7 @@ const TYPOGRAPHY = {
   caption: { fontSize: 14, fontWeight: '400', fontFamily: fonts.regular, letterSpacing: 0.1 },
   captionMedium: { fontSize: 14, fontWeight: '500', fontFamily: fonts.medium, letterSpacing: 0.1 },
   small: { fontSize: 12, fontWeight: '400', fontFamily: fonts.regular, letterSpacing: 0.1 },
-};
+} satisfies Record<string, TextStyle>;
 
 // Espacement cohérent
 const SPACING = {
