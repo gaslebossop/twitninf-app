@@ -22,6 +22,7 @@ import {
   CATEGORY_LABELS,
   STATUS_LABELS,
   createTicket,
+  fetchStaffQueue,
   fetchSummary,
   fetchTickets,
   isTicketOpen,
@@ -44,6 +45,14 @@ const CATEGORIES: TicketCategory[] = [
   'compte', 'abonnement', 'economie', 'moderation', 'bug', 'autre',
 ];
 
+const STAFF_STATUS_LABELS: Record<SupportTicketSummary['status'], string> = {
+  open: 'À prendre en charge',
+  pending: 'En attente de l’utilisateur',
+  answered: 'Réponse envoyée',
+  resolved: 'Résolu',
+  closed: 'Clos',
+};
+
 interface Props {
   navigation: any;
 }
@@ -64,8 +73,14 @@ export default function SupportScreen({ navigation }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    const [summaryResult, ticketsResult] = await Promise.all([fetchSummary(), fetchTickets()]);
-    if (summaryResult.ok) setSummary(summaryResult.data!);
+    // Le serveur détermine `isStaff` depuis la base, pas depuis le JWT local qui
+    // peut dater d'avant la promotion du compte.
+    const summaryResult = await fetchSummary();
+    const resolvedSummary = summaryResult.ok ? summaryResult.data! : null;
+    if (resolvedSummary) setSummary(resolvedSummary);
+    const ticketsResult = resolvedSummary?.isStaff
+      ? await fetchStaffQueue('open')
+      : await fetchTickets();
     if (ticketsResult.ok) {
       setTickets(ticketsResult.data!);
       setError(null);
@@ -117,7 +132,8 @@ export default function SupportScreen({ navigation }: Props) {
   }, [subject, body, category, load]);
 
   const openCount = tickets.filter((t) => isTicketOpen(t.status)).length;
-  const canOpenMore = !summary || openCount < summary.maxOpenTickets;
+  const staffMode = summary?.isStaff === true;
+  const canOpenMore = !staffMode && (!summary || openCount < summary.maxOpenTickets);
 
   return (
     <ScreenBackground>
@@ -129,10 +145,10 @@ export default function SupportScreen({ navigation }: Props) {
             <BackButton navigation={navigation} style={styles.roundButton} />
           </View>
           <View style={styles.titleGroup}>
-            <Text style={styles.title}>Support</Text>
+            <Text style={styles.title}>{staffMode ? 'File support' : 'Support'}</Text>
           </View>
           <View style={styles.roundSlot}>
-            {!composing && canOpenMore && (
+            {!staffMode && !composing && canOpenMore && (
               <TouchableOpacity
                 style={styles.roundButton}
                 onPress={() => setComposing(true)}
@@ -158,26 +174,30 @@ export default function SupportScreen({ navigation }: Props) {
           }
         >
           {!!summary && (
-            <View style={[styles.slaCard, summary.isPro && styles.slaCardPro]}>
+            <View style={[styles.slaCard, (staffMode || summary.isPro) && styles.slaCardPro]}>
               <View style={styles.slaHead}>
                 <Ionicons
-                  name={summary.isPro ? 'flash' : 'headset-outline'}
+                  name={staffMode ? 'shield-checkmark' : summary.isPro ? 'flash' : 'headset-outline'}
                   size={16}
-                  color={summary.isPro ? colors.accent : colors.textSecondary}
+                  color={staffMode || summary.isPro ? colors.accent : colors.textSecondary}
                 />
-                <Text style={[styles.slaTitle, summary.isPro && styles.slaTitlePro]}>
-                  {summary.isPro ? 'Traitement prioritaire' : 'Traitement standard'}
+                <Text style={[styles.slaTitle, (staffMode || summary.isPro) && styles.slaTitlePro]}>
+                  {staffMode
+                    ? `${summary.openTickets} ticket${summary.openTickets > 1 ? 's' : ''} à traiter`
+                    : summary.isPro ? 'Traitement prioritaire' : 'Traitement standard'}
                 </Text>
               </View>
               <Text style={styles.slaText}>
-                {summary.isPro
+                {staffMode
+                  ? `${summary.unreadTickets} ticket${summary.unreadTickets > 1 ? 's' : ''} avec une nouvelle réponse. Les tickets prioritaires et les plus anciens apparaissent d’abord.`
+                  : summary.isPro
                   ? `Tes tickets passent en tête de file. Réponse visée sous ${summary.slaHours} h, jusqu'à ${summary.maxOpenTickets} tickets ouverts en même temps.`
                   : `Réponse visée sous ${summary.slaHours} h, un ticket ouvert à la fois. Le palier Pro place tes tickets en tête de file, sous ${24} h.`}
               </Text>
             </View>
           )}
 
-          {composing && (
+          {!staffMode && composing && (
             <View style={styles.composeCard}>
               <Text style={styles.composeTitle}>Nouveau ticket</Text>
 
@@ -258,18 +278,21 @@ export default function SupportScreen({ navigation }: Props) {
                 <View style={styles.emptyIcon}>
                   <Ionicons name="chatbubbles-outline" size={24} color={colors.textSecondary} />
                 </View>
-                <Text style={styles.emptyTitle}>Aucun ticket</Text>
+                <Text style={styles.emptyTitle}>{staffMode ? 'File vide' : 'Aucun ticket'}</Text>
                 <Text style={styles.centeredText}>
-                  Un souci de compte, de paiement, un bug ? Ouvre un ticket, une
-                  vraie personne le lira.
+                  {staffMode
+                    ? 'Aucun ticket ouvert ne demande de réponse pour le moment.'
+                    : 'Un souci de compte, de paiement, un bug ? Ouvre un ticket, une vraie personne le lira.'}
                 </Text>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() => setComposing(true)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.primaryButtonText}>Ouvrir un ticket</Text>
-                </TouchableOpacity>
+                {!staffMode && (
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={() => setComposing(true)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.primaryButtonText}>Ouvrir un ticket</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )
           ) : (
@@ -282,9 +305,12 @@ export default function SupportScreen({ navigation }: Props) {
               >
                 <View style={styles.ticketHead}>
                   <Text style={styles.ticketSubject} numberOfLines={1}>{t.subject}</Text>
-                  {t.unread && <View style={styles.unreadDot} />}
+                  {(staffMode ? t.unreadForStaff : t.unread) && <View style={styles.unreadDot} />}
                 </View>
-                <Text style={styles.ticketStatus}>{STATUS_LABELS[t.status]}</Text>
+                <Text style={styles.ticketStatus}>
+                  {staffMode ? STAFF_STATUS_LABELS[t.status] : STATUS_LABELS[t.status]}
+                  {staffMode && t.user?.username ? ` · @${t.user.username}` : ''}
+                </Text>
                 <View style={styles.ticketMeta}>
                   <View style={styles.tag}>
                     <Text style={styles.tagText}>{CATEGORY_LABELS[t.category]}</Text>

@@ -39,6 +39,14 @@ interface Props {
   route: { params: { ticketId: string } };
 }
 
+const STAFF_STATUS_LABELS: Record<string, string> = {
+  open: 'À prendre en charge',
+  pending: 'En attente de l’utilisateur',
+  answered: 'Réponse envoyée',
+  resolved: 'Résolu',
+  closed: 'Clos',
+};
+
 export default function SupportTicketScreen({ navigation, route }: Props) {
   const { ticketId } = route.params;
   const { top: headerTopInset } = useHeaderMetrics();
@@ -68,7 +76,9 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
     if (!text) return;
 
     setSending(true);
-    const result = await replyToTicket(ticketId, text);
+    const result = await replyToTicket(ticketId, text, {
+      asStaff: detail?.actor?.isStaff === true,
+    });
     setSending(false);
 
     if (!result.ok) {
@@ -80,12 +90,14 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
     await load();
     // Après rechargement, le dernier message est en bas : on l'y amène.
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
-  }, [reply, ticketId, load]);
+  }, [reply, ticketId, load, detail?.actor?.isStaff]);
 
   const onClose = useCallback(() => {
     Alert.alert(
-      'Clore ce ticket ?',
-      'Tu ne pourras plus y répondre. Si le problème revient, ouvre-en un nouveau.',
+      detail?.actor?.isStaff ? 'Clore ce ticket côté support ?' : 'Clore ce ticket ?',
+      detail?.actor?.isStaff
+        ? 'Le fil sera fermé pour le support et pour l’utilisateur.'
+        : 'Tu ne pourras plus y répondre. Si le problème revient, ouvre-en un nouveau.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -99,10 +111,11 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
         },
       ],
     );
-  }, [ticketId, load]);
+  }, [ticketId, load, detail?.actor?.isStaff]);
 
   const ticket = detail?.ticket;
   const open = ticket ? isTicketOpen(ticket.status) : false;
+  const staffMode = detail?.actor?.isStaff === true;
 
   return (
     <ScreenBackground>
@@ -119,7 +132,8 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
             </Text>
             {!!ticket && (
               <Text style={styles.subtitle} numberOfLines={1}>
-                {STATUS_LABELS[ticket.status]}
+                {staffMode && ticket.requester?.username ? `@${ticket.requester.username} · ` : ''}
+                {staffMode ? STAFF_STATUS_LABELS[ticket.status] : STATUS_LABELS[ticket.status]}
               </Text>
             )}
           </View>
@@ -168,10 +182,31 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
                 </View>
               )}
 
+              {staffMode && ticket?.requester && (
+                <View style={styles.requesterCard}>
+                  <View style={styles.requesterIcon}>
+                    <Ionicons name="person" size={14} color={colors.accent} />
+                  </View>
+                  <View style={styles.requesterTextWrap}>
+                    <Text style={styles.requesterName}>
+                      {ticket.requester.fullName || ticket.requester.username}
+                    </Text>
+                    <Text style={styles.requesterHandle}>@{ticket.requester.username}</Text>
+                  </View>
+                  <View style={styles.staffModeBadge}>
+                    <Text style={styles.staffModeBadgeText}>Réponse officielle</Text>
+                  </View>
+                </View>
+              )}
+
               {detail?.messages.map((m) => (
                 <View
                   key={m.id}
-                  style={[styles.bubble, m.isStaff ? styles.bubbleStaff : styles.bubbleUser]}
+                  style={[
+                    styles.bubble,
+                    m.isStaff ? styles.bubbleStaff : styles.bubbleUser,
+                    (staffMode ? m.isStaff : !m.isStaff) ? styles.bubbleOwn : styles.bubbleOther,
+                  ]}
                 >
                   {m.isStaff && (
                     <View style={styles.staffBadge}>
@@ -204,7 +239,7 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
           <View style={styles.composer}>
             <TextInput
               style={styles.composerInput}
-              placeholder="Ta réponse…"
+              placeholder={staffMode ? 'Réponse officielle du support…' : 'Ta réponse…'}
               placeholderTextColor={colors.textMuted}
               value={reply}
               onChangeText={setReply}
@@ -278,6 +313,31 @@ const styles = StyleSheet.create({
   },
   priorityText: { color: colors.accent, fontSize: 12, flex: 1, fontFamily: fonts.regular },
 
+  requesterCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    padding: 11,
+    borderRadius: 11,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    marginBottom: 14,
+  },
+  requesterIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requesterTextWrap: { flex: 1, minWidth: 0 },
+  requesterName: { color: colors.textPrimary, fontSize: 12.5, fontFamily: fonts.bold },
+  requesterHandle: { color: colors.textMuted, fontSize: 10.5, marginTop: 1, fontFamily: fonts.regular },
+  staffModeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.accentMuted },
+  staffModeBadgeText: { color: colors.accent, fontSize: 9.5, fontFamily: fonts.bold },
+
   bubble: {
     maxWidth: '88%',
     padding: 12,
@@ -296,6 +356,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderBottomLeftRadius: 4,
   },
+  bubbleOwn: { alignSelf: 'flex-end' },
+  bubbleOther: { alignSelf: 'flex-start' },
   staffBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
   staffBadgeText: { color: colors.accent, fontSize: 11, fontFamily: fonts.bold },
   bubbleText: {

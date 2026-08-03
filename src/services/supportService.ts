@@ -23,10 +23,20 @@ export interface SupportTicketSummary {
   category: TicketCategory;
   status: TicketStatus;
   priority: 'normal' | 'high';
-  unread: boolean;
+  unread?: boolean;
+  unreadForStaff?: boolean;
   slaHours: number;
   lastMessageAt: string | null;
   createdAt: string;
+  user?: {
+    id: string;
+    username: string;
+    tier: string;
+  } | null;
+  assignee?: {
+    id: string;
+    username: string;
+  } | null;
 }
 
 export interface SupportMessage {
@@ -54,6 +64,19 @@ export interface SupportTicketDetail {
     slaHours: number;
     createdAt: string;
     closedAt: string | null;
+    requester?: {
+      id: string;
+      username: string;
+      fullName: string | null;
+      avatar: string | null;
+      verified: boolean;
+    } | null;
+    assignee?: { id: string; username: string } | null;
+  };
+  actor?: {
+    isStaff: boolean;
+    isOwner: boolean;
+    role: string;
   };
   messages: SupportMessage[];
 }
@@ -65,6 +88,8 @@ export interface SupportSummary {
   slaHours: number;
   maxOpenTickets: number;
   isPro: boolean;
+  isStaff?: boolean;
+  staffRole?: string | null;
 }
 
 export interface Outcome<T> {
@@ -121,6 +146,19 @@ export async function fetchTickets(
   }
 }
 
+/** File globale réservée aux modérateurs et administrateurs. */
+export async function fetchStaffQueue(
+  status: TicketStatus | 'open' = 'open',
+): Promise<Outcome<SupportTicketSummary[]>> {
+  try {
+    const res = await apiService.get(`${BASE}/admin/queue`, { status, limit: '100' });
+    if (!res?.success) return fail(res, 'Impossible de charger la file support.');
+    return { ok: true, data: (res.data?.tickets || []) as SupportTicketSummary[] };
+  } catch {
+    return { ok: false, message: 'Impossible de charger la file support.' };
+  }
+}
+
 export async function fetchTicket(id: string): Promise<Outcome<SupportTicketDetail>> {
   try {
     const res = await apiService.get(`${BASE}/tickets/${id}`);
@@ -148,9 +186,14 @@ export async function createTicket(params: {
 export async function replyToTicket(
   id: string,
   message: string,
+  options: { asStaff?: boolean; internal?: boolean } = {},
 ): Promise<Outcome<{ message: SupportMessage; ticketStatus: TicketStatus }>> {
   try {
-    const res = await apiService.post(`${BASE}/tickets/${id}/messages`, { message });
+    const res = await apiService.post(`${BASE}/tickets/${id}/messages`, {
+      message,
+      asStaff: options.asStaff === true,
+      internal: options.internal === true,
+    });
     if (!res?.success) return fail(res, 'Message non envoyé.');
     return { ok: true, data: res.data };
   } catch {
