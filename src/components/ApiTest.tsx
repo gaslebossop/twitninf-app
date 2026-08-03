@@ -52,7 +52,7 @@ const ApiTest: React.FC = () => {
         email: `test${timestamp}@example.com`,
         phone: `+3312345678${timestamp % 100}`,
         password: 'TestPass123!',
-        platform: 'android'
+        platform: 'android' as const
       };
 
       const response = await apiService.register(userData);
@@ -76,7 +76,7 @@ const ApiTest: React.FC = () => {
     
     try {
       const credentials = {
-        email: 'test@example.com',
+        username: 'test@example.com',
         password: 'TestPass123!'
       };
 

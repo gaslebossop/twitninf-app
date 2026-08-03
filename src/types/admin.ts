@@ -1,3 +1,5 @@
+import type { User, Tweet } from './api';
+
 // Types pour l'administration de l'application TwitNin
 
 export interface AdminUser extends User {
@@ -10,7 +12,7 @@ export interface AdminUser extends User {
   moderation_notes?: string;
 }
 
-export interface AdminTweet extends Tweet {
+export interface AdminTweet extends Omit<Tweet, 'moderation_status'> {
   moderation_status: 'pending' | 'approved' | 'rejected' | 'flagged';
   moderation_reason?: string;
   is_eligible_for_recommendations: boolean;

@@ -10,10 +10,8 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, withAlpha } from '../theme';
 import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
+type NavigationProp = any;
 
 type TabKey = 'tweets' | 'search' | 'notifications' | 'trading' | 'profile';
 

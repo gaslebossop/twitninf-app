@@ -71,7 +71,7 @@ export default function FloatingActionButton({
       
       {/* Fond principal avec gradient */}
       <LinearGradient
-        colors={colors}
+        colors={colors as any}
         style={[styles.gradient, { borderRadius }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -90,7 +90,7 @@ export default function FloatingActionButton({
       
       {/* Effet de brillance */}
       <LinearGradient
-        colors={['rgba(255, 255, 255, 0.3)', 'transparent']}
+        colors={['rgba(255, 255, 255, 0.3)', 'transparent'] as any}
         style={[styles.shine, { borderRadius }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

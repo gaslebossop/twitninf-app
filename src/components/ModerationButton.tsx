@@ -140,7 +140,7 @@ const ModerationButton: React.FC<ModerationButtonProps> = ({ style }) => {
           
           {/* Gradient de bordure */}
           <LinearGradient
-            colors={getRoleGradient()}
+            colors={getRoleGradient() as any}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.gradientBorder}

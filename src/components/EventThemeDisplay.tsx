@@ -89,7 +89,7 @@ const EventThemeDisplay: React.FC<EventThemeDisplayProps> = ({
   return (
     <Animated.View style={[styles.container, style, { opacity: fadeAnim }]}>
       <LinearGradient
-        colors={activeEvent.colors || [colors.background, colors.primary]}
+        colors={(activeEvent.colors || [colors.background, colors.primary]) as any}
         style={styles.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

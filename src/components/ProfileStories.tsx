@@ -219,7 +219,7 @@ export default function ProfileStories({
               onLongPress={() => openHighlightOptions(highlight)}
             >
               <LinearGradient
-                colors={STORY_GRADIENT as unknown as string[]}
+                colors={STORY_GRADIENT as unknown as string[] as any}
                 start={{ x: 0.85, y: 0.05 }}
                 end={{ x: 0.15, y: 0.95 }}
                 style={styles.ring}

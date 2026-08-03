@@ -539,11 +539,18 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                     )}
                     <TouchableOpacity 
                       onPress={async () => {
-                        const newKey = `twtn-${Math.random().toString(36).substr(2, 9)}`;
-                        await liveService.registerStreamKey(newKey, {
-                          userId: user.id
-                        });
-                        Alert.alert('✅ Clé générée', `Votre nouvelle clé a été enregistrée sur le serveur.\n\nClé : ${newKey}`);
+                        try {
+                          const credentials = await liveService.requestStreamCredentials();
+                          Alert.alert(
+                            '✅ Accès de diffusion généré',
+                            `URL : ${credentials.ingestUrl}\n\nClé : ${credentials.streamKey}\n\nCette clé est temporaire et à usage unique.`,
+                          );
+                        } catch (error) {
+                          Alert.alert(
+                            'Erreur',
+                            error instanceof Error ? error.message : "Impossible de générer l'accès de diffusion.",
+                          );
+                        }
                       }} 
                       style={styles.generateBtn}
                     >
