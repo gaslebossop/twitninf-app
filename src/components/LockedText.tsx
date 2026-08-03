@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleProp, StyleSheet, Text, TextStyle } from 'react-native';
-import { colors } from '../theme';
+import { colors, withAlpha } from '../theme';
 
 /**
  * Texte d'un contenu payant non acheté.
@@ -10,9 +10,15 @@ import { colors } from '../theme';
  * ressemble pas à un contenu verrouillé mais à un bug d'encodage — d'où le
  * flou, qui rend au bloc la SILHOUETTE d'un texte sans rien donner à lire.
  *
- * Le flou vient d'une ombre portée sur un texte transparent : pas de
- * `BlurView` (la DA « Pulse » proscrit le verre décoratif), pas de module
- * natif, et un rendu identique sur iOS et Android.
+ * Le flou vient d'un halo (ombre portée sans décalage) posé sur des lettres
+ * très pâles. Pas de `BlurView` : la DA « Pulse » proscrit le verre décoratif,
+ * et le flou natif d'Android demande un mode expérimental.
+ *
+ * **Les lettres gardent volontairement un peu d'opacité.** Android ne dessine
+ * pas l'ombre d'un texte entièrement transparent : le bloc devenait alors
+ * totalement vide, ce qui donnait l'impression d'un tweet cassé plutôt que
+ * verrouillé. Avec ce fond de lettres, le pire cas reste un texte pâle et
+ * illisible — jamais un trou.
  *
  * Ne jamais utiliser ce composant sur un aperçu écrit par le créateur : cet
  * aperçu-là est une accroche, il est fait pour être lu.
@@ -27,9 +33,15 @@ interface Props {
 }
 
 export default function LockedText({ text, style, numberOfLines, tint }: Props) {
+  const tone = tint || colors.textPrimary;
+
   return (
     <Text
-      style={[style, styles.blurred, { textShadowColor: tint || colors.textPrimary }]}
+      style={[
+        style,
+        styles.blurred,
+        { color: withAlpha(tone, 0.22), textShadowColor: withAlpha(tone, 0.8) },
+      ]}
       numberOfLines={numberOfLines}
       // Le brouillage n'a aucun sens à voix haute : on annonce l'état, et le
       // verrou juste en dessous porte le prix et le bouton.
@@ -42,8 +54,7 @@ export default function LockedText({ text, style, numberOfLines, tint }: Props) 
 
 const styles = StyleSheet.create({
   blurred: {
-    color: 'transparent',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 7,
+    textShadowRadius: 8,
   },
 });
