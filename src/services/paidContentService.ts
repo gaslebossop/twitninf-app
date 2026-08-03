@@ -32,6 +32,15 @@ export interface PaidContentLock {
   /** Renseignés pour le vendeur uniquement. */
   purchases_count?: number;
   net_twc?: number;
+  /**
+   * Temps restant pour ajuster le prix, en millisecondes.
+   *
+   * Le prix se fixe à la publication et reste réglable 30 minutes. Passé ce
+   * délai, des gens ont vu le contenu à un prix donné : le changer reviendrait
+   * à déplacer l'étiquette sur un article déjà examiné. Rendre le contenu
+   * gratuit, en revanche, reste possible à tout moment — ça ne lèse personne.
+   */
+  price_editable_for_ms?: number;
 }
 
 export interface PaidContentConfig {
@@ -39,6 +48,7 @@ export interface PaidContentConfig {
   max_price_twc: number;
   platform_fee_rate: number;
   creator_share_rate: number;
+  price_edit_window_ms: number;
 }
 
 export interface SalesItem {
@@ -169,6 +179,14 @@ export async function fetchBuyers(paidContentId: string): Promise<Buyer[]> {
 export async function refund(purchaseId: string, reason?: string): Promise<void> {
   const response = await apiService.post(`${BASE}/purchases/${purchaseId}/refund`, { reason });
   unwrap(response, 'Remboursement impossible.');
+}
+
+/** « 12 min pour changer le prix » — un délai muet est un délai qu'on rate. */
+export function formatPriceWindow(ms: number): string {
+  if (ms <= 0) return 'prix définitif';
+  const minutes = Math.floor(ms / 60000);
+  if (minutes >= 1) return `${minutes} min pour changer le prix`;
+  return `${Math.max(1, Math.floor(ms / 1000))} s pour changer le prix`;
 }
 
 /**

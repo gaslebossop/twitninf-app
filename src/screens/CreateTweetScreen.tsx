@@ -38,6 +38,8 @@ import {
 } from '../utils/subscriptionTier';
 import { useOffline } from '../contexts/OfflineContext';
 import DraftsSheet from '../components/DraftsSheet';
+import PaywallSetupSheet from '../components/PaywallSetupSheet';
+import { lockContent } from '../services/paidContentService';
 import AiCopilotSheet from '../components/AiCopilotSheet';
 import { countDrafts, saveDraft, deleteDraft, TweetDraft } from '../services/draftsService';
 import { serializeOverlays, type VideoOverlay } from '../utils/videoFilters';
@@ -66,6 +68,18 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const [isSensitive, setIsSensitive] = useState(false);
   /** « Traduction (bêta) » — réservée aux abonnés Pro actifs (revalidé par l'API). */
   const [translationEnabled, setTranslationEnabled] = useState(false);
+
+  /**
+   * Contenu payant — prix choisi AVANT publication, verrou posé APRÈS.
+   *
+   * Le verrou a besoin de l'identifiant du tweet, qui n'existe qu'une fois
+   * celui-ci créé. Garder le prix en état local jusque-là évite le cas
+   * inverse, bien pire : un verrou posé sur un tweet dont la publication
+   * échoue ensuite.
+   */
+  const [paidPrice, setPaidPrice] = useState<number | null>(null);
+  const [paidPreview, setPaidPreview] = useState('');
+  const [paywallVisible, setPaywallVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [charCount, setCharCount] = useState(0);
 
@@ -128,6 +142,13 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   // Brouillons — même population que la limite étendue : c'est l'abonnement
   // qui ouvre les deux.
   const canUseDrafts = isExtendedLimit;
+
+  /**
+   * Vendre un contenu à l'unité : Pro actif, exactement comme la traduction.
+   * Le serveur revalide le palier à la pose du verrou — ce test n'évite qu'un
+   * aller-retour perdu et un bouton qui déçoit.
+   */
+  const canUsePaidContent = canUseTranslation;
 
   /**
    * Co-pilote IA — même porte que la traduction : Pro, et Pro actif. Le serveur
@@ -490,6 +511,30 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         // Signaler à NeuralRank la publication du tweet pour invalider les caches feed
         const newTweetId = response.data?.tweet?.id || response.data?.id;
         if (newTweetId) neuralRankService.onPublish(String(newTweetId));
+
+        // Verrou payant, une fois l'identifiant connu.
+        //
+        // Un échec ici ne remet pas en cause la publication : le tweet est
+        // parti, il est simplement resté gratuit. On le DIT plutôt que de
+        // laisser l'auteur croire qu'il vend quelque chose — c'est de
+        // l'argent, le silence n'est pas une option.
+        if (newTweetId && paidPrice !== null) {
+          try {
+            await lockContent({
+              contentType: 'tweet',
+              contentId: String(newTweetId),
+              priceTwc: paidPrice,
+              previewText: paidPreview || null,
+            });
+          } catch (lockError: any) {
+            Alert.alert(
+              'Tweet publié, mais gratuit',
+              `${lockError?.message || 'La mise en vente a échoué.'}
+
+Tu peux fixer le prix depuis le menu « … » du tweet.`,
+            );
+          }
+        }
 
         // Un brouillon publié n'a plus lieu d'être : le laisser en liste
         // ferait republier le même texte à la prochaine reprise.
@@ -948,6 +993,48 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
                   </TouchableOpacity>
                 )}
 
+                {/* Contenu payant — Pro uniquement, comme la traduction.
+                    Le prix est fixé ICI, avant publication : c'est le moment
+                    où l'auteur sait ce que vaut ce qu'il vient d'écrire.
+                    Le verrou n'est posé qu'APRÈS la création du tweet (il faut
+                    son identifiant), et il restera ajustable 30 minutes. */}
+                {canUsePaidContent && !parentTweetId && !quoteTweetId && (
+                  <TouchableOpacity
+                    style={[
+                      styles.translationRow,
+                      paidPrice !== null && styles.translationRowActive,
+                    ]}
+                    onPress={() => setPaywallVisible(true)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rendre ce tweet payant"
+                  >
+                    <Ionicons
+                      name="lock-closed"
+                      size={19}
+                      color={paidPrice !== null ? colors.accent : colors.textMuted}
+                    />
+                    <View style={styles.translationCopy}>
+                      <View style={styles.translationTitleRow}>
+                        <Text style={styles.translationTitle}>Contenu payant</Text>
+                        <View style={styles.betaTag}>
+                          <Text style={styles.betaTagText}>PRO</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.translationCaption}>
+                        {paidPrice !== null
+                          ? `${paidPrice} NF — tu touches ${Math.round(paidPrice * 0.7 * 100) / 100} NF par vente.`
+                          : 'Fixer un prix pour débloquer ce tweet.'}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={paidPrice !== null ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={22}
+                      color={paidPrice !== null ? colors.accent : colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                )}
+
                 {/* Avertissement */}
                 {charCount === 0 && (
                   <View style={styles.writingTips}>
@@ -961,6 +1048,24 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
           </ScrollView>
         </KeyboardAvoidingView>
       </Wrapper>
+
+      {/* Prix du contenu payant, en mode brouillon : la feuille renvoie le
+          prix, le verrou est posé après la publication. */}
+      {canUsePaidContent && (
+        <PaywallSetupSheet
+          visible={paywallVisible}
+          contentType="tweet"
+          contentId=""
+          draftMode
+          draftPrice={paidPrice}
+          draftPreview={paidPreview}
+          onDraftChange={(price, previewText) => {
+            setPaidPrice(price);
+            setPaidPreview(previewText);
+          }}
+          onClose={() => setPaywallVisible(false)}
+        />
+      )}
 
       {canUseDrafts && !!currentUser?.id && (
         <DraftsSheet
