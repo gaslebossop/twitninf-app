@@ -436,6 +436,12 @@ export default function TweetsScreen() {
         // l'envoie — c'est ce qui laissait les tweets en version originale
         // alors que l'écran de détail, lui, les traduisait.
         translation_enabled: Boolean(tweetData.translation_enabled ?? rec.translation_enabled ?? false),
+        // Contenu payant : `content` ne contient déjà plus que l'aperçu envoyé
+        // par le serveur. Sans ces deux champs, la carte affichait cet aperçu
+        // SANS le verrou — donc sans rien à acheter, et sans dire pourquoi le
+        // texte est illisible.
+        paid_content: tweetData.paid_content || rec.paid_content || null,
+        is_locked: Boolean(tweetData.is_locked ?? rec.is_locked ?? false),
       } as any;
     } catch { return null; }
   };

@@ -21,6 +21,7 @@ import Avatar from '../components/Avatar';
 import PremiumTweetHolo, { usePremiumAuthorTheme } from '../components/PremiumTweetHolo';
 import { useAuth } from '../contexts/AuthContext';
 import ClickableMentions from '../components/ClickableMentions';
+import PaidContentLock from '../components/PaidContentLock';
 import TweetLanguageSwitcher from '../components/TweetLanguageSwitcher';
 import TranslationReveal from '../components/TranslationReveal';
 import ModerationActions from '../components/ModerationActions';
@@ -785,6 +786,23 @@ export default function TweetDetailScreen() {
                   tweetId={tweet.id}
                   active={activeTranslation}
                   onSelect={setActiveTranslation}
+                />
+              )}
+
+              {/* Contenu payant : on arrive ici depuis le fil, un profil, une
+                  notification ou un lien. Le texte ci-dessus n'est que
+                  l'aperçu ; l'achat doit donc être possible sur cette page
+                  aussi, sans repasser par le fil. */}
+              {!!(tweet as any).paid_content && !(tweet as any).paid_content.has_access && (
+                <PaidContentLock
+                  lock={(tweet as any).paid_content}
+                  onUnlocked={async () => {
+                    // Le contenu complet ne vient QUE du serveur : après
+                    // l'achat, on redemande le tweet plutôt que de tenter de
+                    // reconstituer quoi que ce soit localement.
+                    const res = await apiService.getTweet(String(tweetId));
+                    if (res?.success && res.data) setTweet(res.data as Tweet);
+                  }}
                 />
               )}
 

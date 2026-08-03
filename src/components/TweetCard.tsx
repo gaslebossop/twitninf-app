@@ -30,6 +30,7 @@ import {
 import IosNativeBadge from './IosNativeBadge';
 import { useNavigation } from '@react-navigation/native';
 import ClickableMentions from './ClickableMentions';
+import PaidContentLock from './PaidContentLock';
 import TweetLanguageSwitcher from './TweetLanguageSwitcher';
 import TranslationReveal from './TranslationReveal';
 import Avatar from './Avatar';
@@ -494,6 +495,18 @@ export default function TweetCard({
                 tweetId={tweet.id}
                 active={activeTranslation}
                 onSelect={setActiveTranslation}
+              />
+            )}
+
+            {/* Contenu payant : le texte ci-dessus n'est que l'aperçu renvoyé
+                par le serveur. Cette carte sert le profil et la recherche —
+                sans le verrou ici, l'aperçu y apparaissait illisible et sans
+                rien à acheter. */}
+            {!!(tweet as any).paid_content && !(tweet as any).paid_content.has_access && (
+              <PaidContentLock
+                lock={(tweet as any).paid_content}
+                compact={compact}
+                onUnlocked={handleTweetPress}
               />
             )}
           </View>
