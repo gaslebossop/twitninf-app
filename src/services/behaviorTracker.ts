@@ -231,7 +231,7 @@ class BehaviorTracker {
 
     const actionsToSend = this.actionQueue.splice(0, this.batchSize);
     try {
-      await apiService.makeRequest('/api/behavior/batch', {
+      await apiService.request('/api/behavior/batch', {
         method: 'POST',
         body: { actions: actionsToSend },
         requiresAuth: true
@@ -256,7 +256,7 @@ class BehaviorTracker {
   
   async getMyBehaviorStats(days: number = 30) {
     if (!this.enabled) return null;
-    const res = await apiService.makeRequest(`/api/behavior/stats?days=${days}`, { method: 'GET', requiresAuth: true });
+    const res = await apiService.request(`/api/behavior/stats?days=${days}`, { method: 'GET', requiresAuth: true });
     return res.success ? res.data : null;
   }
 
@@ -267,7 +267,7 @@ class BehaviorTracker {
   async endContentEngagement(data: any) {
     if (!this.currentContent) return;
     const duration = Date.now() - this.currentContent.startTime;
-    await apiService.makeRequest('/api/behavior/engagement', {
+    await apiService.request('/api/behavior/engagement', {
         method: 'POST',
         body: { content_id: this.currentContent.id, content_type: this.currentContent.type, time_spent: duration, engagement_data: data },
         requiresAuth: true

@@ -31,6 +31,9 @@ module.exports = ({ config }) => {
       }
     },
     android: {
+      // Les sauvegardes Android ne doivent jamais pouvoir exporter les
+      // informations de session ou les caches privés de l'application.
+      allowBackup: false,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff"
@@ -41,10 +44,6 @@ module.exports = ({ config }) => {
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
         "POST_NOTIFICATIONS"
       ]
     },
@@ -75,7 +74,8 @@ module.exports = ({ config }) => {
       "expo-build-properties",
       {
         android: {
-          usesCleartextTraffic: true,
+          // Les jetons Bearer ne doivent jamais pouvoir transiter en HTTP.
+          usesCleartextTraffic: false,
           compileSdkVersion: 35,
           targetSdkVersion: 34,
           buildToolsVersion: "35.0.0",
@@ -90,10 +90,6 @@ module.exports = ({ config }) => {
             "INTERNET",
             "ACCESS_NETWORK_STATE",
             "CAMERA",
-            "READ_EXTERNAL_STORAGE",
-            "WRITE_EXTERNAL_STORAGE",
-            "ACCESS_FINE_LOCATION",
-            "ACCESS_COARSE_LOCATION",
             "POST_NOTIFICATIONS",
             "VIBRATE",
             "WAKE_LOCK"

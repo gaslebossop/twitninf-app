@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useId, useRef } from 'react';
-import { View, StyleSheet, Animated, Platform } from 'react-native';
+import { View, StyleSheet, Animated, Platform, StyleProp } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -26,6 +26,7 @@ interface VerifiedBadgeProps {
    * une distinction attribuée au compte, on ne la repeint pas.
    */
   tint?: string | null;
+  style?: StyleProp<any>;
 }
 
 export default function VerifiedBadge({
@@ -35,6 +36,7 @@ export default function VerifiedBadge({
   showRing = false,
   premium = false,
   tint,
+  style,
 }: VerifiedBadgeProps) {
   /**
    * Identifiant unique du dégradé du halo.
@@ -260,13 +262,13 @@ export default function VerifiedBadge({
   // nom allumé, mais il ajoutait une auréole colorée qui faisait décoration
   // plutôt qu'identité. La pastille est une coche, rien de plus.
   if (verificationStyle === 'default') {
-    return <Ionicons name="checkmark-circle" size={size} color={tint || '#3897F0'} />;
+    return <Ionicons name="checkmark-circle" size={size} color={tint || '#3897F0'} style={style} />;
   }
 
   // Pour le style rose avec effet néon ultra professionnel
   if (verificationStyle === 'rose') {
     return (
-      <View style={[styles.neonWrapper, { width: size * 2, height: size * 2 }]}>
+      <View style={[styles.neonWrapper, { width: size * 2, height: size * 2 }, style]}>
         {/* Couche 1: Ring externe animé */}
         <Animated.View 
           style={[
@@ -449,7 +451,7 @@ export default function VerifiedBadge({
   // Pour le style gris avec effet glow
   if (verificationStyle === 'gray') {
     return (
-      <View style={[styles.neonWrapper, { width: size * 1.5, height: size * 1.5 }]}>
+      <View style={[styles.neonWrapper, { width: size * 1.5, height: size * 1.5 }, style]}>
         {/* Couche 1: Glow de base */}
         <Animated.View 
           style={[
@@ -546,7 +548,7 @@ export default function VerifiedBadge({
   // Pour le style or avec effet sparkle
   if (verificationStyle === 'gold') {
     return (
-      <View style={[styles.neonWrapper, { width: size * 1.8, height: size * 1.8 }]}>
+      <View style={[styles.neonWrapper, { width: size * 1.8, height: size * 1.8 }, style]}>
         {/* Couche 1: Glow doré */}
         <Animated.View 
           style={[
@@ -695,6 +697,7 @@ export default function VerifiedBadge({
       name="checkmark-circle"
       size={size}
       color="#3897F0"
+      style={style}
     />
   );
 }

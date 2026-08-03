@@ -112,10 +112,6 @@ class ModerationService {
 
     try {
       console.log(`🌐 Modération API: ${method} ${url}`);
-      console.log('🔑 Headers:', headers);
-      if (body) {
-        console.log('📦 Request Body:', JSON.stringify(body, null, 2));
-      }
       
       const response = await fetch(url, config);
       
@@ -128,7 +124,6 @@ class ModerationService {
       }
 
       const data = await response.json();
-      console.log('✅ Response Data:', JSON.stringify(data, null, 2));
       return data;
     } catch (error) {
       console.error('❌ Erreur lors de la requête de modération:', error);

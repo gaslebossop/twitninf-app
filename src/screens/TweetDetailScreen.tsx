@@ -1199,7 +1199,7 @@ export default function TweetDetailScreen() {
         onClose={() => setShowReportModal(false)}
         targetId={tweet?.id || ''}
         targetType="tweet"
-        targetLabel={tweet?.user?.username ? `@${tweet.user.username}` : undefined}
+        targetLabel={tweet?.author?.username ? `@${tweet.author.username}` : undefined}
       />
 
       {/* Modal d'information progressif */}

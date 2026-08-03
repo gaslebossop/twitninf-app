@@ -4,13 +4,13 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import eventService, { Event, EventConfig, EventTheme } from '../services/eventService';
-import { getEventTheme } from '../themes/eventThemes';
+import eventService, { Event, EventConfig } from '../services/eventService';
+import { getEventTheme, EventThemeConfig } from '../themes/eventThemes';
 
 interface EventContextType {
   // État des événements
   activeEvent: Event | null;
-  eventTheme: EventTheme | null;
+  eventTheme: EventThemeConfig | null;
   eventConfig: EventConfig | null;
   isLoading: boolean;
   hasActiveEvent: boolean;
@@ -18,7 +18,7 @@ interface EventContextType {
   // Actions
   refreshActiveEvent: () => Promise<void>;
   checkForEvents: () => Promise<void>;
-  applyEventTheme: (theme: EventTheme | null) => void;
+  applyEventTheme: (theme: EventThemeConfig | null) => void;
   
   // Pour les admins
   activateEvent: (id: string, deactivateOthers?: boolean) => Promise<boolean>;
@@ -36,7 +36,7 @@ interface EventProviderProps {
 
 export const EventProvider: React.FC<EventProviderProps> = ({ children }) => {
   const [activeEvent, setActiveEvent] = useState<Event | null>(null);
-  const [eventTheme, setEventTheme] = useState<EventTheme | null>(null);
+  const [eventTheme, setEventTheme] = useState<EventThemeConfig | null>(null);
   const [eventConfig, setEventConfig] = useState<EventConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasActiveEvent, setHasActiveEvent] = useState(false);
@@ -103,7 +103,7 @@ export const EventProvider: React.FC<EventProviderProps> = ({ children }) => {
   /**
    * Appliquer manuellement un thème d'événement
    */
-  const applyEventTheme = (theme: EventTheme | null): void => {
+  const applyEventTheme = (theme: EventThemeConfig | null): void => {
     setEventTheme(theme);
   };
 

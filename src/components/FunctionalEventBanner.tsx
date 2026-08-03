@@ -88,7 +88,7 @@ export function FunctionalEventBanner({ events, onPress, style }: FunctionalEven
     <Animated.View style={[styles.container, style, { opacity: fadeAnim }]}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
         <LinearGradient
-          colors={colors}
+          colors={colors as any}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.banner}

@@ -183,7 +183,7 @@ export default function TweetsScreen() {
   });
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
-  const [currentAlgorithm, setCurrentAlgorithm] = useState<'neural_rank'>('neural_rank');
+  const [currentAlgorithm, setCurrentAlgorithm] = useState<'neural_rank' | 'progressive'>('neural_rank');
   const [algorithmStats, setAlgorithmStats] = useState<{ [key: string]: number }>({});
   const [displayedAlgorithm, setDisplayedAlgorithm] = useState<string>('neural_rank');
 
@@ -775,7 +775,7 @@ export default function TweetsScreen() {
     const tweet = tweets.find((t) => t.id === tweetId);
     setReportTarget({
       id: tweetId,
-      label: tweet?.user?.username ? `@${tweet.user.username}` : undefined,
+      label: tweet?.author?.username ? `@${tweet.author.username}` : undefined,
     });
 
     // Le suivi analytics reste, mais il ne remplace plus le signalement.

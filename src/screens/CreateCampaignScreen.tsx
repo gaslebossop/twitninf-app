@@ -644,6 +644,13 @@ const styles = StyleSheet.create({
     color: '#14171a',
     marginBottom: 8,
   },
+  inputLabel: {
+    fontSize: 14,
+    fontFamily: fonts.semibold,
+    color: '#14171a',
+    marginBottom: 6,
+    marginTop: 10,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#e1e8ed',

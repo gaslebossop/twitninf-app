@@ -19,7 +19,25 @@ if (!process.env.EXPO_PUBLIC_STREAM_SERVER) {
     'du projet avec EXPO_PUBLIC_STREAM_SERVER=... (voir .env.example).',
   );
 }
-const STREAM_SERVER = process.env.EXPO_PUBLIC_STREAM_SERVER;
+const streamServerUrl = process.env.EXPO_PUBLIC_STREAM_SERVER;
+let parsedStreamServerUrl: URL;
+try {
+  parsedStreamServerUrl = new URL(streamServerUrl);
+} catch {
+  throw new Error('EXPO_PUBLIC_STREAM_SERVER doit être une URL absolue valide.');
+}
+
+const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(
+  parsedStreamServerUrl.hostname,
+);
+if (parsedStreamServerUrl.protocol !== 'https:' && !isLocalDevelopment) {
+  throw new Error('EXPO_PUBLIC_STREAM_SERVER doit utiliser HTTPS hors développement local.');
+}
+if (parsedStreamServerUrl.username || parsedStreamServerUrl.password) {
+  throw new Error('EXPO_PUBLIC_STREAM_SERVER ne doit pas contenir d’identifiants.');
+}
+
+const STREAM_SERVER = streamServerUrl.replace(/\/+$/, '');
 
 /**
  * Le socket porte le jeton d'accès : le serveur en tire l'identité de

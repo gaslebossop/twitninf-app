@@ -386,7 +386,7 @@ export default function KosporBirthdayScreen() {
   };
 
   const goToKosporProfile = () => {
-    navigation.navigate('UserProfile' as never, { username: 'g' } as never);
+    (navigation as any).navigate('UserProfile', { username: 'g' });
   };
 
   const handleRefresh = async () => {

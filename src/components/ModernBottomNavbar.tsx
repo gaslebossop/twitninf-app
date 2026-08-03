@@ -11,12 +11,10 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
 
 const { width } = Dimensions.get('window');
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
+type NavigationProp = any;
 
 interface ModernBottomNavbarProps {
   activeTab: 'tweets' | 'search' | 'notifications' | 'messages' | 'profile';

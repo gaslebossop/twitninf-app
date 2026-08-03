@@ -47,6 +47,7 @@ export default function AppNavigator() {
       <ScreenBackground style={StyleSheet.absoluteFill} />
       <NavigationContainer ref={navigationRef} theme={TransparentTheme}>
         <RootStack.Navigator
+          id={undefined}
           screenOptions={{
             headerShown: false,
             cardStyle: { backgroundColor: 'transparent' },

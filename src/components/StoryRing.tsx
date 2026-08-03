@@ -60,7 +60,7 @@ export default function StoryRing({
     <View style={[{ width: outer, height: outer }, style]}>
       {hasStory ? (
         <LinearGradient
-          colors={(seen ? SEEN_RING : STORY_GRADIENT) as unknown as string[]}
+          colors={(seen ? SEEN_RING : STORY_GRADIENT) as unknown as string[] as any}
           start={{ x: 0.85, y: 0.05 }}
           end={{ x: 0.15, y: 0.95 }}
           style={[styles.center, { width: outer, height: outer, borderRadius: outer / 2 }]}

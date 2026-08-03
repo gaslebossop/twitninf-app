@@ -18,9 +18,27 @@ if (!process.env.EXPO_PUBLIC_API_URL) {
   );
 }
 
+const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+let parsedApiUrl: URL;
+try {
+  parsedApiUrl = new URL(apiUrl);
+} catch {
+  throw new Error('EXPO_PUBLIC_API_URL doit être une URL absolue valide.');
+}
+
+const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(parsedApiUrl.hostname);
+if (parsedApiUrl.protocol !== 'https:' && !isLocalDevelopment) {
+  throw new Error('EXPO_PUBLIC_API_URL doit utiliser HTTPS hors développement local.');
+}
+if (parsedApiUrl.username || parsedApiUrl.password) {
+  throw new Error('EXPO_PUBLIC_API_URL ne doit pas contenir d’identifiants.');
+}
+
+const normalizedApiUrl = apiUrl.replace(/\/+$/, '');
+
 export const API_CONFIG = {
   // URL de base de l'API
-  BASE_URL: process.env.EXPO_PUBLIC_API_URL,
+  BASE_URL: normalizedApiUrl,
 
   // Timeout des requêtes
   TIMEOUT: 15000,
