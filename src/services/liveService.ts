@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import tokenStore from './tokenStore';
+import { resolveServerUrl } from '../config/serverUrl';
 
 /**
  * Serveur de stream (ingestion RTMPS, lecture HLS, chat du live).
@@ -13,31 +14,12 @@ import tokenStore from './tokenStore';
  * domaine en dur — voir la note équivalente dans `config/api.ts`, même
  * raison : le dépôt est destiné à devenir public.
  */
-if (!process.env.EXPO_PUBLIC_STREAM_SERVER) {
-  throw new Error(
-    "EXPO_PUBLIC_STREAM_SERVER manquant. Créer un fichier .env à la racine " +
-    'du projet avec EXPO_PUBLIC_STREAM_SERVER=... (voir .env.example).',
-  );
-}
-const streamServerUrl = process.env.EXPO_PUBLIC_STREAM_SERVER;
-let parsedStreamServerUrl: URL;
-try {
-  parsedStreamServerUrl = new URL(streamServerUrl);
-} catch {
-  throw new Error('EXPO_PUBLIC_STREAM_SERVER doit être une URL absolue valide.');
-}
-
-const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(
-  parsedStreamServerUrl.hostname,
+const resolvedStreamServer = resolveServerUrl(
+  process.env.EXPO_PUBLIC_STREAM_SERVER,
+  'EXPO_PUBLIC_STREAM_SERVER',
+  'https://stream.invalid',
 );
-if (parsedStreamServerUrl.protocol !== 'https:' && !isLocalDevelopment) {
-  throw new Error('EXPO_PUBLIC_STREAM_SERVER doit utiliser HTTPS hors développement local.');
-}
-if (parsedStreamServerUrl.username || parsedStreamServerUrl.password) {
-  throw new Error('EXPO_PUBLIC_STREAM_SERVER ne doit pas contenir d’identifiants.');
-}
-
-const STREAM_SERVER = streamServerUrl.replace(/\/+$/, '');
+const STREAM_SERVER = resolvedStreamServer.url;
 
 /**
  * Le socket porte le jeton d'accès : le serveur en tire l'identité de
