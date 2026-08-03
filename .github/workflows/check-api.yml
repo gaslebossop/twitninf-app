@@ -1,0 +1,33 @@
+name: Check API connectivity
+
+# Verification rapide (pas de build) : les secrets du depot sont bien
+# definis et les domaines repondent bien depuis un runner GitHub, avant de
+# lancer un build iOS complet pour rien.
+on: [workflow_dispatch]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verifie les secrets et la connectivite
+        env:
+          API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          STREAM_SERVER: ${{ secrets.EXPO_PUBLIC_STREAM_SERVER }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$API_URL" ] || [ -z "$STREAM_SERVER" ]; then
+            echo "::error::EXPO_PUBLIC_API_URL et/ou EXPO_PUBLIC_STREAM_SERVER absents des secrets du depot."
+            exit 1
+          fi
+
+          echo "EXPO_PUBLIC_API_URL host: $(echo "$API_URL" | sed -E 's#https?://([^/]+).*#\1#')"
+          echo "EXPO_PUBLIC_STREAM_SERVER host: $(echo "$STREAM_SERVER" | sed -E 's#https?://([^/]+).*#\1#')"
+
+          echo "--- Test $API_URL ---"
+          curl -sS -m 10 -o /dev/null -w "HTTP %{http_code} en %{time_total}s\n" "$API_URL" || echo "::error::API_URL injoignable"
+
+          echo "--- Test $STREAM_SERVER/api/lives ---"
+          curl -sS -m 10 -o /dev/null -w "HTTP %{http_code} en %{time_total}s\n" "$STREAM_SERVER/api/lives" || echo "::error::STREAM_SERVER injoignable"
