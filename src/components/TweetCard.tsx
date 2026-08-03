@@ -31,6 +31,7 @@ import IosNativeBadge from './IosNativeBadge';
 import { useNavigation } from '@react-navigation/native';
 import ClickableMentions from './ClickableMentions';
 import PaidContentLock from './PaidContentLock';
+import LockedText from './LockedText';
 import TweetLanguageSwitcher from './TweetLanguageSwitcher';
 import TranslationReveal from './TranslationReveal';
 import Avatar from './Avatar';
@@ -88,6 +89,15 @@ export default function TweetCard({
     setActive: setActiveTranslation,
     displayedContent,
   } = useTweetAutoTranslation(tweet);
+
+  /**
+   * Contenu payant. `content` ne contient déjà que l'aperçu renvoyé par le
+   * serveur : sans aperçu rédigé par le créateur, c'est un brouillage, qui se
+   * floute pour ne pas passer pour un bug d'affichage.
+   */
+  const contentLock = (tweet as any).paid_content || null;
+  const isContentLocked = !!contentLock && !contentLock.has_access;
+  const isScrambled = isContentLocked && !contentLock.preview_text;
 
   const { isModerator, canModerateContent, canDeleteTweets } = useAdminPermissions();
   const { activeEvent, hasActiveEvent } = useEvents();
@@ -450,23 +460,32 @@ export default function TweetCard({
 
           {/* Contenu du tweet */}
           <View style={styles.tweetContent}>
-            <TranslationReveal
-              tweetId={tweet.id}
-              language={activeTranslation?.language ?? null}
-            >
-              <ClickableMentions
+            {isScrambled ? (
+              <LockedText
                 text={displayedContent}
-                mentions={tweet.mentions || []} 
-                style={[
-                  styles.tweetText, 
-                  compact && styles.compactTweetText,
-                  hasActiveEvent && eventTheme && {
-                    color: eventTheme.colors.text,
-                  }
-                ]}
+                style={[styles.tweetText, compact && styles.compactTweetText]}
                 numberOfLines={isExpanded ? undefined : (compact ? 3 : 4)}
+                tint={hasActiveEvent && eventTheme ? eventTheme.colors.text : undefined}
               />
-            </TranslationReveal>
+            ) : (
+              <TranslationReveal
+                tweetId={tweet.id}
+                language={activeTranslation?.language ?? null}
+              >
+                <ClickableMentions
+                  text={displayedContent}
+                  mentions={tweet.mentions || []}
+                  style={[
+                    styles.tweetText,
+                    compact && styles.compactTweetText,
+                    hasActiveEvent && eventTheme && {
+                      color: eventTheme.colors.text,
+                    }
+                  ]}
+                  numberOfLines={isExpanded ? undefined : (compact ? 3 : 4)}
+                />
+              </TranslationReveal>
+            )}
             
             {/* Bouton "Voir plus" si le texte est long */}
             {displayedContent && displayedContent.length > (compact ? 120 : 160) && !isExpanded && (
@@ -502,9 +521,9 @@ export default function TweetCard({
                 par le serveur. Cette carte sert le profil et la recherche —
                 sans le verrou ici, l'aperçu y apparaissait illisible et sans
                 rien à acheter. */}
-            {!!(tweet as any).paid_content && !(tweet as any).paid_content.has_access && (
+            {isContentLocked && (
               <PaidContentLock
-                lock={(tweet as any).paid_content}
+                lock={contentLock}
                 compact={compact}
                 onUnlocked={handleTweetPress}
               />

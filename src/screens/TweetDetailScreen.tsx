@@ -22,6 +22,7 @@ import PremiumTweetHolo, { usePremiumAuthorTheme } from '../components/PremiumTw
 import { useAuth } from '../contexts/AuthContext';
 import ClickableMentions from '../components/ClickableMentions';
 import PaidContentLock from '../components/PaidContentLock';
+import LockedText from '../components/LockedText';
 import TweetLanguageSwitcher from '../components/TweetLanguageSwitcher';
 import TranslationReveal from '../components/TranslationReveal';
 import ModerationActions from '../components/ModerationActions';
@@ -100,6 +101,15 @@ export default function TweetDetailScreen() {
     translation: (tweet as any)?.translation,
   });
   
+  /**
+   * Contenu payant. Le serveur n'a envoyé qu'un aperçu ; sans aperçu rédigé
+   * par le créateur, c'est un brouillage de même longueur, qu'on floute pour
+   * qu'il se lise comme un contenu verrouillé et pas comme un bug.
+   */
+  const contentLock = (tweet as any)?.paid_content || null;
+  const isContentLocked = !!contentLock && !contentLock.has_access;
+  const isScrambled = isContentLocked && !contentLock.preview_text;
+
   // Habillage premium : la lumière prend la couleur du profil de l'auteur.
   const holo = usePremiumAuthorTheme(tweet?.author);
 
@@ -764,21 +774,29 @@ export default function TweetDetailScreen() {
                 </Text>
               )}
 
-              <TranslationReveal
-                tweetId={String(tweetId)}
-                language={activeTranslation?.language ?? null}
-              >
-                <ClickableMentions
+              {isScrambled ? (
+                <LockedText
                   text={displayedContent || tweet.content}
-                  mentions={tweet.mentions}
-                  style={[
-                    styles.tweetText,
-                    hasActiveEvent && eventTheme && {
-                      color: eventTheme.colors.text,
-                    }
-                  ]}
+                  style={styles.tweetText}
+                  tint={hasActiveEvent && eventTheme ? eventTheme.colors.text : undefined}
                 />
-              </TranslationReveal>
+              ) : (
+                <TranslationReveal
+                  tweetId={String(tweetId)}
+                  language={activeTranslation?.language ?? null}
+                >
+                  <ClickableMentions
+                    text={displayedContent || tweet.content}
+                    mentions={tweet.mentions}
+                    style={[
+                      styles.tweetText,
+                      hasActiveEvent && eventTheme && {
+                        color: eventTheme.colors.text,
+                      }
+                    ]}
+                  />
+                </TranslationReveal>
+              )}
 
               {/* Sélecteur de langue — seulement si l'auteur a publié avec l'option */}
               {tweet.translation_enabled && (
@@ -793,9 +811,9 @@ export default function TweetDetailScreen() {
                   notification ou un lien. Le texte ci-dessus n'est que
                   l'aperçu ; l'achat doit donc être possible sur cette page
                   aussi, sans repasser par le fil. */}
-              {!!(tweet as any).paid_content && !(tweet as any).paid_content.has_access && (
+              {isContentLocked && (
                 <PaidContentLock
-                  lock={(tweet as any).paid_content}
+                  lock={contentLock}
                   onUnlocked={async () => {
                     // Le contenu complet ne vient QUE du serveur : après
                     // l'achat, on redemande le tweet plutôt que de tenter de

@@ -25,6 +25,7 @@ import VerifiedBadge from '../VerifiedBadge';
 import PremiumDisplayName from '../PremiumDisplayName';
 import { STORY_GRADIENT } from '../StoryRing';
 import PaidContentLock from '../PaidContentLock';
+import LockedText from '../LockedText';
 import { certifiedNameColors, type ProfileCustomization } from '../../services/profileCustomizationService';
 import { colors } from '../../theme';
 import ReactionBurst, {
@@ -158,6 +159,21 @@ function TweetRow({
     translation_enabled: !!(translationSource as any)?.translation_enabled,
   });
   const displayContent = displayedContent || sourceContent;
+
+  /**
+   * Contenu payant — lu sur la MÊME source que le texte affiché.
+   *
+   * Sur un retweet, le texte vient du tweet d'origine : c'est donc lui qui
+   * porte le verrou. Le lire sur la ligne du retweet laissait le brouillage à
+   * l'écran sans rien à acheter.
+   */
+  const contentLock = (isRetweet && originalTweet
+    ? (originalTweet as any).paid_content
+    : (tweet as any).paid_content) || null;
+  const isContentLocked = !!contentLock && !contentLock.has_access;
+  // Sans aperçu écrit par le créateur, le serveur renvoie un brouillage : il
+  // se floute. Un aperçu rédigé, lui, est une accroche — il se lit.
+  const isScrambled = isContentLocked && !contentLock.preview_text;
   const displayCreatedAt =
     isRetweet && (originalTweet?.created_at || originalTweet?.createdAt)
       ? originalTweet.created_at || originalTweet.createdAt
@@ -359,19 +375,27 @@ function TweetRow({
               <Text style={S.timestamp}>{fmtDate(displayCreatedAt || new Date().toISOString())}</Text>
             </View>
 
-            <TranslationReveal
-              tweetId={String(translationSource?.id || tweet.id)}
-              language={activeTranslation?.language ?? null}
-            >
-              <ClickableMentions
+            {isScrambled ? (
+              <LockedText
                 text={displayContent}
-                mentions={displayMentions}
                 style={S.tweetText}
                 numberOfLines={isExpanded ? undefined : 4}
-                tweetId={String(tweet.id)}
-                contextData={{ ...contextData, position: index, author_id: displayAuthor?.id }}
               />
-            </TranslationReveal>
+            ) : (
+              <TranslationReveal
+                tweetId={String(translationSource?.id || tweet.id)}
+                language={activeTranslation?.language ?? null}
+              >
+                <ClickableMentions
+                  text={displayContent}
+                  mentions={displayMentions}
+                  style={S.tweetText}
+                  numberOfLines={isExpanded ? undefined : 4}
+                  tweetId={String(tweet.id)}
+                  contextData={{ ...contextData, position: index, author_id: displayAuthor?.id }}
+                />
+              </TranslationReveal>
+            )}
 
             {/* Mesure de troncature : une seule fois par ligne, en local. */}
             {isTruncated === undefined && (
@@ -403,9 +427,9 @@ function TweetRow({
             {/* Contenu payant : le texte affiché plus haut n'est déjà qu'un
                 aperçu envoyé par le serveur — le reste n'a jamais été
                 téléchargé. Le verrou propose de l'acheter, il ne masque rien. */}
-            {!!(tweet as any).paid_content && !(tweet as any).paid_content.has_access && (
+            {isContentLocked && (
               <PaidContentLock
-                lock={(tweet as any).paid_content}
+                lock={contentLock}
                 compact
                 // Après l'achat, on ouvre le tweet : c'est là que le serveur
                 // renverra le contenu complet, désormais accessible.
