@@ -12,6 +12,22 @@ import { apiService } from './api';
 
 const BASE = '/api/insights';
 
+/**
+ * Revenus nets du compte, jour par jour.
+ *
+ * `net` est ce qui arrive vraiment sur le portefeuille, commission déduite —
+ * pas le prix affiché. `delta_percent` vaut `null` quand la période
+ * précédente est à zéro : « +100 % » sur une première vente serait faux.
+ */
+export interface EarningsData {
+  window_days: number;
+  net: number;
+  previous_net: number;
+  delta_percent: number | null;
+  by_source: { content: number; username: number };
+  series: Array<{ day: string; net: number }>;
+}
+
 export interface VisitorEntry {
   viewed_on: string;
   user: {
@@ -115,6 +131,11 @@ export async function fetchVisitors(days?: number): Promise<VisitorsData> {
 export async function fetchVisitorCount(): Promise<{ count: number; window_days: number }> {
   const response = await apiService.get(`${BASE}/visitors/count`);
   return unwrap(response, 'Compteur indisponible.');
+}
+
+export async function fetchEarnings(days = 30): Promise<EarningsData> {
+  const response = await apiService.get(`${BASE}/earnings`, { days });
+  return unwrap(response, 'Revenus indisponibles.');
 }
 
 export async function fetchIncognito(): Promise<boolean> {
