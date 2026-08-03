@@ -1,0 +1,965 @@
+import React, { useState, useEffect } from 'react';
+import { fonts, colors } from '../theme';
+import { ScreenBackground, BackButton } from '../components/ui';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Animated,
+  Dimensions,
+  Alert,
+  StatusBar,
+  useWindowDimensions,
+  SafeAreaView,
+  Platform,
+  Switch,
+  Modal,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
+import { useAdminPermissions } from '../hooks/useAdminPermissions';
+import { useEvents } from '../contexts/EventContext';
+import { apiService } from '../services';
+import { liveService } from '../services/liveService';
+import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
+import PremiumProfileCard from '../components/PremiumProfileCard';
+import PremiumPurchaseModal from '../components/PremiumPurchaseModal';
+import VerificationButton from '../../components/VerificationButton';
+import VerificationRequestForm from '../../components/VerificationRequestForm';
+import VerificationStyleScreen from './VerificationStyleScreen';
+import { useBehaviorTracking } from '../hooks/useBehaviorTracking';
+import {
+  getFranceDailyLocalNotificationsDebug,
+  sendImmediateNotification,
+  setupFranceDailyLocalNotifications,
+  scheduleRandomDebugNotificationAtTime
+} from '../services/push';
+import { APP_VERSION } from '../services/clientIdentity';
+import { useReadingLanguage } from '../contexts/ReadingLanguageContext';
+import ReadingLanguageModal from '../components/ReadingLanguageModal';
+import { PATCH_NOTES } from '../data/patchNotes';
+import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
+import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
+
+const { width, height } = Dimensions.get('window');
+
+interface SettingsScreenProps {
+  navigation: any;
+  route?: any;
+}
+
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
+  const { user, refreshCurrentUser } = useAuth();
+  const { isAdmin, isSuperAdmin } = useAdminPermissions();
+  const { activeEvent, hasActiveEvent } = useEvents();
+  const { isEventActive: isKosporEventActive, events: kosporEvents } = useKosporBirthdayEvent();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+
+  // 📊 Tracking comportemental pour SettingsScreen
+  const { trackSettingChange, trackCustomAction } = useBehaviorTracking({
+    autoTrackScreenView: true,
+    screenName: 'SettingsScreen',
+    trackTimeSpent: true
+  });
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(30));
+  const [showVerificationForm, setShowVerificationForm] = useState(false);
+  const [showStreamKey, setShowStreamKey] = useState(false);
+  const [showPremiumPopup, setShowPremiumPopup] = useState(false);
+  const [showPatchNotes, setShowPatchNotes] = useState(false);
+  const [showNavbarCustomization, setShowNavbarCustomization] = useState(false);
+  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
+  const { preferredLanguage, languages } = useReadingLanguage();
+  const currentLanguageLabel =
+    languages.find((language) => language.code === preferredLanguage)?.label || 'Non définie';
+  const { selected: selectedOptionalTabs, save: saveNavbarPrefs } = useNavbarPrefs();
+
+  // États pour les paramètres
+  const [privacyLoading, setPrivacyLoading] = useState(false);
+
+  // Calculs responsive
+  const isSmallScreen = screenHeight < 700;
+  const isMediumScreen = screenHeight >= 700 && screenHeight < 900;
+  const headerPaddingTop = Platform.OS === 'ios' ? (isSmallScreen ? 10 : 15) : (isSmallScreen ? 30 : 35);
+
+  useEffect(() => {
+    // Animation d'entrée
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const handleTogglePrivateAccount = async (value: boolean) => {
+    if (privacyLoading) return;
+    setPrivacyLoading(true);
+    try {
+      const response = await apiService.updatePrivacy(value);
+      if (response.success) {
+        await refreshCurrentUser?.();
+      } else {
+        Alert.alert('Erreur', 'Impossible de mettre à jour la confidentialité du compte.');
+      }
+    } catch {
+      Alert.alert('Erreur', 'Impossible de mettre à jour la confidentialité du compte.');
+    } finally {
+      setPrivacyLoading(false);
+    }
+  };
+
+  const renderSettingItem = (
+    title: string,
+    description: string,
+    icon: string,
+    value: boolean,
+    onValueChange: (value: boolean) => void,
+    isSwitch: boolean = true
+  ) => (
+    <View style={styles.settingItem}>
+      <View style={styles.settingIcon}>
+        <Ionicons name={icon as any} size={22} color={colors.accent} />
+      </View>
+      <View style={styles.settingContent}>
+        <Text style={styles.settingTitle}>{title}</Text>
+        <Text style={styles.settingDescription}>{description}</Text>
+      </View>
+      {isSwitch && (
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ false: colors.surfaceAlt, true: colors.accent }}
+          thumbColor={colors.textPrimary}
+          ios_backgroundColor={colors.surfaceAlt}
+        />
+      )}
+    </View>
+  );
+
+  const renderActionButton = (title: string, description: string, icon: string, onPress: () => void) => (
+    <TouchableOpacity style={styles.actionButton} onPress={onPress} activeOpacity={0.8}>
+      <View style={styles.actionIcon}>
+        <Ionicons name={icon as any} size={22} color={colors.accent} />
+      </View>
+      <View style={styles.actionContent}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.actionDescription}>{description}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+    </TouchableOpacity>
+  );
+
+  return (
+    <ScreenBackground>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+
+      <View style={styles.gradient}>
+        {/* Header */}
+        <Animated.View 
+          style={[
+            styles.header, 
+            { 
+              paddingTop: headerPaddingTop,
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <BackButton navigation={navigation} />
+          
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Paramètres</Text>
+            <Text style={styles.headerSubtitle}>Personnalisez votre expérience</Text>
+          </View>
+        </Animated.View>
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Carte Premium */}
+          <Animated.View
+            style={[
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <PremiumProfileCard
+              isPremium={user?.premium || false}
+              onUpgrade={() => setShowPremiumPopup(true)}
+            />
+          </Animated.View>
+
+          {/* Section Confidentialité */}
+          <Animated.View
+            style={[
+              styles.section,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Ionicons name="lock-closed" size={24} color={colors.success} />
+              <Text style={styles.sectionTitle}>Confidentialité</Text>
+            </View>
+
+            {renderSettingItem(
+              'Compte privé',
+              'Seuls vos abonnés acceptés peuvent voir vos publications',
+              'lock-closed-outline',
+              !!user?.is_private_account,
+              handleTogglePrivateAccount
+            )}
+          </Animated.View>
+
+          {/* Section Navigation — onglets optionnels de la navbar (mobile uniquement) */}
+          <Animated.View
+            style={[
+              styles.section,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Ionicons name="apps" size={24} color={colors.cyan} />
+              <Text style={styles.sectionTitle}>Navigation</Text>
+            </View>
+
+            {renderActionButton(
+              'Langue de lecture',
+              `${currentLanguageLabel} · les publications traduites s'affichent dans cette langue`,
+              'language-outline',
+              () => setShowLanguagePicker(true)
+            )}
+
+            {renderActionButton(
+              'Personnaliser la navbar',
+              'Choisis les raccourcis affichés en bas de l\'écran',
+              'options-outline',
+              () => setShowNavbarCustomization(true)
+            )}
+
+            {renderActionButton(
+              'Vidéos',
+              'Le fil vidéo façon TikTok',
+              'play-circle-outline',
+              () => navigation.navigate('Video')
+            )}
+
+            {renderActionButton(
+              'Messages',
+              'Tes conversations privées',
+              'mail-outline',
+              () => navigation.navigate('Messages')
+            )}
+          </Animated.View>
+
+          {/* Section Actions */}
+          <Animated.View 
+            style={[
+              styles.section,
+              { 
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Ionicons name="build" size={24} color={colors.red} />
+              <Text style={styles.sectionTitle}>Actions</Text>
+            </View>
+
+            {renderActionButton(
+              'Statistiques du compte',
+              'Ouvrir la page dédiée avec vos analytics TwitNinf',
+              'stats-chart-outline',
+              () => navigation.navigate('AccountStats')
+            )}
+
+            {renderActionButton(
+              'Debug notifs locales',
+              'Voir les rappels 12h/16h/20h planifiés',
+              'notifications-outline',
+              async () => {
+                const setupOk = await setupFranceDailyLocalNotifications();
+                const debugInfo = await getFranceDailyLocalNotificationsDebug();
+                await sendImmediateNotification(
+                  'Debug notifications',
+                  'Test local: le bouton debug a bien declenche une notification.',
+                  { type: 'debug_local_notification' }
+                );
+                const reminders = debugInfo.reminders || [];
+                const lines = reminders.length
+                  ? reminders
+                      .map((r, index) => {
+                        const hh = String(r.hour ?? '--').padStart(2, '0');
+                        const mm = String(r.minute ?? '--').padStart(2, '0');
+                        const tz = r.timezone || 'default';
+                        return `${index + 1}. ${hh}:${mm} (${tz})`;
+                      })
+                      .join('\n')
+                  : 'Aucun rappel taggé trouvé';
+
+                Alert.alert(
+                  'Debug notifs locales',
+                  `Replanification: ${setupOk ? 'OK' : 'ECHEC'}\nTotal planifiées: ${debugInfo.totalScheduled}\nRappels FR: ${reminders.length}\n\n${lines}${
+                    (debugInfo as any).error ? `\n\nErreur: ${(debugInfo as any).error}` : ''
+                  }`
+                );
+              }
+            )}
+
+            {renderActionButton(
+              'Debug notif personnalisée',
+              'Programmer une notif a l heure choisie',
+              'timer-outline',
+              async () => {
+                const scheduleAt = async (hour: number, minute: number) => {
+                  const result = await scheduleRandomDebugNotificationAtTime(hour, minute);
+                  if (!result.success) {
+                    Alert.alert('Erreur', `Impossible de programmer la notif.\n${(result as any).error || ''}`);
+                    return;
+                  }
+                  Alert.alert(
+                    'Notif programmée',
+                    `Heure: ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}\nTitre: ${
+                      (result as any).title
+                    }\nMessage: ${(result as any).body}`
+                  );
+                };
+
+                if (Platform.OS === 'ios' && typeof (Alert as any).prompt === 'function') {
+                  (Alert as any).prompt(
+                    'Heure de notif',
+                    'Format HH:MM (ex: 21:30)',
+                    [
+                      { text: 'Annuler', style: 'cancel' },
+                      {
+                        text: 'Programmer',
+                        onPress: async (value: string) => {
+                          const input = (value || '').trim();
+                          const match = input.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+                          if (!match) {
+                            Alert.alert('Format invalide', 'Utilise HH:MM, ex: 09:05 ou 21:30');
+                            return;
+                          }
+                          const hour = Number(match[1]);
+                          const minute = Number(match[2]);
+                          await scheduleAt(hour, minute);
+                        }
+                      }
+                    ],
+                    'plain-text',
+                    '12:00'
+                  );
+                  return;
+                }
+
+                Alert.alert(
+                  'Choix rapide',
+                  'Saisie libre dispo sur iOS. Ici, utilise un créneau rapide.',
+                  [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: '12:00', onPress: () => scheduleAt(12, 0) },
+                    { text: '16:00', onPress: () => scheduleAt(16, 0) },
+                    { text: '20:00', onPress: () => scheduleAt(20, 0) }
+                  ]
+                );
+              }
+            )}
+
+            {/* Bouton de vérification */}
+            <VerificationButton
+              onPress={() => setShowVerificationForm(true)}
+              style={{ marginBottom: 16 }}
+            />
+
+            {/* Revue communautaire — ouverte à tout le monde, pas réservée aux
+                modérateurs : c'est justement un jury d'utilisateurs. */}
+            {renderActionButton(
+              'Revue communautaire',
+              'Jugez des contenus signalés, anonymisés',
+              'hammer-outline',
+              () => navigation.navigate('CommunityReview')
+            )}
+
+            {renderActionButton(
+              'Monétisation des Tweets',
+              'Gagnez des TWC avec vos tweets de qualité',
+              'cash-outline',
+              () => navigation.navigate('TweetMonetization')
+            )}
+
+            {renderActionButton(
+              'Créer une publicité ciblée',
+              'Diffusez votre ad sur une audience ultra-ciblée',
+              'megaphone-outline',
+              () => navigation.navigate('CreateTargetingAd')
+            )}
+
+            {renderActionButton(
+              'TwitCoins Store',
+              'Acheter des TwitCoins officiels',
+              'wallet-outline',
+              () => navigation.navigate('NewEconomy')
+            )}
+
+        {renderActionButton(
+          'Trading Dashboard',
+          'Analyse technique et statistiques avancées',
+          'analytics-outline',
+          () => navigation.navigate('Trading')
+        )}
+
+        {renderActionButton(
+          'Mon Portefeuille',
+          'Historique des transactions et statistiques détaillées',
+          'wallet-outline',
+          () => navigation.navigate('WalletDetail')
+        )}
+
+        {renderActionButton(
+          'Casino NF',
+          'Pile ou face et machine à sous, mise tes NF',
+          'dice-outline',
+          () => navigation.navigate('Casino')
+        )}
+
+        {/* Bouton pour changer le style de certification (utilisateurs vérifiés uniquement) */}
+        {user?.verified && renderActionButton(
+          'Style de Certification',
+          'Changer le style de votre badge vérifié',
+          'color-palette-outline',
+          () => navigation.navigate('VerificationStyle' as never)
+        )}
+
+        {/* Bouton de gestion des événements fonctionnels (admin uniquement) */}
+        {(isAdmin || isSuperAdmin) && renderActionButton(
+          'Gestion des Événements',
+          'Lancer l\'événement Kospor Birthday',
+          'gift-outline',
+          () => navigation.navigate('FunctionalEventManagement')
+        )}
+
+        {/* SECTION DÉVELOPPEUR */}
+        {renderActionButton(
+          'Portail Développeur API',
+          'Créez des applications tierces avec l\'API OAuth 2.0',
+          'code-slash-outline',
+          () => navigation.navigate('DeveloperPortal' as never)
+        )}
+
+        {renderActionButton(
+          'Notes de version',
+          `Version ${APP_VERSION} — voir les dernières nouveautés`,
+          'sparkles-outline',
+          () => setShowPatchNotes(true)
+        )}
+
+        {/* SECTION STREAMING (Vérifiés uniquement) */}
+        {user?.verified && (
+          <View style={[styles.section, { marginTop: 20 }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="videocam" size={24} color={colors.accent} />
+              <Text style={styles.sectionTitle}>Diffusion en Direct</Text>
+            </View>
+            <Text style={styles.sectionDescription}>
+              Utilisez votre clé de stream pour diffuser depuis OBS, Streamlabs ou CameraFi, ou lancez un live directement depuis l'application.
+            </Text>
+
+            {renderActionButton(
+              'Lancer un live',
+              'Diffuser directement depuis la caméra de votre téléphone',
+              'radio-outline',
+              () => {
+                navigation.navigate('GoLive' as never);
+              }
+            )}
+
+            <View style={styles.streamKeyCard}>
+              <View style={styles.streamKeyInfo}>
+                <Text style={styles.streamKeyLabel}>URL du serveur (RTMP)</Text>
+                <View style={styles.streamKeyRow}>
+                  <Text style={styles.streamKeyText} numberOfLines={1}>rtmp://51.255.48.125:1935/live</Text>
+                </View>
+              </View>
+
+              <View style={[styles.streamKeyInfo, { marginTop: 15 }]}>
+                <Text style={styles.streamKeyLabel}>Clé de stream</Text>
+                <View style={styles.streamKeyRow}>
+                  <Text style={styles.streamKeyText}>
+                    {user?.stream_key 
+                      ? (showStreamKey ? user.stream_key : '••••••••••••••••') 
+                      : 'Aucune clé générée'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {user?.stream_key && (
+                      <TouchableOpacity onPress={() => setShowStreamKey(!showStreamKey)} style={styles.copyBtn}>
+                        <Ionicons name={showStreamKey ? "eye-off-outline" : "eye-outline"} size={18} color={colors.accent} />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity 
+                      onPress={async () => {
+                        const newKey = `twtn-${Math.random().toString(36).substr(2, 9)}`;
+                        await liveService.registerStreamKey(newKey, {
+                          userId: user.id
+                        });
+                        Alert.alert('✅ Clé générée', `Votre nouvelle clé a été enregistrée sur le serveur.\n\nClé : ${newKey}`);
+                      }} 
+                      style={styles.generateBtn}
+                    >
+                      <Text style={styles.generateBtnText}>{user?.stream_key ? 'Régénérer' : 'Générer'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+          </Animated.View>
+
+          {/* Événement actif */}
+          {(hasActiveEvent && activeEvent) || (isKosporEventActive && kosporEvents.length > 0) ? (
+            <Animated.View 
+              style={[
+                styles.eventInfo,
+                { 
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }]
+                }
+              ]}
+            >
+              <View style={styles.eventInfoHeader}>
+                <Ionicons name={isKosporEventActive ? "gift" : "calendar"} size={20} color={colors.accent} />
+                <Text style={styles.eventInfoTitle}>Événement Actif</Text>
+              </View>
+              {isKosporEventActive && kosporEvents.length > 0 ? (
+                <>
+                  <Text style={styles.eventInfoName}>🎂 {kosporEvents[0].name}</Text>
+                  {kosporEvents[0].description && (
+                    <Text style={styles.eventInfoDescription}>{kosporEvents[0].description}</Text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.eventInfoName}>🎉 {activeEvent.name}</Text>
+                  {activeEvent.description && (
+                    <Text style={styles.eventInfoDescription}>{activeEvent.description}</Text>
+                  )}
+                </>
+              )}
+            </Animated.View>
+          ) : null}
+
+          {/* Informations sur l'application */}
+          <Animated.View 
+            style={[
+              styles.appInfo,
+              { 
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Text style={styles.appName}>TwitNin Legacy</Text>
+            <Text style={styles.appVersion}>Version {APP_VERSION}</Text>
+            <Text style={styles.appDescription}>
+              Propulsé par l'IA ultra-puissante 🚀
+            </Text>
+          </Animated.View>
+        </ScrollView>
+      </View>
+
+      {/* Modal de demande de vérification */}
+      <VerificationRequestForm
+        visible={showVerificationForm}
+        onClose={() => setShowVerificationForm(false)}
+        onSuccess={() => {
+          setShowVerificationForm(false);
+          // Optionnel: rafraîchir les données utilisateur
+        }}
+      />
+
+      {/* Modal Premium */}
+      <PremiumPurchaseModal
+        visible={showPremiumPopup}
+        onClose={() => setShowPremiumPopup(false)}
+        onSuccess={() => {
+          setShowPremiumPopup(false);
+          Alert.alert('Bienvenue dans Premium Pro', 'Tous tes avantages sont actifs pour 5 jours.');
+        }}
+      />
+
+      {/* Modal Notes de version */}
+      <Modal
+        visible={showPatchNotes}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowPatchNotes(false)}
+      >
+        <View style={styles.patchOverlay}>
+          <View style={styles.patchSheet}>
+            <View style={styles.patchHeader}>
+              <View>
+                <Text style={styles.patchTitle}>Notes de version</Text>
+                <Text style={styles.patchVersion}>Version {APP_VERSION}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowPatchNotes(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: screenHeight * 0.6 }}>
+              {PATCH_NOTES.map((note) => (
+                <View key={note.date} style={styles.patchEntry}>
+                  <Text style={styles.patchDate}>{note.date}</Text>
+                  <Text style={styles.patchEntryTitle}>{note.title}</Text>
+                  {note.items.map((item) => (
+                    <View key={item} style={styles.patchItemRow}>
+                      <Text style={styles.patchBullet}>•</Text>
+                      <Text style={styles.patchItemText}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Personnalisation de la navbar */}
+      <NavbarOnboardingModal
+        visible={showNavbarCustomization}
+        mode="settings"
+        initialSelected={selectedOptionalTabs}
+        onComplete={(selected) => {
+          saveNavbarPrefs(selected);
+          setShowNavbarCustomization(false);
+        }}
+        onCancel={() => setShowNavbarCustomization(false)}
+      />
+
+      {/* Modal Langue de lecture — fermable ici, contrairement à l'accueil */}
+      <ReadingLanguageModal
+        visible={showLanguagePicker}
+        onClose={() => setShowLanguagePicker(false)}
+      />
+    </SafeAreaView>
+    </ScreenBackground>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  gradient: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontFamily: fonts.displayHeavy,
+    color: colors.textPrimary,
+    letterSpacing: -0.6,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  section: {
+    marginBottom: 30,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    justifyContent: 'space-between',
+  },
+  premiumBadgeInHeader: {
+    marginLeft: 10,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginLeft: 12,
+  },
+  sectionDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+  },
+  settingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  settingContent: {
+    flex: 1,
+  },
+  settingTitle: {
+    fontSize: 16,
+    fontFamily: fonts.semibold,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  settingDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+  },
+  actionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  actionContent: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontFamily: fonts.semibold,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  actionDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  appInfo: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: 20,
+  },
+  appName: {
+    fontSize: 20,
+    fontWeight: '800', fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginBottom: 5,
+  },
+  appVersion: {
+    fontSize: 14,
+    color: colors.accent,
+    fontWeight: '600', fontFamily: fonts.semibold,
+    marginBottom: 10,
+  },
+  appDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  eventInfo: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  eventInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  eventInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600', fontFamily: fonts.semibold,
+    color: colors.accent,
+    marginLeft: 8,
+  },
+  eventInfoName: {
+    fontSize: 16,
+    fontWeight: '700', fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  eventInfoDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  // STYLES STREAMING
+  streamKeyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+  },
+  streamKeyInfo: {
+    gap: 6,
+  },
+  streamKeyLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600', fontFamily: fonts.semibold,
+    textTransform: 'uppercase',
+  },
+  streamKeyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 44,
+  },
+  streamKeyText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    flex: 1,
+  },
+  copyBtn: {
+    padding: 4,
+  },
+  generateBtn: {
+    backgroundColor: 'rgba(79, 124, 255, 0.14)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 124, 255, 0.3)',
+  },
+  generateBtnText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '700', fontFamily: fonts.bold,
+  },
+  // NOTES DE VERSION
+  patchOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  patchSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+  },
+  patchHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  patchTitle: {
+    fontSize: 20,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  patchVersion: {
+    fontSize: 13,
+    color: colors.accent,
+    fontFamily: fonts.semibold,
+    marginTop: 2,
+  },
+  patchEntry: {
+    marginBottom: 20,
+  },
+  patchDate: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  patchEntryTitle: {
+    fontSize: 16,
+    fontFamily: fonts.semibold,
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  patchItemRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+    paddingRight: 4,
+  },
+  patchBullet: {
+    color: colors.accent,
+    fontSize: 14,
+    marginRight: 8,
+    lineHeight: 19,
+  },
+  patchItemText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 19,
+  },
+});
+
+export default SettingsScreen;

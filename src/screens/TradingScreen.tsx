@@ -1,0 +1,876 @@
+import { colors, fonts, glow } from '../theme';
+import { ScreenBackground, BackButton, Skeleton } from '../components/ui';
+import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  Animated,
+  RefreshControl,
+  ActivityIndicator,
+  StatusBar,
+  Platform,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { LineChart } from 'react-native-chart-kit';
+import { useNavigation } from '@react-navigation/native';
+import NewEconomyService, { EconomicStats, ChartRange } from '../services/newEconomyService';
+import CurrencyService from '../services/currencyService';
+import SimpleChart from '../components/SimpleChart';
+import SimpleStatsPanel from '../components/SimpleStatsPanel';
+
+const { width, height } = Dimensions.get('window');
+const chartWidth = width - 40;
+
+const TIMEFRAME_TO_RANGE: Record<'1H' | '1D' | '1W' | '1M', ChartRange> = {
+  '1H': '1h', '1D': '24h', '1W': '7d', '1M': '30d',
+};
+
+interface MarketData {
+  price: number;
+  change24h: number;
+  volume: number;
+  marketCap: number;
+  trend: 'rising' | 'falling' | 'stable';
+  priceHistory: Array<{
+    date: string;
+    price: number;
+    volume: number;
+  }>;
+}
+
+
+const TradingScreen: React.FC = () => {
+  const navigation = useNavigation();
+  const { top: headerTopInset } = useHeaderMetrics();
+  const [marketData, setMarketData] = useState<MarketData | null>(null);
+  const [economicStats, setEconomicStats] = useState<EconomicStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [timeframe, setTimeframe] = useState<'1H' | '1D' | '1W' | '1M'>('1D');
+  const [currentView, setCurrentView] = useState<'chart' | 'stats'>('chart');
+  
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+
+  // ID de la cryptomonnaie (récupéré dynamiquement)
+  const [currencyId, setCurrencyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    initializeCurrency();
+    startAnimations();
+  }, []);
+
+  useEffect(() => {
+    if (currencyId) {
+      loadMarketData();
+
+      // Mettre à jour les données toutes les 30 secondes. Dépend aussi de
+      // `timeframe` : sinon l'intervalle gardait en mémoire l'intervalle de
+      // graphique sélectionné AU MOMENT du montage (fermeture figée) et
+      // continuait de rafraîchir avec l'ancien `range`, même après un
+      // changement de sélecteur — l'effet se ré-arme ici avec le bon `range`
+      // à chaque changement.
+      const interval = setInterval(() => {
+        loadMarketData(true);
+      }, 30000);
+
+      return () => clearInterval(interval);
+    }
+  }, [currencyId, timeframe]);
+
+  const startAnimations = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const initializeCurrency = async () => {
+    try {
+      // Forcer le nettoyage du cache d'abord
+      CurrencyService.clearCache();
+      const id = await CurrencyService.getTwitCoinsCurrencyId();
+      console.log('🆔 ID de cryptomonnaie récupéré:', id);
+      setCurrencyId(id);
+    } catch (error) {
+      console.error('Erreur lors de l\'initialisation de la cryptomonnaie:', error);
+      // Fallback avec l'ID réel de TwitCoins
+      const fallbackId = '077ae58c-7ba5-4da0-bb67-5829a83a2ea1';
+      console.log('🆔 Utilisation de l\'ID de fallback:', fallbackId);
+      setCurrencyId(fallbackId);
+    }
+  };
+
+  const loadMarketData = async (silent = false) => {
+    try {
+      if (!currencyId) return;
+      if (!silent) setLoading(true);
+      
+      const stats = await NewEconomyService.getEconomicStats(currencyId, TIMEFRAME_TO_RANGE[timeframe]);
+      setEconomicStats(stats);
+      
+      // Transformer les données pour le composant
+      const marketInfo: MarketData = {
+        price: stats.currency.currentPrice,
+        change24h: stats.currency.priceChange24h,
+        volume: stats.currency.volume24h,
+        marketCap: stats.currency.marketCap,
+        trend: stats.currency.trend,
+        priceHistory: stats.priceHistory
+      };
+      
+      setMarketData(marketInfo);
+    } catch (error) {
+      console.error('Erreur lors du chargement des données:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    if (!currencyId) return;
+    setRefreshing(true);
+    await loadMarketData();
+    setRefreshing(false);
+  };
+
+  const getTimeframeData = () => {
+    if (!marketData?.priceHistory) return [];
+    
+    const now = new Date();
+    let cutoffDate: Date;
+    
+    switch (timeframe) {
+      case '1H':
+        cutoffDate = new Date(now.getTime() - 60 * 60 * 1000);
+        break;
+      case '1D':
+        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case '1W':
+        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '1M':
+        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+    
+    return marketData.priceHistory
+      .filter(point => new Date(point.date) >= cutoffDate)
+      .slice(-50); // Maximum 50 points pour la performance
+  };
+
+  const formatPrice = (price: number) => {
+    return `${price.toFixed(4)}€`;
+  };
+
+  const formatVolume = (volume: number) => {
+    if (volume >= 1000000) {
+      return `${(volume / 1000000).toFixed(1)}M€`;
+    } else if (volume >= 1000) {
+      return `${(volume / 1000).toFixed(1)}k€`;
+    }
+    return `${volume.toFixed(0)}€`;
+  };
+
+  const formatMarketCap = (marketCap: number) => {
+    if (marketCap >= 1000000) {
+      return `${(marketCap / 1000000).toFixed(2)}M€`;
+    } else if (marketCap >= 1000) {
+      return `${(marketCap / 1000).toFixed(1)}k€`;
+    }
+    return `${marketCap.toFixed(0)}€`;
+  };
+
+  const getTrendColor = (trend: string, change: number) => {
+    if (change > 0) return '#10B981';
+    if (change < 0) return '#EF4444';
+    return '#6B7280';
+  };
+
+  const getTrendIcon = (trend: string, change: number) => {
+    if (change > 0) return 'trending-up';
+    if (change < 0) return 'trending-down';
+    return 'remove';
+  };
+
+  const renderHeader = () => (
+    <View style={[styles.header, { paddingTop: headerTopInset }]}>
+      <BackButton navigation={navigation} />
+      
+      <View style={styles.headerTitleContainer}>
+        <Text style={styles.headerTitle}>TwitCoins</Text>
+      </View>
+      
+      <View style={styles.headerActions}>
+        <TouchableOpacity 
+          style={[styles.viewToggle, currentView === 'chart' && styles.viewToggleActive]}
+          onPress={() => setCurrentView('chart')}
+        >
+          <Ionicons name="analytics" size={20} color={currentView === 'chart' ? '#fff' : 'rgba(255,255,255,0.6)'} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.viewToggle, currentView === 'stats' && styles.viewToggleActive]}
+          onPress={() => setCurrentView('stats')}
+        >
+          <Ionicons name="bar-chart" size={20} color={currentView === 'stats' ? '#fff' : 'rgba(255,255,255,0.6)'} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={onRefresh}
+          disabled={refreshing}
+        >
+          <Ionicons name={refreshing ? "hourglass" : "refresh"} size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderPriceHeader = () => {
+    if (!marketData) return null;
+
+    return (
+      <Animated.View 
+        style={[
+          styles.priceContainer,
+          { 
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <View style={styles.priceCard}>
+          <View style={styles.priceHeader}>
+            <View style={styles.priceInfo}>
+              <Text style={styles.currencyName}>TwitCoins</Text>
+              <Text style={styles.currencySymbol}>TWC</Text>
+            </View>
+            
+            <View style={[styles.trendBadge, { backgroundColor: getTrendColor(marketData.trend, marketData.change24h) }]}>
+              <Ionicons 
+                name={getTrendIcon(marketData.trend, marketData.change24h)} 
+                size={16} 
+                color="#fff" 
+              />
+              <Text style={styles.trendText}>{marketData.trend.toUpperCase()}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.priceRow}>
+            <Text style={styles.currentPrice}>
+              {formatPrice(marketData.price)}
+            </Text>
+            
+            <View style={styles.changeContainer}>
+              <Text style={[
+                styles.priceChange,
+                { color: getTrendColor(marketData.trend, marketData.change24h) }
+              ]}>
+                {marketData.change24h >= 0 ? '+' : ''}{marketData.change24h.toFixed(2)}%
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.priceStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Volume 24h</Text>
+              <Text style={styles.statValue}>{formatVolume(marketData.volume)}</Text>
+            </View>
+            
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Market Cap</Text>
+              <Text style={styles.statValue}>{formatMarketCap(marketData.marketCap)}</Text>
+            </View>
+          </View>
+        </View>
+      </Animated.View>
+    );
+  };
+
+  const renderTimeframeSelector = () => (
+    <View style={styles.timeframeContainer}>
+      {(['1H', '1D', '1W', '1M'] as const).map((tf) => (
+        <TouchableOpacity
+          key={tf}
+          style={[
+            styles.timeframeButton,
+            timeframe === tf && styles.timeframeButtonActive
+          ]}
+          onPress={() => setTimeframe(tf)}
+        >
+          <Text style={[
+            styles.timeframeText,
+            timeframe === tf && styles.timeframeTextActive
+          ]}>
+            {tf}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderChart = () => {
+    const data = getTimeframeData();
+    
+    if (!data.length) {
+      return (
+        <View style={styles.chartContainer}>
+          <Text style={styles.noDataText}>Données insuffisantes pour ce timeframe</Text>
+        </View>
+      );
+    }
+
+    const prices = data.map(point => point.price);
+    const labels = data.map((point, index) => {
+      if (index % Math.ceil(data.length / 6) === 0) {
+        const date = new Date(point.date);
+        return timeframe === '1H' 
+          ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+          : date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+      }
+      return '';
+    });
+
+    const chartData = {
+      labels,
+      datasets: [{
+        data: prices,
+        color: (opacity = 1) => marketData?.change24h >= 0 
+          ? `rgba(16, 185, 129, ${opacity})` 
+          : `rgba(239, 68, 68, ${opacity})`,
+        strokeWidth: 3
+      }]
+    };
+
+    const chartConfig = {
+      backgroundColor: 'transparent',
+      backgroundGradientFrom: '#15171C',
+      backgroundGradientTo: '#1B1E25',
+      color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.6})`,
+      style: {
+        borderRadius: 16
+      },
+      propsForDots: {
+        r: "4",
+        strokeWidth: "2",
+        stroke: marketData?.change24h >= 0 ? "#10B981" : "#EF4444"
+      },
+      propsForBackgroundLines: {
+        strokeDasharray: "5,5",
+        stroke: "rgba(255,255,255,0.1)"
+      }
+    };
+
+    return (
+      <View style={styles.chartContainer}>
+        <View style={styles.chartCard}>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle}>Prix Evolution</Text>
+            <View style={styles.chartLegend}>
+              <View style={[styles.legendDot, { 
+                backgroundColor: marketData?.change24h >= 0 ? '#10B981' : '#EF4444' 
+              }]} />
+              <Text style={styles.legendText}>Prix TWC</Text>
+            </View>
+          </View>
+          
+          <LineChart
+            data={chartData}
+            width={chartWidth - 40}
+            height={220}
+            chartConfig={chartConfig}
+            bezier
+            style={styles.chart}
+            withInnerLines={true}
+            withOuterLines={false}
+            withVerticalLabels={true}
+            withHorizontalLabels={true}
+          />
+        </View>
+      </View>
+    );
+  };
+
+  const renderMarketStats = () => {
+    if (!economicStats) return null;
+
+    const stats = [
+      {
+        label: 'Offre Totale',
+        value: `${economicStats.currency.circulatingSupply.toFixed(0)} TWC`,
+        icon: 'pie-chart',
+        color: colors.accent
+      },
+      {
+        label: 'Multiplicateur',
+        value: `×${economicStats.currency.multiplier.toFixed(2)}`,
+        icon: 'trending-up',
+        color: colors.success
+      },
+      {
+        label: 'Bonus Achat',
+        value: `${economicStats.currency.purchaseBonus.toFixed(1)}%`,
+        icon: 'gift',
+        color: colors.gold
+      },
+      {
+        label: 'Volume 24h',
+        value: formatVolume(economicStats.currency.volume24h),
+        icon: 'bar-chart',
+        color: colors.cyan
+      }
+    ];
+
+    return (
+      <View style={styles.statsContainer}>
+        <Text style={styles.sectionTitle}>Statistiques du Marché</Text>
+        
+        <View style={styles.statsGrid}>
+          {stats.map((stat, index) => (
+            <Animated.View
+              key={index}
+              style={[
+                styles.statCard,
+                {
+                  opacity: fadeAnim,
+                  transform: [{
+                    translateY: slideAnim.interpolate({
+                      inputRange: [0, 50],
+                      outputRange: [0, 50 + index * 10]
+                    })
+                  }]
+                }
+              ]}
+            >
+              <View style={styles.statCardGradient}>
+                <View style={[styles.statIcon, { backgroundColor: stat.color }]}>
+                  <Ionicons name={stat.icon as any} size={20} color={colors.white} />
+                </View>
+
+                <Text style={styles.statLabel}>{stat.label}</Text>
+                <Text style={styles.statValue}>{stat.value}</Text>
+              </View>
+            </Animated.View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  const renderTradingActions = () => (
+    <View style={styles.actionsContainer}>
+      <Text style={styles.sectionTitle}>Actions de Trading</Text>
+      
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={[styles.buyButton, styles.actionButtonGradient, { backgroundColor: colors.success }, glow(colors.success, 10)]}
+          onPress={() => navigation.navigate('NewEconomy' as never)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add-circle" size={22} color={colors.white} />
+          <Text style={styles.actionButtonText}>Acheter TWC</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.sellButton, styles.actionButtonGradient, { backgroundColor: colors.surfaceAlt }]}
+          onPress={() => {
+            // TODO: Implémenter la fonctionnalité de vente/échange
+          }}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="swap-horizontal" size={22} color={colors.textPrimary} />
+          <Text style={[styles.actionButtonText, { color: colors.textPrimary }]}>Utiliser TWC</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderMainContent = () => {
+    if (currentView === 'stats' && economicStats) {
+      return (
+        <SimpleStatsPanel
+          currency={economicStats.currency}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        />
+      );
+    }
+
+    if (currentView === 'chart' && marketData && economicStats) {
+      return (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          bounces={!refreshing}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#4F7CFF"
+              title="Actualisation..."
+              titleColor="#4F7CFF"
+              progressViewOffset={0}
+              progressBackgroundColor="transparent"
+            />
+          }
+        >
+          {renderPriceHeader()}
+          
+          {economicStats?.currency ? (
+            <SimpleChart
+              data={marketData?.priceHistory || []}
+              timeframe={timeframe}
+              currency={{
+                symbol: economicStats.currency.symbol || 'TWC',
+                name: economicStats.currency.name || 'TwitCoins',
+                currentPrice: economicStats.currency.currentPrice || 0.01,
+                change24h: economicStats.currency.priceChange24h || 0,
+                trend: economicStats.currency.trend || 'stable'
+              }}
+            />
+          ) : (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Chargement du graphique...</Text>
+            </View>
+          )}
+          
+          {renderTradingActions()}
+          
+          {/* Espace en bas pour la navigation */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      );
+    }
+
+    return null;
+  };
+
+  if (loading) {
+    return (
+      <ScreenBackground>
+        <View style={styles.container}>
+          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <View style={styles.gradient}>
+            {renderHeader()}
+            <View style={styles.content}>
+              <Skeleton width="100%" height={90} rounded={20} style={{ marginTop: 16, marginBottom: 16 }} />
+              <Skeleton width="100%" height={210} rounded={20} style={{ marginBottom: 16 }} />
+              <Skeleton width="100%" height={64} rounded={16} style={{ marginBottom: 12 }} />
+              <Skeleton width="100%" height={64} rounded={16} />
+            </View>
+          </View>
+        </View>
+      </ScreenBackground>
+    );
+  }
+
+  return (
+    <ScreenBackground>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+
+      <View style={styles.gradient}>
+        {renderHeader()}
+
+        <View style={styles.content}>
+          {renderMainContent()}
+        </View>
+      </View>
+    </View>
+    </ScreenBackground>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  gradient: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '500', fontFamily: fonts.medium,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    // paddingTop réel posé à l'appel (useHeaderMetrics), pas une valeur devinée.
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  headerTitleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontFamily: fonts.heading,
+    color: colors.textPrimary,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewToggle: {
+    padding: 8,
+    marginRight: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  viewToggleActive: {
+    backgroundColor: '#4F7CFF',
+  },
+  refreshButton: {
+    padding: 8,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  priceContainer: {
+    marginBottom: 20,
+  },
+  priceCard: {
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  priceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  priceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  currencyName: {
+    fontSize: 18,
+    fontWeight: '700', fontFamily: fonts.bold,
+    color: '#fff',
+    marginRight: 12,
+  },
+  currencySymbol: {
+    fontSize: 14,
+    fontWeight: '600', fontFamily: fonts.semibold,
+    color: '#4F7CFF',
+    backgroundColor: 'rgba(29, 155, 240, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  trendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  trendText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700', fontFamily: fonts.bold,
+    marginLeft: 4,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  currentPrice: {
+    fontSize: 36,
+    fontWeight: '900', fontFamily: fonts.bold,
+    color: '#fff',
+  },
+  changeContainer: {
+    alignItems: 'flex-end',
+  },
+  priceChange: {
+    fontSize: 18,
+    fontWeight: '700', fontFamily: fonts.bold,
+  },
+  priceStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '600', fontFamily: fonts.semibold,
+    color: '#fff',
+  },
+  timeframeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 20,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderRadius: 12,
+    padding: 4,
+  },
+  timeframeButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  timeframeButtonActive: {
+    backgroundColor: '#4F7CFF',
+  },
+  timeframeText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontWeight: '600', fontFamily: fonts.semibold,
+  },
+  timeframeTextActive: {
+    color: '#fff',
+  },
+  chartContainer: {
+    marginBottom: 20,
+  },
+  chartCard: {
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: '700', fontFamily: fonts.bold,
+    color: '#fff',
+  },
+  chartLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  chart: {
+    borderRadius: 16,
+  },
+  noDataText: {
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    padding: 40,
+    fontSize: 16,
+  },
+  statsContainer: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700', fontFamily: fonts.bold,
+    color: '#fff',
+    marginBottom: 16,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  statCard: {
+    width: '48%',
+    marginBottom: 12,
+  },
+  statCardGradient: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  actionsContainer: {
+    marginBottom: 20,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  buyButton: {
+    flex: 1,
+    marginRight: 8,
+  },
+  sellButton: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  actionButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700', fontFamily: fonts.bold,
+    marginLeft: 8,
+  },
+});
+
+export default TradingScreen;
