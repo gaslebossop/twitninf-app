@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useRef, useState } from 'react';
 import {
+  Alert,
   View,
   Text,
   TouchableOpacity,
@@ -220,17 +221,35 @@ function TweetRow({
     blockPressUntilRef.current = Date.now() + ms;
   }, []);
 
+  /**
+   * Interactions sur un contenu payant non acheté.
+   *
+   * Le serveur les refuse (403) : aimer, retweeter ou répondre à un texte
+   * qu'on n'a pas lu n'a pas de sens, et un retweet le republierait. On ne
+   * laisse donc pas le geste partir pour revenir en erreur — on dit
+   * pourquoi, et l'animation ne se joue pas dans le vide.
+   */
+  const refuseLocked = useCallback(() => {
+    blockRowPress();
+    Alert.alert(
+      'Contenu réservé',
+      `Débloque ce contenu pour ${contentLock?.price_twc ?? ''} NF avant d'interagir avec lui.`.replace('  ', ' '),
+    );
+  }, [blockRowPress, contentLock]);
+
   const handleLikePress = useCallback(() => {
+    if (isContentLocked) return refuseLocked();
     blockRowPress();
     playLike(isLiked);
     onAction({ type: 'like', tweetId: tweet.id });
-  }, [blockRowPress, playLike, isLiked, onAction, tweet.id]);
+  }, [isContentLocked, refuseLocked, blockRowPress, playLike, isLiked, onAction, tweet.id]);
 
   const handleRetweetPress = useCallback(() => {
+    if (isContentLocked) return refuseLocked();
     blockRowPress();
     retweet.play(!isRetweeted);
     onAction({ type: 'retweet', tweetId: tweet.id });
-  }, [blockRowPress, retweet, isRetweeted, onAction, tweet.id]);
+  }, [isContentLocked, refuseLocked, blockRowPress, retweet, isRetweeted, onAction, tweet.id]);
 
   const handleRowPress = useCallback(() => {
     if (isAd) {
@@ -246,6 +265,8 @@ function TweetRow({
     if (isDoubleTap) {
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = null;
+      // Le double-tap aime aussi : il tombe sous la même règle.
+      if (isContentLocked) return;
       playBigHeart();
       if (!isLiked) {
         playLike(false);
@@ -479,7 +500,11 @@ function TweetRow({
             <View style={S.actions}>
               <TouchableOpacity
                 style={S.actionChip}
-                onPress={() => { blockRowPress(); onAction({ type: 'reply', tweetId: tweet.id }); }}
+                onPress={() => {
+                  if (isContentLocked) return refuseLocked();
+                  blockRowPress();
+                  onAction({ type: 'reply', tweetId: tweet.id });
+                }}
                 disabled={isAd}
                 activeOpacity={0.7}
               >

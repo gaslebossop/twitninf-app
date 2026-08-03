@@ -354,7 +354,20 @@ export default function TweetDetailScreen() {
     }
   };
 
+  /**
+   * Le serveur refuse like, retweet et réponse sur un contenu payant non
+   * acheté (403). On arrête le geste ici plutôt que de le laisser partir :
+   * l'écran afficherait sinon un état optimiste qu'il faudrait annuler.
+   */
+  const refuseLocked = () => {
+    Alert.alert(
+      'Contenu réservé',
+      `Débloque ce contenu pour ${contentLock?.price_twc} NF avant d'interagir avec lui.`,
+    );
+  };
+
   const handleLike = async () => {
+    if (isContentLocked) return refuseLocked();
     if (!tweet || isLiking) return;
     try {
       setIsLiking(true);
@@ -382,6 +395,7 @@ export default function TweetDetailScreen() {
   };
 
   const handleRetweet = async () => {
+    if (isContentLocked) return refuseLocked();
     if (!tweet || isRetweeting) return;
     try {
       setIsRetweeting(true);
@@ -471,6 +485,7 @@ export default function TweetDetailScreen() {
   };
 
   const handleReply = async () => {
+    if (isContentLocked) return refuseLocked();
     if (!tweet || isReplying || !replyText.trim()) return;
     try {
       setIsReplying(true);

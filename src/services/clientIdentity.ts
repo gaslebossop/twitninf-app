@@ -21,6 +21,22 @@ export const CLIENT_NAME = 'mobile-expo';
 
 const DEVICE_ID_KEY = 'twitninf_device_id';
 
+/**
+ * Fuseau de l'appareil, en nom IANA (« Europe/Paris »).
+ *
+ * On envoie le NOM et pas le décalage : un décalage vaut pour l'instant où
+ * on le mesure, alors qu'une publication programmée pour dans trois semaines
+ * peut tomber de l'autre côté du changement d'heure. Seul le nom permet au
+ * serveur de calculer le bon décalage à la bonne date.
+ */
+function resolveDeviceTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 let cachedDeviceId: string | null = null;
 let deviceIdLoading: Promise<string> | null = null;
 
@@ -110,6 +126,12 @@ export async function buildClientHeaders(
     'X-Device-ID': deviceId,
     'X-App-Version': APP_VERSION,
     'X-App-Ownership': (Constants as any).appOwnership || 'standalone',
+    // Le serveur tourne en UTC et la base aussi. Tant qu'on échange des
+    // instants, aucune importance ; dès qu'on parle d'HEURE DE LA JOURNÉE
+    // (« tes meilleurs créneaux », « publie à 8 h »), il lui faut l'horloge
+    // de l'appareil, sinon il répond en heures UTC — deux de moins qu'à
+    // Paris l'été. Envoyé partout : le fuseau suit l'utilisateur en voyage.
+    'X-Timezone': resolveDeviceTimeZone(),
     ...extra,
   };
 }

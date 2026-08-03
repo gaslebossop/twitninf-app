@@ -226,8 +226,23 @@ class ApiService {
   }
 
   // Méthodes de commodité pour les requêtes HTTP
+  /**
+   * `new URLSearchParams({ limit: undefined })` ne saute PAS la clé : il
+   * sérialise la chaîne « undefined ». Un filtre laissé vide partait donc en
+   * `?min_price=undefined`, que les validateurs `isFloat()` / `isInt()` de
+   * l'API rejettent — 400 « Requête invalide » sur un écran qui n'avait
+   * pourtant rien demandé de particulier. C'est ce qui rendait le marché des
+   * pseudos entièrement muet.
+   */
   async get(endpoint: string, params?: any, requiresAuth: boolean = true, timeout?: number): Promise<any> {
-    const queryString = params ? '?' + new URLSearchParams(params).toString() : '';
+    const search = new URLSearchParams();
+    if (params && typeof params === 'object') {
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null || value === '') continue;
+        search.append(key, String(value));
+      }
+    }
+    const queryString = search.toString() ? `?${search.toString()}` : '';
     return this.request(`${endpoint}${queryString}`, { method: 'GET', requiresAuth, timeout });
   }
 
