@@ -59,6 +59,8 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'radar', label: 'Radar', icon: 'radio-outline' },
 ];
 
+const DAY_NAMES = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+
 interface Props {
   navigation: any;
 }
@@ -561,7 +563,9 @@ function TestTab({
             </View>
             <Text style={styles.scoreLabel}>{label?.label}</Text>
             <Text style={styles.scoreHint}>
-              {confidenceLabel(prediction.confidence)} · basée sur {prediction.sampleSize} tweets
+              {confidenceLabel(prediction.confidence)}
+              {prediction.confidenceScore != null ? ` (${prediction.confidenceScore} %)` : ''}
+              {' '}· basée sur {prediction.sampleSize} tweets
             </Text>
           </View>
 
@@ -577,11 +581,108 @@ function TestTab({
               <RangeCell label="Haut" value={prediction.prediction!.engagement.high} />
             </View>
             <Text style={styles.cardBody}>
-              Vues estimées : environ {prediction.prediction!.views.expected}. Une
-              fourchette et non un chiffre unique — l'engagement d'un tweet reste
-              largement imprévisible, et prétendre le contraire serait mentir.
+              Vues : {prediction.prediction!.views.low}–{prediction.prediction!.views.high},
+              {' '}attendu {prediction.prediction!.views.expected}.
+              {prediction.prediction!.engagementRatePercent != null
+                ? ` Taux d'engagement estimé : ${prediction.prediction!.engagementRatePercent} %.`
+                : ''}
             </Text>
+            {!!prediction.prediction!.engagement.interval95 && (
+              <Text style={styles.intervalNote}>
+                Intervalle prudent à 95 % : {prediction.prediction!.engagement.interval95.low}–
+                {prediction.prediction!.engagement.interval95.high} interactions.
+              </Text>
+            )}
           </View>
+
+          {!!prediction.prediction!.components && (
+            <>
+              <SectionTitle title="Détail des interactions" hint="Répartition apprise sur les tweets les plus proches" />
+              <View style={styles.statGrid}>
+                <StatCard
+                  label="Likes attendus"
+                  value={String(prediction.prediction!.components.likes.expected)}
+                  hint={`${prediction.prediction!.components.likes.sharePercent} % du total`}
+                />
+                <StatCard
+                  label="Retweets attendus"
+                  value={String(prediction.prediction!.components.retweets.expected)}
+                  hint={`${prediction.prediction!.components.retweets.sharePercent} % du total`}
+                />
+                <StatCard
+                  label="Réponses attendues"
+                  value={String(prediction.prediction!.components.replies.expected)}
+                  hint={`${prediction.prediction!.components.replies.sharePercent} % du total`}
+                />
+                <StatCard
+                  label="Clics attendus"
+                  value={String(prediction.prediction!.clicks?.expected ?? 0)}
+                  hint={prediction.prediction!.clicks?.clickThroughRatePercent != null
+                    ? `CTR ${prediction.prediction!.clicks.clickThroughRatePercent} %`
+                    : 'signal incomplet'}
+                />
+              </View>
+            </>
+          )}
+
+          {!!prediction.probabilities && (
+            <>
+              <SectionTitle title="Probabilités calibrées" hint="Calculées sur les erreurs du backtest temporel" />
+              <View style={styles.card}>
+                <MetricRow
+                  label="Faire mieux que ton tweet habituel"
+                  value={`${prediction.probabilities.aboveUsualPercent} %`}
+                />
+                <MetricRow
+                  label="Entrer dans ton top 10 %"
+                  value={`${prediction.probabilities.top10Percent} %`}
+                  divider
+                />
+                <MetricRow
+                  label="Rester sous ta médiane"
+                  value={`${prediction.probabilities.belowUsualPercent} %`}
+                  divider
+                />
+              </View>
+            </>
+          )}
+
+          {!!prediction.drivers?.length && (
+            <>
+              <SectionTitle
+                title="Signaux qui déplacent la prédiction"
+                hint="Contribution du modèle, toutes choses égales par ailleurs"
+              />
+              {prediction.drivers.map((driver) => (
+                <DriverRow key={driver.label} driver={driver} />
+              ))}
+            </>
+          )}
+
+          {!!prediction.timingForecast?.length && (
+            <>
+              <SectionTitle title="Meilleurs créneaux pour ce brouillon" hint="Simulation des 7 prochains jours" />
+              <View style={styles.card}>
+                {prediction.timingForecast.map((slot, index) => (
+                  <View key={slot.publishAt} style={[styles.forecastRow, index > 0 && styles.slotRowDivider]}>
+                    <View style={styles.forecastTime}>
+                      <Text style={styles.forecastDay}>{DAY_NAMES[slot.dayOfWeek]}</Text>
+                      <Text style={styles.forecastHour}>{formatHour(slot.hour)}</Text>
+                    </View>
+                    <View style={styles.forecastValues}>
+                      <Text style={styles.forecastPrimary}>{slot.expectedEngagement} interactions</Text>
+                      <Text style={styles.forecastSecondary}>
+                        {slot.expectedViews} vues · audience {slot.audienceActivityIndex}/100
+                      </Text>
+                    </View>
+                    <Text style={[styles.forecastUplift, slot.upliftPercent >= 0 ? styles.impactGood : styles.impactWeak]}>
+                      {formatImpact(slot.upliftPercent)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
 
           {!!prediction.advice?.length && (
             <>
@@ -624,6 +725,47 @@ function TestTab({
                   </Text>
                 </View>
               ))}
+            </>
+          )}
+
+          {!!prediction.model && (
+            <>
+              <SectionTitle title="Fiabilité du modèle" hint={prediction.modelVersion} />
+              <View style={styles.card}>
+                <MetricRow label="Variables analysées" value={String(prediction.model.featuresConsidered)} />
+                <MetricRow
+                  label="Tweets réellement exploitables"
+                  value={`${prediction.model.dataQuality.matureSampleSize}/${prediction.model.dataQuality.rawSampleSize}`}
+                  divider
+                />
+                <MetricRow
+                  label="Couverture des vues"
+                  value={`${prediction.model.dataQuality.viewCoveragePercent} %`}
+                  divider
+                />
+                <MetricRow
+                  label="Couverture comportementale"
+                  value={`${prediction.model.dataQuality.behaviorCoveragePercent} %`}
+                  divider
+                />
+                <MetricRow
+                  label="Erreur moyenne du backtest"
+                  value={prediction.model.backtest.meanAbsoluteError == null
+                    ? 'pas assez de recul'
+                    : `± ${prediction.model.backtest.meanAbsoluteError}`}
+                  divider
+                />
+                <Text style={styles.modelWeights}>
+                  Poids : base robuste {prediction.model.ensembleWeights.baseline} % · régression{' '}
+                  {prediction.model.ensembleWeights.ridge} % · tweets proches{' '}
+                  {prediction.model.ensembleWeights.neighbors} %
+                </Text>
+                {!!prediction.confidenceDetails?.caveats.length && (
+                  <Text style={styles.modelCaveats}>
+                    {prediction.confidenceDetails.caveats.join('\n')}
+                  </Text>
+                )}
+              </View>
             </>
           )}
         </>
@@ -815,6 +957,51 @@ function FactorRow({
   );
 }
 
+function DriverRow({
+  driver,
+}: {
+  driver: NonNullable<PredictionResult['drivers']>[number];
+}) {
+  const positive = driver.impactPercent >= 0;
+  const magnitude = Math.min(100, Math.abs(driver.impactPercent));
+  return (
+    <View style={styles.factorRow}>
+      <View style={styles.factorHead}>
+        <Text style={styles.factorLabel}>{driver.label}</Text>
+        <Text style={[styles.factorImpact, positive ? styles.impactGood : styles.impactWeak]}>
+          {formatImpact(driver.impactPercent)}
+        </Text>
+      </View>
+      <View style={styles.factorBarTrack}>
+        <View
+          style={[
+            styles.factorBarFill,
+            { width: `${magnitude}%` },
+            positive ? styles.factorBarGood : styles.factorBarWeak,
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
+function MetricRow({
+  label,
+  value,
+  divider,
+}: {
+  label: string;
+  value: string;
+  divider?: boolean;
+}) {
+  return (
+    <View style={[styles.metricRow, divider && styles.slotRowDivider]}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+    </View>
+  );
+}
+
 function MiniStat({ icon, value }: { icon: string; value: number }) {
   return (
     <View style={styles.miniStat}>
@@ -957,6 +1144,13 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 18,
     marginTop: 6,
+    fontFamily: fonts.regular,
+  },
+  intervalNote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 7,
     fontFamily: fonts.regular,
   },
 
@@ -1128,6 +1322,37 @@ const styles = StyleSheet.create({
   rangeValue: { color: colors.textSecondary, fontSize: 20, fontFamily: fonts.heading },
   rangeValueEmphasis: { color: colors.accent, fontSize: 26 },
   rangeLabel: { color: colors.textMuted, fontSize: 11, marginTop: 2, fontFamily: fonts.regular },
+
+  metricRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  metricLabel: { flex: 1, color: colors.textSecondary, fontSize: 12.5, fontFamily: fonts.regular },
+  metricValue: { color: colors.textPrimary, fontSize: 13, textAlign: 'right', fontFamily: fonts.bold },
+
+  forecastRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  forecastTime: { width: 50 },
+  forecastDay: { color: colors.textMuted, fontSize: 10.5, fontFamily: fonts.regular },
+  forecastHour: { color: colors.textPrimary, fontSize: 14, marginTop: 1, fontFamily: fonts.bold },
+  forecastValues: { flex: 1, minWidth: 0, paddingHorizontal: 8 },
+  forecastPrimary: { color: colors.textPrimary, fontSize: 12.5, fontFamily: fonts.bold },
+  forecastSecondary: { color: colors.textMuted, fontSize: 10.5, marginTop: 3, fontFamily: fonts.regular },
+  forecastUplift: { width: 48, textAlign: 'right', fontSize: 11.5, fontFamily: fonts.bold },
+
+  modelWeights: { color: colors.textMuted, fontSize: 10.5, lineHeight: 16, marginTop: 10, fontFamily: fonts.regular },
+  modelCaveats: {
+    color: colors.warning,
+    fontSize: 10.5,
+    lineHeight: 16,
+    marginTop: 9,
+    paddingTop: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    fontFamily: fonts.regular,
+  },
 
   adviceRow: {
     flexDirection: 'row',

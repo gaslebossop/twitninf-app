@@ -37,6 +37,7 @@ export interface PredictionRange {
   low: number;
   expected: number;
   high: number;
+  interval95?: { low: number; high: number };
 }
 
 export interface TweetFeatures {
@@ -53,6 +54,32 @@ export interface TweetFeatures {
   isUppercaseHeavy: boolean;
   hour: number;
   dayOfWeek: number;
+  uniqueWords?: number;
+  lexicalDiversity?: number;
+  averageWordLength?: number;
+  sentenceCount?: number;
+  averageSentenceLength?: number;
+  readabilityScore?: number;
+  urlCount?: number;
+  emojiCount?: number;
+  questionCount?: number;
+  exclamationCount?: number;
+  lineBreakCount?: number;
+  punctuationDensity?: number;
+  uppercaseRatio?: number;
+  digitRatio?: number;
+  repeatedPunctuationCount?: number;
+  repeatedCharacterRuns?: number;
+  callToActionCount?: number;
+  firstPersonCount?: number;
+  secondPersonCount?: number;
+  sentimentScore?: number;
+  emotionalIntensity?: number;
+  hookStrength?: number;
+  startsWithQuestion?: boolean;
+  startsWithNumber?: boolean;
+  isWeekend?: boolean;
+  hoursSinceLastPost?: number;
 }
 
 export interface ComparableTweet {
@@ -62,6 +89,29 @@ export interface ComparableTweet {
   engagement: number;
   views: number;
   createdAt: string;
+  lexicalSimilarity?: number;
+  adjustedEngagement?: number;
+}
+
+export interface PredictedComponent extends PredictionRange {
+  sharePercent: number;
+}
+
+export interface PredictionDriver {
+  label: string;
+  impactPercent: number;
+  direction: 'positive' | 'negative';
+  strength: number;
+}
+
+export interface TimingForecast {
+  publishAt: string;
+  hour: number;
+  dayOfWeek: number;
+  expectedEngagement: number;
+  expectedViews: number;
+  upliftPercent: number;
+  audienceActivityIndex: number;
 }
 
 export interface PredictionResult {
@@ -70,23 +120,85 @@ export interface PredictionResult {
   minimumRequired?: number;
   message?: string;
   confidence?: Confidence;
+  confidenceScore?: number;
+  confidenceDetails?: {
+    numeric: number;
+    label: Confidence;
+    components: {
+      sample: number;
+      maturity: number;
+      viewCoverage: number;
+      backtest: number;
+      modelAgreement: number;
+    };
+    caveats: string[];
+  };
   score?: number;
+  modelVersion?: string;
+  method?: string;
   features: TweetFeatures;
   prediction?: {
     engagement: PredictionRange;
     views: PredictionRange;
     multiplier: number;
+    components?: {
+      likes: PredictedComponent;
+      retweets: PredictedComponent;
+      replies: PredictedComponent;
+    };
+    clicks?: {
+      expected: number;
+      clickThroughRatePercent: number | null;
+    };
+    engagementRatePercent?: number | null;
+    reachVsFollowersPercent?: number | null;
   };
   baseline?: {
     medianEngagement: number;
     medianViews: number;
     bestEverEngagement: number;
     averageEngagement: number;
+    p90Engagement?: number;
+    medianEngagementRatePercent?: number;
   };
   factors?: PredictionFactor[];
   bestHours?: { hour: number; avgEngagement: number; tweets: number }[];
   advice?: { icon: string; text: string; gain: number | null }[];
   comparables?: ComparableTweet[];
+  probabilities?: {
+    aboveUsualPercent: number;
+    top10Percent: number;
+    belowUsualPercent: number;
+  };
+  drivers?: PredictionDriver[];
+  timingForecast?: TimingForecast[];
+  audienceSignal?: {
+    activityIndex: number;
+    confidencePercent: number;
+    interactionsAnalyzed: number;
+  };
+  model?: {
+    featuresConsidered: number;
+    ensembleWeights: { baseline: number; ridge: number; neighbors: number };
+    backtest: {
+      holdoutSize: number;
+      meanAbsoluteError: number | null;
+      logRmse: Record<string, number | null>;
+    };
+    dataQuality: {
+      rawSampleSize: number;
+      matureSampleSize: number;
+      effectiveSampleSize: number;
+      viewCoveragePercent: number;
+      behaviorCoveragePercent: number;
+      completenessPercent: number;
+      zeroEngagementPercent: number;
+      outlierPercent: number;
+      medianTweetAgeHours: number;
+    };
+    recencyHalfLifeDays: number;
+    maturityModelHours: number;
+  };
   generatedAt: string;
 }
 
