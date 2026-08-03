@@ -44,8 +44,15 @@ export const SUBSCRIPTION_FEATURES: SubscriptionFeature[] = [
   },
   {
     icon: 'time',
-    title: 'Meilleur moment pour publier',
-    text: 'On te prévient à l\'heure où ton audience est la plus réactive.',
+    title: 'Publications programmées',
+    text: 'Écris quand tu veux, on publie à l\'heure choisie — ou au meilleur créneau de ton audience.',
+    minTier: 'plus',
+    highlight: true,
+  },
+  {
+    icon: 'create',
+    title: 'Modifier un tweet publié',
+    text: '30 minutes pour corriger une faute, avec un historique consultable par tous.',
     minTier: 'plus',
     highlight: true,
   },
@@ -68,6 +75,42 @@ export const SUBSCRIPTION_FEATURES: SubscriptionFeature[] = [
     icon: 'stats-chart',
     title: 'Stats créateur',
     text: 'Vues et engagement : comprends ce qui fonctionne vraiment.',
+    minTier: 'plus',
+  },
+
+  {
+    icon: 'at',
+    title: 'Marché des pseudos',
+    text: 'Réserve un nom d\'utilisateur libre, vends le tien ou rachète celui que tu veux.',
+    minTier: 'plus',
+    highlight: true,
+  },
+
+  // ── Renseignements ────────────────────────────────────────────────────
+  {
+    icon: 'eye',
+    title: 'Qui a consulté ton profil',
+    text: 'Les visiteurs des 7 derniers jours — et la possibilité de naviguer en discret.',
+    minTier: 'plus',
+    highlight: true,
+  },
+  {
+    icon: 'shield-half',
+    title: 'Alerte usurpation',
+    text: 'On surveille les comptes qui copient ton pseudo, ta photo ou ta bio. Signalement en un tap.',
+    minTier: 'plus',
+    highlight: true,
+  },
+  {
+    icon: 'flame',
+    title: 'Alerte quand ton tweet décolle',
+    text: 'Une notif dès qu\'un tweet va nettement plus vite que ton rythme habituel.',
+    minTier: 'plus',
+  },
+  {
+    icon: 'compass',
+    title: 'Radar des comptes qui montent',
+    text: 'Repère les comptes en croissance dans ton univers avant tout le monde.',
     minTier: 'plus',
   },
 
@@ -99,6 +142,13 @@ export const SUBSCRIPTION_FEATURES: SubscriptionFeature[] = [
   },
 
   // ── Réservé au palier Pro ─────────────────────────────────────────────
+  {
+    icon: 'lock-closed',
+    title: 'Vendre tes contenus à l\'unité',
+    text: 'Verrouille un tweet, une story ou un replay derrière un prix : tu gardes 70 % de chaque vente.',
+    minTier: 'pro',
+    highlight: true,
+  },
   {
     icon: 'cloud-offline',
     title: 'Mode hors ligne',

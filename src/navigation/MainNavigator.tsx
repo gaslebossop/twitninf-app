@@ -18,6 +18,12 @@ import AccountStatsScreen from '../screens/AccountStatsScreen';
 import PredictiveAnalyticsScreen from '../screens/PredictiveAnalyticsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import SupportTicketScreen from '../screens/SupportTicketScreen';
+import CreatorStudioScreen from '../screens/CreatorStudioScreen';
+import PaidContentSalesScreen from '../screens/PaidContentSalesScreen';
+import ScheduledPostsScreen from '../screens/ScheduledPostsScreen';
+import ProfileInsightsScreen from '../screens/ProfileInsightsScreen';
+import UsernameMarketScreen from '../screens/UsernameMarketScreen';
+import EditTweetScreen from '../screens/EditTweetScreen';
 import MonetizationScreen from '../screens/MonetizationScreen';
 import NewEconomyScreen from '../screens/NewEconomyScreen';
 import TradingScreen from '../screens/TradingScreen';
@@ -155,6 +161,16 @@ export type MainStackParamList = {
   PredictiveAnalytics: { draft?: string } | undefined;
   Support: undefined;
   SupportTicket: { ticketId: string };
+
+  // Offre créateur
+  CreatorStudio: undefined;
+  PaidContentSales: undefined;
+  ScheduledPosts: undefined;
+  /** `tab` : onglet ouvert d'emblée, quand on arrive depuis le studio. */
+  ProfileInsights: { tab?: 'visitors' | 'impersonation' | 'rising' | 'velocity' } | undefined;
+  UsernameMarket: undefined;
+  /** `content` : texte actuel, pour ne pas rouvrir l'éditeur sur un champ vide. */
+  EditTweet: { tweetId: string; content?: string };
 };
 
 const MainStack = createStackNavigator<MainStackParamList>();
@@ -695,6 +711,39 @@ function MainNavigatorInner() {
         name="SupportTicket"
         component={SupportTicketScreen}
         options={{ headerShown: false }}
+      />
+
+      {/* Offre créateur — ventes de contenu, programmation, renseignements,
+          marché des pseudos et modification d'un tweet publié. */}
+      <MainStack.Screen
+        name="CreatorStudio"
+        component={CreatorStudioScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="PaidContentSales"
+        component={PaidContentSalesScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="ScheduledPosts"
+        component={ScheduledPostsScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="ProfileInsights"
+        component={ProfileInsightsScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="UsernameMarket"
+        component={UsernameMarketScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="EditTweet"
+        component={EditTweetScreen}
+        options={{ presentation: 'modal', headerShown: false }}
       />
 
     </MainStack.Navigator>

@@ -55,6 +55,7 @@ import { useFunctionalEventFeatures } from '../hooks/useFunctionalEventFeatures'
 import { FunctionalEventBanner } from '../components/FunctionalEventBanner';
 import StoriesTray from '../components/StoriesTray';
 import storiesService from '../services/storiesService';
+import PaywallSetupSheet from '../components/PaywallSetupSheet';
 
 // ─── Palette ── identité « Encre » centralisée (src/theme) ───────────────────
 import { colors, glow, withAlpha } from '../theme';
@@ -138,6 +139,8 @@ export default function TweetsScreen() {
   const { trackTweetInteraction, trackProfileInteraction, trackSettingChange, trackCustomAction } = useTweetScreenTracking('TweetsScreen');
 
   const [tweets, setTweets] = useState<Tweet[]>([]);
+  /** Tweet dont on est en train de fixer le prix, `null` quand la feuille est fermée. */
+  const [paywallTarget, setPaywallTarget] = useState<string | null>(null);
   // Miroir en ref : permet aux handlers d'être stables (donc mémoïsables et
   // transmissibles aux lignes) tout en lisant toujours la liste à jour.
   const tweetsRef = useRef<Tweet[]>([]);
@@ -809,8 +812,28 @@ export default function TweetsScreen() {
 
     // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
     // propre tweet, le menu ne propose que ce qui reste pertinent.
+    // La modification n'est proposée que dans sa fenêtre de 30 minutes : un
+    // bouton toujours visible qui échoue une fois sur deux vaut moins qu'un
+    // bouton absent. Le serveur revérifie de toute façon (palier, fenêtre,
+    // nombre de révisions) — ce filtre n'est que du confort d'affichage.
+    const publishedAt = tweet?.created_at ? new Date(tweet.created_at).getTime() : 0;
+    const withinEditWindow = publishedAt > 0 && Date.now() - publishedAt < 30 * 60 * 1000;
+
     const entries: { label: string; onPress: () => void; destructive?: boolean }[] = isOwnTweet
       ? [
+          ...(withinEditWindow
+            ? [{
+              label: 'Modifier',
+              onPress: () => (navigation as any).navigate('EditTweet', {
+                tweetId,
+                content: tweet?.content,
+              }),
+            }]
+            : []),
+          {
+            label: (tweet as any)?.paid_content ? 'Gérer le prix' : 'Rendre payant',
+            onPress: () => setPaywallTarget(tweetId),
+          },
           { label: 'Partager', onPress: () => handleShare(tweetId) },
           { label: 'Supprimer', onPress: () => handleDeleteTweet(tweetId), destructive: true },
         ]
@@ -1241,6 +1264,15 @@ export default function TweetsScreen() {
             <View style={{ height: 120 }} />
           </>
         }
+      />
+
+      {/* Mise en vente d'un de ses tweets — déclenchée depuis le menu « … ». */}
+      <PaywallSetupSheet
+        visible={!!paywallTarget}
+        contentType="tweet"
+        contentId={paywallTarget || ''}
+        onClose={() => setPaywallTarget(null)}
+        onDone={() => onRefresh()}
       />
     </SafeAreaView>
     </ScreenBackground>

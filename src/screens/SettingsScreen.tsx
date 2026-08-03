@@ -295,6 +295,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             )}
 
             {renderActionButton(
+              'Studio créateur',
+              'Ventes, programmation, visiteurs, radar et marché des pseudos',
+              'briefcase-outline',
+              () => navigation.navigate('CreatorStudio')
+            )}
+
+            {renderActionButton(
               'Analytics prédictifs',
               'Estimez la portée d\'un tweet avant de le publier (Pro)',
               'trending-up-outline',

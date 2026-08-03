@@ -24,6 +24,7 @@ import { useTweetAutoTranslation } from '../../contexts/ReadingLanguageContext';
 import VerifiedBadge from '../VerifiedBadge';
 import PremiumDisplayName from '../PremiumDisplayName';
 import { STORY_GRADIENT } from '../StoryRing';
+import PaidContentLock from '../PaidContentLock';
 import { certifiedNameColors, type ProfileCustomization } from '../../services/profileCustomizationService';
 import { colors } from '../../theme';
 import ReactionBurst, {
@@ -396,6 +397,19 @@ function TweetRow({
                 tweetId={String(translationSource?.id || tweet.id)}
                 active={activeTranslation as any}
                 onSelect={setActiveTranslation}
+              />
+            )}
+
+            {/* Contenu payant : le texte affiché plus haut n'est déjà qu'un
+                aperçu envoyé par le serveur — le reste n'a jamais été
+                téléchargé. Le verrou propose de l'acheter, il ne masque rien. */}
+            {!!(tweet as any).paid_content && !(tweet as any).paid_content.has_access && (
+              <PaidContentLock
+                lock={(tweet as any).paid_content}
+                compact
+                // Après l'achat, on ouvre le tweet : c'est là que le serveur
+                // renverra le contenu complet, désormais accessible.
+                onUnlocked={() => onAction({ type: 'open', tweetId: tweet.id })}
               />
             )}
 
