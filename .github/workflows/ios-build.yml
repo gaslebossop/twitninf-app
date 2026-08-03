@@ -51,6 +51,18 @@ jobs:
             echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
           } >> .env
 
+          # Le `.env` seul ne suffit pas : la phase "Bundle React Native code"
+          # de `xcodebuild archive` ne tourne pas forcement avec le repo en
+          # working directory, donc le chargement dotenv d'Expo peut le
+          # manquer silencieusement (BASE_URL retombe alors sur le fallback
+          # hors ligne, sans erreur). $GITHUB_ENV propage ces variables telles
+          # quelles dans process.env de TOUTES les etapes suivantes du job,
+          # y compris celle-ci, quel que soit le repertoire courant.
+          {
+            echo "EXPO_PUBLIC_API_URL=$API_URL"
+            echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
+          } >> "$GITHUB_ENV"
+
       - name: Select latest Xcode
         run: |
           set -euo pipefail
