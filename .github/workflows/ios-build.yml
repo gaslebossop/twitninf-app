@@ -1,0 +1,129 @@
+name: Build iOS Unsigned
+
+# Build iOS non signe sur un runner macOS GitHub, pour contourner
+# l'exigence Xcode >= 16.1 de React Native 0.81 que la VM locale
+# (Xcode 15.1) ne peut pas satisfaire — et, depuis le passage a
+# react-native-nitro-rtmp-publisher, le plancher SDK iOS 26 de HaishinKit
+# 2.2.5 (voir le commentaire sur `runs-on` plus bas).
+#
+# L'artefact produit est un .app non signe : le signer ensuite avec
+# Sideloadly (Apple ID gratuit) pour l'installer sur un appareil.
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    # `react-native-nitro-rtmp-publisher` (remplace @api.video/react-native-
+    # livestream — voir GoLiveScreen.tsx) vendorise HaishinKit 2.2.5, qui
+    # reference kVTCompressionPropertyKey_VariableBitRate derriere un
+    # @available(iOS 26, ...) : ce symbole n'existe dans AUCUN SDK avant
+    # iOS 26, donc ca ne compile qu'avec le SDK fourni par Xcode 26 —
+    # meme si l'app cible reellement iOS 15.1 (deploymentTarget). C'est
+    # l'inverse de l'ancienne contrainte de ce workflow (qui evitait Xcode 26
+    # a cause d'un crash du compilateur Swift sur le HaishinKit 1.9.x de
+    # l'ancienne lib) : cette lib-ci n'a plus ce probleme, donc `macos-latest`
+    # convient. Si un futur bump d'une dependance replante sous Xcode 26,
+    # verifier d'abord si c'est ce meme genre de plancher SDK avant de
+    # chercher a repined une version anterieure d'Xcode.
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Les domaines de l'API et du serveur de stream ne sont plus ecrits en
+      # dur dans le code (voir src/config/api.ts et src/services/liveService.ts) —
+      # le depot est public. `EXPO_PUBLIC_*` est inline par Metro au moment du
+      # bundle JS, qui a lieu PENDANT `xcodebuild archive` (etape "Archive
+      # unsigned" plus bas) : ce .env doit donc exister avant elle, peu importe
+      # l'etape exacte tant que c'est fait a temps.
+      - name: Configure les domaines (secrets du depot)
+        env:
+          API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          STREAM_SERVER: ${{ secrets.EXPO_PUBLIC_STREAM_SERVER }}
+        run: |
+          set -euo pipefail
+          if [ -z "$API_URL" ] || [ -z "$STREAM_SERVER" ]; then
+            echo "::error::EXPO_PUBLIC_API_URL et/ou EXPO_PUBLIC_STREAM_SERVER absents des secrets du depot (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          {
+            echo "EXPO_PUBLIC_API_URL=$API_URL"
+            echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
+          } >> .env
+
+      - name: Select latest Xcode
+        run: |
+          set -euo pipefail
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Selection de $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # --legacy-peer-deps : l'arbre React 19 / RN 0.81 declenche un
+      # ERESOLVE sur @react-native-community/datetimepicker sinon.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Prebuild iOS
+        run: npx expo prebuild --platform ios --clean
+
+      # Etape explicite : `expo prebuild` ne lance pas toujours pod install
+      # sur CI, et sans les Pods aucun .xcworkspace n'est genere.
+      - name: Install pods
+        working-directory: ios
+        run: pod install
+
+      # Le nom du workspace est derive du nom de l'app et non code en dur,
+      # pour ne pas casser si celui-ci change. -derivedDataPath est
+      # obligatoire : par defaut xcodebuild ecrit dans ~/Library/Developer
+      # et l'upload ne trouverait rien a publier.
+      # `archive` et non `build` : l'action archive execute la phase install
+      # (strip, post-processing de deploiement) et produit l'app telle
+      # qu'elle serait distribuee, dans Products/Applications. C'est la
+      # recette validee manuellement sur la machine de dev.
+      - name: Archive unsigned
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME="${WORKSPACE%.xcworkspace}"
+          echo "Workspace: $WORKSPACE — Scheme: $SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$PWD/build/$SCHEME.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            archive
+
+      # Empaquetage sur macOS et non cote Windows : le zip de Windows ecrit
+      # les chemins avec des antislashs, omet les entrees de repertoire et
+      # perd les permissions Unix (bit executable du binaire). AltStore
+      # rejette alors l'archive avec « invalid format ». `zip -y` preserve
+      # en prime les liens symboliques des frameworks.
+      - name: Package IPA
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          APP=$(ls -d build/*.xcarchive/Products/Applications/*.app | head -1)
+          NAME=$(basename "$APP" .app)
+          rm -rf Payload
+          mkdir Payload
+          cp -r "$APP" Payload/
+          zip -r "$NAME.ipa" Payload
+          unzip -l "$NAME.ipa" | tail -3
+          ls -lh "$NAME.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: ios/*.ipa
+          if-no-files-found: error

@@ -1,0 +1,1722 @@
+import { fonts } from '../theme';
+import { ScreenBackground } from '../components/ui';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  SafeAreaView,
+  Platform,
+  RefreshControl,
+  UIManager,
+  StatusBar,
+  Image,
+  ActionSheetIOS,
+  Alert,
+  AppState,
+  type LayoutChangeEvent,
+} from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  interpolate,
+  FadeIn,
+} from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { apiService, progressiveRecommendationService } from '../services';
+import { neuralRankService } from '../services/neuralRankService';
+import { Tweet, RecommendationItem, RecommendationRequest, ProgressiveRecommendationRequest, ProgressiveRecommendationItem } from '../types/api';
+import Avatar from '../components/Avatar';
+import BanAlertBanner from '../components/BanAlertBanner';
+import PatchNotesModal from '../components/PatchNotesModal';
+import ClickableMentions from '../components/ClickableMentions';
+import { useAuth } from '../contexts/AuthContext';
+import { useOffline } from '../contexts/OfflineContext';
+import { cacheFeed, getCachedFeed } from '../services/offlineService';
+import OfflineBanner from '../components/OfflineBanner';
+import { registerForPushNotifications } from '../services/push';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trackingService } from '../services/trackingService';
+import { useTweetScreenTracking } from '../hooks/useBehaviorTracking';
+import { useEventStyles } from '../hooks/useEventStyles';
+import { EventBanner } from '../components/EventBanner';
+import ReportSheet from '../components/ReportSheet';
+import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
+import TweetSkeleton from '../components/feed/TweetSkeleton';
+import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
+import { useFunctionalEventFeatures } from '../hooks/useFunctionalEventFeatures';
+import { FunctionalEventBanner } from '../components/FunctionalEventBanner';
+import StoriesTray from '../components/StoriesTray';
+import storiesService from '../services/storiesService';
+
+// ─── Palette ── identité « Encre » centralisée (src/theme) ───────────────────
+import { colors, glow, withAlpha } from '../theme';
+
+const C = {
+  bg: colors.bg,
+  bgModal: colors.surface,
+  bgHover: colors.surfaceHover,
+  border: colors.border,
+  borderSubtle: colors.borderSubtle,
+  accent: colors.accent,
+  accentHover: colors.accentHover,
+  accentMuted: colors.accentMuted,
+  green: colors.success,
+  red: colors.red,
+  like: colors.like,
+  gold: colors.gold,
+  textPrimary: colors.textPrimary,
+  textSecondary: colors.textSecondary,
+  textMuted: colors.textMuted,
+  white: colors.white,
+};
+
+/**
+ * Fusionne une nouvelle page de tweets dans la liste existante en écartant les
+ * id déjà présents.
+ *
+ * Sans cette déduplication, `keyExtractor` (qui ne retourne que `item.id`)
+ * produisait des clés dupliquées dans la FlatList dès qu'une page se
+ * chevauchait avec la précédente — ce qui arrive « parfois » côté API
+ * (fenêtre de pagination décalée, recommandation déjà vue réinjectée) et
+ * systématiquement lors d'une course entre un rafraîchissement et une
+ * pagination encore en vol.
+ */
+function mergeUniqueTweets(base: Tweet[], incoming: Tweet[]): Tweet[] {
+  const seen = new Set(base.map((t) => t.id));
+  const merged = base.slice();
+  for (const tweet of incoming) {
+    if (!tweet?.id || seen.has(tweet.id)) continue;
+    seen.add(tweet.id);
+    merged.push(tweet);
+  }
+  return merged;
+}
+
+/** Écarte les doublons internes à une même page avant tout affichage. */
+function dedupeTweets(list: Tweet[]): Tweet[] {
+  const seen = new Set<string>();
+  const out: Tweet[] = [];
+  for (const tweet of list) {
+    if (!tweet?.id || seen.has(tweet.id)) continue;
+    seen.add(tweet.id);
+    out.push(tweet);
+  }
+  return out;
+}
+
+export default function TweetsScreen() {
+  const navigation = useNavigation();
+  const { user } = useAuth();
+  const { styles: eventStyles, theme: currentTheme } = useEventStyles();
+
+  // Mode hors ligne (Pro) : cache du fil et bandeau d'état.
+  const {
+    enabled: offlineEnabled,
+    online,
+    pending: pendingTweets,
+    pendingActions,
+    queueAction,
+  } = useOffline();
+  const offlineUserId = user?.id ? String(user.id) : '';
+  /** Le fil courant vient-il du cache ? Empêche un appelant en amont de
+      réafficher une erreur que le repli vient justement d'écarter. */
+  const servedFromCacheRef = useRef(false);
+
+  const { events: functionalEvents, features: functionalFeatures, hasActiveEvents } = useFunctionalEventFeatures({
+    pageName: 'tweets',
+    refreshInterval: 30000,
+  });
+
+  const { trackTweetInteraction, trackProfileInteraction, trackSettingChange, trackCustomAction } = useTweetScreenTracking('TweetsScreen');
+
+  const [tweets, setTweets] = useState<Tweet[]>([]);
+  // Miroir en ref : permet aux handlers d'être stables (donc mémoïsables et
+  // transmissibles aux lignes) tout en lisant toujours la liste à jour.
+  const tweetsRef = useRef<Tweet[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // Incrémenté au pull-to-refresh pour recharger la barre de stories.
+  const [storiesRefresh, setStoriesRefresh] = useState(0);
+  // Auteurs ayant une story active (non expirée) : alimente l'anneau autour
+  // de l'avatar dans le fil, distinct du badge de vérification.
+  const [storyUserIds, setStoryUserIds] = useState<Set<string>>(new Set());
+  const [unseenStoryUserIds, setUnseenStoryUserIds] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'following' | 'forYou'>('forYou');
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Cible du signalement en cours ; null = feuille fermée.
+  const [reportTarget, setReportTarget] = useState<{ id: string; label?: string } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalTweets, setTotalTweets] = useState(0);
+  // Verrous d'action : en `ref`, pas en state — ils ne changent rien à
+  // l'affichage et provoquaient deux rendus complets du fil par like.
+  const likeLockRef = useRef<{ [key: string]: boolean }>({});
+  const retweetLockRef = useRef<{ [key: string]: boolean }>({});
+
+  // Numéro de génération de la requête en cours pour l'onglet actif.
+  // Un rafraîchissement l'incrémente ; une pagination lancée avant lui capture
+  // l'ancienne valeur et, en résolvant après coup, se voit ignorée au lieu de
+  // ré-ajouter des tweets déjà présents dans la liste fraîchement rechargée —
+  // c'était la cause des doublons d'id vus « parfois » au reload.
+  const fetchGenerationRef = useRef(0);
+
+  // Cache par onglet : « Pour toi » et « Abonnements » partageaient un seul
+  // tableau, si bien que changer d'onglet affichait le contenu de l'autre.
+  const tabCacheRef = useRef<Record<'following' | 'forYou', Tweet[]>>({
+    following: [],
+    forYou: [],
+  });
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [currentAlgorithm, setCurrentAlgorithm] = useState<'neural_rank'>('neural_rank');
+  const [algorithmStats, setAlgorithmStats] = useState<{ [key: string]: number }>({});
+  const [displayedAlgorithm, setDisplayedAlgorithm] = useState<string>('neural_rank');
+
+  // ─── Indicateur d'onglet — thread UI (auparavant useNativeDriver: false) ──
+  //
+  // La position de la pastille était auparavant recalculée à la main à partir
+  // de la largeur de la barre, du padding et du gap. Deux défauts :
+  //  - les insets d'un enfant absolu ne se mesurent pas dans le même repère
+  //    que le `x` d'un enfant en flux, si bien que la pastille pouvait se
+  //    retrouver décalée du padding ;
+  //  - au premier rendu la largeur vaut 0, donc la pastille apparaissait
+  //    d'un coup à la bonne place au lieu de se poser.
+  // On mesure donc chaque onglet et on pilote la pastille sur ces valeurs, à
+  // l'intérieur d'une piste `absoluteFill` qui, elle, ignore le padding.
+  const tabIndicator = useSharedValue(activeTab === 'forYou' ? 1 : 0);
+  const tabLayouts = useSharedValue<{ x: number; y: number; width: number; height: number }[]>([
+    { x: 0, y: 0, width: 0, height: 0 },
+    { x: 0, y: 0, width: 0, height: 0 },
+  ]);
+  /** Passe à 1 quand les deux onglets sont mesurés : évite le pop. */
+  const tabsReady = useSharedValue(0);
+
+  const handleTabLayout = useCallback(
+    (index: number) => (e: LayoutChangeEvent) => {
+      const { x, y, width, height } = e.nativeEvent.layout;
+      const next = tabLayouts.value.slice();
+      next[index] = { x, y, width, height };
+      tabLayouts.value = next;
+      if (next.every((l) => l.width > 0) && tabsReady.value === 0) {
+        tabsReady.value = withTiming(1, { duration: 140 });
+      }
+    },
+    [tabLayouts, tabsReady],
+  );
+
+  const tabIndicatorStyle = useAnimatedStyle(() => {
+    const [left, right] = tabLayouts.value;
+    if (!left.width || !right.width) {
+      return {
+        opacity: 0,
+        width: 0,
+        height: 0,
+        transform: [{ translateX: 0 }, { translateY: 0 }] as const,
+      };
+    }
+    const p = tabIndicator.value;
+    return {
+      opacity: tabsReady.value,
+      width: interpolate(p, [0, 1], [left.width, right.width]),
+      height: interpolate(p, [0, 1], [left.height, right.height]),
+      transform: [
+        { translateX: interpolate(p, [0, 1], [left.x, right.x]) },
+        { translateY: interpolate(p, [0, 1], [left.y, right.y]) },
+      ] as const,
+    };
+  });
+
+  const animateTabSwitch = useCallback((tab: 'following' | 'forYou') => {
+    tabIndicator.value = withSpring(tab === 'forYou' ? 1 : 0, {
+      damping: 20,
+      stiffness: 220,
+    });
+  }, [tabIndicator]);
+
+  // Un seul traqueur de vues pour tout le fil. Auparavant chaque tweet montait
+  // sa propre instance ET un setInterval(500ms) avec measureInWindow : à 150
+  // tweets, ~300 allers-retours de pont par seconde, et aucun regroupement
+  // possible puisque le cache de déduplication était par ligne.
+  // FlatList qualifie déjà l'impression après 500 ms ; le batcher doit donc
+  // l'enregistrer immédiatement au lieu d'ajouter un second délai de 2 s.
+  const { trackView } = useOptimizedViewTracking({
+    minViewTime: 0,
+    debounceMs: 600,
+    batchSize: 20,
+  });
+  const feedImpressionsRef = useRef<Set<string>>(new Set());
+
+  const sendNotificationToken = async () => {
+    try {
+      const projectId = '341da021-111f-4a0c-9f54-0b5f4c9c3965';
+      const notificationToken = await registerForPushNotifications(projectId);
+      if (notificationToken) {
+        await apiService.updateNotificationToken(notificationToken);
+      }
+    } catch (error) { }
+  };
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+    loadSavedAlgorithm();
+    sendNotificationToken();
+  }, []);
+
+  const loadSavedAlgorithm = async () => {
+    // NeuralRank v2 est le seul algorithme — on force et on sauvegarde
+    try { await AsyncStorage.setItem('selectedAlgorithm', 'neural_rank'); } catch { }
+    return 'neural_rank';
+  };
+
+  // Note : le chargement au focus est assuré uniquement par le `useFocusEffect`
+  // plus bas. Un `navigation.addListener('focus')` faisait ici double emploi et
+  // déclenchait deux requêtes concurrentes au premier affichage.
+
+  /**
+   * Repli hors ligne (Pro) : plutôt qu'un fil vide et « Vérifiez votre
+   * connexion », on ressert la dernière copie reçue. Ne s'applique QUE sur un
+   * rafraîchissement raté — en pagination, un échec ne doit pas remplacer ce
+   * qui est déjà à l'écran par du cache.
+   *
+   * ⚠ À appeler sur TOUS les chemins d'échec, pas seulement dans un `catch` :
+   * `neuralRankService` intercepte l'erreur réseau et renvoie
+   * `{ success: false, error }` au lieu de la propager. Ne brancher le repli
+   * que sur les exceptions le rendait inopérant sur l'onglet « Pour toi » —
+   * l'écran affichait le message d'erreur réseau alors qu'un cache valide
+   * était disponible.
+   */
+  const fallbackToCache = useCallback(async (): Promise<boolean> => {
+    if (!offlineEnabled || !offlineUserId) return false;
+    const cached = await getCachedFeed(offlineUserId);
+    if (!cached) return false;
+    setTweets(cached.tweets);
+    tweetsRef.current = cached.tweets;
+    setError(null);
+    setHasMore(false);
+    servedFromCacheRef.current = true;
+    return true;
+  }, [offlineEnabled, offlineUserId]);
+
+  /**
+   * Hors ligne avec un cache sous la main : inutile d'attendre l'expiration
+   * d'une requête vouée à échouer. On sert directement, la coupure est déjà
+   * connue.
+   */
+  const serveCacheIfOffline = useCallback(async (): Promise<boolean> => {
+    if (!offlineEnabled || online) return false;
+    return fallbackToCache();
+  }, [offlineEnabled, online, fallbackToCache]);
+
+  /** Enregistre le fil affiché pour la prochaine coupure. */
+  const rememberFeed = useCallback(
+    (list: Tweet[]) => {
+      if (!offlineEnabled || !offlineUserId || list.length === 0) return;
+      cacheFeed(offlineUserId, list);
+    },
+    [offlineEnabled, offlineUserId],
+  );
+
+  const fetchTweets = async (refresh: boolean = false) => {
+    if (refresh && (await serveCacheIfOffline())) { setLoading(false); return; }
+    // Capturée avant l'appel réseau : si un rafraîchissement démarre pendant
+    // que cette requête est en vol, sa génération devient obsolète et son
+    // résultat est ignoré au retour plutôt que fusionné dans la mauvaise liste.
+    if (refresh) fetchGenerationRef.current += 1;
+    const generation = fetchGenerationRef.current;
+
+    try {
+      if (refresh) { setOffset(0); setHasMore(true); setCurrentPage(1); }
+      setLoadingMore(true);
+      setError(null);
+
+      const currentOffset = refresh ? 0 : offset;
+
+      // On utilise le nouvel endpoint IA pour les abonnements
+      const response = await apiService.getFollowingRecommendations({
+        limit: 10,
+        offset: currentOffset
+      });
+
+      if (generation !== fetchGenerationRef.current) return;
+
+      if (response && response.success && response.data && response.data.recommendations && Array.isArray(response.data.recommendations)) {
+        const normalizedTweets: Tweet[] = [];
+        for (const rec of response.data.recommendations) {
+          const t = normalizeRecommendationToTweet(rec);
+          if (t) normalizedTweets.push(t);
+        }
+
+        if (refresh) {
+          const fresh = dedupeTweets(normalizedTweets);
+          setTweets(fresh);
+          rememberFeed(fresh);
+        } else {
+          setTweets(prev => mergeUniqueTweets(prev, normalizedTweets));
+        }
+
+        if (response.data.pagination) {
+          setHasMore(response.data.pagination.hasMore);
+          setOffset(currentOffset + normalizedTweets.length);
+          setTotalTweets(response.data.pagination.total);
+          setTotalPages((response.data.pagination as any).totalPages || Math.ceil(response.data.pagination.total / 10));
+          if (!refresh) setCurrentPage((response.data.pagination as any).currentPage || Math.floor(currentOffset / 10) + 1);
+        }
+      } else {
+        if (refresh) { setError('Aucun tweet trouvé'); setTweets([]); }
+      }
+    } catch (err) {
+      if (refresh && !(await fallbackToCache())) {
+        setError('Erreur de connexion');
+        setTweets([]);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const normalizeRecommendationToTweet = (rec: any): Tweet | null => {
+    try {
+      let tweetData = rec;
+      if (rec.tweet && typeof rec.tweet === 'object') tweetData = rec.tweet;
+      const id = tweetData.id || tweetData._id || rec.author?.id || `rec_${Date.now()}_${Math.random()}`;
+      const content = tweetData.content || tweetData.text || tweetData.message || rec.content || '';
+      const author = tweetData.author || rec.author;
+      if (!id) return null;
+      const isRetweet = tweetData.is_retweet || tweetData.tweet_type === 'retweet' || rec.is_retweet;
+      const isQuote = tweetData.is_quote || tweetData.tweet_type === 'quote' || rec.is_quote;
+      if (!isRetweet && !isQuote && (!content || typeof content !== 'string' || content.trim().length === 0)) return null;
+      if (!author || !author.id) return null;
+      return {
+        id: String(id), content: String(content).trim(),
+        author: { 
+          id: String(author.id), 
+          username: author.username || author.handle || `user_${author.id}`, 
+          full_name: author.full_name || author.name || author.displayName || author.username || 'Utilisateur', 
+          avatar: author.avatar || author.profile_image || author.avatarUrl, 
+          verified: author.verified || false,
+          verification_style: author.verification_style || 'default',
+          premium: author.premium || false,
+          // L'habillage d'un compte le suit dans le fil : sans ce report, la
+          // normalisation le jetait et le nom retombait mat, alors que l'API le
+          // renvoie bien avec l'auteur.
+          profile_customization: author.profile_customization || null,
+          stats: author.stats || {}
+        } as any,
+        created_at: tweetData.created_at || tweetData.createdAt || tweetData.timestamp || rec.created_at || new Date().toISOString(),
+        stats: { likes: Number(tweetData.stats?.likes || rec.stats?.likes || 0), retweets: Number(tweetData.stats?.retweets || rec.stats?.retweets || 0), replies: Number(tweetData.stats?.replies || rec.stats?.replies || 0), views: Number(tweetData.stats?.views || rec.stats?.views || 0) },
+        user_interaction: { is_liked: Boolean(tweetData.user_interaction?.is_liked || false), is_retweeted: Boolean(tweetData.user_interaction?.is_retweeted || false) },
+        mentions: tweetData.mentions || rec.mentions || [],
+        hashtags: tweetData.hashtags || rec.hashtags || [],
+        media_urls: tweetData.media_urls || rec.media_urls || [],
+        ...(rec.score !== undefined && { _recommendation_score: Number(rec.score), _recommendation_final_score: Number(rec.finalScore || rec.score), _recommendation_confidence: Number(rec.confidence || 0), _recommendation_algorithm: rec.algorithm || currentAlgorithm }),
+        is_ad: Boolean(tweetData.is_ad || rec.is_ad || false),
+        ad_data: tweetData.ad_data || rec.ad_data,
+        parent_tweet_id: tweetData.parent_tweet_id || rec.parent_tweet_id || null,
+        originalTweet: tweetData.originalTweet || rec.originalTweet || null,
+        // « Traduction (bêta) » : cette normalisation recopie les champs un à
+        // un, donc un champ oublié ici disparaît du fil même quand l'API
+        // l'envoie — c'est ce qui laissait les tweets en version originale
+        // alors que l'écran de détail, lui, les traduisait.
+        translation_enabled: Boolean(tweetData.translation_enabled ?? rec.translation_enabled ?? false),
+      } as any;
+    } catch { return null; }
+  };
+
+  const fetchProgressiveRecommendations = async (forceRefresh: boolean = true) => {
+    try {
+      setRecommendationsLoading(true);
+      setError(null);
+      const options: ProgressiveRecommendationRequest = { limit: 20, offset: forceRefresh ? 0 : tweets.length, includeUser: true, includeStats: true, group: 'auto' };
+      const response = await progressiveRecommendationService.getProgressiveRecommendations(options);
+      if (response && response.success && response.data && response.data.recommendations && Array.isArray(response.data.recommendations)) {
+        const normalizedTweets: Tweet[] = [];
+        for (const rec of response.data.recommendations) {
+          const t = progressiveRecommendationService.normalizeProgressiveRecommendationToTweet(rec);
+          if (t) normalizedTweets.push(t);
+        }
+        if (normalizedTweets.length === 0) { if (forceRefresh) { setError('Aucune recommandation progressive valide'); setTweets([]); } return; }
+        if (forceRefresh) setTweets(dedupeTweets(normalizedTweets));
+        else setTweets(prev => mergeUniqueTweets(prev, normalizedTweets));
+        setCurrentAlgorithm('progressive');
+        setDisplayedAlgorithm('progressive');
+      } else {
+        if (forceRefresh) setError('Erreur lors de la récupération des recommandations progressives');
+      }
+    } catch { if (forceRefresh) setError('Erreur lors de la récupération des recommandations progressives'); }
+    finally { setRecommendationsLoading(false); }
+  };
+
+  const fetchNeuralRankRecommendations = async (forceRefresh: boolean = true) => {
+    if (forceRefresh && (await serveCacheIfOffline())) { setLoading(false); return; }
+    // Voir fetchTweets : une pagination lancée avant un rafraîchissement ne
+    // doit pas réinjecter ses résultats une fois le rafraîchissement terminé.
+    if (forceRefresh) fetchGenerationRef.current += 1;
+    const generation = fetchGenerationRef.current;
+
+    try {
+      setRecommendationsLoading(true);
+      setError(null);
+
+      const currentOffset = forceRefresh ? 0 : offset;
+      const response = await neuralRankService.getRecommendations({
+        mode: 'for_you',
+        limit: 20,
+        offset: currentOffset,
+      });
+
+      if (generation !== fetchGenerationRef.current) return;
+
+      // `success: false` couvre aussi la coupure réseau (le service l'avale) :
+      // on tente le cache AVANT d'afficher quoi que ce soit d'alarmant.
+      if (!response?.success && forceRefresh && (await fallbackToCache())) return;
+
+      if (response?.success && Array.isArray(response.data?.recommendations)) {
+        const tweets = dedupeTweets(
+          response.data.recommendations.filter(
+            (t: any) => t && t.id && t.author && t.author.id
+          )
+        );
+
+        if (tweets.length === 0 && forceRefresh) {
+          setError('Aucune recommandation NeuralRank disponible');
+          setTweets([]);
+          return;
+        }
+
+        if (forceRefresh) {
+          setTweets(tweets);
+          rememberFeed(tweets);
+        } else {
+          setTweets(prev => mergeUniqueTweets(prev, tweets));
+        }
+
+        if (response.data.pagination) {
+          setHasMore(response.data.pagination.hasMore);
+          setOffset(currentOffset + tweets.length);
+          setTotalTweets(response.data.pagination.total);
+        }
+
+        setCurrentAlgorithm('neural_rank');
+        setDisplayedAlgorithm('neural_rank');
+      } else {
+        if (forceRefresh) setError(response?.error || 'Erreur NeuralRank');
+      }
+    } catch {
+      if (forceRefresh && !(await fallbackToCache())) {
+        setError('Erreur de connexion NeuralRank');
+      }
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  };
+
+  const fetchRecommendations = async (_algorithm?: string, forceRefresh: boolean = true) => {
+    await fetchNeuralRankRecommendations(forceRefresh);
+  };
+
+  const sendRecommendationFeedback = async (tweetId: string, action: 'like' | 'dislike' | 'skip' | 'share' | 'bookmark') => {
+    try { await apiService.sendRecommendationFeedback({ tweetId, action, algorithm: currentAlgorithm, sessionId: `session_${Date.now()}` }); } catch { }
+  };
+
+  const fetchFollowing = async () => {
+    try {
+      if (!user?.id) return;
+      const res = await apiService.getUserFollowing(user.id, { limit: 500 });
+      if (res && res.success && res.data && Array.isArray((res.data as any).following)) {
+        const ids = new Set<string>();
+        ids.add(user.id);
+        for (const u of (res.data as any).following) { if (u && u.id) ids.add(u.id); }
+        setFollowingIds(ids);
+      }
+    } catch { }
+  };
+
+  /** Anneau de story dans le fil : reflète une story active, jamais le badge vérifié. */
+  const loadStoryRings = useCallback(async () => {
+    const feed = await storiesService.getFeed();
+    const withStories = new Set<string>();
+    const withUnseen = new Set<string>();
+    if (feed.self.stories.length > 0 && feed.self.user?.id) {
+      withStories.add(String(feed.self.user.id));
+    }
+    feed.groups.forEach((group) => {
+      const id = group.user?.id ? String(group.user.id) : '';
+      if (!id) return;
+      withStories.add(id);
+      if (group.has_unseen) withUnseen.add(id);
+    });
+    setStoryUserIds(withStories);
+    setUnseenStoryUserIds(withUnseen);
+  }, []);
+
+  useEffect(() => {
+    void loadStoryRings();
+  }, [loadStoryRings, storiesRefresh]);
+
+  const onRefresh = useCallback(async () => {
+    trackCustomAction('refresh', 'pull_to_refresh', 'user_action', { tab: activeTab, algorithm: currentAlgorithm, tweets_before_refresh: tweetsRef.current.length });
+    setRefreshing(true);
+    setError(null);
+    servedFromCacheRef.current = false;
+    setStoriesRefresh((value) => value + 1);
+    try {
+      if (activeTab === 'forYou') await fetchRecommendations(undefined, true);
+      else {
+        // Les deux appels sont indépendants : les enchaîner doublait pour rien
+        // le temps d'attente du rafraîchissement. `allSettled` et non `all` :
+        // hors ligne, l'échec de `fetchFollowing` faisait remonter une erreur
+        // ici et réaffichait le bandeau que le repli sur cache venait d'effacer.
+        await Promise.allSettled([fetchTweets(true), fetchFollowing()]);
+      }
+    } catch {
+      if (!servedFromCacheRef.current) setError('Erreur lors du rafraîchissement');
+    }
+    finally { setRefreshing(false); }
+  }, [activeTab, currentAlgorithm, trackCustomAction]);
+
+  /**
+   * Changement d'onglet.
+   *
+   * Chaque onglet a son propre cache : on affiche immédiatement son contenu
+   * déjà chargé, et on ne relance une requête que s'il est vide. Auparavant les
+   * deux onglets partageaient un unique tableau, ce qui affichait le contenu du
+   * précédent après le basculement.
+   */
+  const handleTabChange = useCallback(async (newTab: 'following' | 'forYou') => {
+    if (newTab === activeTab) return;
+
+    trackCustomAction('tab_change', newTab, 'navigation', { previous_tab: activeTab, new_tab: newTab, algorithm: currentAlgorithm, tweets_loaded: tweetsRef.current.length });
+
+    // Mémoriser l'onglet quitté avant de basculer.
+    tabCacheRef.current[activeTab] = tweetsRef.current;
+
+    const cached = tabCacheRef.current[newTab];
+    setActiveTab(newTab);
+    animateTabSwitch(newTab);
+    setError(null);
+    setTweets(cached);
+    tweetsRef.current = cached;
+
+    if (cached.length === 0) {
+      setOffset(0);
+      setHasMore(true);
+      if (newTab === 'forYou') await fetchRecommendations(undefined, true);
+      else await fetchTweets(true);
+    }
+  }, [activeTab, currentAlgorithm, trackCustomAction, animateTabSwitch]);
+
+  const handleAlgorithmChange = useCallback(async (_newAlgorithm: string) => {
+    // Toujours NeuralRank
+    if (activeTab === 'forYou') await fetchNeuralRankRecommendations(true);
+  }, [activeTab]);
+
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasLoadedOnce || tweetsRef.current.length === 0) {
+        const loadInitialData = async () => {
+          // Les abonnements et le fil sont indépendants : les lancer en
+          // parallèle supprime une attente en cascade au premier affichage.
+          const jobs: Promise<unknown>[] = [];
+          if (followingIds.size === 0) jobs.push(fetchFollowing());
+          jobs.push(
+            activeTab === 'forYou' ? fetchRecommendations(undefined, true) : fetchTweets(true)
+          );
+          await Promise.all(jobs);
+          setHasLoadedOnce(true);
+        };
+        loadInitialData();
+      }
+    }, [hasLoadedOnce, activeTab])
+  );
+
+  const handleCreateTweet = () => {
+    trackCustomAction('create_tweet_button', 'floating_button', 'user_action', { tab: activeTab, algorithm: currentAlgorithm, tweets_visible: tweets.length, source: 'floating_button' });
+    (navigation as any).navigate('CreateTweet');
+  };
+
+  /**
+   * Like optimiste.
+   *
+   * L'animation est jouée par `TweetRow` sur le thread UI : cette fonction ne
+   * fait plus qu'une seule mise à jour d'état (la liste des tweets), là où elle
+   * en déclenchait quatre à cinq par appui.
+   */
+  const handleLike = useCallback(async (tweetId: string) => {
+    if (likeLockRef.current[tweetId]) return;
+    likeLockRef.current[tweetId] = true;
+
+    const currentTweet = tweetsRef.current.find(t => t.id === tweetId);
+    if (!currentTweet) { likeLockRef.current[tweetId] = false; return; }
+
+    const wasLiked = currentTweet.user_interaction?.is_liked || false;
+    const currentLikes = currentTweet.stats?.likes || 0;
+    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, likes: wasLiked ? currentLikes - 1 : currentLikes + 1 }, user_interaction: { ...tweet.user_interaction, is_liked: !wasLiked } }));
+
+    // Hors ligne : on met en file et on GARDE l'état optimiste. Annuler le like
+    // sous les yeux de l'utilisateur alors qu'on sait le réseau coupé lui ferait
+    // croire à un refus, et il réessaierait dans le vide.
+    if (offlineEnabled && !online) {
+      await queueAction({ type: 'like', tweetId, value: !wasLiked });
+      likeLockRef.current[tweetId] = false;
+      return;
+    }
+
+    try {
+      const response = await apiService.likeTweet(tweetId);
+      if (!response.success) {
+        setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked } } : tweet));
+      } else {
+        trackTweetInteraction(tweetId, wasLiked ? 'unlike' : 'like', { tab: activeTab, previous_likes: currentLikes, algorithm: currentAlgorithm });
+        if (activeTab === 'forYou') {
+          sendRecommendationFeedback(tweetId, wasLiked ? 'dislike' : 'like');
+          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasLiked ? 'unlike' : 'like' });
+        }
+      }
+    } catch {
+      setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked } } : tweet));
+    } finally { likeLockRef.current[tweetId] = false; }
+  }, [activeTab, currentAlgorithm, trackTweetInteraction, offlineEnabled, online, queueAction]);
+
+  const handleRetweet = useCallback(async (tweetId: string) => {
+    if (retweetLockRef.current[tweetId]) return;
+    retweetLockRef.current[tweetId] = true;
+
+    const currentTweet = tweetsRef.current.find(t => t.id === tweetId);
+    if (!currentTweet) { retweetLockRef.current[tweetId] = false; return; }
+
+    const wasRetweeted = currentTweet.user_interaction?.is_retweeted || false;
+    const currentRetweets = currentTweet.stats?.retweets || 0;
+    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, retweets: wasRetweeted ? currentRetweets - 1 : currentRetweets + 1 }, user_interaction: { ...tweet.user_interaction, is_retweeted: !wasRetweeted } }));
+
+    // Voir `handleLike` : hors ligne on met en file et on garde l'état affiché.
+    if (offlineEnabled && !online) {
+      await queueAction({ type: 'retweet', tweetId, value: !wasRetweeted });
+      retweetLockRef.current[tweetId] = false;
+      return;
+    }
+
+    try {
+      const response = await apiService.retweet(tweetId);
+      if (!response.success) {
+        setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, retweets: currentRetweets }, user_interaction: { ...tweet.user_interaction, is_retweeted: wasRetweeted } }));
+      } else {
+        trackTweetInteraction(tweetId, wasRetweeted ? 'unretweet' : 'retweet', { tab: activeTab, previous_retweets: currentRetweets, algorithm: currentAlgorithm });
+        if (activeTab === 'forYou') {
+          sendRecommendationFeedback(tweetId, wasRetweeted ? 'skip' : 'share');
+          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasRetweeted ? 'unretweet' : 'retweet' });
+        }
+      }
+    } catch {
+      setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, retweets: currentRetweets }, user_interaction: { ...tweet.user_interaction, is_retweeted: wasRetweeted } }));
+    } finally { retweetLockRef.current[tweetId] = false; }
+  }, [activeTab, currentAlgorithm, trackTweetInteraction, offlineEnabled, online, queueAction]);
+
+  const handleBookmark = async (tweetId: string) => {
+    try {
+      await trackingService.trackBookmark(tweetId);
+    } catch (error) {
+      console.warn('Erreur tracking bookmark:', error);
+    }
+  };
+
+  const handleSkip = async (tweetId: string) => {
+    try {
+      await trackingService.trackSkip(tweetId);
+    } catch (error) {
+      console.warn('Erreur tracking skip:', error);
+    }
+  };
+
+  const handleBlock = async (tweetId: string) => {
+    try {
+      await trackingService.trackBlock(tweetId);
+    } catch (error) {
+      console.warn('Erreur tracking block:', error);
+    }
+  };
+
+  const handleShare = async (tweetId: string) => {
+    try {
+      await trackingService.trackShare(tweetId);
+    } catch (error) {
+      console.warn('Erreur tracking share:', error);
+    }
+  };
+
+  /**
+   * Ouvre la feuille de signalement.
+   *
+   * Avant, cette fonction n'appelait que `trackingService.trackReport()` —
+   * un simple événement d'analytics. Aucun signalement n'était créé et
+   * l'utilisateur n'avait aucun retour : le bouton « Signaler » du fil
+   * principal ne signalait rien du tout.
+   */
+  const handleReport = (tweetId: string) => {
+    const tweet = tweets.find((t) => t.id === tweetId);
+    setReportTarget({
+      id: tweetId,
+      label: tweet?.user?.username ? `@${tweet.user.username}` : undefined,
+    });
+
+    // Le suivi analytics reste, mais il ne remplace plus le signalement.
+    trackingService.trackReport(tweetId).catch((error) => {
+      console.warn('Erreur tracking report:', error);
+    });
+  };
+
+  const handleDeleteTweet = (tweetId: string) => {
+    Alert.alert(
+      'Supprimer ce tweet ?',
+      'Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            const response = await apiService.deleteTweet(tweetId);
+            if (response?.success) {
+              setTweets((prev) => prev.filter((t) => t.id !== tweetId));
+            } else {
+              Alert.alert('Erreur', response?.message || 'Impossible de supprimer ce tweet');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleOptionsMenu = (tweetId: string) => {
+    const tweet = tweets.find((t) => t.id === tweetId);
+    const isOwnTweet = !!(user?.id && tweet?.author?.id === user.id);
+
+    // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
+    // propre tweet, le menu ne propose que ce qui reste pertinent.
+    const entries: { label: string; onPress: () => void; destructive?: boolean }[] = isOwnTweet
+      ? [
+          { label: 'Partager', onPress: () => handleShare(tweetId) },
+          { label: 'Supprimer', onPress: () => handleDeleteTweet(tweetId), destructive: true },
+        ]
+      : [
+          { label: 'Ajouter aux favoris', onPress: () => handleBookmark(tweetId) },
+          { label: 'Ignorer ce tweet', onPress: () => handleSkip(tweetId) },
+          { label: 'Partager', onPress: () => handleShare(tweetId) },
+          { label: 'Signaler', onPress: () => handleReport(tweetId) },
+          { label: 'Bloquer cet utilisateur', onPress: () => handleBlock(tweetId), destructive: true },
+        ];
+
+    if (Platform.OS === 'ios') {
+      const destructiveButtonIndex = entries.findIndex((e) => e.destructive);
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Annuler', ...entries.map((e) => e.label)],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: destructiveButtonIndex >= 0 ? destructiveButtonIndex + 1 : undefined,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) return;
+          entries[buttonIndex - 1]?.onPress();
+        }
+      );
+    } else {
+      Alert.alert('Plus d\'options', 'Choisir une action', [
+        { text: 'Annuler', style: 'cancel' },
+        ...entries.map((e) => ({
+          text: e.label,
+          onPress: e.onPress,
+          style: e.destructive ? ('destructive' as const) : undefined,
+        })),
+      ]);
+    }
+  };
+
+  const detectIsRetweet = (t: any) => {
+    return !!(t?.is_retweet || t?.tweet_type === 'retweet');
+  };
+
+  const detectIsQuote = (t: any) => {
+    return !!(t?.is_quote || t?.tweet_type === 'quote');
+  };
+
+  // Synchronise le miroir et le cache de l'onglet courant à chaque changement.
+  useEffect(() => {
+    tweetsRef.current = tweets;
+    tabCacheRef.current[activeTab] = tweets;
+  }, [tweets, activeTab]);
+
+  // Mémoïsé : ce filtre était recalculé à chaque rendu, y compris pour un like.
+  const visibleTweets: Tweet[] = useMemo(
+    () => tweets.filter(tweet => tweet && tweet.id && tweet.content),
+    [tweets]
+  );
+
+  const getAlgorithmLabel = (_algo: string) => 'NeuralRank v2';
+
+  const getAlgorithmColor = (_algo: string) => '#f97316';
+
+  // ─── Fil : handler d'action unique, tracking, rendu ───────────────────────
+
+  /** Contexte transmis aux lignes — stable, sinon toutes se re-rendent. */
+  const rowContext = useMemo(
+    () => ({ tab: activeTab, algorithm: currentAlgorithm }),
+    [activeTab, currentAlgorithm]
+  );
+
+  /**
+   * Handler unique pour toutes les interactions d'une ligne. Le passer en une
+   * seule référence stable (au lieu de 8 closures recréées par ligne et par
+   * rendu) est ce qui rend la mémoïsation de `TweetRow` réellement efficace.
+   */
+  const handleRowAction = useCallback((action: TweetRowAction) => {
+    const { type, tweetId, payload } = action;
+
+    switch (type) {
+      case 'like':
+        handleLike(tweetId);
+        break;
+
+      case 'retweet':
+        handleRetweet(tweetId);
+        break;
+
+      case 'reply':
+        (navigation as any).navigate('TweetDetail', { tweetId, focusReply: true });
+        break;
+
+      case 'share':
+        handleShare(tweetId);
+        break;
+
+      case 'options':
+        handleOptionsMenu(tweetId);
+        break;
+
+      case 'openQuote':
+        (navigation as any).navigate('TweetDetail', { tweetId });
+        break;
+
+      case 'profile': {
+        const author = payload?.author;
+        if (!author?.id) return;
+        trackProfileInteraction(author.id, 'view', {
+          source: 'tweet_header',
+          tweet_id: tweetId,
+          tab: activeTab,
+          position: payload?.index,
+        });
+        (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
+        break;
+      }
+
+      case 'open': {
+        if (payload?.isAd) {
+          const tweet = payload.tweet;
+          apiService.post(`/api/targeting/ads/${tweet?.ad_data?.id}/click`).catch(() => {});
+          const redirectUrl: string | undefined = tweet?.ad_data?.redirect_url;
+          if (redirectUrl?.startsWith('twitnin://profile/')) {
+            (navigation as any).navigate('UserProfile', { username: redirectUrl.replace('twitnin://profile/', '') });
+          } else if (redirectUrl?.startsWith('twitnin://tweet/')) {
+            (navigation as any).navigate('TweetDetail', { tweetId: redirectUrl.replace('twitnin://tweet/', '') });
+          } else if (tweet?.author?.id) {
+            (navigation as any).navigate('UserProfile', { userId: tweet.author.id, username: tweet.author.username });
+          }
+          return;
+        }
+        // `isThread` evite au detail d'afficher le squelette d'un tweet isole
+        // pour ce qui est en fait une reponse (voir TweetDetailScreen).
+        (navigation as any).navigate('TweetDetail', {
+          tweetId,
+          isThread: !!(tweets.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
+        });
+        break;
+      }
+    }
+  }, [handleLike, handleRetweet, navigation, activeTab, trackProfileInteraction]);
+
+  /**
+   * Comptabilisation des vues via la visibilité réelle de la liste.
+   * `viewabilityConfig` est figé dans une ref : FlatList refuse qu'il change
+   * après le montage.
+   */
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 500,
+    waitForInteraction: false,
+  }).current;
+
+  // Indirection en ref : `onViewableItemsChanged` doit rester la même fonction
+  // pendant toute la vie de la liste, mais doit voir les valeurs à jour.
+  const viewTrackingRef = useRef({
+    trackView: (_id: string, _v: boolean) => {},
+    onView: (_id: string, _index: number) => {},
+  });
+
+  const onViewableItemsChanged = useRef(
+    ({ changed, viewableItems }: {
+      changed?: Array<{ item: Tweet; index: number | null; isViewable: boolean }>;
+      viewableItems: Array<{ item: Tweet; index: number | null; isViewable: boolean }>;
+    }) => {
+      const entries = Array.isArray(changed) ? changed : viewableItems;
+
+      for (const entry of entries) {
+        const tweet = entry.item;
+        if (!tweet?.id) continue;
+
+        if (!entry.isViewable) {
+          viewTrackingRef.current.trackView(tweet.id, false);
+          continue;
+        }
+
+        // Les callbacks de visibilité peuvent reparler d'un item quand un
+        // voisin entre dans l'écran. Une impression ne part qu'une seule fois
+        // par tweet pendant cette session du feed.
+        if (feedImpressionsRef.current.has(tweet.id)) continue;
+        feedImpressionsRef.current.add(tweet.id);
+
+        viewTrackingRef.current.trackView(tweet.id, true);
+        viewTrackingRef.current.onView(tweet.id, entry.index ?? 0);
+      }
+    }
+  ).current;
+
+  useEffect(() => {
+    viewTrackingRef.current = {
+      trackView,
+      onView: (tweetId: string, position: number) => {
+        trackTweetInteraction(tweetId, 'view', {
+          position,
+          tab: activeTab,
+          algorithm: currentAlgorithm,
+        });
+        trackingService.trackView(tweetId, 500);
+      },
+    };
+  }, [trackView, trackTweetInteraction, activeTab, currentAlgorithm]);
+
+  const renderTweet = useCallback(
+    ({ item, index }: { item: Tweet; index: number }) => {
+      const next = visibleTweets[index + 1];
+      const prev = visibleTweets[index - 1];
+      return (
+        <TweetRow
+          tweet={item}
+          index={index}
+          isThreadParent={!!(next && next.parent_tweet_id === item.id)}
+          isThreadChild={!!(prev && item.parent_tweet_id === prev.id)}
+          onAction={handleRowAction}
+          contextData={rowContext}
+          storyUserIds={storyUserIds}
+          unseenStoryUserIds={unseenStoryUserIds}
+        />
+      );
+    },
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds]
+  );
+
+  const keyExtractor = useCallback((item: Tweet) => String(item.id), []);
+
+  const onEndReached = useCallback(() => {
+    if (!hasMore || loadingMore || loading || recommendationsLoading) return;
+    if (activeTab === 'forYou') fetchRecommendations(undefined, false);
+    else fetchTweets(false);
+  }, [hasMore, loadingMore, loading, recommendationsLoading, activeTab]);
+
+  const isInitialLoading = (loading || recommendationsLoading) && visibleTweets.length === 0;
+
+  return (
+    <ScreenBackground>
+    <SafeAreaView style={S.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+
+      {/* ── Event banners ── */}
+      <EventBanner />
+      {hasActiveEvents && <FunctionalEventBanner events={functionalEvents} />}
+      <PatchNotesModal />
+
+      {/* Signalement depuis le fil — la feuille se charge de tout le parcours. */}
+      <ReportSheet
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetId={reportTarget?.id || ''}
+        targetType="tweet"
+        targetLabel={reportTarget?.label}
+      />
+
+      {/* ── Header ── */}
+      <View style={S.header}>
+        {/* Top row: logo + settings */}
+        <View style={S.headerTopRow}>
+          <TouchableOpacity
+            onPress={() => (navigation as any).navigate('Profil')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={S.avatarRing}
+          >
+            <Avatar size={32} username={user?.username || 'U'} uri={(user as any)?.avatar} />
+          </TouchableOpacity>
+
+          <View style={S.brandLockup}>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={{ width: 26, height: 26 }}
+              resizeMode="contain"
+            />
+            <Text style={S.brandWord}>twitninf</Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => (navigation as any).navigate('Settings', { returnTo: 'TweetsScreen' })}
+            style={S.settingsBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="options-outline" size={19} color={C.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Tab bar — la pastille active glisse sur le thread UI */}
+        <View style={S.tabBar}>
+          {/* Piste : couvre toute la barre, padding compris, ce qui met la
+              pastille et les `x` mesurés dans le même repère. */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Animated.View style={[S.tabIndicator, tabIndicatorStyle]} />
+          </View>
+          {(['following', 'forYou'] as const).map((tab, index) => (
+            <TouchableOpacity
+              key={tab}
+              style={S.tabItem}
+              onPress={() => handleTabChange(tab)}
+              onLayout={handleTabLayout(index)}
+              activeOpacity={0.85}
+            >
+              <Text style={[S.tabLabel, activeTab === tab && S.tabLabelActive]}>
+                {tab === 'following' ? 'Abonnements' : 'Pour toi'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* ── Algorithm pill (For You only) ── */}
+      {activeTab === 'forYou' && (
+        <TouchableOpacity
+          style={S.algoPill}
+          onPress={() => (navigation as any).navigate('Settings', { returnTo: 'TweetsScreen' })}
+          activeOpacity={0.8}
+        >
+          <View style={S.algoDot} />
+          <Text style={S.algoPillText}>{getAlgorithmLabel(displayedAlgorithm)}</Text>
+          <Ionicons name="chevron-down" size={13} color={C.accent} style={{ marginLeft: 2 }} />
+        </TouchableOpacity>
+      )}
+
+      {/* ── Ban alert ── */}
+      <BanAlertBanner />
+
+      {/* ── FAB ──
+          Un seul bouton : la vidéo est passée dans le composeur de tweet et le
+          labo (A/B test) n'est plus utilisé. */}
+      <View style={S.fabContainer} pointerEvents="box-none">
+        <TouchableOpacity style={S.fab} onPress={handleCreateTweet} activeOpacity={0.85}>
+          <Ionicons name="add" size={26} color={C.white} />
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Feed ── */}
+      {/* FlatList au lieu d'un ScrollView : les lignes sont recyclées. Le fil
+          montait auparavant chaque tweet chargé simultanément et ne les
+          démontait jamais — 150 sous-arbres vivants après trois pages. */}
+      <FlatList
+        data={visibleTweets}
+        renderItem={renderTweet}
+        keyExtractor={keyExtractor}
+        style={S.scrollView}
+        contentContainerStyle={S.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} />
+        }
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.6}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        // Fenêtre de rendu : de quoi remplir l'écran sans monter tout le fil.
+        initialNumToRender={6}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <>
+            <OfflineBanner
+              enabled={offlineEnabled}
+              online={online}
+              pendingCount={pendingTweets.length}
+              pendingActionCount={pendingActions.length}
+            />
+            <StoriesTray
+              currentUser={user ? { id: String((user as any).id), username: user.username, avatar: (user as any)?.avatar } : null}
+              refreshSignal={storiesRefresh}
+              backgroundColor={C.bg}
+              onOpenProfile={(author) => (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username })}
+              onSendMessage={async (author, message) => {
+                if (!message.trim()) {
+                  (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
+                  return;
+                }
+                try {
+                  await apiService.post(`/api/messages/direct/${author.id}`, { content: message.trim() });
+                } catch {
+                  // L'échec d'une réponse de story ne doit pas casser le fil.
+                }
+              }}
+            />
+
+            {error && (
+              <Animated.View entering={FadeIn.duration(180)} style={S.errorBanner}>
+                <Ionicons name="alert-circle-outline" size={18} color={C.red} />
+                <Text style={S.errorText}>{error}</Text>
+                <TouchableOpacity
+                  style={S.retryBtn}
+                  onPress={() => {
+                    trackCustomAction('retry_after_error', error || 'unknown_error', 'user_action', { tab: activeTab, algorithm: currentAlgorithm });
+                    if (activeTab === 'forYou') fetchRecommendations(undefined, true);
+                    else fetchTweets(true);
+                  }}
+                >
+                  <Text style={S.retryBtnText}>Réessayer</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          </>
+        }
+        ListEmptyComponent={
+          isInitialLoading ? (
+            // Ossature plutôt qu'un logo qui tourne : l'attente paraît
+            // beaucoup plus courte et la mise en page ne saute pas.
+            <TweetSkeleton count={6} />
+          ) : (
+            <Animated.View entering={FadeIn.duration(220)} style={S.emptyState}>
+              <View style={S.emptyIconWrap}>
+                <Ionicons name="chatbubble-ellipses-outline" size={38} color={C.accent} />
+              </View>
+              <Text style={S.emptyTitle}>Rien à afficher</Text>
+              <Text style={S.emptySubtitle}>
+                {activeTab === 'forYou' ? 'Aucune recommandation pour l\'instant' : 'Suivez des comptes pour voir leurs tweets'}
+              </Text>
+              <TouchableOpacity style={S.emptyAction} onPress={handleCreateTweet}>
+                <Text style={S.emptyActionText}>Poster un tweet</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )
+        }
+        ListFooterComponent={
+          <>
+            {loadingMore && visibleTweets.length > 0 && <TweetSkeleton count={2} />}
+
+            {!hasMore && visibleTweets.length > 0 && (
+              <View style={S.endRow}>
+                <View style={S.endDivider} />
+                <Text style={S.endText}>Vous êtes à jour</Text>
+                <View style={S.endDivider} />
+              </View>
+            )}
+
+            <View style={{ height: 120 }} />
+          </>
+        }
+      />
+    </SafeAreaView>
+    </ScreenBackground>
+  );
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
+const S = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  fullLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+
+  // ── Header ──
+  header: {
+    backgroundColor: 'transparent',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 12 : 6,
+    paddingBottom: 10,
+  },
+  avatarRing: {
+    padding: 2,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: C.accent,
+  },
+  brandLockup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  brandWord: {
+    color: C.textPrimary,
+    fontSize: 17,
+    fontFamily: fonts.displayHeavy,
+    letterSpacing: -0.3,
+  },
+  settingsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 14,
+    marginBottom: 10,
+    padding: 4,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    gap: 4,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'transparent',
+  },
+  // Pastille active : une seule vue qui glisse, au lieu d'un fond qui
+  // apparaît/disparaît sur deux boutons distincts. Position et taille
+  // viennent entièrement de la mesure des onglets.
+  //
+  // Pas de `glow()` ici : sous Android il ne rend qu'une `elevation`, qui
+  // faisait passer la pastille DEVANT les libellés — le texte de l'onglet
+  // actif disparaissait sous l'aplat indigo. L'ombre reste sur iOS, où elle
+  // n'a aucun effet sur l'ordre de peinture.
+  tabIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    borderRadius: 10,
+    backgroundColor: C.accent,
+    ...(Platform.OS === 'ios' ? glow(colors.accent, 10) : null),
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontFamily: fonts.bold,
+    color: C.textMuted,
+    letterSpacing: -0.1,
+  },
+  tabLabelActive: {
+    color: C.white,
+  },
+
+  // ── Algorithm pill ──
+  algoPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginLeft: 14,
+    marginTop: 2,
+    marginBottom: 4,
+    backgroundColor: colors.accentMuted,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  algoDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 7,
+    backgroundColor: colors.accent,
+  },
+  algoPillText: {
+    color: C.accent,
+    fontSize: 13,
+    fontFamily: fonts.bold,
+  },
+
+  // ── FAB ──
+  fabContainer: {
+    position: 'absolute',
+    right: 18,
+    bottom: 92,
+    alignItems: 'flex-end',
+    zIndex: 20,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: C.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...glow(colors.accent, 16),
+  },
+
+  // ── Feed ──
+  scrollView: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  scrollContent: {
+    paddingTop: 6,
+  },
+
+  // ── Error ──
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.redMuted,
+    borderRadius: 12,
+    margin: 16,
+    padding: 14,
+    gap: 10,
+  },
+  errorText: {
+    flex: 1,
+    color: C.red,
+    fontSize: 14,
+  },
+  retryBtn: {
+    backgroundColor: C.red,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  retryBtnText: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: '700', fontFamily: fonts.bold,
+  },
+
+  // ── Empty ──
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 40,
+  },
+  emptyIconWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.accentMuted,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    color: C.textPrimary,
+    fontSize: 20,
+    fontFamily: fonts.displayHeavy,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    color: C.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  emptyAction: {
+    backgroundColor: C.accent,
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    ...glow(colors.accent, 14),
+  },
+  emptyActionText: {
+    color: C.white,
+    fontWeight: '700', fontFamily: fonts.bold,
+    fontSize: 15,
+  },
+
+  // ── Tweet row ──
+  tweetRow: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    marginHorizontal: 12,
+    marginTop: 10,
+    paddingTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    overflow: 'hidden',
+  },
+  tweetRowAd: {
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  tweetInner: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  // ── Avatar col ──
+  avatarCol: {
+    alignItems: 'center',
+    width: 44,
+  },
+  avatarVerifiedRing: {
+    padding: 2,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#3897F0',
+  },
+  threadLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: C.border,
+    borderRadius: 1,
+    marginTop: 6,
+    minHeight: 20,
+  },
+  threadLineTop: {
+    position: 'absolute',
+    top: -14,
+    width: 2,
+    height: 14,
+    backgroundColor: C.border,
+    borderRadius: 1,
+    alignSelf: 'center',
+  },
+
+  // ── Content col ──
+  contentCol: {
+    flex: 1,
+    paddingBottom: 12,
+  },
+  authorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    marginBottom: 3,
+    gap: 4,
+  },
+  authorName: {
+    color: C.textPrimary,
+    fontSize: 15,
+    fontWeight: '700', fontFamily: fonts.bold,
+    letterSpacing: -0.2,
+    flexShrink: 1,
+    maxWidth: '45%',
+  },
+  verifiedWrap: {
+    marginTop: 1,
+  },
+  authorHandle: {
+    color: C.textSecondary,
+    fontSize: 14,
+    flexShrink: 1,
+    maxWidth: '30%',
+  },
+  dot: {
+    color: C.textMuted,
+    fontSize: 14,
+  },
+  timestamp: {
+    color: C.textSecondary,
+    fontSize: 14,
+  },
+  tweetText: {
+    color: C.textPrimary,
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 10,
+  },
+  hiddenMeasure: {
+    position: 'absolute',
+    opacity: 0,
+    left: -9999,
+    height: 0,
+    width: '100%',
+  },
+  seeMoreBtn: {
+    marginBottom: 10,
+    marginTop: -6,
+  },
+  seeMoreText: {
+    color: C.accent,
+    fontSize: 14,
+    fontWeight: '600', fontFamily: fonts.semibold,
+  },
+
+  // ── Quote tweet ──
+  quoteTweet: {
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: colors.surfaceAlt,
+  },
+  quoteAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 5,
+  },
+  quoteAuthorName: {
+    color: C.textPrimary,
+    fontSize: 14,
+    fontWeight: '700', fontFamily: fonts.bold,
+  },
+  quoteAuthorHandle: {
+    color: C.textSecondary,
+    fontSize: 13,
+  },
+  quoteText: {
+    color: C.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  // ── Retweet / ad labels ──
+  retweetLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 52,
+    marginBottom: 6,
+  },
+  retweetLabelText: {
+    color: C.textSecondary,
+    fontSize: 13,
+    fontWeight: '500', fontFamily: fonts.medium,
+  },
+  adLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginLeft: 52,
+    marginBottom: 8,
+    backgroundColor: colors.gold,
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  adLabelText: {
+    color: '#1a1303',
+    fontSize: 11,
+    fontFamily: fonts.bold,
+  },
+
+  // ── Actions ──
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 6,
+  },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceAlt,
+  },
+  actionChipStatic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  actionIconOnly: {
+    padding: 7,
+  },
+  actionChipRetweetActive: {
+    backgroundColor: colors.successMuted,
+  },
+  actionChipLikeActive: {
+    backgroundColor: withAlpha(colors.like, 0.16),
+  },
+  likeActionBtn: {
+    position: 'relative',
+    overflow: 'visible',
+  },
+  likeBurstHeart: {
+    position: 'absolute',
+    left: 5,
+    top: -2,
+  },
+  actionCount: {
+    color: C.textMuted,
+    fontSize: 13,
+  },
+
+  // ── Separator ──
+  separator: {
+    height: 0,
+  },
+  instagramLikeOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+
+  // ── Loading more ──
+  loadingMoreRow: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+
+  // ── End of feed ──
+  endRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  endDivider: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: C.border,
+  },
+  endText: {
+    color: C.textMuted,
+    fontSize: 13,
+    fontWeight: '500', fontFamily: fonts.medium,
+  },
+});

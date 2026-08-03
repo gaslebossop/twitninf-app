@@ -1,0 +1,51 @@
+node_modules/
+# `.env.production` n'etait couvert par aucun des trois motifs precedents
+# (.env, .env.local, .env.*.local) : un `.env.production` cree localement
+# serait parti tel quel dans le depot public. `.env*` couvre toutes les
+# variantes qu'Expo sait charger (.env, .env.local, .env.production, etc.),
+# et seul .env.example — qui ne contient que des valeurs de substitution —
+# est explicitement reintegre.
+.env*
+!.env.example
+dist/
+build/
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.git/
+.expo/
+.expo-shared/
+package-lock.json
+yarn.lock
+.cache/
+*.zip
+*.ipa
+*.apk
+*.tar.gz
+sourcecode/
+content/
+
+# Development guides and test files
+*.md
+*.js
+*.ipa
+*.zip
+App.tsx
+currentprice-error-final-fix.md
+
+# Cache d'outillage local (~21 Mo) : ne doit jamais partir dans le depot.
+.task-cache/
+
+# Fichiers indispensables au build, reintegres explicitement : les regles
+# generiques *.js et App.tsx ci-dessus les excluaient, si bien que le depot
+# ne contenait ni la config Expo ni le point d'entree de l'app. Un build CI
+# sur un clone frais ne pouvait donc pas aboutir.
+!app.config.js
+!babel.config.js
+!metro.config.js
+!App.tsx
+
