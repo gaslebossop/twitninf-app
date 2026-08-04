@@ -19,7 +19,7 @@ import type { Tweet } from '../types/api';
  * Le recommandeur Rust traite déjà le problème de son côté : il écarte toute
  * réponse dont il ne peut pas reconstituer la chaîne d'ancêtres, et marque ces
  * ancêtres comme « à l'écran » en comptant sur le client pour les afficher en
- * contexte au-dessus (voir `format_thread` dans `services/recommender.rs`).
+ * contexte au-dessus (voir `shape_feed` dans `services/recommender.rs`).
  *
  * Sauf que le fil de l'API ne sérialise `thread_ancestors` que sur le DÉTAIL
  * d'un tweet (`GET /api/tweets/:id`), jamais dans la liste : le client n'a donc
