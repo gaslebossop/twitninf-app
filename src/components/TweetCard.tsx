@@ -447,6 +447,8 @@ export default function TweetCard({
                 style={[styles.tweetText, compact && styles.compactTweetText]}
                 numberOfLines={isExpanded ? undefined : (compact ? 3 : 4)}
                 tint={hasActiveEvent && eventTheme ? eventTheme.colors.text : undefined}
+                price={contentLock?.price_twc}
+                compact={compact}
               />
             ) : (
               <TranslationReveal

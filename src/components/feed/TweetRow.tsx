@@ -412,6 +412,8 @@ function TweetRow({
                 text={displayContent}
                 style={S.tweetText}
                 numberOfLines={isExpanded ? undefined : 4}
+                price={contentLock?.price_twc}
+                compact
               />
             ) : (
               <TranslationReveal

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius } from '../theme';
 import {
   purchase,
@@ -13,21 +14,15 @@ import { toast } from './ui/Toast';
 import { confirmAsync } from './ui/ConfirmSheet';
 
 /**
- * Verrou affiché sous l'aperçu d'un contenu payant.
+ * Action d'achat d'un contenu payant.
  *
- * Ce composant ne cache rien : quand il s'affiche, le texte complet et les
- * médias ne sont déjà plus dans la réponse du serveur. Il ne fait que
- * proposer l'achat de ce qui manque. Un flou posé par-dessus un contenu
- * complet aurait été contourné le jour même — la marchandise doit rester sur
- * le serveur, pas être livrée puis masquée.
- *
- * Le prix est affiché en NF, la monnaie dans laquelle l'utilisateur raisonne
- * partout ailleurs dans l'app.
+ * Tout le discours commercial tient dans une seule action. Le panneau flouté
+ * au-dessus crée l'envie ; ce composant ne répète donc ni « accès privé », ni
+ * les bénéfices, ni une deuxième carte décorative.
  */
 
 interface Props {
   lock: Lock;
-  /** Appelé après un achat réussi — l'appelant recharge le contenu déverrouillé. */
   onUnlocked?: (contentId: string) => void;
   compact?: boolean;
 }
@@ -35,17 +30,8 @@ interface Props {
 export default function PaidContentLock({ lock, onUnlocked, compact = false }: Props) {
   const [buying, setBuying] = useState(false);
 
-  // Le créateur et les acheteurs voient le contenu : il n'y a rien à afficher.
   if (lock.has_access) return null;
 
-  /**
-   * L'estimation est demandée AVANT la confirmation, pas après.
-   *
-   * Sans elle, quelqu'un qui possède largement de quoi payer — mais réparti sur
-   * plusieurs monnaies — se prenait un « Solde insuffisant » sans la moindre
-   * indication qu'il lui suffisait d'accepter une conversion. Le solde NF seul
-   * ne dit pas ce qu'on peut s'offrir.
-   */
   const confirmPurchase = async () => {
     if (buying) return;
     setBuying(true);
@@ -70,16 +56,12 @@ export default function PaidContentLock({ lock, onUnlocked, compact = false }: P
         return;
       }
 
-      // Le détail est explicite : quelles monnaies, quels montants. Convertir
-      // les avoirs de quelqu'un se demande, ça ne se déduit pas d'un clic sur
-      // « Débloquer » — et personne ne doit découvrir après coup qu'une de ses
-      // monnaies a été vendue.
       const ok = await confirmAsync({
         title: 'Compléter avec tes autres monnaies ?',
         message:
           `Ce contenu coûte ${formatAmount(quote.price)} NF et tu en as ${formatAmount(quote.balance)}.\n\n` +
           `Il manque ${formatAmount(quote.shortfall)} NF : ${describeConversions(quote.conversions)} seront convertis pour compléter.\n\n` +
-          'Les cours peuvent bouger légèrement d\'ici la validation.',
+          "Les cours peuvent bouger légèrement d'ici la validation.",
         confirmLabel: 'Convertir et débloquer',
         cancelLabel: 'Annuler',
         destructive: true,
@@ -98,112 +80,126 @@ export default function PaidContentLock({ lock, onUnlocked, compact = false }: P
     try {
       const result = await purchase(lock.id, autoConvert);
       if (result.conversions?.length) {
-        // Ce qui a réellement été converti, pas ce qui était prévu : les cours
-        // ont pu bouger entre l'estimation et l'achat.
         toast.success('Contenu débloqué', {
           description: `Converti : ${result.conversions
-            .map((c) => `${formatAmount(c.debited)} ${c.symbol}`)
+            .map((conversion) => `${formatAmount(conversion.debited)} ${conversion.symbol}`)
             .join(' et ')}.`,
         });
       }
       onUnlocked?.(lock.content_id);
     } catch (error: any) {
-      // Le message du serveur est écrit pour être lu (« Solde insuffisant »,
-      // « Tu possèdes déjà ce contenu ») : le remplacer par un texte générique
-      // ferait perdre la seule information utile à cet instant précis.
       toast.error('Achat impossible', {
         description: error?.message || 'Réessaie dans un instant.',
       });
     }
   };
 
+  const displayedPrice = formatAmount(lock.price_twc);
+
   return (
     <View style={[styles.wrap, compact && styles.wrapCompact]}>
-      <View style={styles.row}>
-        <View style={styles.iconCircle}>
-          <Ionicons name="lock-closed" size={compact ? 14 : 16} color={colors.gold} />
-        </View>
-        <View style={styles.texts}>
-          <Text style={styles.title} numberOfLines={1}>Contenu réservé</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
-            Débloque la suite et les médias
-          </Text>
-        </View>
-      </View>
-
       <TouchableOpacity
-        style={[styles.cta, buying && styles.ctaBusy]}
+        style={[styles.buttonShadow, buying && styles.buttonBusy]}
         onPress={confirmPurchase}
         disabled={buying}
-        activeOpacity={0.85}
+        activeOpacity={0.84}
         accessibilityRole="button"
-        accessibilityLabel={`Débloquer pour ${lock.price_twc} NF`}
+        accessibilityLabel={`Débloquer pour ${displayedPrice} NF`}
+        accessibilityHint="Ouvre la confirmation d'achat. L'accès sera définitif."
       >
-        {buying ? (
-          <ActivityIndicator size="small" color={colors.onAccent} />
-        ) : (
-          <Text style={styles.ctaText}>{lock.price_twc} NF</Text>
-        )}
+        <LinearGradient
+          colors={[colors.accentBright, colors.accent, colors.accentHover]}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.button, compact && styles.buttonCompact]}
+        >
+          <View style={styles.buttonHighlight} pointerEvents="none" />
+          {buying ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <>
+              <Ionicons name="lock-open" size={compact ? 16 : 18} color={colors.white} />
+              <Text style={[styles.buttonText, compact && styles.buttonTextCompact]}>
+                Débloquer pour{' '}
+                <Text style={styles.buttonPrice}>{displayedPrice} NF</Text>
+              </Text>
+            </>
+          )}
+        </LinearGradient>
       </TouchableOpacity>
+
+      {!compact && (
+        <Text style={styles.note}>Paiement unique · accès définitif</Text>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    flexDirection: 'row',
+    width: '100%',
+    marginTop: 12,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    padding: 12,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
   },
   wrapCompact: {
-    padding: 10,
-    marginTop: 8,
+    marginTop: 9,
   },
-  row: {
+  buttonShadow: {
+    width: '100%',
+    borderRadius: radius.md + 2,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 15,
+    elevation: 6,
+  },
+  button: {
+    minHeight: 52,
+    paddingHorizontal: 18,
+    borderRadius: radius.md + 2,
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.warningMuted,
-    marginRight: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.28)',
   },
-  texts: { flex: 1 },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  cta: {
-    minWidth: 84,
+  buttonCompact: {
+    minHeight: 46,
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: radius.round,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: radius.md,
   },
-  ctaBusy: { opacity: 0.7 },
-  ctaText: {
-    color: colors.onAccent,
-    fontSize: 14,
+  buttonHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.52)',
+  },
+  buttonText: {
+    color: colors.white,
+    fontSize: 15,
+    lineHeight: 19,
     fontWeight: '700',
+    letterSpacing: -0.15,
+    marginLeft: 9,
+  },
+  buttonTextCompact: {
+    fontSize: 13.5,
+    lineHeight: 17,
+  },
+  buttonPrice: {
+    fontWeight: '900',
+  },
+  buttonBusy: {
+    opacity: 0.72,
+  },
+  note: {
+    color: colors.textMuted,
+    fontSize: 10.5,
+    lineHeight: 14,
+    marginTop: 7,
   },
 });

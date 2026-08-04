@@ -794,6 +794,7 @@ export default function TweetDetailScreen() {
                   text={displayedContent || tweet.content}
                   style={styles.tweetText}
                   tint={hasActiveEvent && eventTheme ? eventTheme.colors.text : undefined}
+                  price={contentLock?.price_twc}
                 />
               ) : (
                 <TranslationReveal
