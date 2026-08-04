@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
-import { purchase, type PaidContentLock as Lock } from '../services/paidContentService';
+import {
+  purchase,
+  fetchPurchaseQuote,
+  describeConversions,
+  formatAmount,
+  type PaidContentLock as Lock,
+} from '../services/paidContentService';
 import { toast } from './ui/Toast';
 import { confirmAsync } from './ui/ConfirmSheet';
 
@@ -32,22 +38,74 @@ export default function PaidContentLock({ lock, onUnlocked, compact = false }: P
   // Le créateur et les acheteurs voient le contenu : il n'y a rien à afficher.
   if (lock.has_access) return null;
 
-  const confirmPurchase = () => {
-    confirmAsync({
-      title: 'Débloquer ce contenu',
-      message: `${lock.price_twc} NF seront débités de ton portefeuille. L'accès est définitif.`,
-      confirmLabel: 'Débloquer',
-      destructive: true,
-    }).then((ok) => {
-      if (ok) (runPurchase)();
-    });
-  };
-
-  const runPurchase = async () => {
+  /**
+   * L'estimation est demandée AVANT la confirmation, pas après.
+   *
+   * Sans elle, quelqu'un qui possède largement de quoi payer — mais réparti sur
+   * plusieurs monnaies — se prenait un « Solde insuffisant » sans la moindre
+   * indication qu'il lui suffisait d'accepter une conversion. Le solde NF seul
+   * ne dit pas ce qu'on peut s'offrir.
+   */
+  const confirmPurchase = async () => {
     if (buying) return;
     setBuying(true);
     try {
-      await purchase(lock.id);
+      const quote = await fetchPurchaseQuote(lock.id);
+
+      if (!quote.affordable) {
+        toast.error('Solde insuffisant', {
+          description: `Il te manque ${formatAmount(quote.missing)} NF, même en convertissant tes autres monnaies.`,
+        });
+        return;
+      }
+
+      if (!quote.needsConversion) {
+        const ok = await confirmAsync({
+          title: 'Débloquer ce contenu',
+          message: `${formatAmount(quote.price)} NF seront débités de ton portefeuille. L'accès est définitif.`,
+          confirmLabel: 'Débloquer',
+          destructive: true,
+        });
+        if (ok) await runPurchase(false);
+        return;
+      }
+
+      // Le détail est explicite : quelles monnaies, quels montants. Convertir
+      // les avoirs de quelqu'un se demande, ça ne se déduit pas d'un clic sur
+      // « Débloquer » — et personne ne doit découvrir après coup qu'une de ses
+      // monnaies a été vendue.
+      const ok = await confirmAsync({
+        title: 'Compléter avec tes autres monnaies ?',
+        message:
+          `Ce contenu coûte ${formatAmount(quote.price)} NF et tu en as ${formatAmount(quote.balance)}.\n\n` +
+          `Il manque ${formatAmount(quote.shortfall)} NF : ${describeConversions(quote.conversions)} seront convertis pour compléter.\n\n` +
+          'Les cours peuvent bouger légèrement d\'ici la validation.',
+        confirmLabel: 'Convertir et débloquer',
+        cancelLabel: 'Annuler',
+        destructive: true,
+      });
+      if (ok) await runPurchase(true);
+    } catch (error: any) {
+      toast.error('Achat impossible', {
+        description: error?.message || 'Réessaie dans un instant.',
+      });
+    } finally {
+      setBuying(false);
+    }
+  };
+
+  const runPurchase = async (autoConvert: boolean) => {
+    try {
+      const result = await purchase(lock.id, autoConvert);
+      if (result.conversions?.length) {
+        // Ce qui a réellement été converti, pas ce qui était prévu : les cours
+        // ont pu bouger entre l'estimation et l'achat.
+        toast.success('Contenu débloqué', {
+          description: `Converti : ${result.conversions
+            .map((c) => `${formatAmount(c.debited)} ${c.symbol}`)
+            .join(' et ')}.`,
+        });
+      }
       onUnlocked?.(lock.content_id);
     } catch (error: any) {
       // Le message du serveur est écrit pour être lu (« Solde insuffisant »,
@@ -56,8 +114,6 @@ export default function PaidContentLock({ lock, onUnlocked, compact = false }: P
       toast.error('Achat impossible', {
         description: error?.message || 'Réessaie dans un instant.',
       });
-    } finally {
-      setBuying(false);
     }
   };
 

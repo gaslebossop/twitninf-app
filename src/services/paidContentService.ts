@@ -141,14 +141,74 @@ export async function unlockContent(paidContentId: string): Promise<void> {
   unwrap(response, 'Retrait impossible.');
 }
 
-export async function purchase(paidContentId: string): Promise<{
+/** Une monnaie à convertir pour compléter un paiement. */
+export interface ConversionStep {
+  symbol: string;
+  currency_id: string;
+  /** Unités prélevées sur cette monnaie. */
+  debit: number;
+  /** Ce que ça rapporte dans la monnaie du prix. */
+  credit: number;
+  rate: number;
+}
+
+/**
+ * Estimation d'achat : ce qu'il manque, et ce qu'il faudrait convertir.
+ *
+ * `affordable` tient compte de TOUTES les monnaies du compte, pas seulement du
+ * solde NF. C'est la différence entre « tu n'as pas assez » et « tu as assez,
+ * mais pas dans cette monnaie-là » — deux situations que l'app confondait, ce
+ * qui laissait des gens bloqués devant un contenu qu'ils pouvaient s'offrir.
+ */
+export interface PurchaseQuote {
+  price: number;
+  currencyId: string;
+  /** Solde dans la monnaie du prix. */
+  balance: number;
+  needsConversion: boolean;
+  shortfall: number;
+  missing: number;
+  affordable: boolean;
+  conversions: ConversionStep[];
+}
+
+export async function fetchPurchaseQuote(paidContentId: string): Promise<PurchaseQuote> {
+  const response = await apiService.get(`${BASE}/${paidContentId}/quote`);
+  return unwrap(response, 'Estimation indisponible.');
+}
+
+/**
+ * @param autoConvert Autorise le serveur à convertir les AUTRES monnaies du
+ *   compte pour compléter. Jamais implicite : sans ce consentement, un solde
+ *   insuffisant reste un refus, et rien n'est vendu.
+ */
+export async function purchase(paidContentId: string, autoConvert = false): Promise<{
   purchase_id: string;
   content_type: PaidContentType;
   content_id: string;
   price_twc: number;
+  conversions?: Array<{ symbol: string; debited: number; credited: number }>;
 }> {
-  const response = await apiService.post(`${BASE}/${paidContentId}/purchase`);
+  const response = await apiService.post(
+    `${BASE}/${paidContentId}/purchase`,
+    autoConvert ? { auto_convert: true } : {},
+  );
   return unwrap(response, 'Achat impossible.');
+}
+
+/** « 31 500 CONG et 0,57 GCORP » — lisible, sans jargon de taux de change. */
+export function describeConversions(steps: ConversionStep[]): string {
+  return steps
+    .map((step) => `${formatAmount(step.debit)} ${step.symbol}`)
+    .join(' et ');
+}
+
+/** Montants monétaires : jamais de notation scientifique, jamais 12 décimales. */
+export function formatAmount(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded)
+    ? rounded.toLocaleString('fr-FR')
+    : rounded.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export async function fetchLockState(
