@@ -1,7 +1,8 @@
 import { apiService } from './api';
 
 /**
- * Analytics prédictifs, co-pilote IA et radar de tendances — avantages Pro.
+ * Analytics prédictifs, co-pilote IA et radar de tendances — avantages Pro —
+ * ainsi que le générateur à crédits commun aux abonnés Plus et Pro.
  *
  * Miroir de `api/src/routes/creatorIntelligenceRoutes.js`. Le serveur revalide
  * le palier ET l'expiration à chaque appel : masquer les entrées côté app est
@@ -274,6 +275,21 @@ export interface CopilotMode {
   label: string;
 }
 
+export interface TweetGeneratorStatus {
+  credits: number;
+  creditsPerSubscription: number;
+  costPerGeneration: number;
+  available: boolean;
+}
+
+export interface GeneratedCustomTweet {
+  success: true;
+  tweet: string;
+  angle: string;
+  creditsRemaining: number;
+  styleSamples: number;
+}
+
 /** Réponse uniforme : jamais d'exception jetée vers les écrans. */
 export interface Outcome<T> {
   ok: boolean;
@@ -341,6 +357,38 @@ export async function generateRadarIdea(
     return { ok: true, data: res.data };
   } catch {
     return { ok: false, message: 'Aucune idée générée.' };
+  }
+}
+
+export async function fetchTweetGeneratorStatus(): Promise<Outcome<TweetGeneratorStatus>> {
+  try {
+    const res = await apiService.get(`${BASE}/generator`);
+    if (!res?.success) return fail(res, 'Crédits du générateur indisponibles.');
+    return { ok: true, data: res.data as TweetGeneratorStatus };
+  } catch {
+    return { ok: false, message: 'Crédits du générateur indisponibles.' };
+  }
+}
+
+export async function generateCustomTweet(
+  request: string,
+): Promise<Outcome<GeneratedCustomTweet | { creditsRemaining: number }>> {
+  try {
+    const res = await apiService.post(
+      `${BASE}/generator`,
+      { request },
+      true,
+      COPILOT_TIMEOUT_MS,
+    );
+    if (!res?.success) {
+      return {
+        ...fail(res, 'Aucun tweet généré.'),
+        data: res?.data,
+      };
+    }
+    return { ok: true, data: res.data as GeneratedCustomTweet };
+  } catch {
+    return { ok: false, message: 'Le générateur est indisponible.' };
   }
 }
 

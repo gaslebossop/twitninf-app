@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -43,6 +44,12 @@ import {
   type RisingAccount,
 } from '../services/insightsService';
 import { fetchMyMarket, type MyMarket } from '../services/usernameMarketService';
+import {
+  fetchTweetGeneratorStatus,
+  generateCustomTweet,
+  type GeneratedCustomTweet,
+  type TweetGeneratorStatus,
+} from '../services/creatorIntelligenceService';
 import { toast } from '../components/ui/Toast';
 import {
   effectiveSubscriptionTier,
@@ -86,6 +93,7 @@ interface Summary {
   rising: RisingAccount[];
   nicheTweets: NicheTrendingTweet[];
   market: MyMarket | null;
+  generator: TweetGeneratorStatus | null;
 }
 
 interface InsightFailures {
@@ -97,6 +105,7 @@ interface InsightFailures {
 const EMPTY: Summary = {
   earnings: null, sales: null, queue: [], bestHours: [],
   visitors: null, incognito: false, alerts: [], rising: [], nicheTweets: [], market: null,
+  generator: null,
 };
 
 const NO_INSIGHT_FAILURES: InsightFailures = {
@@ -143,6 +152,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       fetchRisingAccounts({ limit: 6 }),
       fetchNicheTrendingTweets({ days: 7, limit: 3 }),
       fetchMyMarket(),
+      hasInsights ? fetchTweetGeneratorStatus() : Promise.resolve(null),
     ]);
 
     setSummary({
@@ -156,6 +166,9 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       rising: settled<RisingAccount[]>(results[7], []),
       nicheTweets: settled<NicheTrendingTweet[]>(results[8], []),
       market: settled<MyMarket | null>(results[9], null),
+      generator: results[10].status === 'fulfilled' && (results[10].value as any)?.ok
+        ? (results[10].value as any).data
+        : null,
     });
     setInsightFailures({
       impersonation: failure(results[6]),
@@ -163,7 +176,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       niche: failure(results[8]),
     });
     setLoading(false);
-  }, [isPro]);
+  }, [hasInsights, isPro]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -221,6 +234,8 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
           }
@@ -244,6 +259,18 @@ export default function CreatorStudioScreen({ navigation }: Props) {
           />
 
           <BestHoursCard hours={summary.bestHours} />
+
+          <CustomTweetGenerator
+            status={summary.generator}
+            hasAccess={hasInsights}
+            onCreditsChange={(credits) => {
+              setSummary((prev) => ({
+                ...prev,
+                generator: prev.generator ? { ...prev.generator, credits } : prev.generator,
+              }));
+            }}
+            onOpenComposer={(prefill) => navigation.navigate('CreateTweet', { prefill })}
+          />
 
           <StudioCard
             icon="sparkles"
@@ -693,6 +720,162 @@ function RisingCard({
 
 /* ──────────────────────────── Carte générique ───────────────────────────── */
 
+function CustomTweetGenerator({
+  status,
+  hasAccess,
+  onCreditsChange,
+  onOpenComposer,
+}: {
+  status: TweetGeneratorStatus | null;
+  hasAccess: boolean;
+  onCreditsChange: (credits: number) => void;
+  onOpenComposer: (tweet: string) => void;
+}) {
+  const [request, setRequest] = useState('');
+  const [generated, setGenerated] = useState<GeneratedCustomTweet | null>(null);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const credits = status?.credits ?? 0;
+  const cost = status?.costPerGeneration ?? 1;
+  const canGenerate = hasAccess
+    && !!status?.available
+    && credits >= cost
+    && request.trim().length >= 3
+    && !working;
+
+  const generate = useCallback(async () => {
+    if (!canGenerate) return;
+    setWorking(true);
+    setError(null);
+    setGenerated(null);
+    const result = await generateCustomTweet(request.trim());
+
+    if (result.ok && result.data) {
+      const draft = result.data as GeneratedCustomTweet;
+      setGenerated(draft);
+      onCreditsChange(draft.creditsRemaining);
+    } else {
+      const remaining = result.data && 'creditsRemaining' in result.data
+        ? Number(result.data.creditsRemaining)
+        : null;
+      if (remaining != null && Number.isFinite(remaining)) onCreditsChange(remaining);
+      setError(result.message || 'Aucun tweet généré.');
+    }
+    setWorking(false);
+  }, [canGenerate, onCreditsChange, request]);
+
+  return (
+    <LinearGradient
+      colors={[
+        withAlpha(colors.accent, 0.17),
+        withAlpha(colors.cyan, 0.055),
+        colors.surface,
+      ]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.generatorCard}
+    >
+      <View style={styles.generatorGlow} />
+
+      <View style={styles.generatorHeader}>
+        <LinearGradient colors={[colors.accent, '#9A4DFF']} style={styles.generatorIcon}>
+          <Ionicons name="sparkles" size={17} color={colors.onAccent} />
+        </LinearGradient>
+        <View style={styles.generatorHeading}>
+          <Text style={styles.generatorTitle}>Écris-le dans mon style</Text>
+          <Text style={styles.generatorSubtitle}>Ton idée, ta voix, quand tu veux.</Text>
+        </View>
+        <View style={styles.creditPill}>
+          <Ionicons name="flash" size={12} color={credits > 0 ? colors.gold : colors.textMuted} />
+          <Text style={[styles.creditText, credits <= 0 && styles.creditTextEmpty]}>
+            {status ? credits : '—'} crédit{credits === 1 ? '' : 's'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.generatorInputShell}>
+        <TextInput
+          value={request}
+          onChangeText={(value) => {
+            setRequest(value);
+            if (error) setError(null);
+          }}
+          editable={hasAccess && !working}
+          maxLength={600}
+          multiline
+          textAlignVertical="top"
+          placeholder={hasAccess
+            ? 'Ex. annonce mon live de ce soir avec un ton mystérieux…'
+            : 'Disponible avec un abonnement Plus ou Pro'}
+          placeholderTextColor={colors.textMuted}
+          style={styles.generatorInput}
+        />
+        <Text style={styles.generatorCounter}>{request.length}/600</Text>
+      </View>
+
+      {!hasAccess ? (
+        <View style={styles.generatorNotice}>
+          <Ionicons name="lock-closed" size={13} color={colors.gold} />
+          <Text style={styles.generatorNoticeText}>Chaque achat Plus ou Pro ajoute 5 crédits.</Text>
+        </View>
+      ) : status && !status.available ? (
+        <View style={styles.generatorNotice}>
+          <Ionicons name="cloud-offline-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.generatorNoticeText}>Le moteur est momentanément indisponible.</Text>
+        </View>
+      ) : status && credits < cost ? (
+        <View style={styles.generatorNotice}>
+          <Ionicons name="flash-outline" size={14} color={colors.gold} />
+          <Text style={styles.generatorNoticeText}>Tes 5 prochains crédits arrivent au renouvellement.</Text>
+        </View>
+      ) : null}
+
+      {error ? <Text style={styles.generatorError}>{error}</Text> : null}
+
+      <TouchableOpacity
+        onPress={generate}
+        disabled={!canGenerate}
+        activeOpacity={0.86}
+        style={[styles.generatorButton, !canGenerate && styles.generatorButtonDisabled]}
+      >
+        {working ? (
+          <ActivityIndicator size="small" color={colors.onAccent} />
+        ) : (
+          <Ionicons name="sparkles" size={16} color={colors.onAccent} />
+        )}
+        <Text style={styles.generatorButtonText}>
+          {working ? 'J’écris dans ta voix…' : `Générer · ${cost} crédit`}
+        </Text>
+      </TouchableOpacity>
+
+      {generated ? (
+        <View style={styles.generatedDraft}>
+          <View style={styles.generatedDraftTop}>
+            <Text style={styles.generatedDraftLabel}>TON BROUILLON</Text>
+            <View style={styles.styleLearnedPill}>
+              <Ionicons name="finger-print" size={12} color={colors.cyan} />
+              <Text style={styles.styleLearnedText}>
+                {generated.styleSamples} tweet{generated.styleSamples === 1 ? '' : 's'} analysé{generated.styleSamples === 1 ? '' : 's'}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.generatedDraftText}>{generated.tweet}</Text>
+          {generated.angle ? <Text style={styles.generatedAngle}>{generated.angle}</Text> : null}
+          <TouchableOpacity
+            onPress={() => onOpenComposer(generated.tweet)}
+            activeOpacity={0.84}
+            style={styles.openComposerButton}
+          >
+            <Text style={styles.openComposerText}>Ouvrir dans le composeur</Text>
+            <Ionicons name="arrow-forward" size={16} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+    </LinearGradient>
+  );
+}
+
 function StudioCard({
   icon, title, subtitle, onPress, badge, value, trailing, tone = 'magenta',
 }: {
@@ -796,6 +979,89 @@ const styles = StyleSheet.create({
   },
 
   // ── Cartes ──
+  generatorCard: {
+    position: 'relative', overflow: 'hidden',
+    borderRadius: radius.lg, borderWidth: 1,
+    borderColor: withAlpha(colors.accent, 0.28),
+    padding: 14, marginBottom: 10,
+  },
+  generatorGlow: {
+    position: 'absolute', width: 130, height: 130, borderRadius: 65,
+    right: -48, top: -72, backgroundColor: withAlpha(colors.accent, 0.18),
+  },
+  generatorHeader: { flexDirection: 'row', alignItems: 'center' },
+  generatorIcon: {
+    width: 36, height: 36, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', marginRight: 10,
+  },
+  generatorHeading: { flex: 1 },
+  generatorTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '800' },
+  generatorSubtitle: { color: colors.textMuted, fontSize: 11.5, marginTop: 2 },
+  creditPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 5, borderRadius: radius.round,
+    backgroundColor: withAlpha(colors.gold, 0.11),
+    borderWidth: 1, borderColor: withAlpha(colors.gold, 0.2),
+  },
+  creditText: { color: colors.gold, fontSize: 10.5, fontWeight: '800' },
+  creditTextEmpty: { color: colors.textMuted },
+  generatorInputShell: {
+    position: 'relative', marginTop: 13, minHeight: 92,
+    borderRadius: radius.md, borderWidth: 1,
+    borderColor: withAlpha(colors.textPrimary, 0.09),
+    backgroundColor: withAlpha(colors.bg, 0.55),
+  },
+  generatorInput: {
+    minHeight: 92, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 26,
+    color: colors.textPrimary, fontSize: 14, lineHeight: 20,
+  },
+  generatorCounter: {
+    position: 'absolute', right: 9, bottom: 7,
+    color: colors.textMuted, fontSize: 9.5,
+  },
+  generatorNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 9, paddingHorizontal: 2,
+  },
+  generatorNoticeText: { flex: 1, color: colors.textMuted, fontSize: 11.5 },
+  generatorError: { color: colors.red, fontSize: 11.5, lineHeight: 16, marginTop: 9 },
+  generatorButton: {
+    height: 43, borderRadius: radius.md, marginTop: 11,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: colors.accent,
+    shadowColor: colors.accent, shadowOpacity: 0.25, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 }, elevation: 4,
+  },
+  generatorButtonDisabled: {
+    opacity: 0.42, shadowOpacity: 0, elevation: 0,
+  },
+  generatorButtonText: { color: colors.onAccent, fontSize: 13.5, fontWeight: '800' },
+  generatedDraft: {
+    marginTop: 13, padding: 12, borderRadius: radius.md,
+    backgroundColor: withAlpha(colors.textPrimary, 0.055),
+    borderWidth: 1, borderColor: withAlpha(colors.cyan, 0.15),
+  },
+  generatedDraftTop: { flexDirection: 'row', alignItems: 'center' },
+  generatedDraftLabel: {
+    flex: 1, color: colors.textMuted, fontSize: 9.5,
+    fontWeight: '800', letterSpacing: 0.9,
+  },
+  styleLearnedPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.round,
+    backgroundColor: withAlpha(colors.cyan, 0.09),
+  },
+  styleLearnedText: { color: colors.cyan, fontSize: 9.5, fontWeight: '700' },
+  generatedDraftText: {
+    color: colors.textPrimary, fontSize: 15, lineHeight: 21, fontWeight: '600', marginTop: 10,
+  },
+  generatedAngle: { color: colors.textMuted, fontSize: 11, fontStyle: 'italic', marginTop: 7 },
+  openComposerButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  openComposerText: { color: colors.textPrimary, fontSize: 12.5, fontWeight: '700' },
+
   card: {
     paddingVertical: 13, paddingHorizontal: 14,
     borderRadius: radius.md,
