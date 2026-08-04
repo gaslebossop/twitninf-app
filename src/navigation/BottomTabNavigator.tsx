@@ -1,8 +1,14 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { View, StyleSheet, Platform, Dimensions } from 'react-native';
+import { AccessibilityInfo, View, StyleSheet, Platform, Dimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
+import {
+  GlassView,
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+} from 'expo-glass-effect';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedTabIcon from '../components/AnimatedTabIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
@@ -33,7 +39,34 @@ const Tab = createBottomTabNavigator();
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function BottomTabNavigator() {
+  const insets = useSafeAreaInsets();
   const { isUserBanned, isUserSuspended } = useAuth();
+  const liquidGlassCapable = React.useMemo(() => {
+    if (Platform.OS !== 'ios') return false;
+    try {
+      // Les deux vérifications sont nécessaires : l'une valide la compilation
+      // avec le SDK 26, l'autre la présence réelle de l'API sur l'appareil.
+      return isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
+    } catch {
+      // Une bêta iOS 26 incomplète ne doit jamais faire tomber la navigation.
+      return false;
+    }
+  }, []);
+  const [reduceTransparency, setReduceTransparency] = React.useState(false);
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+    AccessibilityInfo.isReduceTransparencyEnabled()
+      .then(setReduceTransparency)
+      .catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceTransparencyChanged',
+      setReduceTransparency,
+    );
+    return () => subscription.remove();
+  }, []);
+
+  const useLiquidGlass = liquidGlassCapable && !reduceTransparency;
   /** Sert au badge de l'onglet Live, plus à décider de son existence. */
   const [activeLiveCount, setActiveLiveCount] = React.useState(0);
   // Onglets optionnels choisis à l'onboarding (voir NavbarPrefsContext) — les
@@ -183,25 +216,52 @@ export default function BottomTabNavigator() {
           );
         },
         tabBarLabel: () => null, // Pas de labels comme sur Twitter
-        tabBarStyle: {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: Platform.OS === 'ios' ? 83 : 85,
-          backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.bg,
-          borderTopWidth: 0,
-          borderTopColor: Platform.OS === 'ios' ? 'transparent' : colors.border,
-          paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-          paddingTop: Platform.OS === 'ios' ? 8 : 8,
-          shadowColor: Platform.OS === 'ios' ? '#000' : 'transparent',
-          shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
-          shadowRadius: Platform.OS === 'ios' ? 15 : 0,
-          shadowOffset: { width: 0, height: Platform.OS === 'ios' ? -2 : 0 },
-          elevation: Platform.OS === 'ios' ? 0 : 0,
-        },
+        tabBarStyle: liquidGlassCapable
+          ? {
+              position: 'absolute',
+              bottom: Math.max(insets.bottom, 10),
+              left: 12,
+              right: 12,
+              height: 60,
+              paddingTop: 5,
+              paddingBottom: 5,
+              borderRadius: 30,
+              borderTopWidth: 0,
+              backgroundColor: 'transparent',
+              shadowOpacity: 0,
+              elevation: 0,
+            }
+          : {
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: Platform.OS === 'ios' ? 83 : 85,
+              backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.bg,
+              borderTopWidth: 0,
+              borderTopColor: Platform.OS === 'ios' ? 'transparent' : colors.border,
+              paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+              paddingTop: 8,
+              shadowColor: Platform.OS === 'ios' ? '#000' : 'transparent',
+              shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
+              shadowRadius: Platform.OS === 'ios' ? 15 : 0,
+              shadowOffset: { width: 0, height: Platform.OS === 'ios' ? -2 : 0 },
+              elevation: 0,
+            },
         tabBarBackground: () => (
-          Platform.OS === 'ios' ? (
+          useLiquidGlass ? (
+            <GlassView
+              pointerEvents="none"
+              glassEffectStyle="regular"
+              colorScheme="dark"
+              tintColor="rgba(232, 35, 116, 0.08)"
+              style={styles.liquidGlassBackground}
+            />
+          ) : liquidGlassCapable ? (
+            // Réduire la transparence garde la géométrie iOS 26 mais remplace
+            // le matériau translucide par une surface opaque lisible.
+            <View pointerEvents="none" style={styles.reducedTransparencyBackground} />
+          ) : Platform.OS === 'ios' ? (
             <BlurView
               intensity={60}
               tint="systemChromeMaterialDark"
@@ -326,6 +386,15 @@ export default function BottomTabNavigator() {
 }
 
 const styles = StyleSheet.create({
+  liquidGlassBackground: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 30,
+  },
+  reducedTransparencyBackground: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 30,
+    backgroundColor: '#17151B',
+  },
   blurBackground: {
     position: 'absolute',
     top: 0,
