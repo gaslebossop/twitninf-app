@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { navigationRef } from './NavigationService';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Platform } from 'react-native';
@@ -26,11 +26,14 @@ export type RootStackParamList = {
 const RootStack = createStackNavigator<RootStackParamList>();
 
 const TransparentTheme = {
-  ...DefaultTheme,
+  ...DarkTheme,
   colors: {
-    ...DefaultTheme.colors,
+    ...DarkTheme.colors,
+    primary: colors.accent,
     background: 'transparent',
     card: 'transparent',
+    text: colors.textPrimary,
+    border: colors.border,
   },
 };
 

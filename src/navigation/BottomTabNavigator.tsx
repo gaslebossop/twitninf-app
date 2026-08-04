@@ -1,14 +1,12 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { AccessibilityInfo, View, StyleSheet, Platform, Dimensions } from 'react-native';
-import { BlurView } from 'expo-blur';
 import {
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from 'expo-glass-effect';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+  createNativeBottomTabNavigator,
+  type NativeBottomTabIcon,
+  type NativeBottomTabNavigationOptions,
+} from '@react-navigation/bottom-tabs/unstable';
+import { Ionicons } from '@expo/vector-icons';
+import { View, StyleSheet, Platform, Dimensions } from 'react-native';
 import AnimatedTabIcon from '../components/AnimatedTabIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
@@ -35,38 +33,83 @@ import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 
 const Tab = createBottomTabNavigator();
+const NativeTab = createNativeBottomTabNavigator();
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
+type TabName =
+  | 'Accueil'
+  | 'Video'
+  | 'Live'
+  | 'Recherche'
+  | 'Notifications'
+  | 'Messages'
+  | 'Profil'
+  | 'Casino'
+  | 'Revue'
+  | 'Trading'
+  | 'WalletDetail'
+  | 'AccountStats'
+  | 'TweetMonetization'
+  | 'KosporBirthday';
+
+type NativeSfSymbolName = Extract<NativeBottomTabIcon, { type: 'sfSymbol' }>['name'];
+
+interface TabDefinition {
+  name: TabName;
+  component: React.ComponentType<any>;
+}
+
+const TAB_LABELS: Record<TabName, string> = {
+  Accueil: 'Accueil',
+  Video: 'Vidéos',
+  Live: 'Live',
+  Recherche: 'Recherche',
+  Notifications: 'Activité',
+  Messages: 'Messages',
+  Profil: 'Profil',
+  Casino: 'Casino',
+  Revue: 'Revue',
+  Trading: 'Trading',
+  WalletDetail: 'Wallet',
+  AccountStats: 'Stats',
+  TweetMonetization: 'Gains',
+  KosporBirthday: 'Kospor',
+};
+
+const NATIVE_TAB_ICONS: Record<
+  Exclude<TabName, 'Recherche'>,
+  { default: NativeSfSymbolName; selected: NativeSfSymbolName }
+> = {
+  Accueil: { default: 'house', selected: 'house.fill' },
+  Video: { default: 'play.rectangle', selected: 'play.rectangle.fill' },
+  Live: {
+    default: 'dot.radiowaves.left.and.right',
+    selected: 'dot.radiowaves.left.and.right',
+  },
+  Notifications: { default: 'bell', selected: 'bell.fill' },
+  Messages: { default: 'envelope', selected: 'envelope.fill' },
+  Profil: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
+  Casino: { default: 'dice', selected: 'dice.fill' },
+  Revue: { default: 'hammer', selected: 'hammer.fill' },
+  Trading: { default: 'chart.xyaxis.line', selected: 'chart.xyaxis.line' },
+  WalletDetail: { default: 'wallet.pass', selected: 'wallet.pass.fill' },
+  AccountStats: { default: 'chart.bar', selected: 'chart.bar.fill' },
+  TweetMonetization: { default: 'banknote', selected: 'banknote.fill' },
+  KosporBirthday: { default: 'gift', selected: 'gift.fill' },
+};
+
+const nativeTabIcon = (name: TabName): NativeBottomTabNavigationOptions['tabBarIcon'] => {
+  if (name === 'Recherche') return undefined;
+  const icons = NATIVE_TAB_ICONS[name];
+  return ({ focused }) => ({
+    type: 'sfSymbol',
+    name: focused ? icons.selected : icons.default,
+  });
+};
+
 export default function BottomTabNavigator() {
-  const insets = useSafeAreaInsets();
   const { isUserBanned, isUserSuspended } = useAuth();
-  const liquidGlassCapable = React.useMemo(() => {
-    if (Platform.OS !== 'ios') return false;
-    try {
-      // Les deux vérifications sont nécessaires : l'une valide la compilation
-      // avec le SDK 26, l'autre la présence réelle de l'API sur l'appareil.
-      return isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
-    } catch {
-      // Une bêta iOS 26 incomplète ne doit jamais faire tomber la navigation.
-      return false;
-    }
-  }, []);
-  const [reduceTransparency, setReduceTransparency] = React.useState(false);
-
-  React.useEffect(() => {
-    if (Platform.OS !== 'ios') return undefined;
-    AccessibilityInfo.isReduceTransparencyEnabled()
-      .then(setReduceTransparency)
-      .catch(() => {});
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceTransparencyChanged',
-      setReduceTransparency,
-    );
-    return () => subscription.remove();
-  }, []);
-
-  const useLiquidGlass = liquidGlassCapable && !reduceTransparency;
   /** Sert au badge de l'onglet Live, plus à décider de son existence. */
   const [activeLiveCount, setActiveLiveCount] = React.useState(0);
   // Onglets optionnels choisis à l'onboarding (voir NavbarPrefsContext) — les
@@ -117,6 +160,106 @@ export default function BottomTabNavigator() {
   React.useEffect(() => unreadService.subscribe(refreshCounts), [refreshCounts]);
 
   const isRestricted = isUserBanned || isUserSuspended;
+
+  const optionalTabs: TabDefinition[] = [
+    ...(showVideoTab ? [{ name: 'Video' as const, component: TwitNinfVideo }] : []),
+    ...(showMessagesTab ? [{ name: 'Messages' as const, component: MessagesScreen }] : []),
+    ...(showCasinoTab ? [{ name: 'Casino' as const, component: CasinoScreen }] : []),
+    ...(showRevueTab ? [{ name: 'Revue' as const, component: CommunityReviewScreen }] : []),
+    ...(showTradingTab ? [{ name: 'Trading' as const, component: TradingScreen }] : []),
+    ...(showWalletTab ? [{ name: 'WalletDetail' as const, component: WalletDetailScreen }] : []),
+    ...(showAnalyticsTab ? [{ name: 'AccountStats' as const, component: AccountStatsScreen }] : []),
+    ...(showMonetizationTab
+      ? [{ name: 'TweetMonetization' as const, component: TweetMonetizationScreen }]
+      : []),
+  ];
+
+  const eventTabs: TabDefinition[] = isEventActive
+    ? [{ name: 'KosporBirthday', component: KosporBirthdayScreen }]
+    : [];
+
+  const classicTabs: TabDefinition[] = isRestricted
+    ? [
+        { name: 'Notifications', component: NotificationsScreen },
+        { name: 'Profil', component: ProfileScreen },
+      ]
+    : [
+        { name: 'Accueil', component: TweetsScreen },
+        ...optionalTabs.slice(0, showVideoTab ? 1 : 0),
+        { name: 'Live', component: LivesScreen },
+        { name: 'Recherche', component: SearchScreen },
+        { name: 'Notifications', component: NotificationsScreen },
+        ...optionalTabs.slice(showVideoTab ? 1 : 0),
+        ...eventTabs,
+        { name: 'Profil', component: ProfileScreen },
+      ];
+
+  // Sur iOS 26, l'onglet Recherche devient le bouton système séparé.
+  // Les quatre destinations principales restent donc dans la capsule, comme
+  // dans GitHub. Si l'utilisateur ajoute beaucoup d'onglets, UIKit gère lui-
+  // même le regroupement "Plus" au lieu de compresser neuf icônes.
+  const nativeTabs: TabDefinition[] = isRestricted
+    ? classicTabs
+    : [
+        { name: 'Accueil', component: TweetsScreen },
+        { name: 'Live', component: LivesScreen },
+        { name: 'Notifications', component: NotificationsScreen },
+        { name: 'Profil', component: ProfileScreen },
+        ...optionalTabs,
+        ...eventTabs,
+        { name: 'Recherche', component: SearchScreen },
+      ];
+
+  const badgeFor = (name: string) =>
+    name === 'Notifications'
+      ? notificationCount
+      : name === 'Messages'
+        ? messageCount
+        : name === 'Live'
+          ? activeLiveCount
+          : 0;
+
+  if (Platform.OS === 'ios') {
+    return (
+      <NativeTab.Navigator
+        id={undefined}
+        screenOptions={({ route }) => {
+          const name = route.name as TabName;
+          const badgeCount = badgeFor(name);
+          const isSearch = name === 'Recherche';
+
+          return {
+            headerShown: false,
+            title: TAB_LABELS[name],
+            lazy: true,
+            tabBarActiveTintColor: colors.accent,
+            tabBarBadge: badgeCount > 0 ? badgeCount : undefined,
+            tabBarBadgeStyle: { backgroundColor: colors.accent },
+            tabBarBlurEffect: 'systemChromeMaterialDark',
+            tabBarControllerMode: 'tabBar',
+            tabBarMinimizeBehavior: 'onScrollDown',
+            tabBarStyle: {
+              backgroundColor: 'rgba(10, 10, 10, 0.82)',
+              shadowColor: 'transparent',
+            },
+            // Ne rien substituer pour Recherche : le system item conserve sa
+            // lentille séparée et son icône SF Symbol native sous iOS 26.
+            tabBarSystemItem: isSearch ? 'search' : undefined,
+            tabBarLabel: isSearch ? undefined : TAB_LABELS[name],
+            tabBarIcon: isSearch ? undefined : nativeTabIcon(name),
+          };
+        }}
+      >
+        {nativeTabs.map((screen) => (
+          <NativeTab.Screen
+            key={screen.name}
+            name={screen.name}
+            component={screen.component}
+          />
+        ))}
+      </NativeTab.Navigator>
+    );
+  }
 
   // La barre peut maintenant porter jusqu'à 5 onglets optionnels (+ Live et
   // l'événement, conditionnels) : à 9 icônes ou plus, un gabarit fixe de 50pt
@@ -216,61 +359,20 @@ export default function BottomTabNavigator() {
           );
         },
         tabBarLabel: () => null, // Pas de labels comme sur Twitter
-        tabBarStyle: liquidGlassCapable
-          ? {
-              position: 'absolute',
-              bottom: Math.max(insets.bottom, 10),
-              left: 12,
-              right: 12,
-              height: 60,
-              paddingTop: 5,
-              paddingBottom: 5,
-              borderRadius: 30,
-              borderTopWidth: 0,
-              backgroundColor: 'transparent',
-              shadowOpacity: 0,
-              elevation: 0,
-            }
-          : {
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: Platform.OS === 'ios' ? 83 : 85,
-              backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.bg,
-              borderTopWidth: 0,
-              borderTopColor: Platform.OS === 'ios' ? 'transparent' : colors.border,
-              paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-              paddingTop: 8,
-              shadowColor: Platform.OS === 'ios' ? '#000' : 'transparent',
-              shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
-              shadowRadius: Platform.OS === 'ios' ? 15 : 0,
-              shadowOffset: { width: 0, height: Platform.OS === 'ios' ? -2 : 0 },
-              elevation: 0,
-            },
-        tabBarBackground: () => (
-          useLiquidGlass ? (
-            <GlassView
-              pointerEvents="none"
-              glassEffectStyle="regular"
-              colorScheme="dark"
-              tintColor="rgba(232, 35, 116, 0.08)"
-              style={styles.liquidGlassBackground}
-            />
-          ) : liquidGlassCapable ? (
-            // Réduire la transparence garde la géométrie iOS 26 mais remplace
-            // le matériau translucide par une surface opaque lisible.
-            <View pointerEvents="none" style={styles.reducedTransparencyBackground} />
-          ) : Platform.OS === 'ios' ? (
-            <BlurView
-              intensity={60}
-              tint="systemChromeMaterialDark"
-              style={styles.blurBackground}
-            />
-          ) : (
-            <View style={styles.androidBackground} />
-          )
-        ),
+        tabBarStyle: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 85,
+          backgroundColor: colors.bg,
+          borderTopWidth: 0,
+          borderTopColor: colors.border,
+          paddingBottom: 20,
+          paddingTop: 8,
+          elevation: 0,
+        },
+        tabBarBackground: () => <View style={styles.androidBackground} />,
         tabBarItemStyle: {
           paddingVertical: 0,
         },
@@ -278,133 +380,19 @@ export default function BottomTabNavigator() {
         tabBarHideOnKeyboard: true,
       })}
     >
-      {isRestricted ? (
-        <>
-          <Tab.Screen
-            name="Notifications"
-            component={NotificationsScreen}
-          />
-          <Tab.Screen
-            name="Profil"
-            component={ProfileScreen}
-          />
-        </>
-      ) : (
-        <>
-          <Tab.Screen
-            name="Accueil"
-            component={TweetsScreen}
-          />
-          {showVideoTab && (
-            <Tab.Screen
-              name="Video"
-              component={TwitNinfVideo}
-            />
-          )}
-          {/* Toujours monté. L'onglet n'apparaissait qu'en présence d'un live
-              déjà en cours, or c'est le seul chemin vers « Passer en direct » :
-              tant que personne ne diffusait, personne ne pouvait commencer.
-              L'écran a d'ailleurs un état vide écrit pour ce cas précis
-              (« Sois le premier à diffuser ! »), jusqu'ici inatteignable. */}
-          <Tab.Screen
-            name="Live"
-            component={LivesScreen}
-          />
-
-          <Tab.Screen
-            name="Recherche"
-            component={SearchScreen}
-          />
-          <Tab.Screen
-            name="Notifications"
-            component={NotificationsScreen}
-          />
-          {showMessagesTab && (
-            <Tab.Screen
-              name="Messages"
-              component={MessagesScreen}
-            />
-          )}
-          {showCasinoTab && (
-            <Tab.Screen
-              name="Casino"
-              component={CasinoScreen}
-            />
-          )}
-          {/* Revue communautaire (BÊTA). Elle reste aussi accessible depuis les
-              réglages et depuis MainNavigator — même double entrée que Casino,
-              qui est à la fois un onglet et un écran de la pile. */}
-          {showRevueTab && (
-            <Tab.Screen
-              name="Revue"
-              component={CommunityReviewScreen}
-            />
-          )}
-          {/* Trading, Portefeuille, Analytiques, Monétisation : même double
-              entrée (onglet + Réglages) que Casino/Revue ci-dessus. */}
-          {showTradingTab && (
-            <Tab.Screen
-              name="Trading"
-              component={TradingScreen}
-            />
-          )}
-          {showWalletTab && (
-            <Tab.Screen
-              name="WalletDetail"
-              component={WalletDetailScreen}
-            />
-          )}
-          {showAnalyticsTab && (
-            <Tab.Screen
-              name="AccountStats"
-              component={AccountStatsScreen}
-            />
-          )}
-          {showMonetizationTab && (
-            <Tab.Screen
-              name="TweetMonetization"
-              component={TweetMonetizationScreen}
-            />
-          )}
-          {isEventActive && (
-            <Tab.Screen
-              name="KosporBirthday"
-              component={KosporBirthdayScreen}
-              options={{
-                tabBarLabel: 'Kospor',
-              }}
-            />
-          )}
-          <Tab.Screen
-            name="Profil"
-            component={ProfileScreen}
-          />
-        </>
-      )}
+      {classicTabs.map((screen) => (
+        <Tab.Screen
+          key={screen.name}
+          name={screen.name}
+          component={screen.component}
+          options={screen.name === 'KosporBirthday' ? { tabBarLabel: 'Kospor' } : undefined}
+        />
+      ))}
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  liquidGlassBackground: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 30,
-  },
-  reducedTransparencyBackground: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 30,
-    backgroundColor: '#17151B',
-  },
-  blurBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(11, 12, 15, 0.62)',
-    borderTopWidth: 0.5,
-    borderTopColor: colors.border,
-  },
   androidBackground: {
     position: 'absolute',
     top: 0,
