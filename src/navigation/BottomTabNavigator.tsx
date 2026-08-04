@@ -30,7 +30,9 @@ import TradingScreen from '../screens/TradingScreen';
 import WalletDetailScreen from '../screens/WalletDetailScreen';
 import AccountStatsScreen from '../screens/AccountStatsScreen';
 import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
+import MoreScreen from '../screens/MoreScreen';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
+import { resolveTabLayout } from './tabLayout';
 
 const Tab = createBottomTabNavigator();
 const NativeTab = createNativeBottomTabNavigator();
@@ -47,6 +49,7 @@ type TabName =
   | 'Profil'
   | 'Casino'
   | 'Revue'
+  | 'Plus'
   | 'Trading'
   | 'WalletDetail'
   | 'AccountStats'
@@ -70,6 +73,7 @@ const TAB_LABELS: Record<TabName, string> = {
   Profil: 'Profil',
   Casino: 'Casino',
   Revue: 'Revue',
+  Plus: 'Plus',
   Trading: 'Trading',
   WalletDetail: 'Wallet',
   AccountStats: 'Stats',
@@ -92,6 +96,7 @@ const NATIVE_TAB_ICONS: Record<
   Profil: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
   Casino: { default: 'dice', selected: 'dice.fill' },
   Revue: { default: 'hammer', selected: 'hammer.fill' },
+  Plus: { default: 'ellipsis.circle', selected: 'ellipsis.circle.fill' },
   Trading: { default: 'chart.xyaxis.line', selected: 'chart.xyaxis.line' },
   WalletDetail: { default: 'wallet.pass', selected: 'wallet.pass.fill' },
   AccountStats: { default: 'chart.bar', selected: 'chart.bar.fill' },
@@ -197,21 +202,35 @@ export default function BottomTabNavigator() {
         { name: 'Profil', component: ProfileScreen },
       ];
 
-  // Sur iOS 26, l'onglet Recherche devient le bouton système séparé.
-  // Les quatre destinations principales restent donc dans la capsule, comme
-  // dans GitHub. Si l'utilisateur ajoute beaucoup d'onglets, UIKit gère lui-
-  // même le regroupement "Plus" au lieu de compresser neuf icônes.
+  // Exactement cinq onglets, jamais plus : au-delà, UITabBarController
+  // remplace le cinquième par SON « More » — une UITableView grise, non
+  // stylable, toujours en dernière position, qui embarquerait Profil avec
+  // elle. Tout ce qui ne tient pas ici part dans MoreScreen, qui applique la
+  // même règle de répartition (voir navigation/tabLayout).
+  const layout = resolveTabLayout(selectedOptionalTabs);
+
+  const dynamicTab: TabDefinition =
+    layout.dynamic === 'messages'
+      ? { name: 'Messages', component: MessagesScreen }
+      : layout.dynamic === 'revue'
+        ? { name: 'Revue', component: CommunityReviewScreen }
+        : { name: 'Notifications', component: NotificationsScreen };
+
   const nativeTabs: TabDefinition[] = isRestricted
     ? classicTabs
     : [
         { name: 'Accueil', component: TweetsScreen },
-        { name: 'Live', component: LivesScreen },
-        { name: 'Notifications', component: NotificationsScreen },
-        { name: 'Profil', component: ProfileScreen },
-        ...optionalTabs,
-        ...eventTabs,
         { name: 'Recherche', component: SearchScreen },
+        dynamicTab,
+        { name: 'Plus', component: MoreScreen },
+        { name: 'Profil', component: ProfileScreen },
       ];
+
+  // Activité perd sa place dès que le slot dynamique est occupé : son badge
+  // remonte alors sur l'onglet Plus, sinon l'alerte deviendrait invisible.
+  // Messages n'a pas besoin du même report — quand il est sélectionné, il est
+  // prioritaire sur le slot dynamique, donc toujours visible dans la barre.
+  const displacedBadgeCount = layout.showsNotifications ? 0 : notificationCount;
 
   const badgeFor = (name: string) =>
     name === 'Notifications'
@@ -220,7 +239,9 @@ export default function BottomTabNavigator() {
         ? messageCount
         : name === 'Live'
           ? activeLiveCount
-          : 0;
+          : name === 'Plus'
+            ? displacedBadgeCount
+            : 0;
 
   if (Platform.OS === 'ios') {
     // UITabBarController ne supporte pas qu'on lui remplace sa topologie au
@@ -257,15 +278,39 @@ export default function BottomTabNavigator() {
             tabBarActiveTintColor: colors.accent,
             tabBarBadge: badgeCount > 0 ? badgeCount : undefined,
             tabBarBadgeStyle: { backgroundColor: colors.accent },
-            tabBarBlurEffect: 'systemChromeMaterialDark',
+            // Liquid Glass en permanence, et pas seulement sous le doigt.
+            //
+            // `[UITabBarAppearance new]` part déjà du fond par défaut, qui
+            // sous iOS 26 EST le verre. Deux réglages l'écrasaient :
+            // `systemChromeMaterialDark` remplaçait le verre par un
+            // `UIBlurEffect` classique, et surtout `backgroundColor` peignait
+            // un aplat quasi opaque par-dessus. Il ne restait du verre que le
+            // reflet de l'élément pressé — d'où l'impression qu'il
+            // n'apparaissait qu'au doigt.
+            //
+            // `systemDefault` est traité à part côté natif : c'est la seule
+            // valeur qui laisse `backgroundEffect` intact (voir
+            // RNSTabBarAppearanceCoordinator.mm). Ne rien passer ne suffirait
+            // pas — bottom-tabs retomberait sur `systemMaterialDark`.
+            tabBarBlurEffect: 'systemDefault',
             tabBarControllerMode: 'tabBar',
             tabBarMinimizeBehavior: 'onScrollDown',
-            tabBarStyle: {
-              backgroundColor: 'rgba(10, 10, 10, 0.82)',
-              shadowColor: 'transparent',
-            },
-            // Ne rien substituer pour Recherche : le system item conserve sa
-            // lentille séparée et son icône SF Symbol native sous iOS 26.
+            // react-native-screens repasse par défaut le premier ScrollView
+            // descendant de l'onglet en `contentInsetAdjustmentBehavior:
+            // 'automatic'` (au lieu du `'never'` de React Native), pour que les
+            // listes respectent une barre de navigation native. Cette app n'en
+            // a pas : chaque écran dessine son propre header et réserve déjà
+            // l'encoche via `useHeaderMetrics()` (`insets.top`). Laisser UIKit
+            // ajouter le même inset une seconde fois décalait le haut du
+            // contenu d'une hauteur de Dynamic Island, et seulement sur les
+            // écrans dont la liste se trouve en tête de chaîne — d'où un
+            // décalage qui n'apparaissait que sur certains onglets.
+            overrideScrollViewContentInsetAdjustmentBehavior: false,
+            // Recherche prend le system item : icône loupe et libellé
+            // localisés par UIKit. Contrairement à ce que disait le commentaire
+            // précédent, ça ne lui donne PAS la lentille séparée d'iOS 26 —
+            // react-native-screens 4.25 n'expose aucun rôle `.search`, donc
+            // Recherche est un onglet comme les autres et compte dans les cinq.
             tabBarSystemItem: isSearch ? 'search' : undefined,
             tabBarLabel: isSearch ? undefined : TAB_LABELS[name],
             tabBarIcon: isSearch ? undefined : nativeTabIcon(name),

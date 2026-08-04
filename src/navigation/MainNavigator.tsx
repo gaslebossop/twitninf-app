@@ -49,6 +49,8 @@ import VideoCaptionScreen from '../screens/VideoCaptionScreen';
 import type { VideoOverlay } from '../utils/videoFilters';
 import TwitNinfVideo from '../screens/twitninfvideo';
 import MessagesScreen from '../screens/MessagesScreen';
+import LivesScreen from '../screens/LivesScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import LiveViewerScreen from '../screens/LiveViewerScreen';
 import GoLiveScreen from '../screens/GoLiveScreen';
 import KosporBirthdayPopup from '../components/KosporBirthdayPopup';
@@ -119,6 +121,10 @@ export type MainStackParamList = {
   PolicierCongoAdmin: undefined;
   Video: undefined;
   Messages: undefined;
+  // Atteignables depuis l'écran Plus quand elles n'ont pas de place dans la
+  // barre d'onglets, plafonnée à cinq (voir navigation/tabLayout).
+  Lives: undefined;
+  Notifications: undefined;
   CreateVideo: undefined;
   /**
    * `returnTo` : écran à qui rendre la prise, au lieu d'enchaîner sur
@@ -549,6 +555,31 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="Messages"
         component={MessagesScreen}
+        options={{
+          presentation: 'card',
+          headerShown: false,
+        }}
+      />
+
+      {/* Live et Activité : ils n'ont plus de place dans la barre, qui est
+          plafonnée à cinq onglets pour empêcher UIKit de fabriquer son propre
+          « More » (voir MoreScreen). On les atteint donc par la pile, comme
+          Vidéos et Messages juste au-dessus. Quand Activité redevient un
+          onglet, `navigate('Notifications')` est capté par le navigateur
+          d'onglets avant de remonter ici : les deux entrées coexistent sans
+          se marcher dessus. */}
+      <MainStack.Screen
+        name="Lives"
+        component={LivesScreen}
+        options={{
+          presentation: 'card',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
         options={{
           presentation: 'card',
           headerShown: false,
