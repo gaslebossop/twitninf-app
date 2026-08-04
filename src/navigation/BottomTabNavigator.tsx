@@ -6,7 +6,7 @@ import {
   type NativeBottomTabNavigationOptions,
 } from '@react-navigation/bottom-tabs/unstable';
 import { Ionicons } from '@expo/vector-icons';
-import { View, StyleSheet, Platform, Dimensions } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Platform, Dimensions } from 'react-native';
 import AnimatedTabIcon from '../components/AnimatedTabIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
@@ -114,7 +114,10 @@ export default function BottomTabNavigator() {
   const [activeLiveCount, setActiveLiveCount] = React.useState(0);
   // Onglets optionnels choisis à l'onboarding (voir NavbarPrefsContext) — les
   // autres restent joignables depuis Réglages, jamais totalement retirés.
-  const { selected: selectedOptionalTabs } = useNavbarPrefs();
+  const {
+    loading: navbarPrefsLoading,
+    selected: selectedOptionalTabs,
+  } = useNavbarPrefs();
   const showVideoTab = selectedOptionalTabs.includes('video');
   const showMessagesTab = selectedOptionalTabs.includes('messages');
   const showCasinoTab = selectedOptionalTabs.includes('casino');
@@ -220,8 +223,27 @@ export default function BottomTabNavigator() {
           : 0;
 
   if (Platform.OS === 'ios') {
+    // UITabBarController ne supporte pas qu'on lui remplace sa topologie au
+    // milieu de sa première transaction de montage. Les préférences passent
+    // d'abord par une valeur par défaut avant d'être hydratées depuis
+    // AsyncStorage. Attendre cette hydratation empêche UIKit de sélectionner
+    // un contrôleur qui vient d'être retiré de son tableau `viewControllers`.
+    if (navbarPrefsLoading) {
+      return (
+        <View style={styles.nativeTabsLoading}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      );
+    }
+
+    // Les préférences restent modifiables depuis Réglages et un événement
+    // peut s'activer à chaud. Dans ce cas, recréer le conteneur UIKit est plus
+    // sûr que de muter la liste de view controllers d'une instance existante.
+    const nativeTabsTopologyKey = nativeTabs.map((screen) => screen.name).join('|');
+
     return (
       <NativeTab.Navigator
+        key={nativeTabsTopologyKey}
         id={undefined}
         screenOptions={({ route }) => {
           const name = route.name as TabName;
@@ -393,6 +415,12 @@ export default function BottomTabNavigator() {
 }
 
 const styles = StyleSheet.create({
+  nativeTabsLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
   androidBackground: {
     position: 'absolute',
     top: 0,
