@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -14,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts, withAlpha } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -48,6 +47,7 @@ import profileCustomizationService, {
   nameSizeScale,
 } from '../services/profileCustomizationService';
 import type { VerificationStyle } from '../services/verificationStyleService';
+import { toast } from '../components/ui/Toast';
 
 const PREVIEW_AVATAR = 72;
 const PREVIEW_BANNER = 96;
@@ -93,7 +93,9 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   /** Un réglage Pro touché sans le palier : on le dit, on ne l'applique pas. */
   const requirePro = (apply: () => void) => {
     if (!canUseDecorations) {
-      Alert.alert('Palier Pro', 'Cet habillage est réservé à l\'abonnement Pro.');
+      toast.info('Palier Pro', {
+        description: 'Cet habillage est réservé à l\'abonnement Pro.',
+      });
       return;
     }
     apply();
@@ -105,14 +107,16 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
 
   const save = async () => {
     if (!canCustomize) {
-      Alert.alert('Abonnement requis', 'La personnalisation de profil est réservée aux abonnements Plus et Pro.');
+      toast.error('Abonnement requis', {
+        description: 'La personnalisation de profil est réservée aux abonnements Plus et Pro.',
+      });
       return;
     }
     setSaving(true);
     try {
       const result = await profileCustomizationService.save(draft);
       if (!result.success) {
-        Alert.alert('Erreur', result.message || 'Enregistrement impossible');
+        toast.error(result.message || 'Enregistrement impossible');
         return;
       }
       await refreshCurrentUser?.();
@@ -127,9 +131,7 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   if (loading) {
     return (
       <ScreenBackground>
-        <SafeAreaView style={styles.center}>
-          <ActivityIndicator color={colors.textSecondary} />
-        </SafeAreaView>
+        <ScreenSkeleton variant="list" />
       </ScreenBackground>
     );
   }
@@ -383,10 +385,9 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                     if (option.key === 'none') return update({ name_effect: 'none' });
                     if (certifOption) {
                       if (!canUseCertified) {
-                        Alert.alert(
-                          'Compte certifié requis',
-                          'Cet effet reprend la couleur de ton badge de certification : il faut être certifié pour l\'utiliser.',
-                        );
+                        toast.error('Compte certifié requis', {
+                          description: 'Cet effet reprend la couleur de ton badge de certification : il faut être certifié pour l\'utiliser.',
+                        });
                         return;
                       }
                       return update({ name_effect: 'certified' });

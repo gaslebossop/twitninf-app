@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
   Platform,
   Dimensions,
   StatusBar,
@@ -25,6 +24,7 @@ import { saveDraft, deleteDraft, persistDraftVideo } from '../services/draftsSer
 import { serializeOverlays, type VideoOverlay } from '../utils/videoFilters';
 import { useAuth } from '../contexts/AuthContext';
 import { effectiveSubscriptionTier, canUseFeature } from '../utils/subscriptionTier';
+import { toast } from '../components/ui/Toast';
 
 const { width, height } = Dimensions.get('window');
 
@@ -70,10 +70,14 @@ export default function VideoCaptionScreen() {
         videoUri: storedUri,
       });
       if (!saved) {
-        Alert.alert('Brouillon non enregistré', "La vidéo n'a pas pu être mise de côté.");
+        toast.success('Brouillon non enregistré', {
+          description: "La vidéo n'a pas pu être mise de côté.",
+        });
         return;
       }
-      Alert.alert('Brouillon enregistré', 'Tu le retrouveras dans tes brouillons.');
+      toast.success('Brouillon enregistré', {
+        description: 'Tu le retrouveras dans tes brouillons.',
+      });
       navigation.popToTop();
     } finally {
       setIsSavingDraft(false);
@@ -102,7 +106,7 @@ export default function VideoCaptionScreen() {
       });
 
       if (!result.success) {
-        Alert.alert('Erreur', result.message || 'Impossible de publier.');
+        toast.error(result.message || 'Impossible de publier.');
         return;
       }
 
@@ -111,7 +115,9 @@ export default function VideoCaptionScreen() {
       // l'impression qu'il reste quelque chose à publier.
       if (draftId && user?.id) await deleteDraft(user.id, draftId);
 
-      Alert.alert('Succès 🎉', result.message || 'Votre vidéo a été publiée !');
+      toast.success('Succès 🎉', {
+        description: result.message || 'Votre vidéo a été publiée !',
+      });
       navigation.popToTop();
     } finally {
       setIsLoading(false);

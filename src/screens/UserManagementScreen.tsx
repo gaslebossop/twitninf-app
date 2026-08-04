@@ -8,7 +8,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   StatusBar,
   Platform,
   Animated,
@@ -24,6 +23,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { moderationService, User } from '../services/moderationService';
 import SanctionModal, { SanctionData } from '../components/SanctionModal';
 import VerifiedBadge from '../components/VerifiedBadge';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -62,7 +63,7 @@ export default function UserManagementScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'suspended' | 'banned'>('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [animationValue] = useState(new Animated.Value(0));
+  const [animationValue] = useState(new Animated.Value(1));
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [sanctionModalVisible, setSanctionModalVisible] = useState(false);
@@ -70,11 +71,6 @@ export default function UserManagementScreen() {
 
   useEffect(() => {
     loadUsers();
-    Animated.timing(animationValue, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
   }, []);
 
   const loadUsers = async () => {
@@ -110,7 +106,7 @@ export default function UserManagementScreen() {
       console.log('✅ Utilisateurs chargés avec succès');
     } catch (error) {
       console.error('❌ Erreur lors du chargement des utilisateurs:', error);
-      Alert.alert('Erreur', 'Impossible de charger les utilisateurs');
+      toast.error('Impossible de charger les utilisateurs');
       setUsers([]);
     } finally {
       setLoading(false);
@@ -140,20 +136,15 @@ export default function UserManagementScreen() {
       setSelectedSanctionType(action);
       setSanctionModalVisible(true);
     } else {
-      Alert.alert(
-        `${actionTexts[action].charAt(0).toUpperCase() + actionTexts[action].slice(1)} l'utilisateur`,
-        `Êtes-vous sûr de vouloir ${actionTexts[action]} @${user.username} ?`,
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Confirmer',
-            style: action === 'unban' || action === 'unsuspend' ? 'default' : 'destructive',
-            onPress: async () => {
+      confirmAsync({
+        title: `${actionTexts[action].charAt(0).toUpperCase() + actionTexts[action].slice(1)} l'utilisateur`,
+        message: `Êtes-vous sûr de vouloir ${actionTexts[action]} @${user.username} ?`,
+        confirmLabel: 'Confirmer',
+      }).then((ok) => {
+        if (ok) (async () => {
               await executeUserAction(user, action, 'Action de modération');
-            }
-          }
-        ]
-      );
+            })();
+      });
     }
   };
 
@@ -174,14 +165,14 @@ export default function UserManagementScreen() {
           ban: 'banni',
           suspend: 'suspendu'
         };
-        Alert.alert('Succès', `Utilisateur ${actionTexts[sanctionData.type]} avec succès.`);
+        toast.success(`Utilisateur ${actionTexts[sanctionData.type]} avec succès.`);
         loadUsers(); // Recharger les données
       } else {
-        Alert.alert('Erreur', `Impossible d'effectuer cette action`);
+        toast.error(`Impossible d'effectuer cette action`);
       }
     } catch (error) {
       console.error('❌ Erreur lors de l\'action sur l\'utilisateur:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     } finally {
       setSanctionModalVisible(false);
       setSelectedUser(null);
@@ -222,14 +213,14 @@ export default function UserManagementScreen() {
           unban: 'débanni',
           unsuspend: 'réactivé'
         };
-        Alert.alert('Succès', `Utilisateur ${actionTexts[action]} avec succès.`);
+        toast.success(`Utilisateur ${actionTexts[action]} avec succès.`);
         loadUsers(); // Recharger les données
       } else {
-        Alert.alert('Erreur', `Impossible d'effectuer cette action`);
+        toast.error(`Impossible d'effectuer cette action`);
       }
     } catch (error) {
       console.error('❌ Erreur lors de l\'action sur l\'utilisateur:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     }
   };
 

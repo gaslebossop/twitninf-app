@@ -16,6 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import apiService from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { BackButton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 interface Tweet {
   id: string;
@@ -112,7 +113,7 @@ export default function CreateAdvertisementScreen() {
       }
     } catch (error) {
       console.error('Erreur lors du chargement des données:', error);
-      Alert.alert('Erreur', 'Impossible de charger les données');
+      toast.error('Impossible de charger les données');
     }
   };
 
@@ -136,27 +137,27 @@ export default function CreateAdvertisementScreen() {
 
   const validateForm = () => {
     if (!formData.tweet_id) {
-      Alert.alert('Erreur', 'Veuillez sélectionner un tweet à promouvoir');
+      toast.error('Veuillez sélectionner un tweet à promouvoir');
       return false;
     }
 
     if (!formData.title.trim()) {
-      Alert.alert('Erreur', 'Le titre de la publicité est requis');
+      toast.error('Le titre de la publicité est requis');
       return false;
     }
 
     if (!formData.budget || parseFloat(formData.budget) <= 0) {
-      Alert.alert('Erreur', 'Le budget doit être supérieur à 0');
+      toast.error('Le budget doit être supérieur à 0');
       return false;
     }
 
     if (balance && parseFloat(formData.budget) > balance.balance) {
-      Alert.alert('Erreur', `Solde TWC insuffisant. Solde: ${balance.balance} TWC`);
+      toast.error(`Solde TWC insuffisant. Solde: ${balance.balance} TWC`);
       return false;
     }
 
     if (formData.end_date <= formData.start_date) {
-      Alert.alert('Erreur', 'La date de fin doit être après la date de début');
+      toast.error('La date de fin doit être après la date de début');
       return false;
     }
 
@@ -190,22 +191,14 @@ export default function CreateAdvertisementScreen() {
       const response = await apiService.post('/api/ads/advertisements', advertisementData);
 
       if (response.success) {
-        Alert.alert(
-          'Succès',
-          'Publicité créée avec succès !',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        toast.success('Publicité créée');
+        navigation.goBack();
       } else {
-        Alert.alert('Erreur', response.message || 'Erreur lors de la création de la publicité');
+        toast.error(response.message || 'Erreur lors de la création de la publicité');
       }
     } catch (error) {
       console.error('Erreur lors de la création de la publicité:', error);
-      Alert.alert('Erreur', 'Impossible de créer la publicité');
+      toast.error('Impossible de créer la publicité');
     } finally {
       setLoading(false);
     }
@@ -307,7 +300,9 @@ export default function CreateAdvertisementScreen() {
               if (tweets.length > 0) {
                 setShowTweetSelector(true);
               } else {
-                Alert.alert('Aucun tweet', 'Vous n\'avez pas encore de tweets à promouvoir.');
+                toast.info('Aucun tweet', {
+                  description: 'Vous n\'avez pas encore de tweets à promouvoir.',
+                });
               }
             }}
           >

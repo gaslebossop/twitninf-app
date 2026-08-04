@@ -5,7 +5,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   Modal,
   ScrollView,
   TextInput,
@@ -19,6 +18,8 @@ import { BlurView } from 'expo-blur';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { moderationService } from '../services/moderationService';
 import SanctionModal, { SanctionData } from './SanctionModal';
+import { toast } from './ui/Toast';
+import { confirmAsync } from './ui/ConfirmSheet';
 
 const { width } = Dimensions.get('window');
 
@@ -121,7 +122,9 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
     switch (action) {
       case 'ban':
         if (!canBanUsers) {
-          Alert.alert('⚠️ Permission refusée', 'Vous n\'avez pas la permission de bannir des utilisateurs');
+          toast.error('⚠️ Permission refusée', {
+            description: 'Vous n\'avez pas la permission de bannir des utilisateurs',
+          });
           return;
         }
         setSanctionType('ban');
@@ -130,7 +133,9 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
         
       case 'suspend':
         if (!canSuspendUsers) {
-          Alert.alert('⚠️ Permission refusée', 'Vous n\'avez pas la permission de suspendre des utilisateurs');
+          toast.error('⚠️ Permission refusée', {
+            description: 'Vous n\'avez pas la permission de suspendre des utilisateurs',
+          });
           return;
         }
         setSanctionType('suspend');
@@ -139,7 +144,9 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
         
       case 'verify':
         if (!canVerifyUsers) {
-          Alert.alert('⚠️ Permission refusée', 'Vous n\'avez pas la permission de vérifier des utilisateurs');
+          toast.error('⚠️ Permission refusée', {
+            description: 'Vous n\'avez pas la permission de vérifier des utilisateurs',
+          });
           return;
         }
         executeSimpleAction('verify');
@@ -147,7 +154,9 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
         
       case 'unverify':
         if (!canVerifyUsers) {
-          Alert.alert('⚠️ Permission refusée', 'Vous n\'avez pas la permission de modifier la vérification');
+          toast.error('⚠️ Permission refusée', {
+            description: 'Vous n\'avez pas la permission de modifier la vérification',
+          });
           return;
         }
         executeSimpleAction('unverify');
@@ -157,7 +166,9 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
         if (targetType === 'tweet' && (canModerateContent || canDeleteTweets)) {
           executeSimpleAction('approve');
         } else {
-          Alert.alert('⚠️ Permission refusée', 'Vous n\'avez pas la permission d\'approuver ce contenu');
+          toast.error('⚠️ Permission refusée', {
+            description: 'Vous n\'avez pas la permission d\'approuver ce contenu',
+          });
         }
         break;
         
@@ -165,12 +176,16 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
         if (targetType === 'tweet' && (canModerateContent || canDeleteTweets)) {
           executeSimpleAction('reject');
         } else {
-          Alert.alert('⚠️ Permission refusée', 'Vous n\'avez pas la permission de rejeter ce contenu');
+          toast.error('⚠️ Permission refusée', {
+            description: 'Vous n\'avez pas la permission de rejeter ce contenu',
+          });
         }
         break;
         
       default:
-        Alert.alert('ℹ️ Information', 'Action non disponible');
+        toast.info('ℹ️ Information', {
+          description: 'Action non disponible',
+        });
     }
   };
 
@@ -184,15 +199,12 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
 
     const confirmText = actionTexts[action as keyof typeof actionTexts] || action;
     
-    Alert.alert(
-      '🔧 Confirmation d\'action',
-      `Voulez-vous ${confirmText} ${targetType === 'user' ? `@${targetUsername}` : 'ce contenu'} ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Confirmer',
-          style: 'default',
-          onPress: async () => {
+    confirmAsync({
+      title: '🔧 Confirmation d\'action',
+      message: `Voulez-vous ${confirmText} ${targetType === 'user' ? `@${targetUsername}` : 'ce contenu'} ?`,
+      confirmLabel: 'Confirmer',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               setLoading(true);
               let success = false;
@@ -218,21 +230,19 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
               }
 
               if (success) {
-                Alert.alert('✅ Succès', `Action ${confirmText} effectuée avec succès.`);
+                toast.success(`Action ${confirmText} effectuée avec succès.`);
                 onActionComplete?.();
               } else {
-                Alert.alert('❌ Erreur', 'Impossible d\'effectuer cette action.');
+                toast.error('Impossible d\'effectuer cette action.');
               }
             } catch (error) {
               console.error('Erreur lors de l\'action:', error);
-              Alert.alert('❌ Erreur', 'Une erreur est survenue lors de l\'exécution de l\'action');
+              toast.error('Une erreur est survenue lors de l\'exécution de l\'action');
             } finally {
               setLoading(false);
             }
-          }
-        }
-      ]
-    );
+          })();
+    });
   };
 
   const handleSanctionConfirm = async (sanctionData: SanctionData) => {
@@ -249,15 +259,19 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
 
       if (success) {
         const actionText = sanctionData.type === 'ban' ? 'banni' : 'suspendu';
-        Alert.alert('✅ Sanction appliquée', `Utilisateur ${actionText} avec succès.`);
+        toast.success('✅ Sanction appliquée', {
+          description: `Utilisateur ${actionText} avec succès.`,
+        });
         setShowSanctionModal(false);
         onActionComplete?.();
       } else {
-        Alert.alert('❌ Erreur', 'Impossible d\'effectuer cette action.');
+        toast.error('Impossible d\'effectuer cette action.');
       }
     } catch (error) {
       console.error('Erreur lors de la sanction:', error);
-      Alert.alert('❌ Erreur système', 'Une erreur est survenue lors de l\'exécution de l\'action');
+      toast.error('❌ Erreur système', {
+        description: 'Une erreur est survenue lors de l\'exécution de l\'action',
+      });
     } finally {
       setLoading(false);
     }

@@ -22,7 +22,7 @@ import ExchangeModal from '../components/ExchangeModal';
 import { WalletTransaction } from '../services/walletService';
 import { useAuth } from '../contexts/AuthContext';
 import { ScreenBackground, Button, IconButton, BackButton, Skeleton } from '../components/ui';
-import { colors, fonts, radius, withAlpha } from '../theme';
+import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../theme';
 import { HEADER_CONTENT_HEIGHT, useHeaderMetrics } from '../hooks/useHeaderMetrics';
 
 interface TransactionHistoryItem {
@@ -100,19 +100,25 @@ const WalletDetailScreen: React.FC = () => {
   const [walletLoadError, setWalletLoadError] = useState(false);
   const [txLoadError, setTxLoadError] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
   const riseAnim = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
     initializePage();
   }, []);
 
+  /**
+   * Le contenu remplace le squelette. Ce mouvement-là garde son sens — il dit
+   * « les vraies données viennent d'arriver » — mais il doit être bref : à
+   * 360 ms on attendait le portefeuille une deuxième fois, après l'avoir déjà
+   * attendu pendant la requête.
+   */
   const startAnimations = () => {
     fadeAnim.setValue(0);
     riseAnim.setValue(18);
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 360, useNativeDriver: true }),
-      Animated.timing(riseAnim, { toValue: 0, duration: 360, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: D.fast, easing: E.out, useNativeDriver: true }),
+      Animated.timing(riseAnim, { toValue: 0, duration: D.fast, easing: E.out, useNativeDriver: true }),
     ]).start();
   };
 

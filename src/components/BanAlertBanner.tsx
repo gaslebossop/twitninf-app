@@ -1,9 +1,10 @@
 import { fonts } from '../theme';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { moderationService } from '../services/moderationService';
+import { toast } from './ui/Toast';
 
 interface BanAlertBannerProps {
   onDismiss?: () => void;
@@ -19,7 +20,7 @@ export default function BanAlertBanner({ onDismiss }: BanAlertBannerProps) {
 
   const handleSubmit = async () => {
     if (reason.length < 10) {
-      Alert.alert('Erreur', 'Veuillez fournir une explication plus détaillée (min 10 caractères).');
+      toast.error('Veuillez fournir une explication plus détaillée (min 10 caractères).');
       return;
     }
 
@@ -27,14 +28,14 @@ export default function BanAlertBanner({ onDismiss }: BanAlertBannerProps) {
     try {
       const result = await moderationService.submitUnbanTicket(reason);
       if (result.success) {
-        Alert.alert('Succès', 'Votre demande de débannissement a été envoyée avec succès.');
+        toast.success('Votre demande de débannissement a été envoyée avec succès.');
         setShowModal(false);
         setReason('');
       } else {
-        Alert.alert('Erreur', result.message || 'Une erreur est survenue.');
+        toast.error(result.message || 'Une erreur est survenue.');
       }
     } catch (error: any) {
-      Alert.alert('Erreur', error.message || 'Une erreur est survenue lors de l\'envoi.');
+      toast.error(error.message || 'Une erreur est survenue lors de l\'envoi.');
     } finally {
       setIsSubmitting(false);
     }

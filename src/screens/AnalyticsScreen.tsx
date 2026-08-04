@@ -73,17 +73,12 @@ export default function AnalyticsScreen() {
   
   const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d'>('7d');
   const [selectedMetric, setSelectedMetric] = useState<string>('users');
-  const [animationValue] = useState(new Animated.Value(0));
+  const [animationValue] = useState(new Animated.Value(1));
   const [stats, setStats] = useState<ModerationStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadStats();
-    Animated.timing(animationValue, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
   }, []);
 
   const loadStats = async () => {

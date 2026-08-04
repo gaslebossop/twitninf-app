@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenBackground, BackButton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, radius } from '../theme';
+import { toast } from '../components/ui/Toast';
 import {
   BLOCK_LABELS,
   editTweet,
@@ -68,7 +68,9 @@ export default function EditTweetScreen({ navigation, route }: Props) {
       setRemaining(editability.remaining_ms);
       setHistory(revisions);
     } catch (e: any) {
-      Alert.alert('Modification indisponible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Modification indisponible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
       navigation.goBack();
     } finally {
       setLoading(false);
@@ -102,7 +104,9 @@ export default function EditTweetScreen({ navigation, route }: Props) {
       await editTweet(tweetId, content.trim());
       navigation.goBack();
     } catch (e: any) {
-      Alert.alert('Modification impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Modification impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setSaving(false);
     }

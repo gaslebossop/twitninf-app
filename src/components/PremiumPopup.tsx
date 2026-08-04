@@ -8,10 +8,10 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiService } from '../services';
+import { toast } from './ui/Toast';
 
 interface PremiumPopupProps {
   visible: boolean;
@@ -57,7 +57,7 @@ const PremiumPopup: React.FC<PremiumPopupProps> = ({ visible, onClose, onSuccess
 
   const handleSubscribe = async () => {
     if (!selectedPlan) {
-      Alert.alert('Erreur', 'Sélectionnez un plan');
+      toast.error('Sélectionnez un plan');
       return;
     }
 
@@ -69,12 +69,12 @@ const PremiumPopup: React.FC<PremiumPopupProps> = ({ visible, onClose, onSuccess
       });
 
       if (response.data.success) {
-        Alert.alert('✅ Succès', 'Premium activé avec succès!');
+        toast.success('Premium activé avec succès!');
         onSuccess?.();
         onClose();
       }
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.message || 'Erreur lors de l\'abonnement');
+      toast.error(error.response?.data?.message || 'Erreur lors de l\'abonnement');
     } finally {
       setLoading(false);
     }
@@ -85,11 +85,13 @@ const PremiumPopup: React.FC<PremiumPopupProps> = ({ visible, onClose, onSuccess
     try {
       const response = await apiService.post('/api/premium/cancel');
       if (response.data.success) {
-        Alert.alert('✅', 'Abonnement annulé');
+        toast.error('✅', {
+          description: 'Abonnement annulé',
+        });
         fetchStatus();
       }
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.message || 'Erreur lors de l\'annulation');
+      toast.error(error.response?.data?.message || 'Erreur lors de l\'annulation');
     } finally {
       setLoading(false);
     }

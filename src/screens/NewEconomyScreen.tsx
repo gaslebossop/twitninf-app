@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { BackButton } from '../components/ui';
+import { BackButton, ScreenSkeleton, CoinBalancePill, celebrateReward } from '../components/ui';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import NewEconomyService, {
   PurchasePackage,
@@ -21,6 +21,8 @@ import NewEconomyService, {
   EconomicStatus
 } from '../services/newEconomyService';
 import SendCoinsModal from '../components/SendCoinsModal';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const { width } = Dimensions.get('window');
 
@@ -51,7 +53,7 @@ const NewEconomyScreen: React.FC = () => {
       ]);
     } catch (error) {
       console.error('Erreur lors du chargement:', error);
-      Alert.alert('Erreur', 'Impossible de charger les données');
+      toast.error('Impossible de charger les données');
     } finally {
       setLoading(false);
     }
@@ -83,18 +85,13 @@ const NewEconomyScreen: React.FC = () => {
   };
 
   const handlePurchase = async (packageItem: PurchasePackage) => {
-    Alert.alert(
-      'Confirmer l\'achat',
-      `Acheter ${packageItem.name} pour ${packageItem.currentPrice}€?\\n${packageItem.totalCoins} TwitCoins (${packageItem.bonusCoins > 0 ? `+${packageItem.bonusCoins} bonus` : 'pas de bonus'})`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Acheter', 
-          onPress: () => processPurchase(packageItem),
-          style: 'default'
-        }
-      ]
-    );
+    confirmAsync({
+      title: 'Confirmer l\'achat',
+      message: `Acheter ${packageItem.name} pour ${packageItem.currentPrice}€?\\n${packageItem.totalCoins} TwitCoins (${packageItem.bonusCoins > 0 ? `+${packageItem.bonusCoins} bonus` : 'pas de bonus'})`,
+      confirmLabel: 'Acheter',
+    }).then((ok) => {
+      if (ok) (() => processPurchase(packageItem))();
+    });
   };
 
   const processPurchase = async (packageItem: PurchasePackage) => {
@@ -108,14 +105,16 @@ const NewEconomyScreen: React.FC = () => {
         'stripe' // ou autre méthode de paiement
       );
 
-      Alert.alert(
-        'Achat réussi! 🎉',
-        `Vous avez reçu ${packageItem.totalCoins} TwitCoins!`,
-        [{ text: 'OK', onPress: () => loadWalletData() }]
-      );
+      // Un achat crédité se fête au lieu de demander un « OK », et le solde se
+      // rafraîchit sans intervention.
+      celebrateReward({
+        amount: packageItem.totalCoins,
+        label: packageItem.bonusCoins > 0 ? `dont ${packageItem.bonusCoins} de bonus` : packageItem.name,
+      });
+      loadWalletData();
     } catch (error) {
       console.error('Erreur achat:', error);
-      Alert.alert('Erreur', 'L\'achat a échoué. Veuillez réessayer.');
+      toast.error('L\'achat a échoué. Veuillez réessayer.');
     } finally {
       setPurchasing(null);
     }
@@ -125,9 +124,10 @@ const NewEconomyScreen: React.FC = () => {
     <View style={[styles.header, { paddingTop: headerTopInset }]}>
       <BackButton navigation={navigation} />
       <Text style={styles.headerTitle}>TwitCoins Store</Text>
-      <TouchableOpacity style={styles.statsButton}>
-        <Ionicons name="stats-chart" size={20} color={colors.textPrimary} />
-      </TouchableOpacity>
+      {/* Ce bouton « stats » n'avait aucun `onPress` : il répondait au doigt
+          sans jamais rien faire. Remplacé par le solde, qui a sa place ici et
+          mène vraiment quelque part (le portefeuille). */}
+      <CoinBalancePill compact />
     </View>
   );
 
@@ -316,10 +316,7 @@ const NewEconomyScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={styles.loadingText}>Chargement du store...</Text>
-      </View>
+      <ScreenSkeleton variant="list" />
     );
   }
 

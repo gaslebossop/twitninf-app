@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import {  } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services';
 import NewEconomyService from '../services/newEconomyService';
 import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import PremiumCheckoutSheet from './PremiumCheckoutSheet';
+import { toast } from './ui/Toast';
 
 interface PremiumPurchaseModalProps {
   visible: boolean;
@@ -70,7 +71,9 @@ export default function PremiumPurchaseModal({
       onSuccess?.();
       onClose();
     } catch (error: any) {
-      Alert.alert('Achat impossible', error?.message || 'Réessaie dans quelques instants.');
+      toast.error('Achat impossible', {
+        description: error?.message || 'Réessaie dans quelques instants.',
+      });
     } finally {
       setLoading(false);
     }

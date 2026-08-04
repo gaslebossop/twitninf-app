@@ -1,5 +1,5 @@
 import { colors, fonts, glow } from '../theme';
-import { ScreenBackground, BackButton, Skeleton } from '../components/ui';
+import { ScreenBackground, BackButton, Skeleton, HowItWorks, CoinBalancePill } from '../components/ui';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -56,8 +56,8 @@ const TradingScreen: React.FC = () => {
   const [currentView, setCurrentView] = useState<'chart' | 'stats'>('chart');
   
   // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   // ID de la cryptomonnaie (récupéré dynamiquement)
   const [currencyId, setCurrencyId] = useState<string | null>(null);
@@ -86,18 +86,6 @@ const TradingScreen: React.FC = () => {
   }, [currencyId, timeframe]);
 
   const startAnimations = () => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-    ]).start();
   };
 
   const initializeCurrency = async () => {
@@ -218,6 +206,10 @@ const TradingScreen: React.FC = () => {
       <View style={styles.headerTitleContainer}>
         <Text style={styles.headerTitle}>TwitCoins</Text>
       </View>
+
+      {/* Le solde tient dans l'en-tête : décider d'acheter ou de vendre sans
+          savoir ce qu'on a n'a pas de sens. */}
+      <CoinBalancePill compact style={styles.headerBalance} />
       
       <View style={styles.headerActions}>
         <TouchableOpacity 
@@ -534,7 +526,22 @@ const TradingScreen: React.FC = () => {
           }
         >
           {renderPriceHeader()}
-          
+
+          {/* Ce que « acheter » et « vendre » veulent dire ici — c'est une
+              monnaie interne, pas une bourse, et l'écran ne le disait pas. */}
+          <HowItWorks
+            id="trading"
+            title="Ce que tu échanges exactement"
+            points={[
+              { icon: 'cash-outline', text: 'Le NF est la monnaie de l’app. Son cours bouge avec les achats et les ventes des autres membres.' },
+              { icon: 'arrow-up-circle-outline', text: 'Acheter convertit des euros en NF au cours affiché ; vendre fait l’inverse.' },
+              { icon: 'pulse-outline', text: 'Le cours affiché est celui de l’instant : entre l’affichage et la validation, il peut avoir bougé.' },
+              { icon: 'gift-outline', text: 'Tes NF servent partout dans l’app : promotion de tweets, contenus payants, casino, marché des pseudos.' },
+            ]}
+            warning="Ce n’est pas un placement. La valeur du NF ne garantit aucun retour en euros."
+            style={styles.howItWorks}
+          />
+
           {economicStats?.currency ? (
             <SimpleChart
               data={marketData?.priceHistory || []}
@@ -627,6 +634,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
+  howItWorks: { marginHorizontal: 16, marginBottom: 16 },
+  headerBalance: { marginRight: 8 },
   headerTitleContainer: {
     alignItems: 'center',
     flex: 1,

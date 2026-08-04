@@ -1,6 +1,5 @@
 import React, { memo, useCallback, useRef, useState } from 'react';
 import {
-  Alert,
   View,
   Text,
   TouchableOpacity,
@@ -35,6 +34,8 @@ import ReactionBurst, {
   RETWEET_PALETTE,
 } from './ReactionBurst';
 import type { Tweet } from '../../types/api';
+import { toast } from '../ui/Toast';
+import feedback from '../../utils/feedback';
 
 /** Anneau « déjà vu » : gris neutre, comme dans la barre de stories. */
 const SEEN_STORY_RING = ['#3A3A3A', '#3A3A3A'] as const;
@@ -231,15 +232,21 @@ function TweetRow({
    */
   const refuseLocked = useCallback(() => {
     blockRowPress();
-    Alert.alert(
-      'Contenu réservé',
-      `Débloque ce contenu pour ${contentLock?.price_twc ?? ''} NF avant d'interagir avec lui.`.replace('  ', ' '),
-    );
+    // Vibration de refus AVANT le message : le doigt sait déjà que le geste
+    // n'est pas passé, avant même que l'oeil ne remonte vers le toast.
+    feedback.refuse();
+    toast.info('Contenu réservé', {
+      description: `Débloque ce contenu pour ${contentLock?.price_twc ?? ''} NF avant d'interagir avec lui.`.replace('  ', ' '),
+    });
   }, [blockRowPress, contentLock]);
 
   const handleLikePress = useCallback(() => {
     if (isContentLocked) return refuseLocked();
     blockRowPress();
+    // Uniquement à l'ajout du like : vibrer aussi au retrait ferait du bruit
+    // sur un geste correctif, et le geste le plus fréquent du fil doit rester
+    // discret.
+    if (!isLiked) feedback.tap();
     playLike(isLiked);
     onAction({ type: 'like', tweetId: tweet.id });
   }, [isContentLocked, refuseLocked, blockRowPress, playLike, isLiked, onAction, tweet.id]);
@@ -247,6 +254,7 @@ function TweetRow({
   const handleRetweetPress = useCallback(() => {
     if (isContentLocked) return refuseLocked();
     blockRowPress();
+    if (!isRetweeted) feedback.tap();
     retweet.play(!isRetweeted);
     onAction({ type: 'retweet', tweetId: tweet.id });
   }, [isContentLocked, refuseLocked, blockRowPress, retweet, isRetweeted, onAction, tweet.id]);
@@ -269,6 +277,9 @@ function TweetRow({
       if (isContentLocked) return;
       playBigHeart();
       if (!isLiked) {
+        // Le double-tap est un geste sans cible visible : la vibration est le
+        // seul accusé de réception immédiat avant que le coeur ne s'affiche.
+        feedback.select();
         playLike(false);
         onAction({ type: 'like', tweetId: tweet.id });
       }

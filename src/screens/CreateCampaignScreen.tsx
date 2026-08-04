@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import apiService from '../services/api';
 import { BackButton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 interface AdBalance {
   balance: number;
@@ -94,22 +95,22 @@ export default function CreateCampaignScreen() {
 
   const validateForm = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Erreur', 'Le nom de la campagne est requis');
+      toast.error('Le nom de la campagne est requis');
       return false;
     }
 
     if (!formData.total_budget || parseFloat(formData.total_budget) <= 0) {
-      Alert.alert('Erreur', 'Le budget total doit être supérieur à 0');
+      toast.error('Le budget total doit être supérieur à 0');
       return false;
     }
 
     if (balance && parseFloat(formData.total_budget) > balance.balance) {
-      Alert.alert('Erreur', `Solde TWC insuffisant. Solde: ${balance.balance} TWC`);
+      toast.error(`Solde TWC insuffisant. Solde: ${balance.balance} TWC`);
       return false;
     }
 
     if (formData.end_date <= formData.start_date) {
-      Alert.alert('Erreur', 'La date de fin doit être après la date de début');
+      toast.error('La date de fin doit être après la date de début');
       return false;
     }
 
@@ -190,22 +191,14 @@ export default function CreateCampaignScreen() {
           }
         }
 
-        Alert.alert(
-          'Succès',
-          message,
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        toast.success(message);
+        navigation.goBack();
       } else {
-        Alert.alert('Erreur', campaignResponse.message || 'Erreur lors de la création de la campagne');
+        toast.error(campaignResponse.message || 'Erreur lors de la création de la campagne');
       }
     } catch (error) {
       console.error('Erreur lors de la création de la campagne:', error);
-      Alert.alert('Erreur', 'Impossible de créer la campagne');
+      toast.error('Impossible de créer la campagne');
     } finally {
       setLoading(false);
     }

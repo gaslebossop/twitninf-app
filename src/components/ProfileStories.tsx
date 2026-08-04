@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -19,6 +18,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts } from '../theme';
 import { STORY_GRADIENT } from './StoryRing';
 import StoryViewer from './StoryViewer';
+import { toast } from './ui/Toast';
+import { showActionSheet } from './ui/ActionSheet';
 import storiesService, {
   StoryGroup,
   StoryHighlight,
@@ -147,7 +148,7 @@ export default function ProfileStories({
         ? await storiesService.addToHighlight(pickerTarget.id, selected)
         : (await storiesService.createHighlight(title.trim() || 'À la une', selected, selected[0])).success;
       if (!done) {
-        Alert.alert('Erreur', 'Impossible d\'enregistrer la story à la une');
+        toast.error('Impossible d\'enregistrer la story à la une');
         return;
       }
       setPickerVisible(false);
@@ -164,31 +165,44 @@ export default function ProfileStories({
     const done = await storiesService.renameHighlight(renameTarget.id, next);
     setRenameTarget(null);
     if (done) await load();
-    else Alert.alert('Erreur', 'Renommage impossible');
+    else toast.error('Renommage impossible');
   };
 
   const openHighlightOptions = (highlight: StoryHighlight) => {
     if (!isOwner) return;
-    Alert.alert(highlight.title, `${highlight.story_count} story${highlight.story_count > 1 ? 's' : ''}`, [
-      {
-        text: 'Renommer',
-        onPress: () => {
-          setRenameValue(highlight.title);
-          setRenameTarget(highlight);
+    showActionSheet({
+      title: highlight.title,
+      message: `${highlight.story_count} story${highlight.story_count > 1 ? 's' : ''}`,
+      items: [
+        {
+          label: 'Renommer',
+          icon: 'text-outline',
+          onPress: () => {
+            setRenameValue(highlight.title);
+            setRenameTarget(highlight);
+          },
         },
-      },
-      { text: 'Ajouter des stories', onPress: () => openPicker(highlight) },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          const done = await storiesService.deleteHighlight(highlight.id);
-          if (done) await load();
-          else Alert.alert('Erreur', 'Suppression impossible');
+        {
+          label: 'Ajouter des stories',
+          icon: 'add-circle-outline',
+          onPress: () => openPicker(highlight),
         },
-      },
-      { text: 'Annuler', style: 'cancel' },
-    ]);
+        {
+          label: 'Supprimer',
+          icon: 'trash-outline',
+          destructive: true,
+          onPress: async () => {
+            const done = await storiesService.deleteHighlight(highlight.id);
+            if (done) {
+              await load();
+              toast.success('À la une supprimée');
+            } else {
+              toast.error('Suppression impossible');
+            }
+          },
+        },
+      ],
+    });
   };
 
   if (loading) return null;

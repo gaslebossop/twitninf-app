@@ -9,12 +9,12 @@ import {
   SafeAreaView,
   StatusBar,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { BackButton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 const { width, height } = Dimensions.get('window');
 
@@ -52,13 +52,9 @@ const MonetizationScreen: React.FC<MonetizationScreenProps> = ({ navigation }) =
   };
 
   const handlePayment = () => {
-    Alert.alert(
-      'Paiement',
-      'Fonctionnalité de paiement en cours de développement',
-      [
-        { text: 'OK', style: 'default' }
-      ]
-    );
+    toast.info('Paiement', {
+      description: 'Fonctionnalité de paiement en cours de développement',
+    });
   };
 
   const handleBack = () => {

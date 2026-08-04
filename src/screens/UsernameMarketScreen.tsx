@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -19,7 +18,10 @@ import { ScreenBackground, BackButton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, radius } from '../theme';
+import { CoinBalancePill, EmptyState, HowItWorks, ScreenSkeleton } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   UNAVAILABILITY_LABELS,
   browseListings,
@@ -110,7 +112,9 @@ export default function UsernameMarketScreen({ navigation }: Props) {
       setLookupState(await checkAvailability(candidate));
     } catch (e: any) {
       setLookupState(null);
-      Alert.alert('Vérification impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Vérification impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setChecking(false);
     }
@@ -118,37 +122,33 @@ export default function UsernameMarketScreen({ navigation }: Props) {
 
   const onReserve = async () => {
     if (!lookupState?.available || !config) return;
-    Alert.alert(
-      `Réserver @${lookupState.username} ?`,
-      `${config.reservation_price_twc} NF seront débités. Le pseudo t'est réservé ${config.reservation_days} jours, personne d'autre ne peut le prendre.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Réserver',
-          onPress: async () => {
+    confirmAsync({
+      title: `Réserver @${lookupState.username} ?`,
+      message: `${config.reservation_price_twc} NF seront débités. Le pseudo t'est réservé ${config.reservation_days} jours, personne d'autre ne peut le prendre.`,
+      confirmLabel: 'Réserver',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               await reserveUsername(lookupState.username);
               setLookupState(null);
               setLookup('');
               await load();
             } catch (e: any) {
-              Alert.alert('Réservation impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Réservation impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const onClaim = (username: string) => {
-    Alert.alert(
-      `Devenir @${username} ?`,
-      `Ton pseudo actuel @${user?.username} sera libéré et protégé 30 jours. Les liens qui pointent vers ton ancien pseudo ne fonctionneront plus.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Changer de pseudo',
-          onPress: async () => {
+    confirmAsync({
+      title: `Devenir @${username} ?`,
+      message: `Ton pseudo actuel @${user?.username} sera libéré et protégé 30 jours. Les liens qui pointent vers ton ancien pseudo ne fonctionneront plus.`,
+      confirmLabel: 'Changer de pseudo',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               await claimUsername(username);
               // L'identité publique vient de changer : sans rafraîchir la
@@ -156,19 +156,21 @@ export default function UsernameMarketScreen({ navigation }: Props) {
               await refreshCurrentUser?.();
               await load();
             } catch (e: any) {
-              Alert.alert('Changement impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Changement impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const onSell = async () => {
     const price = Number(sellPrice.replace(',', '.'));
     if (!config || !Number.isFinite(price) || selling) return;
     if (replacement.trim().length < 3) {
-      Alert.alert('Pseudo de remplacement requis', 'Choisis le pseudo que tu porteras après la vente.');
+      toast.error('Pseudo de remplacement requis', {
+        description: 'Choisis le pseudo que tu porteras après la vente.',
+      });
       return;
     }
 
@@ -178,38 +180,39 @@ export default function UsernameMarketScreen({ navigation }: Props) {
       setSellPrice('');
       setReplacement('');
       await load();
-      Alert.alert(
-        'Pseudo en vente',
-        `Tu deviendras @${replacement.trim()} dès qu'un acheteur se présente. Ce pseudo t'est réservé jusque-là.`,
-      );
+      toast.info('Pseudo en vente', {
+        description: `Tu deviendras @${replacement.trim()} dès qu'un acheteur se présente. Ce pseudo t'est réservé jusque-là.`,
+      });
     } catch (e: any) {
-      Alert.alert('Mise en vente impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Mise en vente impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setSelling(false);
     }
   };
 
   const onBuy = (listing: Listing) => {
-    Alert.alert(
-      `Acheter @${listing.username} ?`,
-      `${listing.price_twc} NF seront débités. Tu deviens @${listing.username} immédiatement, et ton pseudo actuel @${user?.username} sera protégé 30 jours.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Acheter',
-          onPress: async () => {
+    confirmAsync({
+      title: `Acheter @${listing.username} ?`,
+      message: `${listing.price_twc} NF seront débités. Tu deviens @${listing.username} immédiatement, et ton pseudo actuel @${user?.username} sera protégé 30 jours.`,
+      confirmLabel: 'Acheter',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const result = await buyListing(listing.id);
               await refreshCurrentUser?.();
               await load();
-              Alert.alert('C\'est fait', `Tu es maintenant @${result.username}.`);
+              toast.success('C\'est fait', {
+                description: `Tu es maintenant @${result.username}.`,
+              });
             } catch (e: any) {
-              Alert.alert('Achat impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Achat impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const activeListing = mine?.listings.find((l) => l.status === 'active');
@@ -226,7 +229,9 @@ export default function UsernameMarketScreen({ navigation }: Props) {
           <View style={styles.titleGroup}>
             <Text style={styles.title}>Marché des pseudos</Text>
           </View>
-          <View style={styles.roundSlot} />
+          {/* Tout se paie en NF sur cet écran : le solde doit être sous les
+              yeux au moment de choisir, pas découvert au refus. */}
+          <CoinBalancePill compact />
         </View>
 
         <View style={styles.tabs}>
@@ -252,7 +257,7 @@ export default function UsernameMarketScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {loading ? (
-          <View style={styles.loader}><ActivityIndicator color={colors.accent} /></View>
+          <ScreenSkeleton variant="list" />
         ) : (
           <ScrollView
             contentContainerStyle={styles.content}
@@ -262,6 +267,22 @@ export default function UsernameMarketScreen({ navigation }: Props) {
             }
           >
             {!!error && <Text style={styles.error}>{error}</Text>}
+
+            {/* Les règles du marché (réservation, frais, pseudo de repli)
+                n'étaient écrites nulle part : on les découvrait en vendant. */}
+            <HowItWorks
+              id="username-market"
+              title="Le marché des pseudos en 4 points"
+              tint={colors.gold}
+              points={[
+                { icon: 'search-outline', text: 'Un pseudo libre peut être réservé : il t’est gardé quelques jours, personne d’autre ne peut le prendre.' },
+                { icon: 'pricetag-outline', text: 'Un pseudo que tu possèdes peut être mis en vente au prix que tu fixes, payable en NF.' },
+                { icon: 'swap-horizontal-outline', text: 'En vendant, tu changes de pseudo sur-le-champ : choisis d’abord celui que tu porteras après.' },
+                { icon: 'wallet-outline', text: 'Le montant de la vente arrive sur ton portefeuille, moins les frais du marché.' },
+              ]}
+              warning="Un changement de pseudo casse les mentions déjà écrites vers l’ancien."
+              style={styles.howItWorks}
+            />
 
             {tab === 'browse' ? (
               <>
@@ -280,7 +301,21 @@ export default function UsernameMarketScreen({ navigation }: Props) {
                 </View>
 
                 {listings.length === 0 ? (
-                  <Text style={styles.empty}>Aucun pseudo en vente pour le moment.</Text>
+                  <EmptyState
+                    icon="storefront-outline"
+                    tint={colors.gold}
+                    title={search ? 'Aucun pseudo à ce nom' : 'Le marché est vide'}
+                    message={
+                      search
+                        ? 'Personne ne vend ce pseudo pour l’instant. Vérifie s’il est simplement libre — dans ce cas, réserve-le.'
+                        : 'Personne ne vend son pseudo en ce moment. Tu peux être le premier : mets le tien en vente depuis « Mon espace ».'
+                    }
+                    action={
+                      search
+                        ? { label: 'Voir s’il est libre', icon: 'search-outline', onPress: () => { setLookup(search); setTab('mine'); } }
+                        : { label: 'Vendre mon pseudo', icon: 'pricetag-outline', onPress: () => setTab('mine') }
+                    }
+                  />
                 ) : listings.map((listing) => (
                   <View key={listing.id} style={styles.listingCard}>
                     <View style={styles.listingHead}>
@@ -396,7 +431,9 @@ export default function UsernameMarketScreen({ navigation }: Props) {
                           await cancelListing(activeListing.id);
                           await load();
                         } catch (e: any) {
-                          Alert.alert('Retrait impossible', e?.message || 'Réessaie.');
+                          toast.error('Retrait impossible', {
+                            description: e?.message || 'Réessaie.',
+                          });
                         }
                       }}
                       activeOpacity={0.85}
@@ -511,6 +548,7 @@ const styles = StyleSheet.create({
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   error: { color: colors.red, fontSize: 13, marginBottom: 12 },
   empty: { color: colors.textMuted, fontSize: 13, paddingVertical: 18 },
+  howItWorks: { marginBottom: 16 },
 
   searchBox: {
     flexDirection: 'row',

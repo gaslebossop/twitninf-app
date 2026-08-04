@@ -1,5 +1,5 @@
 import { colors, fonts } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -119,7 +119,7 @@ export default function CurrencyDetailScreen() {
       )}
 
       {!error && !detail && (
-        <View style={styles.centerWrap}><ActivityIndicator color={colors.accent} /></View>
+        <ScreenSkeleton variant="detail" />
       )}
 
       {detail && (

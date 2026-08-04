@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,6 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
+import { toast } from './ui/Toast';
+import { confirmAsync } from './ui/ConfirmSheet';
 import {
   creatorNetFor,
   fetchConfig,
@@ -122,26 +123,25 @@ export default function PaywallSetupSheet({
 
   const makeFree = () => {
     if (!existing) return;
-    Alert.alert(
-      'Rendre ce contenu gratuit ?',
-      "Il ne sera plus vendu. Ceux qui l'ont déjà acheté gardent leur accès et ne sont pas remboursés.",
-      [
-        { text: 'Garder en vente', style: 'cancel' },
-        {
-          text: 'Rendre gratuit',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Rendre ce contenu gratuit ?',
+      message: "Il ne sera plus vendu. Ceux qui l'ont déjà acheté gardent leur accès et ne sont pas remboursés.",
+      confirmLabel: 'Rendre gratuit',
+      cancelLabel: 'Garder en vente',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               await unlockContent(existing.id);
               onDone?.();
               onClose();
             } catch (e: any) {
-              Alert.alert('Impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const submit = async () => {
@@ -164,7 +164,9 @@ export default function PaywallSetupSheet({
       onDone?.();
       onClose();
     } catch (e: any) {
-      Alert.alert('Mise en vente impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Mise en vente impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setSaving(false);
     }

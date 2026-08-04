@@ -6,10 +6,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { confirmAsync } from './ui/ConfirmSheet';
 
 interface PremiumUpgradeCardProps {
   isPremium: boolean;
@@ -118,14 +118,14 @@ export default function PremiumUpgradeCard({ isPremium, onUpgrade }: PremiumUpgr
     if (onUpgrade) {
       onUpgrade();
     } else {
-      Alert.alert(
-        '🚀 TwitNin Premium',
-        'Transformez votre expérience avec des fonctionnalités exclusives !',
-        [
-          { text: 'Plus tard', style: 'cancel' },
-          { text: 'Découvrir Premium', onPress: () => {/* Navigation vers premium */} }
-        ]
-      );
+      confirmAsync({
+        title: '🚀 TwitNin Premium',
+        message: 'Transformez votre expérience avec des fonctionnalités exclusives !',
+        confirmLabel: 'Découvrir Premium',
+        cancelLabel: 'Plus tard',
+      }).then((ok) => {
+        if (ok) (() => {/* Navigation vers premium */})();
+      });
     }
   };
 

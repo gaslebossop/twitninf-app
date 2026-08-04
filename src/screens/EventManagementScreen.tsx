@@ -12,7 +12,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Modal,
   TextInput,
   Switch,
@@ -33,6 +32,8 @@ import { useEvents } from '../contexts/EventContext';
 import eventService, { Event, EventTheme } from '../services/eventService';
 import EventThemeDisplay from '../components/EventThemeDisplay';
 import { themePresetService, ThemePreset } from '../services/themePresetService';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -148,7 +149,7 @@ export default function EventManagementScreen() {
       }
     } catch (error) {
       console.error('❌ Erreur lors du chargement des événements:', error);
-      Alert.alert('Erreur', 'Impossible de charger les événements');
+      toast.error('Impossible de charger les événements');
     } finally {
       setLoading(false);
     }
@@ -166,86 +167,73 @@ export default function EventManagementScreen() {
 
   // Activer un événement
   const handleActivateEvent = async (event: Event) => {
-    Alert.alert(
-      '🎉 Activer l\'événement',
-      `Voulez-vous activer l'événement "${event.name}" ?\n\nCela désactivera automatiquement les autres événements.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Activer',
-          style: 'default',
-          onPress: async () => {
+    confirmAsync({
+      title: '🎉 Activer l\'événement',
+      message: `Voulez-vous activer l'événement "${event.name}" ?\n\nCela désactivera automatiquement les autres événements.`,
+      confirmLabel: 'Activer',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const success = await activateEvent(event.id);
               if (success) {
-                Alert.alert('✅ Succès', `L'événement "${event.name}" a été activé !`);
+                toast.success(`L'événement "${event.name}" a été activé !`);
                 loadEvents();
               } else {
-                Alert.alert('❌ Erreur', 'Impossible d\'activer l\'événement');
+                toast.error('Impossible d\'activer l\'événement');
               }
             } catch (error) {
-              Alert.alert('❌ Erreur', 'Une erreur est survenue lors de l\'activation');
+              toast.error('Une erreur est survenue lors de l\'activation');
             }
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   // Désactiver un événement
   const handleDeactivateEvent = async (event: Event) => {
-    Alert.alert(
-      '🛑 Désactiver l\'événement',
-      `Voulez-vous désactiver l'événement "${event.name}" ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Désactiver',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: '🛑 Désactiver l\'événement',
+      message: `Voulez-vous désactiver l'événement "${event.name}" ?`,
+      confirmLabel: 'Désactiver',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const success = await deactivateEvent(event.id);
               if (success) {
-                Alert.alert('✅ Succès', `L'événement "${event.name}" a été désactivé !`);
+                toast.success(`L'événement "${event.name}" a été désactivé !`);
                 loadEvents();
               } else {
-                Alert.alert('❌ Erreur', 'Impossible de désactiver l\'événement');
+                toast.error('Impossible de désactiver l\'événement');
               }
             } catch (error) {
-              Alert.alert('❌ Erreur', 'Une erreur est survenue lors de la désactivation');
+              toast.error('Une erreur est survenue lors de la désactivation');
             }
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   // Supprimer un événement
   const handleDeleteEvent = async (event: Event) => {
-    Alert.alert(
-      '🗑️ Supprimer l\'événement',
-      `Êtes-vous sûr de vouloir supprimer l'événement "${event.name}" ?\n\nCette action est irréversible.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: '🗑️ Supprimer l\'événement',
+      message: `Êtes-vous sûr de vouloir supprimer l'événement "${event.name}" ?\n\nCette action est irréversible.`,
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const success = await deleteEvent(event.id);
               if (success) {
-                Alert.alert('✅ Succès', `L'événement "${event.name}" a été supprimé !`);
+                toast.success(`L'événement "${event.name}" a été supprimé !`);
                 loadEvents();
               } else {
-                Alert.alert('❌ Erreur', 'Impossible de supprimer l\'événement');
+                toast.error('Impossible de supprimer l\'événement');
               }
             } catch (error) {
-              Alert.alert('❌ Erreur', 'Une erreur est survenue lors de la suppression');
+              toast.error('Une erreur est survenue lors de la suppression');
             }
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   // Ouvrir le modal d'édition
@@ -276,7 +264,7 @@ export default function EventManagementScreen() {
   // Créer ou modifier un événement
   const handleSubmitEvent = async () => {
     if (!formData.name.trim() || !formData.slug.trim()) {
-      Alert.alert('❌ Erreur', 'Le nom et le slug sont requis');
+      toast.error('Le nom et le slug sont requis');
       return;
     }
 
@@ -310,19 +298,16 @@ export default function EventManagementScreen() {
       }
 
       if (success) {
-        Alert.alert(
-          '✅ Succès',
-          editingEvent ? 'Événement mis à jour !' : 'Événement créé !'
-        );
+        toast.success(editingEvent ? 'Événement mis à jour !' : 'Événement créé !');
         setShowCreateModal(false);
         setEditingEvent(null);
         resetForm();
         loadEvents();
       } else {
-        Alert.alert('❌ Erreur', 'Impossible de sauvegarder l\'événement');
+        toast.error('Impossible de sauvegarder l\'événement');
       }
     } catch (error: any) {
-      Alert.alert('❌ Erreur', error.message || 'Une erreur est survenue');
+      toast.error(error.message || 'Une erreur est survenue');
     }
   };
 
@@ -345,30 +330,25 @@ export default function EventManagementScreen() {
 
   // Initialiser les événements par défaut
   const handleInitializeDefaults = async () => {
-    Alert.alert(
-      '🎉 Initialiser les événements',
-      'Voulez-vous créer les événements par défaut (Halloween, Noël, etc.) ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Créer',
-          style: 'default',
-          onPress: async () => {
+    confirmAsync({
+      title: '🎉 Initialiser les événements',
+      message: 'Voulez-vous créer les événements par défaut (Halloween, Noël, etc.) ?',
+      confirmLabel: 'Créer',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const success = await eventService.initializeDefaultEvents();
               if (success) {
-                Alert.alert('✅ Succès', 'Événements par défaut créés !');
+                toast.success('Événements par défaut créés !');
                 loadEvents();
               } else {
-                Alert.alert('❌ Erreur', 'Impossible de créer les événements par défaut');
+                toast.error('Impossible de créer les événements par défaut');
               }
             } catch (error) {
-              Alert.alert('❌ Erreur', 'Une erreur est survenue');
+              toast.error('Une erreur est survenue');
             }
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   // Charger les données au démarrage

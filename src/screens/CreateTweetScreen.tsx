@@ -8,8 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Animated,
-  Alert,
-  ActionSheetIOS,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -44,6 +42,9 @@ import AiCopilotSheet from '../components/AiCopilotSheet';
 import { countDrafts, saveDraft, deleteDraft, TweetDraft } from '../services/draftsService';
 import { serializeOverlays, type VideoOverlay } from '../utils/videoFilters';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
+import { toast } from '../components/ui/Toast';
+import { showActionSheet } from '../components/ui/ActionSheet';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 interface CreateTweetScreenProps {
   navigation: any;
@@ -204,7 +205,9 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
       setEditingDraftId(null);
       setContent('');
       setCharCount(0);
-      Alert.alert('Brouillon enregistré', 'Tu le retrouveras depuis l\'icône brouillons.');
+      toast.success('Brouillon enregistré', {
+        description: 'Tu le retrouveras depuis l\'icône brouillons.',
+      });
     }
   }, [persistDraft]);
 
@@ -236,32 +239,13 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const [quotedTweet, setQuotedTweet] = useState<Tweet | null>(null);
 
   // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  // Au repos dès la première image. Le composeur s'ouvrait par un fondu de
+  // 800 ms doublé de deux ressorts à `friction: 8` — le champ de saisie
+  // arrivait donc en tremblant, sous un doigt qui voulait déjà écrire.
+  const scaleAnim = useRef(new Animated.Value(1)).current;
   const inputScaleAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
 
   // Charger le tweet cité si nécessaire
   useEffect(() => {
@@ -312,7 +296,9 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const pickVideoFromLibrary = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission requise', "L'accès à la galerie est nécessaire pour choisir une vidéo.");
+      toast.error('Permission requise', {
+        description: "L'accès à la galerie est nécessaire pour choisir une vidéo.",
+      });
       return;
     }
 
@@ -357,26 +343,13 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   }, [route.params, navigation]);
 
   const handleAddVideo = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Annuler', 'Filmer', 'Choisir dans la galerie'],
-          cancelButtonIndex: 0,
-          title: 'Ajouter une vidéo',
-        },
-        (index) => {
-          if (index === 1) openCamera();
-          if (index === 2) pickVideoFromLibrary();
-        },
-      );
-      return;
-    }
-
-    Alert.alert('Ajouter une vidéo', undefined, [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Filmer', onPress: openCamera },
-      { text: 'Galerie', onPress: pickVideoFromLibrary },
-    ]);
+    showActionSheet({
+      title: 'Ajouter une vidéo',
+      items: [
+        { label: 'Filmer', icon: 'videocam-outline', onPress: openCamera },
+        { label: 'Choisir dans la galerie', icon: 'images-outline', onPress: pickVideoFromLibrary },
+      ],
+    });
   }, [openCamera, pickVideoFromLibrary]);
 
   /** Publication d'un tweet portant une vidéo — envoi puis transcodage. */
@@ -405,7 +378,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
       });
 
       if (!result.success) {
-        Alert.alert('Erreur', result.message || 'Impossible de publier la vidéo.');
+        toast.error(result.message || 'Impossible de publier la vidéo.');
         return;
       }
 
@@ -417,15 +390,15 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         await refreshDraftCount();
       }
 
-      Alert.alert(
-        'Succès !',
-        result.message || 'Vidéo publiée avec succès !',
-        // `popToTop` et non `goBack` : le parcours vidéo empile la caméra et
-        // l'écran de légende au-dessus du composeur. Reculer d'un cran ne
-        // fermait que le dernier, laissant le composeur ouvert avec un tweet
-        // déjà publié — qu'on pouvait republier.
-        [{ text: 'OK', onPress: () => navigation.popToTop() }],
-      );
+      toast.success(result.message || 'Vidéo publiée !');
+      // `popToTop` et non `goBack` : le parcours vidéo empile la caméra et
+      // l'écran de légende au-dessus du composeur. Reculer d'un cran ne
+      // fermait que le dernier, laissant le composeur ouvert avec un tweet
+      // déjà publié — qu'on pouvait republier.
+      //
+      // La sortie ne dépend plus d'un « OK » à cliquer : on rend la main tout
+      // de suite, le toast suit l'utilisateur sur l'écran d'arrivée.
+      navigation.popToTop();
     } finally {
       setLoading(false);
       setVideoPhase(null);
@@ -437,12 +410,12 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     // Une vidéo se suffit à elle-même : seule une publication sans média
     // exige du texte.
     if (!content.trim() && !videoUri) {
-      Alert.alert('Erreur', 'Le contenu du tweet ne peut pas être vide');
+      toast.error('Le contenu du tweet ne peut pas être vide');
       return;
     }
 
     if (content.length > MAX_CHARS) {
-      Alert.alert('Erreur', `Le tweet ne peut pas dépasser ${MAX_CHARS} caractères`);
+      toast.error(`Le tweet ne peut pas dépasser ${MAX_CHARS} caractères`);
       return;
     }
 
@@ -450,10 +423,9 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
       // La file hors ligne ne sait rejouer qu'un tweet texte : mettre une
       // vidéo en attente reviendrait à la perdre au retour du réseau.
       if (offlineEnabled && !online) {
-        Alert.alert(
-          'Hors ligne',
-          "L'envoi d'une vidéo demande une connexion. Réessaie une fois en ligne.",
-        );
+        toast.info('Hors ligne', {
+          description: "L'envoi d'une vidéo demande une connexion. Réessaie une fois en ligne.",
+        });
         return;
       }
       await submitVideoTweet();
@@ -478,11 +450,10 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
           setEditingDraftId(null);
           await refreshDraftCount();
         }
-        Alert.alert(
-          'En attente de réseau',
-          'Ton tweet est enregistré : il sera publié automatiquement dès que la connexion revient.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }],
-        );
+        toast.info('En attente de réseau', {
+          description: 'Ton tweet est enregistré : il partira dès que la connexion revient.',
+        });
+        navigation.goBack();
         return;
       }
     }
@@ -527,12 +498,13 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
               previewText: paidPreview || null,
             });
           } catch (lockError: any) {
-            Alert.alert(
-              'Tweet publié, mais gratuit',
-              `${lockError?.message || 'La mise en vente a échoué.'}
+            // Volontairement en rouge : la partie qui a échoué est celle qui
+            // rapporte de l'argent, c'est elle qui doit attirer l'oeil.
+            toast.error('Tweet publié, mais gratuit', {
+              description: `${lockError?.message || 'La mise en vente a échoué.'}
 
 Tu peux fixer le prix depuis le menu « … » du tweet.`,
-            );
+            });
           }
         }
 
@@ -544,18 +516,13 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
           await refreshDraftCount();
         }
 
-        Alert.alert(
-          'Succès !',
-          parentTweetId ? 'Réponse publiée avec succès !' : quoteTweetId ? 'Citation publiée avec succès !' : 'Tweet publié avec succès !',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                navigation.goBack();
-              },
-            },
-          ]
+        // Publier était l'action ; la confirmer par une fenêtre à valider
+        // ajoutait un geste à un geste réussi. On rend la main immédiatement
+        // et le toast confirme sur l'écran d'arrivée.
+        toast.success(
+          parentTweetId ? 'Réponse publiée' : quoteTweetId ? 'Citation publiée' : 'Tweet publié',
         );
+        navigation.goBack();
       } else {
         // Gestion spécifique des erreurs de ban
         if ((response as any).ban_info) {
@@ -579,17 +546,17 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
             message = response.message || 'Erreur lors de la publication';
           }
 
-          Alert.alert(title, message, [
-            { text: 'Compris', style: 'default' }
-          ]);
+          toast.info(title, {
+            description: message,
+          });
         } else {
           // Erreur normale
-          Alert.alert('Erreur', response.message || 'Erreur lors de la publication');
+          toast.error(response.message || 'Erreur lors de la publication');
         }
       }
     } catch (error) {
       console.error('Erreur lors de la création du tweet:', error);
-      Alert.alert('Erreur', 'Impossible de publier le tweet. Vérifiez votre connexion.');
+      toast.error('Impossible de publier le tweet. Vérifiez votre connexion.');
     } finally {
       setLoading(false);
     }
@@ -604,36 +571,42 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
     // Avec les brouillons, « votre tweet sera perdu » n'est plus vrai : la
     // sortie propose de le garder, et ne détruit que sur demande explicite.
     if (canUseDrafts) {
-      Alert.alert(
-        'Garder ce tweet ?',
-        'Tu peux l\'enregistrer en brouillon et le reprendre plus tard.',
-        [
-          { text: 'Continuer l\'édition', style: 'cancel' },
+      // Trois issues : ce n'est plus une question fermée, donc une feuille
+      // d'actions plutôt qu'une confirmation. « Enregistrer » vient en tête —
+      // c'est le choix qu'on veut rendre évident.
+      showActionSheet({
+        title: 'Garder ce tweet ?',
+        message: 'Tu peux l’enregistrer en brouillon et le reprendre plus tard.',
+        cancelLabel: 'Continuer l’édition',
+        items: [
           {
-            text: 'Supprimer',
-            style: 'destructive',
-            onPress: () => navigation.goBack(),
-          },
-          {
-            text: 'Enregistrer',
+            label: 'Enregistrer le brouillon',
+            icon: 'save-outline',
             onPress: async () => {
               await persistDraft();
               navigation.goBack();
             },
           },
-        ]
-      );
+          {
+            label: 'Supprimer',
+            icon: 'trash-outline',
+            destructive: true,
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      });
       return;
     }
 
-    Alert.alert(
-      'Annuler la publication',
-      'Êtes-vous sûr de vouloir annuler ? Votre tweet sera perdu.',
-      [
-        { text: 'Continuer l\'édition', style: 'cancel' },
-        { text: 'Annuler', style: 'destructive', onPress: () => navigation.goBack() },
-      ]
-    );
+    confirmAsync({
+      title: 'Annuler la publication',
+      message: 'Êtes-vous sûr de vouloir annuler ? Votre tweet sera perdu.',
+      confirmLabel: 'Annuler',
+      cancelLabel: 'Continuer l\'édition',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (() => navigation.goBack())();
+    });
   };
 
   const isSubmitDisabled =
@@ -787,7 +760,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                       Animated.spring(inputScaleAnim, {
                         toValue: 1.01,
                         tension: 50,
-                        friction: 7,
+                        friction: 14,
                         useNativeDriver: true,
                       }).start();
                     }}
@@ -795,7 +768,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                       Animated.spring(inputScaleAnim, {
                         toValue: 1,
                         tension: 50,
-                        friction: 7,
+                        friction: 14,
                         useNativeDriver: true,
                       }).start();
                     }}

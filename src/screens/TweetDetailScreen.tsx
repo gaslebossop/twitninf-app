@@ -1,7 +1,7 @@
 import { colors, fonts, glow, withAlpha } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, TextInput, Animated, LayoutAnimation, UIManager, Alert, Modal, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, TextInput, Animated, LayoutAnimation, UIManager, Modal, KeyboardAvoidingView } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,7 @@ import ReportSheet from '../components/ReportSheet';
 import { useEvents } from '../contexts/EventContext';
 import { getEventTheme } from '../themes/eventThemes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { toast } from '../components/ui/Toast';
 
 interface RouteParams {
   tweetId: string;
@@ -360,10 +361,9 @@ export default function TweetDetailScreen() {
    * l'écran afficherait sinon un état optimiste qu'il faudrait annuler.
    */
   const refuseLocked = () => {
-    Alert.alert(
-      'Contenu réservé',
-      `Débloque ce contenu pour ${contentLock?.price_twc} NF avant d'interagir avec lui.`,
-    );
+    toast.info('Contenu réservé', {
+      description: `Débloque ce contenu pour ${contentLock?.price_twc} NF avant d'interagir avec lui.`,
+    });
   };
 
   const handleLike = async () => {

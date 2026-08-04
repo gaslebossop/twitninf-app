@@ -10,7 +10,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   StatusBar,
   RefreshControl,
 } from 'react-native';
@@ -22,6 +21,8 @@ import { BackButton } from '../components/ui';
 import { useFunctionalEvents } from '../contexts/FunctionalEventContext';
 import { FunctionalEvent } from '../types/functionalEvent';
 import { FunctionalEventBanner } from '../components/FunctionalEventBanner';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const COLORS = {
   primary: themeColors.accent,
@@ -69,7 +70,7 @@ export default function FunctionalEventManagementScreen() {
       setEvents(allEvents);
     } catch (error) {
       console.error('Erreur lors du chargement des événements:', error);
-      Alert.alert('Erreur', 'Impossible de charger les événements');
+      toast.error('Impossible de charger les événements');
     } finally {
       setLoading(false);
     }
@@ -78,14 +79,13 @@ export default function FunctionalEventManagementScreen() {
   // Lancer l'événement Kospor Birthday par défaut
   const handleLaunchKosporEvent = async () => {
     try {
-      Alert.alert(
-        'Lancer l\'événement Kospor Birthday',
-        'Voulez-vous lancer l\'événement Kospor Birthday ?',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Lancer',
-            onPress: async () => {
+      confirmAsync({
+        title: 'Lancer Kospor Birthday ?',
+        message: 'L’événement devient visible par tout le monde immédiatement.',
+        confirmLabel: 'Lancer',
+        icon: 'gift-outline',
+      }).then((ok) => {
+        if (ok) (async () => {
               // Vérifier si l'événement existe déjà
               const existingEvents = await getAllEvents();
               let kosporEvent = existingEvents.find(event => event.slug === 'kosporbirthday');
@@ -110,7 +110,7 @@ export default function FunctionalEventManagementScreen() {
                 
                 kosporEvent = await createEvent(defaultEvent);
                 if (!kosporEvent) {
-                  Alert.alert('Erreur', 'Impossible de créer l\'événement');
+                  toast.error('Impossible de créer l\'événement');
                   return;
                 }
               }
@@ -118,14 +118,12 @@ export default function FunctionalEventManagementScreen() {
               // Activer l'événement
               await activateEvent(kosporEvent.id, true);
               await loadEvents();
-              Alert.alert('Succès', 'Événement Kospor Birthday lancé !');
-            },
-          },
-        ]
-      );
+              toast.success('Événement Kospor Birthday lancé !');
+        })();
+      });
     } catch (error) {
       console.error('Erreur lors du lancement de l\'événement:', error);
-      Alert.alert('Erreur', 'Impossible de lancer l\'événement');
+      toast.error('Impossible de lancer l\'événement');
     }
   };
 
@@ -139,24 +137,20 @@ export default function FunctionalEventManagementScreen() {
   // Initialiser les événements par défaut
   const handleInitializeDefaults = async () => {
     try {
-      Alert.alert(
-        'Initialiser les événements par défaut',
-        'Voulez-vous créer les événements par défaut ?',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Initialiser',
-            onPress: async () => {
+      confirmAsync({
+        title: 'Initialiser les événements par défaut',
+        message: 'Voulez-vous créer les événements par défaut ?',
+        confirmLabel: 'Initialiser',
+      }).then((ok) => {
+        if (ok) (async () => {
               await initializeDefaultEvents();
               await loadEvents();
-              Alert.alert('Succès', 'Événements par défaut initialisés');
-            },
-          },
-        ]
-      );
+              toast.success('Événements par défaut initialisés');
+            })();
+      });
     } catch (error) {
       console.error('Erreur lors de l\'initialisation:', error);
-      Alert.alert('Erreur', 'Impossible d\'initialiser les événements par défaut');
+      toast.error('Impossible d\'initialiser les événements par défaut');
     }
   };
 
@@ -165,24 +159,20 @@ export default function FunctionalEventManagementScreen() {
   // Activer un événement
   const handleActivateEvent = async (eventId: string) => {
     try {
-      Alert.alert(
-        'Activer l\'événement',
-        'Voulez-vous activer cet événement ? Les autres événements seront désactivés.',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Activer',
-            onPress: async () => {
+      confirmAsync({
+        title: 'Activer l\'événement',
+        message: 'Voulez-vous activer cet événement ? Les autres événements seront désactivés.',
+        confirmLabel: 'Activer',
+      }).then((ok) => {
+        if (ok) (async () => {
               await activateEvent(eventId, true);
               await loadEvents();
-              Alert.alert('Succès', 'Événement activé');
-            },
-          },
-        ]
-      );
+              toast.success('Événement activé');
+            })();
+      });
     } catch (error) {
       console.error('Erreur lors de l\'activation:', error);
-      Alert.alert('Erreur', 'Impossible d\'activer l\'événement');
+      toast.error('Impossible d\'activer l\'événement');
     }
   };
 
@@ -191,35 +181,31 @@ export default function FunctionalEventManagementScreen() {
     try {
       await deactivateEvent(eventId);
       await loadEvents();
-      Alert.alert('Succès', 'Événement désactivé');
+      toast.success('Événement désactivé');
     } catch (error) {
       console.error('Erreur lors de la désactivation:', error);
-      Alert.alert('Erreur', 'Impossible de désactiver l\'événement');
+      toast.error('Impossible de désactiver l\'événement');
     }
   };
 
   // Supprimer un événement
   const handleDeleteEvent = async (eventId: string) => {
     try {
-      Alert.alert(
-        'Supprimer l\'événement',
-        'Êtes-vous sûr de vouloir supprimer cet événement ?',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Supprimer',
-            style: 'destructive',
-            onPress: async () => {
+      confirmAsync({
+        title: 'Supprimer l\'événement',
+        message: 'Êtes-vous sûr de vouloir supprimer cet événement ?',
+        confirmLabel: 'Supprimer',
+        destructive: true,
+      }).then((ok) => {
+        if (ok) (async () => {
               await deleteEvent(eventId);
               await loadEvents();
-              Alert.alert('Succès', 'Événement supprimé');
-            },
-          },
-        ]
-      );
+              toast.success('Événement supprimé');
+            })();
+      });
     } catch (error) {
       console.error('Erreur lors de la suppression:', error);
-      Alert.alert('Erreur', 'Impossible de supprimer l\'événement');
+      toast.error('Impossible de supprimer l\'événement');
     }
   };
 

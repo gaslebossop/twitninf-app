@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, fonts } from '../theme';
@@ -1013,10 +1013,7 @@ function MiniStat({ icon, value }: { icon: string; value: number }) {
 
 function Loader({ label }: { label: string }) {
   return (
-    <View style={styles.centered}>
-      <ActivityIndicator size="small" color={colors.accent} />
-      <Text style={styles.centeredText}>{label}</Text>
-    </View>
+    <ScreenSkeleton variant="detail" />
   );
 }
 

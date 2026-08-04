@@ -9,12 +9,10 @@ import {
   ScrollView,
   Animated,
   Dimensions,
-  Alert,
   StatusBar,
   SafeAreaView,
   Platform,
   ActivityIndicator,
-  ActionSheetIOS,
   RefreshControl,
   TextInput,
   Modal,
@@ -66,6 +64,9 @@ import {
   useProfileEntrance,
 } from '../components/PremiumProfileEntrance';
 import { useProfileBannerHeight } from '../hooks/useProfileBannerHeight';
+import { toast } from '../components/ui/Toast';
+import { showActionSheet } from '../components/ui/ActionSheet';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const { height } = Dimensions.get('window');
 /** Même fond que le feed / navigation (TweetsScreen, tabs) */
@@ -324,9 +325,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       setCustomizationHydrated(true);
       setShowPremiumModal(false);
       const label = tier === 'pro' ? 'Pro' : 'Plus';
-      Alert.alert('Félicitations !', `Abonnement ${label} activé pour 1 mois.`, [{ text: 'OK' }]);
+      toast.success('Félicitations !', {
+        description: `Abonnement ${label} activé pour 1 mois.`,
+      });
     } catch (error: any) {
-      Alert.alert('Erreur', error?.message || 'Une erreur est survenue.', [{ text: 'OK' }]);
+      toast.error(error?.message || 'Une erreur est survenue.');
     } finally { setPremiumLoading(false); }
   };
 
@@ -362,11 +365,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   const handleAddAccount = async () => {
     if (!newAccUsername.trim() || !newAccPassword) {
-      Alert.alert('Champs requis', "Entrez un nom d'utilisateur et un mot de passe.");
+      toast.error('Champs requis', {
+        description: "Entrez un nom d'utilisateur et un mot de passe.",
+      });
       return;
     }
     const res = await addAccountByCredentials(newAccUsername.trim(), newAccPassword);
-    if (!res.success) { Alert.alert('Erreur', res.message || 'Impossible d\'ajouter le compte'); return; }
+    if (!res.success) { toast.error(res.message || 'Impossible d\'ajouter le compte'); return; }
     setShowAddAccount(false); setShowAccounts(false);
     setNewAccUsername(''); setNewAccPassword('');
   };
@@ -375,10 +380,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     try {
       if (fromCamera) {
         const p = await ImagePicker.requestCameraPermissionsAsync();
-        if (p.status !== 'granted') { Alert.alert('Permission requise', 'Autorisez l\'accès à la caméra.'); return; }
+        if (p.status !== 'granted') { toast.error('Permission requise', {
+          description: 'Autorisez l\'accès à la caméra.',
+        }); return; }
       } else {
         const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (p.status !== 'granted') { Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie.'); return; }
+        if (p.status !== 'granted') { toast.error('Permission requise', {
+          description: 'Autorisez l\'accès à la galerie.',
+        }); return; }
       }
       const result = fromCamera
         ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.9 })
@@ -389,33 +398,32 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       setIsUploading(true);
       const uploading = await apiService.uploadUserAvatar(uri);
       if (uploading.success && uploading.data?.url) {
-        Alert.alert('Succès', 'Avatar mis à jour.');
+        toast.success('Avatar mis à jour.');
         await refreshCurrentUser();
-      } else Alert.alert('Erreur', uploading.message || 'Impossible de mettre à jour l\'avatar');
-    } catch { Alert.alert('Erreur', 'Une erreur est survenue'); }
+      } else toast.error(uploading.message || 'Impossible de mettre à jour l\'avatar');
+    } catch { toast.error('Une erreur est survenue'); }
     finally { setIsUploading(false); }
   };
 
   const handleChangeAvatar = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Prendre une photo', 'Choisir dans la galerie', 'Annuler'], cancelButtonIndex: 2, userInterfaceStyle: 'dark' },
-        (idx) => { if (idx === 0) openPickerWith(true); if (idx === 1) openPickerWith(false); }
-      );
-    } else {
-      Alert.alert('Changer la photo de profil', 'Sélectionnez une source', [
-        { text: 'Caméra', onPress: () => openPickerWith(true) },
-        { text: 'Galerie', onPress: () => openPickerWith(false) },
-        { text: 'Annuler', style: 'cancel' },
-      ]);
-    }
+    showActionSheet({
+      title: 'Photo de profil',
+      items: [
+        { label: 'Prendre une photo', icon: 'camera-outline', onPress: () => openPickerWith(true) },
+        { label: 'Choisir dans la galerie', icon: 'images-outline', onPress: () => openPickerWith(false) },
+      ],
+    });
   };
 
   const handleLogout = () => {
-    Alert.alert('Déconnexion', 'Êtes-vous sûr de vouloir vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Déconnexion', style: 'destructive', onPress: async () => { await logout(); navigation.navigate('Intro'); } },
-    ]);
+    confirmAsync({
+      title: 'Déconnexion',
+      message: 'Êtes-vous sûr de vouloir vous déconnecter ?',
+      confirmLabel: 'Déconnexion',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => { await logout(); navigation.navigate('Intro'); })();
+    });
   };
 
   const formatStat = (n?: number) => {

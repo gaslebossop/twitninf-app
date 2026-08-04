@@ -9,10 +9,10 @@ import {
   TextInput,
   ScrollView,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { toast } from './ui/Toast';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -120,12 +120,12 @@ export default function SanctionModal({ visible, onClose, onConfirm, user, sanct
     console.log('🔍 Tentative de confirmation avec:', { duration, reason, customReason, permanent });
     
     if (!reason && !customReason.trim()) {
-      Alert.alert('Erreur', 'Veuillez sélectionner ou saisir un motif');
+      toast.error('Veuillez sélectionner ou saisir un motif');
       return;
     }
 
     if (reason === 'Autre' && !customReason.trim()) {
-      Alert.alert('Erreur', 'Veuillez préciser le motif');
+      toast.error('Veuillez préciser le motif');
       return;
     }
 

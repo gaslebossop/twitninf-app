@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Alert } from 'react-native';
+import {  } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiService from '../services/api';
 import tokenStore from '../services/tokenStore';
 import { resetToRoot } from '../navigation/NavigationService';
 import { registerForPushNotifications } from '../services/push';
+import { toast } from '../components/ui/Toast';
 
 interface User {
   id: string;
@@ -442,25 +443,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const account = merged.find((a) => a.id === userId);
       if (!account) {
-        Alert.alert('Erreur', 'Ce compte est introuvable.');
+        toast.error('Ce compte est introuvable.');
         return;
       }
 
       const activated = await activateAccount(userId);
       if (!activated) {
-        Alert.alert(
-          'Session expirée',
-          `Reconnecte-toi à @${account.username} pour continuer.`
-        );
+        toast.error('Session expirée', {
+          description: `Reconnecte-toi à @${account.username} pour continuer.`,
+        });
         return;
       }
 
       const me = await apiService.getCurrentUser();
       if (!me) {
-        Alert.alert(
-          'Session expirée',
-          `Reconnecte-toi à @${account.username} pour continuer.`
-        );
+        toast.error('Session expirée', {
+          description: `Reconnecte-toi à @${account.username} pour continuer.`,
+        });
         return;
       }
 
@@ -481,7 +480,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       resetToRoot();
     } catch (error) {
       console.error('AuthContext - switchAccount:', error);
-      Alert.alert('Erreur', 'Impossible de changer de compte.');
+      toast.error('Impossible de changer de compte.');
     }
   };
 

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -15,9 +14,10 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, fonts } from '../theme';
+import { toast } from '../components/ui/Toast';
 import {
   CATEGORY_LABELS,
   STATUS_LABELS,
@@ -103,11 +103,15 @@ export default function SupportScreen({ navigation }: Props) {
 
   const submit = useCallback(async () => {
     if (subject.trim().length < 3) {
-      Alert.alert('Sujet trop court', 'Résume ton problème en quelques mots.');
+      toast.error('Sujet trop court', {
+        description: 'Résume ton problème en quelques mots.',
+      });
       return;
     }
     if (body.trim().length < 10) {
-      Alert.alert('Message trop court', 'Décris ce qui se passe, en 10 caractères minimum.');
+      toast.error('Message trop court', {
+        description: 'Décris ce qui se passe, en 10 caractères minimum.',
+      });
       return;
     }
 
@@ -120,7 +124,9 @@ export default function SupportScreen({ navigation }: Props) {
     setSubmitting(false);
 
     if (!result.ok) {
-      Alert.alert('Ticket non ouvert', result.message || 'Réessaie dans un instant.');
+      toast.info('Ticket non ouvert', {
+        description: result.message || 'Réessaie dans un instant.',
+      });
       return;
     }
 
@@ -264,9 +270,7 @@ export default function SupportScreen({ navigation }: Props) {
           )}
 
           {loading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator size="small" color={colors.accent} />
-            </View>
+            <ScreenSkeleton variant="list" />
           ) : error ? (
             <View style={styles.centered} accessibilityRole="alert">
               <Ionicons name="cloud-offline-outline" size={22} color={colors.warning} />

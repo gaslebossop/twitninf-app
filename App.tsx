@@ -13,6 +13,11 @@ import { OfflineProvider } from './src/contexts/OfflineContext';
 import { ReadingLanguageProvider, useReadingLanguage } from './src/contexts/ReadingLanguageContext';
 import ReadingLanguageModal from './src/components/ReadingLanguageModal';
 import { StartupPopupProvider, useStartupPopupSlot } from './src/contexts/StartupPopupContext';
+import { ToastProvider } from './src/components/ui/Toast';
+import { ConfirmProvider } from './src/components/ui/ConfirmSheet';
+import { ActionSheetProvider } from './src/components/ui/ActionSheet';
+import { PromptProvider } from './src/components/ui/PromptSheet';
+import { RewardProvider } from './src/components/ui/RewardBurst';
 import AppNavigator from './src/navigation/AppNavigator';
 import 'react-native-gesture-handler';
 import { registerForPushNotifications, setupFranceDailyLocalNotifications } from './src/services/push';
@@ -122,6 +127,15 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* Les deux hôtes sont montés le plus haut possible : leur calque se
+          dessine APRÈS l'arbre applicatif, donc au-dessus de n'importe quel
+          écran. `ToastProvider` enveloppe `ConfirmProvider` pour qu'un message
+          reste lisible même pendant une question. */}
+      <ToastProvider>
+      <ConfirmProvider>
+      <ActionSheetProvider>
+      <PromptProvider>
+      <RewardProvider>
       <AuthProvider>
         {/* Sous AuthProvider : le mode hors ligne dépend du palier du compte. */}
         <OfflineProvider>
@@ -144,6 +158,11 @@ export default function App() {
           </ReadingLanguageProvider>
         </OfflineProvider>
       </AuthProvider>
+      </RewardProvider>
+      </PromptProvider>
+      </ActionSheetProvider>
+      </ConfirmProvider>
+      </ToastProvider>
     </GestureHandlerRootView>
   );
 }

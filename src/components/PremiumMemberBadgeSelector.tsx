@@ -1,12 +1,13 @@
 import { fonts } from '../theme';
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PremiumBadge from './PremiumBadge';
 import { MEMBER_BADGE_OPTIONS, MEMBER_BADGE_STORAGE_KEY, badgeAllowedForTier } from '../utils/profileMemberBadges';
 import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
+import { toast } from './ui/Toast';
 
 interface PremiumMemberBadgeSelectorProps {
   currentBadgeId: string;
@@ -27,20 +28,18 @@ export default function PremiumMemberBadgeSelector({
     const def = MEMBER_BADGE_OPTIONS.find((b) => b.id === id);
     if (!def) return;
     if (!badgeAllowedForTier(userTier, def)) {
-      Alert.alert(
-        def.minTier === 'pro' ? 'Palier Pro' : 'Palier Plus',
-        def.minTier === 'pro'
+      toast.info(def.minTier === 'pro' ? 'Palier Pro' : 'Palier Plus', {
+        description: def.minTier === 'pro'
           ? `« ${def.label} » est réservé aux membres Pro.`
           : `« ${def.label} » nécessite au moins Plus.`,
-        [{ text: 'OK' }]
-      );
+      });
       return;
     }
     try {
       await AsyncStorage.setItem(MEMBER_BADGE_STORAGE_KEY, id);
       onBadgeChange(id);
     } catch {
-      Alert.alert('Erreur', 'Impossible d’enregistrer le badge.');
+      toast.error('Impossible d’enregistrer le badge.');
     }
   };
 

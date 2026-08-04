@@ -129,23 +129,11 @@ const LoginScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Animations d'entrée
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(24)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
   const errorShake = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-    ]).start();
   }, []);
 
   const shakeError = () => {

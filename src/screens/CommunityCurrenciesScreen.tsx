@@ -1,5 +1,5 @@
 import { colors, fonts } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -88,7 +88,7 @@ export default function CommunityCurrenciesScreen() {
           </TouchableOpacity>
         </View>
       ) : !currencies ? (
-        <View style={styles.centerWrap}><ActivityIndicator color={colors.accent} /></View>
+        <ScreenSkeleton variant="list" />
       ) : (
         <FlatList
           data={currencies}

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
@@ -130,9 +130,7 @@ export default function UserConnectionsScreen({ navigation, route }: any) {
         </View>
 
         {loading && users.length === 0 ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <ScreenSkeleton variant="list" />
         ) : (
           <FlatList
             data={users}

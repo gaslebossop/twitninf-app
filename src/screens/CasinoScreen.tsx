@@ -20,7 +20,7 @@ import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { colors, fonts, glow, radius } from '../theme';
-import { ScreenBackground } from '../components/ui';
+import { ScreenBackground, HowItWorks, celebrateReward } from '../components/ui';
 import CasinoService, { CasinoConfig, CasinoResult, CasinoHistoryRow, WheelMode } from '../services/casinoService';
 import NewEconomyService from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
@@ -498,6 +498,16 @@ export default function CasinoScreen() {
       const big = (res.multiplier ?? 0) >= 4;
       setStreak(prev => prev + 1);
       buzz(big ? BUZZ.jackpot : BUZZ.win);
+      // Un gros coup mérite plus que le flash du tapis : la gerbe plein écran
+      // de l'app, avec le montant en grand. Réservée aux ×4 et plus, sinon
+      // elle se banalise et ne veut plus rien dire.
+      if (big) {
+        celebrateReward({
+          amount: res.netProfit,
+          label: 'Jackpot',
+          multiplier: res.multiplier ? `×${res.multiplier}` : undefined,
+        });
+      }
       setCelebrating(true);
       celebrateAnim.setValue(0);
       Animated.timing(celebrateAnim, { toValue: 1, duration: CELEBRATE_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
@@ -526,7 +536,9 @@ export default function CasinoScreen() {
     buzz(BUZZ.tap);
     Animated.sequence([
       Animated.timing(playPulse, { toValue: 0.94, duration: 90, useNativeDriver: true }),
-      Animated.spring(playPulse, { toValue: 1, friction: 4, useNativeDriver: true }),
+      // friction 4 : le bouton « Jouer » rebondissait trois fois après chaque
+      // tour. 13 = amortissement critique pour la tension par défaut (40).
+      Animated.spring(playPulse, { toValue: 1, friction: 13, useNativeDriver: true }),
     ]).start();
   };
 
@@ -739,6 +751,22 @@ export default function CasinoScreen() {
           contentContainerStyle={styles.stageScrollInner}
           showsVerticalScrollIndicator={false}
         >
+          {/* Les règles n'étaient nulle part : ni l'espérance de gain, ni le
+              fait que la mise part avant le résultat. Dépliée à la première
+              visite, repliée ensuite. */}
+          <HowItWorks
+            id="casino"
+            title="Les règles, en clair"
+            tint={colors.gold}
+            points={[
+              { icon: 'wallet-outline', text: 'Ta mise est débitée au lancement, pas au résultat. Un tour perdu ne se rejoue pas.' },
+              { icon: 'options-outline', text: 'Chaque mode change les chances : plus le jackpot est gros, plus les cases perdantes sont nombreuses.' },
+              { icon: 'trending-up-outline', text: 'Un gain est un multiplicateur de ta mise — ×1,2 sur 100 NF rend 120 NF, pas 100 de plus.' },
+              { icon: 'time-outline', text: 'Chaque tour est indépendant : une série de pertes n’augmente pas les chances du suivant.' },
+            ]}
+            warning="La maison est gagnante sur la durée. Ne mise que ce que tu acceptes de perdre."
+            style={styles.howItWorks}
+          />
           <Animated.View style={[
             styles.stage,
             outcomeTone === 'win' && styles.stageWin,
@@ -1043,6 +1071,7 @@ const styles = StyleSheet.create({
 
   stageScroll: { flex: 1 },
   stageScrollInner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 4 },
+  howItWorks: { marginBottom: 14 },
 
   stage: {
     borderRadius: radius.xl,

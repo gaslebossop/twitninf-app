@@ -1,5 +1,5 @@
 import { colors, fonts, radius } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Dimensions,
   RefreshControl,
-  Alert,
   StatusBar,
   Animated,
   Modal,
@@ -24,6 +23,7 @@ import { moderationService } from '../services/moderationService';
 import ReportsManager from '../components/ReportsManager';
 import ModerationHistory from '../components/ModerationHistory';
 import UnbanTicketsManager from '../components/UnbanTicketsManager';
+import { toast } from '../components/ui/Toast';
 
 const { width: screenWidth } = Dimensions.get('window');
 const CARD_GAP = 10;
@@ -138,7 +138,7 @@ export default function ModerationScreen() {
   const { user } = useAuth();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [animationValue] = useState(new Animated.Value(0));
+  const [animationValue] = useState(new Animated.Value(1));
 
   const [showReportsManager, setShowReportsManager] = useState(false);
   const [showModerationHistory, setShowModerationHistory] = useState(false);
@@ -237,7 +237,6 @@ export default function ModerationScreen() {
   }, []);
 
   useEffect(() => {
-    Animated.timing(animationValue, { toValue: 1, duration: 500, useNativeDriver: true }).start();
     loadRealStats();
   }, [loadRealStats]);
 
@@ -253,57 +252,89 @@ export default function ModerationScreen() {
         break;
       case 'economy':
         if (canManageEconomy) (navigation as any).navigate('EconomyManagement');
-        else Alert.alert('Permission refusee', 'Vous n\'avez pas la permission de gerer l\'economie');
+        else toast.error('Permission refusee', {
+          description: 'Vous n\'avez pas la permission de gerer l\'economie',
+        });
         break;
       case 'policiercongo':
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('PolicierCongoAdmin');
-        else Alert.alert('Permission refusee', 'Reserve aux administrateurs');
+        else toast.error('Permission refusee', {
+          description: 'Reserve aux administrateurs',
+        });
         break;
       case 'tweets':
         if (canDeleteTweets || canModerateContent) (navigation as any).navigate('ContentModeration');
-        else Alert.alert('Permission refusee', 'Vous n\'avez pas la permission de moderer le contenu');
+        else toast.error('Permission refusee', {
+          description: 'Vous n\'avez pas la permission de moderer le contenu',
+        });
         break;
       case 'reports':
         if (canViewReports && !isClasseur) setShowReportsManager(true);
-        else if (isClasseur) Alert.alert('Acces limite', 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu');
-        else Alert.alert('Permission refusee', 'Vous n\'avez pas la permission de voir les signalements');
+        else if (isClasseur) toast.info('Acces limite', {
+          description: 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu',
+        });
+        else toast.error('Permission refusee', {
+          description: 'Vous n\'avez pas la permission de voir les signalements',
+        });
         break;
       case 'users':
         if ((canBanUsers || canSuspendUsers) && !isClasseur) (navigation as any).navigate('UserManagement');
-        else if (isClasseur) Alert.alert('Acces limite', 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu');
-        else Alert.alert('Permission refusee', 'Vous n\'avez pas la permission de gerer les utilisateurs');
+        else if (isClasseur) toast.info('Acces limite', {
+          description: 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu',
+        });
+        else toast.error('Permission refusee', {
+          description: 'Vous n\'avez pas la permission de gerer les utilisateurs',
+        });
         break;
       case 'analytics':
         if (canViewAnalytics && !isClasseur) (navigation as any).navigate('Analytics');
-        else if (isClasseur) Alert.alert('Acces limite', 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu');
-        else Alert.alert('Permission refusee', 'Vous n\'avez pas la permission de voir les analyses');
+        else if (isClasseur) toast.info('Acces limite', {
+          description: 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu',
+        });
+        else toast.error('Permission refusee', {
+          description: 'Vous n\'avez pas la permission de voir les analyses',
+        });
         break;
       case 'moderators':
-        if (canManageModerators) Alert.alert('Gestion des moderateurs', 'Fonctionnalite en cours de developpement...');
-        else Alert.alert('Permission refusee', 'Vous n\'avez pas la permission de gerer les moderateurs');
+        if (canManageModerators) toast.info('Gestion des moderateurs', {
+          description: 'Fonctionnalite en cours de developpement...',
+        });
+        else toast.error('Permission refusee', {
+          description: 'Vous n\'avez pas la permission de gerer les moderateurs',
+        });
         break;
       case 'events':
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('EventManagement');
-        else Alert.alert('Permission refusee', 'Vous devez etre administrateur pour gerer les evenements');
+        else toast.error('Permission refusee', {
+          description: 'Vous devez etre administrateur pour gerer les evenements',
+        });
         break;
       case 'functional-events':
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('FunctionalEventManagement');
-        else Alert.alert('Permission refusee', 'Vous devez etre administrateur pour gerer les evenements fonctionnels');
+        else toast.error('Permission refusee', {
+          description: 'Vous devez etre administrateur pour gerer les evenements fonctionnels',
+        });
         break;
       case 'similarity-algorithm':
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('SimilarityAlgorithm');
-        else Alert.alert('Permission refusee', 'Reserve aux administrateurs');
+        else toast.error('Permission refusee', {
+          description: 'Reserve aux administrateurs',
+        });
         break;
       case 'unban-tickets':
         if (isAdmin || isSuperAdmin) setShowUnbanTicketsManager(true);
-        else Alert.alert('Permission refusee', 'Reserve aux administrateurs');
+        else toast.error('Permission refusee', {
+          description: 'Reserve aux administrateurs',
+        });
         break;
       case 'history':
         if (!isClasseur) setShowModerationHistory(true);
-        else Alert.alert('Acces limite', 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu');
+        else toast.info('Acces limite', {
+          description: 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu',
+        });
         break;
       default:
-        Alert.alert('Information', `Fonctionnalite "${title}" en cours de developpement`);
+        toast.info(`Fonctionnalite "${title}" en cours de developpement`);
     }
   }, [navigation, canDeleteTweets, canModerateContent, canViewReports, canBanUsers, canSuspendUsers, canViewAnalytics, canManageModerators, isClasseur, canManageEconomy, isAdmin, isSuperAdmin]);
 
@@ -314,10 +345,7 @@ export default function ModerationScreen() {
   if (permissionsLoading) {
     return (
       <ScreenBackground>
-        <View style={[styles.container, styles.centerFill]}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Verification des droits...</Text>
-        </View>
+        <ScreenSkeleton variant="list" />
       </ScreenBackground>
     );
   }

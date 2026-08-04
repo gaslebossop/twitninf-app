@@ -1,6 +1,6 @@
 import { fonts } from '../theme';
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { canUseFeature, effectiveSubscriptionTier } from '../utils/subscriptionTier';
@@ -12,6 +12,7 @@ import {
   isProDisplayNameTier,
 } from '../utils/profileDisplayNamePrefs';
 import PremiumDisplayName from './PremiumDisplayName';
+import { toast } from './ui/Toast';
 
 interface PremiumDisplayNameSelectorProps {
   fontId: string;
@@ -35,27 +36,31 @@ export default function PremiumDisplayNameSelector({
 
   const persistFont = async (id: string) => {
     if (!canUseFeature(tier, 'pro')) {
-      Alert.alert('Palier Pro', 'Les polices et effets sur le nom sont réservés aux membres Pro.', [{ text: 'OK' }]);
+      toast.info('Palier Pro', {
+        description: 'Les polices et effets sur le nom sont réservés aux membres Pro.',
+      });
       return;
     }
     try {
       await AsyncStorage.setItem(DISPLAY_NAME_FONT_KEY, id);
       onChangeFont(id);
     } catch {
-      Alert.alert('Erreur', 'Impossible d’enregistrer la police.');
+      toast.error('Impossible d’enregistrer la police.');
     }
   };
 
   const persistEffect = async (id: string) => {
     if (!canUseFeature(tier, 'pro')) {
-      Alert.alert('Palier Pro', 'Les effets sur le nom sont réservés aux membres Pro.', [{ text: 'OK' }]);
+      toast.info('Palier Pro', {
+        description: 'Les effets sur le nom sont réservés aux membres Pro.',
+      });
       return;
     }
     try {
       await AsyncStorage.setItem(DISPLAY_NAME_EFFECT_KEY, id);
       onChangeEffect(id);
     } catch {
-      Alert.alert('Erreur', 'Impossible d’enregistrer l’effet.');
+      toast.error('Impossible d’enregistrer l’effet.');
     }
   };
 

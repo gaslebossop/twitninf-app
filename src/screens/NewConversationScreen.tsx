@@ -11,7 +11,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -23,6 +22,7 @@ import { API_CONFIG } from '../config/api';
 import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
+import { toast } from '../components/ui/Toast';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -79,7 +79,8 @@ export default function NewConversationScreen({ navigation, route }: any) {
 
   useEffect(() => {
     const idx = TABS.findIndex((t) => t.key === mode);
-    Animated.spring(tabAnim, { toValue: idx, useNativeDriver: false, tension: 80, friction: 12 }).start();
+    // 2·√80 ≈ 18 : le curseur d'onglet glisse et s'arrête net.
+    Animated.spring(tabAnim, { toValue: idx, useNativeDriver: false, tension: 80, friction: 18 }).start();
   }, [mode]);
 
   useEffect(() => {
@@ -158,8 +159,10 @@ export default function NewConversationScreen({ navigation, route }: any) {
     setIsSubmitting(true);
     try {
       const res = await apiService.post(`/api/messages/direct/${selectedDmUser.id}`, { content: dmMessage.trim() });
-      if (!res?.success) { Alert.alert('Erreur', res?.message || 'Échec envoi'); return; }
-      Alert.alert('✓', res?.invitation_required ? 'Invitation envoyée' : 'Message envoyé');
+      if (!res?.success) { toast.error(res?.message || 'Échec envoi'); return; }
+      toast.info('✓', {
+        description: res?.invitation_required ? 'Invitation envoyée' : 'Message envoyé',
+      });
       navigation.goBack();
     } finally { setIsSubmitting(false); }
   };
@@ -169,18 +172,20 @@ export default function NewConversationScreen({ navigation, route }: any) {
     setIsSubmitting(true);
     try {
       const res = await apiService.post('/api/messages/groups', { title: groupTitle.trim(), participantIds: groupMembers.map((u) => u.id) });
-      if (!res?.success) { Alert.alert('Erreur', res?.message || 'Échec création'); return; }
+      if (!res?.success) { toast.error(res?.message || 'Échec création'); return; }
       if (groupMessage.trim() && res?.conversation?.id) {
         await apiService.post(`/api/messages/conversations/${res.conversation.id}/messages`, { content: groupMessage.trim() });
       }
-      Alert.alert('✓', 'Groupe créé');
+      toast.success('✓', {
+        description: 'Groupe créé',
+      });
       navigation.goBack();
     } finally { setIsSubmitting(false); }
   };
 
   const respondInvite = async (conversationId: string, action: 'accept' | 'decline') => {
     const res = await apiService.post(`/api/messages/conversations/${conversationId}/invitation/respond`, { action });
-    if (!res?.success) { Alert.alert('Erreur', res?.message || 'Impossible de traiter'); return; }
+    if (!res?.success) { toast.error(res?.message || 'Impossible de traiter'); return; }
     await loadInvitations();
   };
 

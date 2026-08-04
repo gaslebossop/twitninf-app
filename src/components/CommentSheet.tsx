@@ -350,8 +350,10 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
         } else {
           Animated.spring(slideAnim, {
             toValue: 0,
+            // 2·√65 ≈ 16 : la feuille relâchée revient en butée sans
+            // rebondir contre le bord de l'écran.
             tension: 65,
-            friction: 11,
+            friction: 16,
             useNativeDriver: true,
           }).start();
         }

@@ -5,7 +5,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   Dimensions,
   StatusBar,
   ActivityIndicator,
@@ -16,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { toast } from '../components/ui/Toast';
 
 export default function CreateVideoScreen() {
   const navigation = useNavigation<any>();
@@ -30,7 +30,7 @@ export default function CreateVideoScreen() {
   // l'import, d'où la disparition de la branche caméra.
   const pickVideo = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission requise'); return; }
+    if (!perm.granted) { toast.error('Permission requise'); return; }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: true,

@@ -9,7 +9,6 @@ import {
   ScrollView,
   Animated,
   Dimensions,
-  Alert,
   StatusBar,
   useWindowDimensions,
   SafeAreaView,
@@ -43,6 +42,8 @@ import ReadingLanguageModal from '../components/ReadingLanguageModal';
 import { PATCH_NOTES } from '../data/patchNotes';
 import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
+import { toast } from '../components/ui/Toast';
+import { showActionSheet } from '../components/ui/ActionSheet';
 
 const { width, height } = Dimensions.get('window');
 
@@ -64,8 +65,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     screenName: 'SettingsScreen',
     trackTimeSpent: true
   });
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [slideAnim] = useState(new Animated.Value(30));
+  const [fadeAnim] = useState(new Animated.Value(1));
+  const [slideAnim] = useState(new Animated.Value(0));
   const [showVerificationForm, setShowVerificationForm] = useState(false);
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [showPremiumPopup, setShowPremiumPopup] = useState(false);
@@ -85,21 +86,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const isMediumScreen = screenHeight >= 700 && screenHeight < 900;
   const headerPaddingTop = Platform.OS === 'ios' ? (isSmallScreen ? 10 : 15) : (isSmallScreen ? 30 : 35);
 
-  useEffect(() => {
-    // Animation d'entrée
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
 
   const handleTogglePrivateAccount = async (value: boolean) => {
     if (privacyLoading) return;
@@ -109,10 +95,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       if (response.success) {
         await refreshCurrentUser?.();
       } else {
-        Alert.alert('Erreur', 'Impossible de mettre à jour la confidentialité du compte.');
+        toast.error('Impossible de mettre à jour la confidentialité du compte.');
       }
     } catch {
-      Alert.alert('Erreur', 'Impossible de mettre à jour la confidentialité du compte.');
+      toast.error('Impossible de mettre à jour la confidentialité du compte.');
     } finally {
       setPrivacyLoading(false);
     }
@@ -339,12 +325,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                       .join('\n')
                   : 'Aucun rappel taggé trouvé';
 
-                Alert.alert(
-                  'Debug notifs locales',
-                  `Replanification: ${setupOk ? 'OK' : 'ECHEC'}\nTotal planifiées: ${debugInfo.totalScheduled}\nRappels FR: ${reminders.length}\n\n${lines}${
+                toast.error('Debug notifs locales', {
+                  description: `Replanification: ${setupOk ? 'OK' : 'ECHEC'}\nTotal planifiées: ${debugInfo.totalScheduled}\nRappels FR: ${reminders.length}\n\n${lines}${
                     (debugInfo as any).error ? `\n\nErreur: ${(debugInfo as any).error}` : ''
-                  }`
-                );
+                  }`,
+                });
               }
             )}
 
@@ -356,54 +341,30 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                 const scheduleAt = async (hour: number, minute: number) => {
                   const result = await scheduleRandomDebugNotificationAtTime(hour, minute);
                   if (!result.success) {
-                    Alert.alert('Erreur', `Impossible de programmer la notif.\n${(result as any).error || ''}`);
+                    toast.error(`Impossible de programmer la notif.\n${(result as any).error || ''}`);
                     return;
                   }
-                  Alert.alert(
-                    'Notif programmée',
-                    `Heure: ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}\nTitre: ${
+                  toast.info('Notif programmée', {
+                    description: `Heure: ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}\nTitre: ${
                       (result as any).title
-                    }\nMessage: ${(result as any).body}`
-                  );
+                    }\nMessage: ${(result as any).body}`,
+                  });
                 };
 
-                if (Platform.OS === 'ios' && typeof (Alert as any).prompt === 'function') {
-                  (Alert as any).prompt(
-                    'Heure de notif',
-                    'Format HH:MM (ex: 21:30)',
-                    [
-                      { text: 'Annuler', style: 'cancel' },
-                      {
-                        text: 'Programmer',
-                        onPress: async (value: string) => {
-                          const input = (value || '').trim();
-                          const match = input.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
-                          if (!match) {
-                            Alert.alert('Format invalide', 'Utilise HH:MM, ex: 09:05 ou 21:30');
-                            return;
-                          }
-                          const hour = Number(match[1]);
-                          const minute = Number(match[2]);
-                          await scheduleAt(hour, minute);
-                        }
-                      }
-                    ],
-                    'plain-text',
-                    '12:00'
-                  );
-                  return;
-                }
-
-                Alert.alert(
-                  'Choix rapide',
-                  'Saisie libre dispo sur iOS. Ici, utilise un créneau rapide.',
-                  [
-                    { text: 'Annuler', style: 'cancel' },
-                    { text: '12:00', onPress: () => scheduleAt(12, 0) },
-                    { text: '16:00', onPress: () => scheduleAt(16, 0) },
-                    { text: '20:00', onPress: () => scheduleAt(20, 0) }
-                  ]
-                );
+                // `Alert.prompt` (saisie libre) n'existe que sur iOS : Android
+                // n'avait droit qu'à trois créneaux. Une seule liste pour les
+                // deux — c'est un outil de mise au point, la saisie libre au
+                // format HH:MM n'y apportait rien qu'un risque de faute de
+                // frappe.
+                showActionSheet({
+                  title: 'À quelle heure ?',
+                  items: [
+                    { label: '09:00', icon: 'partly-sunny-outline', onPress: () => scheduleAt(9, 0) },
+                    { label: '12:00', icon: 'sunny-outline', onPress: () => scheduleAt(12, 0) },
+                    { label: '16:00', icon: 'cafe-outline', onPress: () => scheduleAt(16, 0) },
+                    { label: '20:00', icon: 'moon-outline', onPress: () => scheduleAt(20, 0) },
+                  ],
+                });
               }
             )}
 
@@ -541,15 +502,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                       onPress={async () => {
                         try {
                           const credentials = await liveService.requestStreamCredentials();
-                          Alert.alert(
-                            '✅ Accès de diffusion généré',
-                            `URL : ${credentials.ingestUrl}\n\nClé : ${credentials.streamKey}\n\nCette clé est temporaire et à usage unique.`,
-                          );
+                          toast.info('✅ Accès de diffusion généré', {
+                            description: `URL : ${credentials.ingestUrl}\n\nClé : ${credentials.streamKey}\n\nCette clé est temporaire et à usage unique.`,
+                          });
                         } catch (error) {
-                          Alert.alert(
-                            'Erreur',
-                            error instanceof Error ? error.message : "Impossible de générer l'accès de diffusion.",
-                          );
+                          toast.error(error instanceof Error ? error.message : "Impossible de générer l'accès de diffusion.");
                         }
                       }} 
                       style={styles.generateBtn}
@@ -632,7 +589,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         onClose={() => setShowPremiumPopup(false)}
         onSuccess={() => {
           setShowPremiumPopup(false);
-          Alert.alert('Bienvenue dans Premium Pro', 'Tous tes avantages sont actifs pour 5 jours.');
+          toast.info('Bienvenue dans Premium Pro', {
+            description: 'Tous tes avantages sont actifs pour 5 jours.',
+          });
         }}
       />
 

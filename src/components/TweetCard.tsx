@@ -10,8 +10,6 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
-  Alert,
-  ActionSheetIOS,
 } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,6 +43,9 @@ import trackingService from '../services/trackingService';
 import { apiService } from '../services';
 import { useAuth } from '../contexts/AuthContext';
 import { colors, fonts } from '../theme';
+import { toast } from './ui/Toast';
+import { confirmAsync } from './ui/ConfirmSheet';
+import { showActionSheet, type ActionSheetItem } from './ui/ActionSheet';
 
 interface TweetCardProps {
   tweet: Tweet;
@@ -185,7 +186,7 @@ export default function TweetCard({
     } else {
       // Fallback action si pas de handler défini
       trackingService.trackBookmark(tweet.id);
-      Alert.alert('Succès', 'Tweet ajouté aux favoris');
+      toast.success('Tweet ajouté aux favoris');
     }
   };
 
@@ -197,32 +198,27 @@ export default function TweetCard({
     } else {
       // Fallback action
       trackingService.trackSkip(tweet.id);
-      Alert.alert('Tweet ignoré', 'Ce tweet n\'apparaîtra plus');
+      toast.info('Tweet ignoré', {
+        description: 'Ce tweet n\'apparaîtra plus',
+      });
     }
   };
 
   const handleBlock = () => {
-    if (tweet.author?.id) {
-      Alert.alert(
-        'Bloquer cet utilisateur?',
-        `Vous ne verrez plus les tweets de @${tweet.author.username}`,
-        [
-          { text: 'Annuler', onPress: () => {} },
-          {
-            text: 'Bloquer',
-            onPress: () => {
-              // 📊 Track block
-              trackingService.trackBlock(tweet.author!.id);
-              if (onBlock) {
-                onBlock(tweet.author.id);
-              }
-              Alert.alert('Succès', `@${tweet.author.username} a été bloqué`);
-            },
-            style: 'destructive'
-          }
-        ]
-      );
-    }
+    if (!tweet.author?.id) return;
+    const author = tweet.author;
+    confirmAsync({
+      title: `Bloquer @${author.username} ?`,
+      message: 'Ses tweets disparaissent de ton fil et il ne peut plus te contacter.',
+      confirmLabel: 'Bloquer',
+      icon: 'ban-outline',
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      trackingService.trackBlock(author.id);
+      onBlock?.(author.id);
+      toast.success(`@${author.username} a été bloqué`);
+    });
   };
 
   const handleTweetPress = () => {
@@ -237,64 +233,49 @@ export default function TweetCard({
   };
 
   const handleDeleteTweet = () => {
-    Alert.alert(
-      'Supprimer ce tweet ?',
-      'Cette action est irréversible.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Supprimer ce tweet ?',
+      message: 'Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             const response = await apiService.deleteTweet(tweet.id);
             if (response?.success) {
               onDelete?.(tweet.id);
             } else {
-              Alert.alert('Erreur', response?.message || 'Impossible de supprimer ce tweet');
+              toast.error(response?.message || 'Impossible de supprimer ce tweet');
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const handleOptionsMenu = () => {
     // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
     // propre tweet, le menu ne propose que ce qui reste pertinent.
-    const entries: { label: string; onPress: () => void; destructive?: boolean }[] = isOwnTweet
+    const entries: ActionSheetItem[] = isOwnTweet
       ? [
-          { label: 'Ajouter aux favoris', onPress: handleBookmark },
-          { label: 'Supprimer', onPress: handleDeleteTweet, destructive: true },
+          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: handleBookmark },
+          { label: 'Supprimer', icon: 'trash-outline', onPress: handleDeleteTweet, destructive: true },
         ]
       : [
-          { label: 'Ajouter aux favoris', onPress: handleBookmark },
-          { label: 'Ignorer ce tweet', onPress: handleSkip },
-          { label: 'Bloquer cet utilisateur', onPress: handleBlock, destructive: true },
+          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: handleBookmark },
+          {
+            label: 'Ignorer ce tweet',
+            icon: 'eye-off-outline',
+            hint: 'Il n’apparaîtra plus dans ton fil',
+            onPress: handleSkip,
+          },
+          {
+            label: 'Bloquer cet utilisateur',
+            icon: 'ban-outline',
+            onPress: handleBlock,
+            destructive: true,
+          },
         ];
 
-    if (Platform.OS === 'ios') {
-      const destructiveButtonIndex = entries.findIndex((e) => e.destructive);
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Annuler', ...entries.map((e) => e.label)],
-          cancelButtonIndex: 0,
-          destructiveButtonIndex: destructiveButtonIndex >= 0 ? destructiveButtonIndex + 1 : undefined,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) return;
-          entries[buttonIndex - 1]?.onPress();
-        }
-      );
-    } else {
-      Alert.alert('Plus d\'options', 'Choisir une action', [
-        { text: 'Annuler', style: 'cancel' },
-        ...entries.map((e) => ({
-          text: e.label,
-          onPress: e.onPress,
-          style: e.destructive ? ('destructive' as const) : undefined,
-        })),
-      ]);
-    }
+    // Même feuille sur iOS et Android — voir `components/ui/ActionSheet`.
+    showActionSheet({ items: entries });
   };
 
   const handleUserPress = () => {

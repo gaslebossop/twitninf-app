@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PremiumProfileEffects, { PREMIUM_PROFILE_RING } from './PremiumProfileEffects';
 import Avatar from './Avatar';
+import { toast } from './ui/Toast';
 import {
   effectiveSubscriptionTier,
   canUseFeature,
@@ -210,13 +210,11 @@ export default function PremiumEffectSelector({
 
     if (!effectAllowed(userTier, selectedEffect)) {
       const needPro = selectedEffect.minTier === 'pro';
-      Alert.alert(
-        needPro ? 'Palier Pro' : 'Palier Plus',
-        needPro
+      toast.info(needPro ? 'Palier Pro' : 'Palier Plus', {
+        description: needPro
           ? `« ${selectedEffect.name} » : réservé au Pro.`
           : `« ${selectedEffect.name} » : inclus avec Plus.`,
-        [{ text: 'OK', style: 'cancel' }]
-      );
+      });
       return;
     }
 
@@ -224,10 +222,12 @@ export default function PremiumEffectSelector({
       await AsyncStorage.setItem('selectedProfileEffect', effectKey);
       onEffectChange(effectKey);
       
-      Alert.alert('Effet enregistré', `« ${selectedEffect.name} » est actif sur ton profil.`, [{ text: 'OK' }]);
+      toast.success('Effet enregistré', {
+        description: `« ${selectedEffect.name} » est actif sur ton profil.`,
+      });
     } catch (error) {
       console.error('Erreur lors de la sauvegarde de l\'effet:', error);
-      Alert.alert('❌ Erreur', 'Impossible de sauvegarder l\'effet sélectionné.');
+      toast.error('Impossible de sauvegarder l\'effet sélectionné.');
     }
   };
 

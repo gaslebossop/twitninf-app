@@ -1,5 +1,15 @@
 import { fonts } from '../theme';
 import { ScreenBackground } from '../components/ui';
+import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
+import { withoutOrphanReplies } from '../utils/feed';
+import AlgoCheckCard from '../components/feed/AlgoCheckCard';
+import {
+  initialAlgoCheckState,
+  shouldAskAt,
+  afterAsk,
+  afterSilentView,
+  afterInteraction,
+} from '../utils/algoCheck';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -14,8 +24,6 @@ import {
   UIManager,
   StatusBar,
   Image,
-  ActionSheetIOS,
-  Alert,
   AppState,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -59,6 +67,8 @@ import PaywallSetupSheet from '../components/PaywallSetupSheet';
 
 // ─── Palette ── identité « Encre » centralisée (src/theme) ───────────────────
 import { colors, glow, withAlpha } from '../theme';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const C = {
   bg: colors.bg,
@@ -116,6 +126,7 @@ function dedupeTweets(list: Tweet[]): Tweet[] {
 export default function TweetsScreen() {
   const navigation = useNavigation();
   const { user } = useAuth();
+
   const { styles: eventStyles, theme: currentTheme } = useEventStyles();
 
   // Mode hors ligne (Pro) : cache du fil et bandeau d'état.
@@ -791,25 +802,21 @@ export default function TweetsScreen() {
   };
 
   const handleDeleteTweet = (tweetId: string) => {
-    Alert.alert(
-      'Supprimer ce tweet ?',
-      'Cette action est irréversible.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Supprimer ce tweet ?',
+      message: 'Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             const response = await apiService.deleteTweet(tweetId);
             if (response?.success) {
               setTweets((prev) => prev.filter((t) => t.id !== tweetId));
             } else {
-              Alert.alert('Erreur', response?.message || 'Impossible de supprimer ce tweet');
+              toast.error(response?.message || 'Impossible de supprimer ce tweet');
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const handleOptionsMenu = (tweetId: string) => {
@@ -825,11 +832,16 @@ export default function TweetsScreen() {
     const publishedAt = tweet?.created_at ? new Date(tweet.created_at).getTime() : 0;
     const withinEditWindow = publishedAt > 0 && Date.now() - publishedAt < 30 * 60 * 1000;
 
-    const entries: { label: string; onPress: () => void; destructive?: boolean }[] = isOwnTweet
+    // Chaque entrée porte son icône : dans une liste de cinq lignes, le
+    // pictogramme se repère avant le texte, et « Signaler » cesse de
+    // ressembler à « Partager ».
+    const entries: ActionSheetItem[] = isOwnTweet
       ? [
           ...(withinEditWindow
             ? [{
               label: 'Modifier',
+              icon: 'create-outline' as const,
+              hint: 'Encore possible pendant 30 minutes après la publication',
               onPress: () => (navigation as any).navigate('EditTweet', {
                 tweetId,
                 content: tweet?.content,
@@ -838,42 +850,39 @@ export default function TweetsScreen() {
             : []),
           {
             label: (tweet as any)?.paid_content ? 'Gérer le prix' : 'Rendre payant',
+            icon: 'lock-closed-outline',
             onPress: () => setPaywallTarget(tweetId),
           },
-          { label: 'Partager', onPress: () => handleShare(tweetId) },
-          { label: 'Supprimer', onPress: () => handleDeleteTweet(tweetId), destructive: true },
+          { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
+          {
+            label: 'Supprimer',
+            icon: 'trash-outline',
+            onPress: () => handleDeleteTweet(tweetId),
+            destructive: true,
+          },
         ]
       : [
-          { label: 'Ajouter aux favoris', onPress: () => handleBookmark(tweetId) },
-          { label: 'Ignorer ce tweet', onPress: () => handleSkip(tweetId) },
-          { label: 'Partager', onPress: () => handleShare(tweetId) },
-          { label: 'Signaler', onPress: () => handleReport(tweetId) },
-          { label: 'Bloquer cet utilisateur', onPress: () => handleBlock(tweetId), destructive: true },
+          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: () => handleBookmark(tweetId) },
+          {
+            label: 'Ignorer ce tweet',
+            icon: 'eye-off-outline',
+            hint: 'Il n’apparaîtra plus dans ton fil',
+            onPress: () => handleSkip(tweetId),
+          },
+          { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
+          { label: 'Signaler', icon: 'flag-outline', onPress: () => handleReport(tweetId) },
+          {
+            label: 'Bloquer cet utilisateur',
+            icon: 'ban-outline',
+            onPress: () => handleBlock(tweetId),
+            destructive: true,
+          },
         ];
 
-    if (Platform.OS === 'ios') {
-      const destructiveButtonIndex = entries.findIndex((e) => e.destructive);
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Annuler', ...entries.map((e) => e.label)],
-          cancelButtonIndex: 0,
-          destructiveButtonIndex: destructiveButtonIndex >= 0 ? destructiveButtonIndex + 1 : undefined,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) return;
-          entries[buttonIndex - 1]?.onPress();
-        }
-      );
-    } else {
-      Alert.alert('Plus d\'options', 'Choisir une action', [
-        { text: 'Annuler', style: 'cancel' },
-        ...entries.map((e) => ({
-          text: e.label,
-          onPress: e.onPress,
-          style: e.destructive ? ('destructive' as const) : undefined,
-        })),
-      ]);
-    }
+    // Une seule feuille pour les deux plateformes : l'ancien code servait
+    // `ActionSheetIOS` à iOS et, à Android, un `Alert` à cinq boutons empilés
+    // où rien ne distinguait « Signaler » de « Partager ».
+    showActionSheet({ items: entries });
   };
 
   const detectIsRetweet = (t: any) => {
@@ -892,7 +901,7 @@ export default function TweetsScreen() {
 
   // Mémoïsé : ce filtre était recalculé à chaque rendu, y compris pour un like.
   const visibleTweets: Tweet[] = useMemo(
-    () => tweets.filter(tweet => tweet && tweet.id && tweet.content),
+    () => withoutOrphanReplies(tweets.filter(tweet => tweet && tweet.id && tweet.content)),
     [tweets]
   );
 
@@ -915,6 +924,10 @@ export default function TweetsScreen() {
    */
   const handleRowAction = useCallback((action: TweetRowAction) => {
     const { type, tweetId, payload } = action;
+
+    // Un utilisateur qui agit parle déjà à l'algorithme : la série de silence
+    // repart de zéro, et la question ne viendra pas l'interrompre.
+    algoCheckRef.current = afterInteraction(algoCheckRef.current);
 
     switch (type) {
       case 'like':
@@ -990,6 +1003,25 @@ export default function TweetsScreen() {
     waitForInteraction: false,
   }).current;
 
+  /**
+   * État de la question « ce genre de tweet, ça te parle ? ».
+   *
+   * En ref et pas en state : il est lu et écrit depuis le callback de
+   * visibilité de la liste, qui doit rester la MÊME fonction pendant toute la
+   * vie de la `FlatList`. Seul `askAtId` est en state — c'est la seule partie
+   * qui doit provoquer un rendu.
+   */
+  const algoCheckRef = useRef(initialAlgoCheckState());
+  const askAtIdRef = useRef<string | null>(null);
+  const [askAtId, setAskAtId] = useState<string | null>(null);
+
+  /** Écrit l'état de la question des deux côtés (ref pour la lecture, state pour le rendu). */
+  const closeAlgoCheck = useCallback((index: number, tweetId: string) => {
+    algoCheckRef.current = afterAsk(algoCheckRef.current, index, tweetId);
+    askAtIdRef.current = null;
+    setAskAtId(null);
+  }, []);
+
   // Indirection en ref : `onViewableItemsChanged` doit rester la même fonction
   // pendant toute la vie de la liste, mais doit voir les valeurs à jour.
   const viewTrackingRef = useRef({
@@ -1035,6 +1067,23 @@ export default function TweetsScreen() {
           algorithm: currentAlgorithm,
         });
         trackingService.trackView(tweetId, 500);
+
+        // ── « Ce genre de tweet, ça te parle ? » ──
+        // Une impression de plus sans que l'utilisateur ait rien fait. C'est
+        // ici, et nulle part ailleurs, qu'on sait qu'un tweet a réellement
+        // été VU — d'où le branchement sur le compteur d'impressions plutôt
+        // que sur l'index de rendu, qui compte aussi ce qui n'atteint jamais
+        // l'écran.
+        algoCheckRef.current = afterSilentView(algoCheckRef.current);
+        if (askAtIdRef.current) return;
+
+        const seen = tweetsRef.current.find((t) => t.id === tweetId);
+        const confidence = Number((seen as any)?._recommendation_confidence) || 0;
+
+        if (shouldAskAt({ index: position, tweetId, state: algoCheckRef.current, confidence })) {
+          askAtIdRef.current = tweetId;
+          setAskAtId(tweetId);
+        }
       },
     };
   }, [trackView, trackTweetInteraction, activeTab, currentAlgorithm]);
@@ -1043,7 +1092,7 @@ export default function TweetsScreen() {
     ({ item, index }: { item: Tweet; index: number }) => {
       const next = visibleTweets[index + 1];
       const prev = visibleTweets[index - 1];
-      return (
+      const row = (
         <TweetRow
           tweet={item}
           index={index}
@@ -1055,8 +1104,44 @@ export default function TweetsScreen() {
           unseenStoryUserIds={unseenStoryUserIds}
         />
       );
+
+      // La question ne s'insère pas dans les DONNÉES de la liste : elle est
+      // rendue au-dessus de la ligne concernée. Toucher `data` obligerait
+      // `keyExtractor`, la déduplication, la pagination et le suivi des
+      // impressions à composer avec des entrées qui ne sont pas des tweets.
+      if (askAtId !== item.id) return row;
+
+      return (
+        <>
+          <AlgoCheckCard
+            onAnswer={(liked) => {
+              // Une réponse explicite est un signal bien plus fort qu'un like
+              // passif — mais l'API n'accepte que le vocabulaire d'interaction
+              // existant (`InteractionType` côté Rust est une énumération
+              // fermée). On envoie donc `like` / `skip`, qui portent déjà le
+              // bon signe pour l'apprentissage.
+              neuralRankService.trackInteraction({
+                tweetId: item.id,
+                interactionType: liked ? 'like' : 'skip',
+              });
+              trackCustomAction('algo_check_answer', item.id, 'tweet', {
+                liked,
+                position: index,
+                algorithm: currentAlgorithm,
+              });
+              closeAlgoCheck(index, item.id);
+            }}
+            onDismiss={() => {
+              // Fermer sans répondre compte quand même : on ne repose pas la
+              // question tout de suite après avoir été ignoré.
+              closeAlgoCheck(index, item.id);
+            }}
+          />
+          {row}
+        </>
+      );
     },
-    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds]
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm]
   );
 
   const keyExtractor = useCallback((item: Tweet) => String(item.id), []);

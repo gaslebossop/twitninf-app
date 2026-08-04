@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, fonts } from '../theme';
 import StoryRing from './StoryRing';
 import StoryViewer from './StoryViewer';
+import { toast } from './ui/Toast';
 import storiesService, {
   StoriesFeed,
   StoryGroup,
@@ -109,7 +109,9 @@ export default function StoriesTray({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Autorisation requise', 'Autorise l\'accès à tes photos pour publier une story.');
+        toast.error('Autorisation requise', {
+          description: 'Autorise l\'accès à tes photos pour publier une story.',
+        });
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -129,12 +131,12 @@ export default function StoriesTray({
         isVideo: asset.type === 'video',
       });
       if (!uploaded.success) {
-        Alert.alert('Erreur', uploaded.message || 'Publication impossible');
+        toast.error(uploaded.message || 'Publication impossible');
         return;
       }
       await load();
     } catch (error) {
-      Alert.alert('Erreur', error instanceof Error ? error.message : 'Publication impossible');
+      toast.error(error instanceof Error ? error.message : 'Publication impossible');
     } finally {
       setPublishing(false);
     }

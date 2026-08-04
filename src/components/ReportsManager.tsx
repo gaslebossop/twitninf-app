@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { reportService, Report } from '../services/reportService';
 import { useNavigation } from '@react-navigation/native';
+import { toast } from './ui/Toast';
+import { confirmAsync } from './ui/ConfirmSheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -73,7 +74,7 @@ export default function ReportsManager({ onClose }: ReportsManagerProps) {
       }
     } catch (error) {
       console.error('❌ Erreur lors du chargement des signalements:', error);
-      Alert.alert('Erreur', 'Impossible de charger les signalements');
+      toast.error('Impossible de charger les signalements');
       setReports([]);
     } finally {
       setLoading(false);
@@ -129,33 +130,29 @@ export default function ReportsManager({ onClose }: ReportsManagerProps) {
       escalate: 'escalader'
     }[action];
 
-    Alert.alert(
-      `Action sur le signalement`,
-      `Voulez-vous vraiment ${actionText} ce signalement ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: actionText.charAt(0).toUpperCase() + actionText.slice(1),
-          style: action === 'dismiss' ? 'destructive' : 'default',
-          onPress: async () => {
+    confirmAsync({
+      title: `Action sur le signalement`,
+      message: `Voulez-vous vraiment ${actionText} ce signalement ?`,
+      confirmLabel: actionText.charAt(0).toUpperCase() + actionText.slice(1),
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const status = action === 'resolve' ? 'resolved' : 'dismissed';
               const success = await reportService.updateReportStatus(report.id, { status });
               if (success) {
-                Alert.alert('Succès', `Signalement ${actionText} avec succès`);
+                toast.success(`Signalement ${actionText} avec succès`);
                 loadReports(); // Recharger les données
               } else {
-                Alert.alert('Erreur', 'Impossible de traiter le signalement');
+                toast.error('Impossible de traiter le signalement');
               }
             } catch (error) {
               console.error('❌ Erreur lors de l\'action sur le signalement:', error);
-              Alert.alert('Erreur', 'Une erreur est survenue');
+              toast.error('Une erreur est survenue');
             }
             setSelectedReport(null);
-          }
-        }
-      ]
-    );
+          })();
+    });
   };
 
 

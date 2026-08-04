@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   RefreshControl,
   Animated,
@@ -18,8 +17,10 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BackButton } from '../components/ui';
+import { BackButton, ScreenSkeleton } from '../components/ui';
 import { policierCongoService, PolicierCongoInstruction } from '../services/policierCongoService';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -162,7 +163,7 @@ export default function PolicierCongoAdminScreen() {
 
   const handleSendInstruction = async () => {
     if (!instructionText.trim()) {
-      Alert.alert('Erreur', 'Veuillez saisir une instruction.');
+      toast.error('Veuillez saisir une instruction.');
       return;
     }
 
@@ -171,102 +172,90 @@ export default function PolicierCongoAdminScreen() {
       const res = await policierCongoService.sendInstruction(instructionText, instructionType);
       
       if (res.success) {
-        Alert.alert('Succès', res.message);
+        toast.success(res.message);
         setInstructionText('');
         loadData();
       } else {
-        Alert.alert('Erreur', res.message || 'Échec de l\'envoi');
+        toast.error(res.message || 'Échec de l\'envoi');
       }
     } catch (error) {
-      Alert.alert('Erreur', 'Erreur lors de la communication avec le serveur');
+      toast.error('Erreur lors de la communication avec le serveur');
     } finally {
       setSending(false);
     }
   };
 
   const handleDeletePersonality = (id: number) => {
-    Alert.alert(
-      'Confirmer la suppression',
-      'Voulez-vous vraiment supprimer cette directive de personnalité ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Supprimer', 
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Confirmer la suppression',
+      message: 'Voulez-vous vraiment supprimer cette directive de personnalité ?',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const res = await policierCongoService.deletePersonalityInstruction(id);
               if (res.success) {
                 loadData();
               }
             } catch (error) {
-              Alert.alert('Erreur', 'Impossible de supprimer');
+              toast.error('Impossible de supprimer');
             }
-          }
-        }
-      ]
-    );
+          })();
+    });
   };
 
   const handleResetScheduler = async () => {
-    Alert.alert(
-      'Réveiller PolicierCongo',
-      'Veux-tu annuler la mise en veille et forcer le bot à se réactiver au prochain cycle ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Réveiller',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Réveiller PolicierCongo',
+      message: 'Veux-tu annuler la mise en veille et forcer le bot à se réactiver au prochain cycle ?',
+      confirmLabel: 'Réveiller',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               setResettingScheduler(true);
               const res = await policierCongoService.resetScheduler();
               if (res.success) {
-                Alert.alert('✅', res.message);
+                toast.info('✅', {
+                  description: res.message,
+                });
                 loadData();
               }
             } catch (e) {
-              Alert.alert('Erreur', 'Impossible de réinitialiser le scheduler');
+              toast.error('Impossible de réinitialiser le scheduler');
             } finally {
               setResettingScheduler(false);
             }
-          }
-        }
-      ]
-    );
+          })();
+    });
   };
 
   const handleRunAutomation = async () => {
-    Alert.alert(
-      'Lancer PolicierCongo',
-      'Veux-tu forcer une exécution immédiate de l\'IA ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Lancer', 
-          onPress: async () => {
+    confirmAsync({
+      title: 'Lancer PolicierCongo',
+      message: 'Veux-tu forcer une exécution immédiate de l\'IA ?',
+      confirmLabel: 'Lancer',
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               setRunningAutomation(true);
               const res = await policierCongoService.runAutomation();
               if (res.success) {
-                Alert.alert('✅ Terminé', 'L\'exécution forcée s\'est terminée avec succès.');
+                toast.success('L\'exécution forcée s\'est terminée avec succès.');
                 loadData();
               }
             } catch (e) {
-              Alert.alert('Erreur', 'Impossible de lancer l\'automatisation');
+              toast.error('Impossible de lancer l\'automatisation');
             } finally {
               setRunningAutomation(false);
             }
-          }
-        }
-      ]
-    );
+          })();
+    });
   };
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <ScreenSkeleton variant="list" />
     );
   }
 

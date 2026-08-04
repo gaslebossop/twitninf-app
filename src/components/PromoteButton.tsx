@@ -5,10 +5,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import PromoteTweetModal from './PromoteTweetModal';
+import { toast } from './ui/Toast';
 
 interface Tweet {
   id: string;
@@ -34,11 +34,7 @@ export default function PromoteButton({ tweet, onPromotionSuccess }: PromoteButt
   const handlePromotionSuccess = () => {
     setShowPromoteModal(false);
     onPromotionSuccess?.();
-    Alert.alert(
-      'Succès',
-      'Votre tweet est maintenant promu ! Il apparaîtra dans le feed des utilisateurs ciblés.',
-      [{ text: 'OK' }]
-    );
+    toast.success('Votre tweet est maintenant promu ! Il apparaîtra dans le feed des utilisateurs ciblés.');
   };
 
   return (

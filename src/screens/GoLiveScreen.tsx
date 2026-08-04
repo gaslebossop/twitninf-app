@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   FlatList,
   TextInput,
 } from 'react-native';
@@ -15,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import type { RtmpPublisherViewMethods } from 'react-native-nitro-rtmp-publisher';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   liveService,
   socket,
@@ -108,10 +109,9 @@ export default function GoLiveScreen() {
     rtmpModule.rtmp.requestRtmpPermissions().then(({ granted }) => {
       setPermissionsGranted(granted);
       if (!granted) {
-        Alert.alert(
-          'Autorisations requises',
-          'Active la caméra et le micro pour TwitNinf dans Réglages pour passer en direct.',
-        );
+        toast.error('Autorisations requises', {
+          description: 'Active la caméra et le micro pour TwitNinf dans Réglages pour passer en direct.',
+        });
       }
     });
   }, []);
@@ -219,10 +219,9 @@ export default function GoLiveScreen() {
           case 'authError':
             setIsStreaming(false);
             setIsLoading(false);
-            Alert.alert(
-              'Connexion échouée',
-              message || "Le serveur de diffusion n'a pas accepté le flux. Vérifie ta connexion et réessaie.",
-            );
+            toast.error('Connexion échouée', {
+              description: message || "Le serveur de diffusion n'a pas accepté le flux. Vérifie ta connexion et réessaie.",
+            });
             break;
           case 'disconnect':
             setIsStreaming(false);
@@ -264,7 +263,9 @@ export default function GoLiveScreen() {
         err instanceof LiveServiceError
           ? err.message
           : 'La connexion au serveur de diffusion a échoué. Réessaie dans un instant.';
-      Alert.alert('Live impossible', message);
+      toast.error('Live impossible', {
+        description: message,
+      });
       setIsLoading(false);
     }
   }, []);
@@ -283,10 +284,14 @@ export default function GoLiveScreen() {
       navigation.goBack();
       return;
     }
-    Alert.alert('Arrêter le live ?', 'Voulez-vous vraiment terminer la diffusion ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Arrêter', style: 'destructive', onPress: () => void stopStream() },
-    ]);
+    confirmAsync({
+      title: 'Arrêter le live ?',
+      message: 'Voulez-vous vraiment terminer la diffusion ?',
+      confirmLabel: 'Arrêter',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (() => void stopStream())();
+    });
   };
 
   const toggleCamera = () => {
@@ -301,7 +306,9 @@ export default function GoLiveScreen() {
     const publisher = publisherRef.current;
     if (!publisher) return;
     if (!publisher.isLanternSupported()) {
-      Alert.alert('Torche indisponible', "Cette caméra n'a pas d'éclairage.");
+      toast.error('Torche indisponible', {
+        description: "Cette caméra n'a pas d'éclairage.",
+      });
       return;
     }
     const next = !torchOn;

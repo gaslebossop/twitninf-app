@@ -22,7 +22,8 @@ import { useAuth } from '../contexts/AuthContext';
 import TweetMonetizationService from '../services/tweetMonetizationService';
 import NewEconomyService from '../services/newEconomyService';
 import { colors, fonts, withAlpha, radius } from '../theme';
-import { ScreenBackground, GlassHeader, GlassCard, GlassButton, SectionLabel, Skeleton } from '../components/ui';
+import { ScreenBackground, GlassHeader, GlassCard, GlassButton, SectionLabel, Skeleton, celebrateReward } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExperimental) {
   (UIManager as any).setLayoutAnimationEnabledExperimental(true);
@@ -408,7 +409,7 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
 
   const previewEarnings = async () => {
     if (!isAuthenticated || !user) {
-      Alert.alert('Erreur', 'Vous devez être connecté pour voir vos gains.');
+      toast.error('Vous devez être connecté pour voir vos gains.');
       return;
     }
     setPreviewLoading(true);
@@ -417,7 +418,7 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
       setPreviewData(result);
       setShowEarningsModal(true);
     } catch (previewError) {
-      Alert.alert('Erreur', 'Impossible de prévisualiser tes gains pour le moment.');
+      toast.error('Impossible de prévisualiser tes gains pour le moment.');
     } finally {
       setPreviewLoading(false);
     }
@@ -427,18 +428,17 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
     try {
       setProcessing(true);
       const result = await TweetMonetizationService.processEligibleTweets();
-      Alert.alert('Gains collectés', `${result.eligibleCount} tweets traités pour ${result.totalRewards} TWC.`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            setShowEarningsModal(false);
-            setPreviewData(null);
-            loadData();
-          },
-        },
-      ]);
+      setShowEarningsModal(false);
+      setPreviewData(null);
+      loadData();
+      // Encaisser ses tweets est le seul moment de l'écran où l'on gagne
+      // vraiment quelque chose : il se voit, au lieu de se lire dans un coin.
+      celebrateReward({
+        amount: result.totalRewards,
+        label: `${result.eligibleCount} tweet${result.eligibleCount > 1 ? 's' : ''} encaissé${result.eligibleCount > 1 ? 's' : ''}`,
+      });
     } catch (processError) {
-      Alert.alert('Erreur', 'Impossible de traiter tes tweets pour le moment.');
+      toast.error('Impossible de traiter tes tweets pour le moment.');
     } finally {
       setProcessing(false);
     }

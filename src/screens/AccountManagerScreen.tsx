@@ -1,6 +1,6 @@
 import { fonts } from '../theme';
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -8,30 +8,24 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
 import { BackButton } from '../components/ui';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 export default function AccountManagerScreen() {
   const navigation = useNavigation();
   const { user, accounts, switchAccount, clearAllAccountsAndLogout } = useAuth() as any;
 
   const handleClearAllAccounts = () => {
-    Alert.alert(
-      'Nettoyer tous les comptes',
-      'Êtes-vous sûr de vouloir supprimer tous les comptes et vous déconnecter ? Cette action est irréversible.',
-      [
-        {
-          text: 'Annuler',
-          style: 'cancel',
-        },
-        {
-          text: 'Nettoyer et déconnecter',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Nettoyer tous les comptes',
+      message: 'Êtes-vous sûr de vouloir supprimer tous les comptes et vous déconnecter ? Cette action est irréversible.',
+      confirmLabel: 'Nettoyer et déconnecter',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             await clearAllAccountsAndLogout();
             (navigation as any).navigate('Intro');
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   return (

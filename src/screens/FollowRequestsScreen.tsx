@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton, EmptyState } from '../components/ui';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
 import unreadService from '../services/unreadService';
@@ -117,9 +117,7 @@ export default function FollowRequestsScreen({ navigation }: any) {
         </View>
 
         {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
+          <ScreenSkeleton variant="list" />
         ) : (
           <FlatList
             data={requests}
@@ -127,10 +125,11 @@ export default function FollowRequestsScreen({ navigation }: any) {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
             contentContainerStyle={requests.length === 0 ? styles.emptyContent : styles.listContent}
             ListEmptyComponent={
-              <View style={styles.centered}>
-                <Ionicons name="person-add-outline" size={44} color={colors.textSecondary} />
-                <Text style={styles.emptyText}>Aucune demande d'abonnement en attente</Text>
-              </View>
+              <EmptyState
+                icon="person-add-outline"
+                title="Aucune demande en attente"
+                message="Ton compte est privé : les demandes d’abonnement apparaîtront ici, à accepter ou refuser une par une."
+              />
             }
             renderItem={({ item }) => {
               const busy = busyIds.has(item.id);

@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -12,9 +11,11 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, EmptyState } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, radius } from '../theme';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   fetchPurchases,
   fetchSales,
@@ -79,25 +80,24 @@ export default function PaidContentSalesScreen({ navigation }: Props) {
   }, [load]);
 
   const confirmUnlock = (id: string, price: number) => {
-    Alert.alert(
-      'Rendre ce contenu gratuit ?',
-      `Il ne sera plus vendu à ${price} NF. Ceux qui l'ont déjà acheté gardent leur accès et ne sont pas remboursés.`,
-      [
-        { text: 'Garder en vente', style: 'cancel' },
-        {
-          text: 'Rendre gratuit',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Rendre ce contenu gratuit ?',
+      message: `Il ne sera plus vendu à ${price} NF. Ceux qui l'ont déjà acheté gardent leur accès et ne sont pas remboursés.`,
+      confirmLabel: 'Rendre gratuit',
+      cancelLabel: 'Garder en vente',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               await unlockContent(id);
               await load();
             } catch (e: any) {
-              Alert.alert('Impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   return (
@@ -173,10 +173,18 @@ export default function PaidContentSalesScreen({ navigation }: Props) {
                 </Text>
 
                 {sales.items.length === 0 ? (
-                  <Text style={styles.empty}>
-                    Aucun contenu en vente. Depuis un de tes tweets, choisis « Rendre payant » pour
-                    fixer un prix.
-                  </Text>
+                  <EmptyState
+                    compact
+                    icon="lock-closed-outline"
+                    tint={colors.gold}
+                    title="Rien en vente pour l’instant"
+                    message="Depuis le menu « … » d’un de tes tweets, choisis « Rendre payant » pour en fixer le prix."
+                    action={{
+                      label: 'Écrire un tweet payant',
+                      icon: 'create-outline',
+                      onPress: () => navigation.navigate('CreateTweet'),
+                    }}
+                  />
                 ) : sales.items.map((item) => (
                   <View key={item.id} style={styles.card}>
                     <View style={styles.cardHead}>

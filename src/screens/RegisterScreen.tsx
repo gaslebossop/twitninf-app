@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -27,6 +26,7 @@ import {
 } from '../utils/responsive';
 import { colors, withAlpha, fonts, gradients, glow } from '../theme';
 import { ScreenBackground, GlassCard } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 const { width } = Dimensions.get('window');
 
@@ -245,15 +245,11 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(24)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
   const errorShake = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-    ]).start();
   }, []);
 
   const shakeError = () => {
@@ -307,7 +303,9 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
         // Le `navigate('Profile')` précédent visait un écran qui n'existe pas
         // sur cette pile (le tab s'appelle "Profil"), d'où l'avertissement
         // "NAVIGATE Profile not handled by any navigator" à chaque inscription.
-        Alert.alert('Bienvenue !', 'Ton compte a été créé avec succès.');
+        toast.success('Bienvenue !', {
+          description: 'Ton compte a été créé avec succès.',
+        });
       }
     } catch {
       setError("Une erreur est survenue lors de l'inscription.");

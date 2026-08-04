@@ -1,5 +1,5 @@
 import { fonts } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 /**
  * Écran pour changer le style de certification
@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
@@ -22,6 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VerificationStyleService, { VerificationStyle } from '../services/verificationStyleService';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from '../components/ui/Toast';
 
 const styles = StyleSheet.create({
   container: {
@@ -188,25 +188,15 @@ export default function VerificationStyleScreen() {
 
       if (success) {
         setCurrentStyle(newStyle);
-        Alert.alert(
-          'Style changé !',
-          `Votre style de certification a été changé en ${newStyle === 'rose' ? 'rose' : newStyle === 'gray' ? 'gris' : newStyle === 'gold' ? 'or' : 'bleu'}.`,
-          [{ text: 'OK' }]
-        );
+        toast.success('Style changé !', {
+          description: `Votre style de certification a été changé en ${newStyle === 'rose' ? 'rose' : newStyle === 'gray' ? 'gris' : newStyle === 'gold' ? 'or' : 'bleu'}.`,
+        });
       } else {
-        Alert.alert(
-          'Erreur',
-          'Impossible de changer le style de certification.',
-          [{ text: 'OK' }]
-        );
+        toast.error('Impossible de changer le style de certification.');
       }
     } catch (error) {
       console.error('Erreur lors du changement de style:', error);
-      Alert.alert(
-        'Erreur',
-        'Une erreur est survenue lors du changement de style.',
-        [{ text: 'OK' }]
-      );
+      toast.error('Une erreur est survenue lors du changement de style.');
     } finally {
       setChanging(false);
     }
@@ -225,10 +215,7 @@ export default function VerificationStyleScreen() {
       <ScreenBackground>
         <View style={styles.container}>
           <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4F7CFF" />
-            <Text style={styles.loadingText}>Chargement des styles...</Text>
-          </View>
+          <ScreenSkeleton variant="list" />
         </View>
       </ScreenBackground>
     );

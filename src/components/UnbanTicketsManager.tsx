@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Dimensions,
   ActivityIndicator,
   TextInput,
@@ -17,6 +16,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { moderationService } from '../services/moderationService';
+import { toast } from './ui/Toast';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -70,7 +70,7 @@ export default function UnbanTicketsManager({ onClose }: UnbanTicketsManagerProp
       setTickets(data || []);
     } catch (error) {
       console.error('❌ Erreur chargement tickets:', error);
-      Alert.alert('Erreur', 'Impossible de charger les tickets d\'unban');
+      toast.error('Impossible de charger les tickets d\'unban');
     } finally {
       setLoading(false);
     }
@@ -95,14 +95,14 @@ export default function UnbanTicketsManager({ onClose }: UnbanTicketsManagerProp
       );
 
       if (success) {
-        Alert.alert('Succès', `Le ticket a été ${actionType === 'approved' ? 'approuvé' : 'rejeté'}.`);
+        toast.success(`Le ticket a été ${actionType === 'approved' ? 'approuvé' : 'rejeté'}.`);
         setShowNotesModal(false);
         loadTickets();
       } else {
-        Alert.alert('Erreur', 'Une erreur est survenue lors du traitement.');
+        toast.error('Une erreur est survenue lors du traitement.');
       }
     } catch (error) {
-      Alert.alert('Erreur', 'Une erreur est survenue.');
+      toast.error('Une erreur est survenue.');
     } finally {
       setProcessing(null);
     }

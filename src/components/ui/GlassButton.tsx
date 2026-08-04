@@ -4,6 +4,7 @@ import {
   StyleSheet,
   Pressable,
   Animated,
+  Easing,
   View,
   ViewStyle,
   StyleProp,
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radius, glow } from '../../theme';
+import feedback from '../../utils/feedback';
 
 interface GlassButtonProps {
   label: string;
@@ -35,8 +37,16 @@ export default function GlassButton({
   style,
 }: GlassButtonProps) {
   const scale = useRef(new Animated.Value(1)).current;
+  // `bounciness: 6` faisait osciller le bouton après chaque appui : sur un
+  // élément aussi présent, ce tremblement se lit comme un défaut. Durée courte
+  // et décélération, jamais de rebond.
   const to = (v: number) =>
-    Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
+    Animated.timing(scale, {
+      toValue: v,
+      duration: v < 1 ? 110 : 140,
+      easing: v < 1 ? Easing.out(Easing.quad) : Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
 
   const textColor =
     variant === 'primary' ? colors.onAccent : variant === 'secondary' ? colors.textPrimary : colors.accent;
@@ -45,7 +55,10 @@ export default function GlassButton({
     <Animated.View style={[{ transform: [{ scale }] }, fullWidth && styles.fullWidth, style]}>
       <Pressable
         onPress={onPress}
-        onPressIn={() => to(0.97)}
+        onPressIn={() => {
+          to(0.97);
+          feedback.tap();
+        }}
         onPressOut={() => to(1)}
         disabled={disabled || loading}
         style={[

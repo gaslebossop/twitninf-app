@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -16,9 +15,11 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, EmptyState } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, radius } from '../theme';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   STATUS_LABELS,
   cancelPost,
@@ -102,32 +103,33 @@ export default function ScheduledPostsScreen({ navigation }: Props) {
       setWhen(new Date(Date.now() + DEFAULT_LEAD_MINUTES * 60000));
       await load();
     } catch (e: any) {
-      Alert.alert('Programmation impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Programmation impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   const confirmCancel = (post: ScheduledPost) => {
-    Alert.alert(
-      'Annuler cette publication ?',
-      'Elle ne partira pas. Le texte est perdu.',
-      [
-        { text: 'Garder', style: 'cancel' },
-        {
-          text: 'Annuler la publication',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Annuler cette publication ?',
+      message: 'Elle ne partira pas. Le texte est perdu.',
+      confirmLabel: 'Annuler la publication',
+      cancelLabel: 'Garder',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               await cancelPost(post.id);
               await load();
             } catch (e: any) {
-              Alert.alert('Annulation impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Annulation impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   return (
@@ -298,9 +300,17 @@ export default function ScheduledPostsScreen({ navigation }: Props) {
             <>
               <Text style={styles.sectionLabel}>À venir</Text>
               {pending.length === 0 ? (
-                <Text style={styles.empty}>
-                  Rien en attente. Écris maintenant, publie quand ton audience est là.
-                </Text>
+                <EmptyState
+                  compact
+                  icon="time-outline"
+                  title="Rien en attente"
+                  message="Écris maintenant, publie quand ton audience est là."
+                  action={{
+                    label: 'Programmer un tweet',
+                    icon: 'add',
+                    onPress: () => navigation.navigate('CreateTweet'),
+                  }}
+                />
               ) : pending.map((post) => (
                 <View key={post.id} style={styles.card}>
                   <View style={styles.cardHead}>

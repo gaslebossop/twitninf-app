@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   RefreshControl,
   Dimensions,
 } from 'react-native';
@@ -14,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/api';
 import { BackButton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 const { width } = Dimensions.get('window');
 
@@ -75,7 +75,7 @@ export default function AdManagerScreen() {
       }
     } catch (error) {
       console.error('Erreur lors du chargement des données:', error);
-      Alert.alert('Erreur', 'Impossible de charger les données publicitaires');
+      toast.error('Impossible de charger les données publicitaires');
     } finally {
       setLoading(false);
     }

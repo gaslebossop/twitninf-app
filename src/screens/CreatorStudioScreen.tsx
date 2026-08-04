@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -44,6 +43,7 @@ import {
   type RisingAccount,
 } from '../services/insightsService';
 import { fetchMyMarket, type MyMarket } from '../services/usernameMarketService';
+import { toast } from '../components/ui/Toast';
 import {
   effectiveSubscriptionTier,
   isSubscriptionActiveFor,
@@ -182,7 +182,9 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       await setIncognito(next);
     } catch (e: any) {
       setSummary((prev) => ({ ...prev, incognito: !next }));
-      Alert.alert('Réglage impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Réglage impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setSavingIncognito(false);
     }

@@ -1,6 +1,7 @@
 import { fonts } from '../theme';
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { toast } from './ui/Toast';
 import { 
   registerForPushNotifications, 
   sendImmediateNotification, 
@@ -29,15 +30,15 @@ export default function NotificationTest() {
       if (newToken) {
         setToken(newToken);
         setStatus(await checkNotificationStatus());
-        Alert.alert('✅ Succès', 'Notifications enregistrées avec succès !');
+        toast.success('Notifications enregistrées avec succès !');
         console.log('🔔 Test - Token obtenu:', newToken);
       } else {
-        Alert.alert('❌ Erreur', 'Impossible d\'obtenir le token');
+        toast.error('Impossible d\'obtenir le token');
         console.log('🔔 Test - Échec de l\'obtention du token');
       }
     } catch (error) {
       console.error('🔔 Test - Erreur:', error);
-      Alert.alert('❌ Erreur', `Erreur: ${error.message}`);
+      toast.error(`Erreur: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -51,10 +52,10 @@ export default function NotificationTest() {
         'Cette notification devrait s\'afficher immédiatement !',
         { type: 'test', timestamp: Date.now() }
       );
-      Alert.alert('✅ Succès', 'Notification de test envoyée !');
+      toast.success('Notification de test envoyée !');
     } catch (error) {
       console.error('🔔 Test - Erreur notification:', error);
-      Alert.alert('❌ Erreur', `Erreur notification: ${error.message}`);
+      toast.error(`Erreur notification: ${error.message}`);
     }
   };
 

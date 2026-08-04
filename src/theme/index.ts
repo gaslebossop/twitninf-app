@@ -25,6 +25,10 @@ export type { TypographyToken } from './typography';
 export { fonts, fontAssets } from './fonts';
 export type { FontToken } from './fonts';
 
+// Vocabulaire de mouvement — durées, courbes et ressorts partagés.
+export { duration, easing, spring, springSnappy, enterTiming, exitTiming } from './motion';
+export { default as motion } from './motion';
+
 // Re-export des tokens responsive sous des noms stables.
 export { spacing, fontSize, iconSize, shadow, wp, hp, normalize };
 export const radius = borderRadius;

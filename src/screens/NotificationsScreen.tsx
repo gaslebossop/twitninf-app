@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   RefreshControl,
-  Alert,
   StatusBar,
   Image,
 } from 'react-native';
@@ -23,6 +22,7 @@ import VerifiedBadge from '../components/VerifiedBadge';
 import BanAlertBanner from '../components/BanAlertBanner';
 import { resolveStoryMedia } from '../services/storiesService';
 import { certifiedNameColors, nameIsLit, type ProfileCustomization } from '../services/profileCustomizationService';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -371,25 +371,21 @@ export default function NotificationsScreen() {
   };
 
   const handleDelete = (id: string) => {
-    Alert.alert(
-      'Supprimer',
-      'Supprimer cette notification ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: 'Supprimer',
+      message: 'Supprimer cette notification ?',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               const response = await apiService.deleteNotification(id);
               if (response.success) {
                 setNotifications(prev => prev.filter(n => n.id !== id));
               }
             } catch { }
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   const filtered = notifications.filter(n => {

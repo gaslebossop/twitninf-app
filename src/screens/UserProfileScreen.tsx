@@ -1,5 +1,5 @@
-import { colors, fonts, glow, withAlpha } from '../theme';
-import { BackButton } from '../components/ui';
+import { colors, fonts, glow, withAlpha, duration as D, easing as E } from '../theme';
+import { BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -13,7 +13,6 @@ import {
   SafeAreaView,
   Platform,
   RefreshControl,
-  Alert,
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
@@ -38,6 +37,8 @@ import PremiumDisplayName from '../components/PremiumDisplayName';
 import ProfileStories, { useProfileStories } from '../components/ProfileStories';
 import { STORY_GRADIENT } from '../components/StoryRing';
 import StoryViewer from '../components/StoryViewer';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   AvatarDecorationLayer,
   AvatarDecorationOrnament,
@@ -150,7 +151,7 @@ export default function UserProfileScreen() {
   const entrance = useProfileEntrance(premiumProfile);
 
   // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
   const followButtonAnim = useRef(new Animated.Value(1)).current;
 
   // 📡 Vérifier le statut Live
@@ -225,10 +226,14 @@ export default function UserProfileScreen() {
     if (!userProfile?.id) return;
     if (premiumProfile) { fadeAnim.setValue(1); return; }
     fadeAnim.setValue(0);
+    // Ce fondu-ci reste : il tient l'exigence « pas d'état intermédiaire
+    // visible » (on n'habille rien tant que la personnalisation n'est pas
+    // chargée, puis tout entre d'un bloc). Mais 900 ms, c'était un rideau —
+    // on voyait le profil se dévoiler au lieu de le voir arriver.
     const animation = Animated.timing(fadeAnim, {
       toValue: 1,
-      duration: 900,
-      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      duration: D.base,
+      easing: E.out,
       useNativeDriver: true,
     });
     animation.start();
@@ -352,19 +357,21 @@ export default function UserProfileScreen() {
   const handleBookmark = (tweetId: string) => {
     // 📌 Bookmark
     console.log('Bookmark:', tweetId);
-    Alert.alert('Succès', 'Tweet ajouté aux favoris');
+    toast.success('Tweet ajouté aux favoris');
   };
 
   const handleSkip = (tweetId: string) => {
     // ⏭️ Skip
     console.log('Skip:', tweetId);
-    Alert.alert('Tweet ignoré', 'Ce tweet n\'apparaîtra plus');
+    toast.info('Tweet ignoré', {
+      description: 'Ce tweet n\'apparaîtra plus',
+    });
   };
 
   const handleBlock = (userId: string) => {
     // 🚫 Block
     console.log('Block:', userId);
-    Alert.alert('Succès', 'Cet utilisateur a été bloqué');
+    toast.success('Cet utilisateur a été bloqué');
   };
 
   const checkFollowStatus = async (targetUserId?: string) => {
@@ -383,15 +390,18 @@ export default function UserProfileScreen() {
 
   const handleFollow = async () => {
     if (!isAuthenticated) {
-      Alert.alert('Connexion requise', 'Vous devez être connecté pour suivre des utilisateurs', [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Se connecter', onPress: () => navigation.navigate('Login' as never) }
-      ]);
+      confirmAsync({
+        title: 'Connexion requise',
+        message: 'Vous devez être connecté pour suivre des utilisateurs',
+        confirmLabel: 'Se connecter',
+      }).then((ok) => {
+        if (ok) (() => navigation.navigate('Login' as never))();
+      });
       return;
     }
     const targetUserId = userId || userProfile?.id;
     if (!targetUserId) {
-      Alert.alert('Erreur', 'ID utilisateur manquant');
+      toast.error('ID utilisateur manquant');
       return;
     }
     try {
@@ -427,7 +437,7 @@ export default function UserProfileScreen() {
         }
       }
     } catch (err) {
-      Alert.alert('Erreur', 'Impossible de modifier le statut de suivi');
+      toast.error('Impossible de modifier le statut de suivi');
     } finally {
       setFollowLoading(false);
     }
@@ -436,9 +446,13 @@ export default function UserProfileScreen() {
   const handleWishHappyBirthday = async () => {
     try {
       await challengeProgressService.completeBirthdayWishChallenge(currentUser?.id || '');
-      Alert.alert('🎂 Bon Anniversaire Kospor ! 🎂', 'Merci pour ce beau message ! Défi complété !', [{ text: 'De rien !' }]);
+      toast.info('🎂 Bon Anniversaire Kospor ! 🎂', {
+        description: 'Merci pour ce beau message ! Défi complété !',
+      });
     } catch (error) {
-      Alert.alert('🎂 Bon Anniversaire Kospor ! 🎂', 'Merci pour ce beau message d\'anniversaire !', [{ text: 'De rien !' }]);
+      toast.info('🎂 Bon Anniversaire Kospor ! 🎂', {
+        description: 'Merci pour ce beau message d\'anniversaire !',
+      });
     }
   };
 
@@ -457,9 +471,7 @@ export default function UserProfileScreen() {
     return (
       <SafeAreaView style={S.container}>
         <StatusBar barStyle="light-content" backgroundColor={PROFILE_BODY_BG} />
-        <View style={S.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <ScreenSkeleton variant="detail" />
       </SafeAreaView>
     );
   }
@@ -917,9 +929,7 @@ export default function UserProfileScreen() {
           {/* Tweet list */}
           <View style={{ paddingBottom: 40 }}>
             {tabLoading && (
-              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                <ActivityIndicator size="small" color={colors.accent} />
-              </View>
+              <ScreenSkeleton variant="detail" />
             )}
             {userProfile.is_private_account && !isOwnProfile && followStatus !== 'active' && !tabLoading ? (
               <View style={S.emptyContainer}>

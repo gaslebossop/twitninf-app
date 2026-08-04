@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/api';
+import { toast } from './ui/Toast';
 
 interface Tweet {
   id: string;
@@ -106,22 +107,22 @@ export default function PromoteTweetModal({
 
   const validateForm = () => {
     if (!tweet) {
-      Alert.alert('Erreur', 'Aucun tweet sélectionné');
+      toast.error('Aucun tweet sélectionné');
       return false;
     }
 
     if (!formData.title.trim()) {
-      Alert.alert('Erreur', 'Le titre de la publicité est requis');
+      toast.error('Le titre de la publicité est requis');
       return false;
     }
 
     if (!formData.budget || parseFloat(formData.budget) <= 0) {
-      Alert.alert('Erreur', 'Le budget doit être supérieur à 0');
+      toast.error('Le budget doit être supérieur à 0');
       return false;
     }
 
     if (balance && parseFloat(formData.budget) > balance.balance) {
-      Alert.alert('Erreur', `Solde TWC insuffisant. Solde: ${balance.balance} TWC`);
+      toast.error(`Solde TWC insuffisant. Solde: ${balance.balance} TWC`);
       return false;
     }
 
@@ -153,25 +154,19 @@ export default function PromoteTweetModal({
       const response = await apiService.post('/api/ads/advertisements', advertisementData);
 
       if (response.success) {
-        Alert.alert(
-          'Succès',
-          'Publicité créée avec succès ! Votre tweet sera promu dans le feed.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                onClose();
-                onSuccess?.();
-              },
-            },
-          ]
-        );
+        // On referme d'abord : le toast doit apparaître sur l'écran auquel on
+        // rend la main, pas derrière une modale qu'il faudrait encore fermer.
+        onClose();
+        onSuccess?.();
+        toast.success('Ton tweet est en promotion', {
+          description: 'Il va commencer à apparaître dans les fils ciblés.',
+        });
       } else {
-        Alert.alert('Erreur', response.message || 'Erreur lors de la création de la publicité');
+        toast.error(response.message || 'Erreur lors de la création de la publicité');
       }
     } catch (error) {
       console.error('Erreur lors de la création de la publicité:', error);
-      Alert.alert('Erreur', 'Impossible de créer la publicité');
+      toast.error('Impossible de créer la publicité');
     } finally {
       setLoading(false);
     }

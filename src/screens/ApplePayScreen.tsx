@@ -5,7 +5,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   ScrollView,
   Dimensions,
@@ -16,6 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { ScreenSkeleton } from '../components/ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -53,8 +55,8 @@ const ApplePayScreen: React.FC = () => {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [currency, setCurrency] = useState<VirtualCurrency | null>(null);
   const [wallet, setWallet] = useState<any>(null);
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [slideAnim] = useState(new Animated.Value(50));
+  const [fadeAnim] = useState(new Animated.Value(1));
+  const [slideAnim] = useState(new Animated.Value(0));
   const [error, setError] = useState<string | null>(null);
 
   const presetAmounts = [5, 10, 20, 50, 100];
@@ -64,18 +66,6 @@ const ApplePayScreen: React.FC = () => {
   }, []);
 
   const animateIn = () => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
   };
 
   const loadData = async () => {
@@ -130,7 +120,7 @@ const ApplePayScreen: React.FC = () => {
     } catch (error) {
       console.error('❌ Erreur lors du chargement:', error);
       setError('Impossible de charger les données de paiement');
-      Alert.alert('Erreur', 'Impossible de charger les données de paiement');
+      toast.error('Impossible de charger les données de paiement');
     } finally {
       setLoading(false);
       console.log('🏁 Chargement terminé');
@@ -139,7 +129,7 @@ const ApplePayScreen: React.FC = () => {
 
   const handleApplePay = async () => {
     if (!currency) {
-      Alert.alert('Erreur', 'Cryptomonnaie non disponible');
+      toast.error('Cryptomonnaie non disponible');
       return;
     }
 
@@ -177,26 +167,20 @@ const ApplePayScreen: React.FC = () => {
         
         setWallet(newWallet);
         
-        Alert.alert(
-          'Paiement réussi',
-          `Vous avez reçu ${transaction.amount.toFixed(8)} ${currency.symbol} pour ${selectedAmount}€`,
-          [
-            {
-              text: 'Voir le portefeuille',
-              onPress: () => {
+        confirmAsync({
+          title: 'Paiement réussi',
+          message: `Vous avez reçu ${transaction.amount.toFixed(8)} ${currency.symbol} pour ${selectedAmount}€`,
+          confirmLabel: 'Voir le portefeuille',
+          cancelLabel: 'OK',
+        }).then((ok) => {
+          if (ok) (() => {
                 // Navigation vers le portefeuille
-              }
-            },
-            {
-              text: 'OK',
-              style: 'cancel'
-            }
-          ]
-        );
+              })();
+        });
       }
     } catch (error) {
       console.error('Erreur lors du paiement:', error);
-      Alert.alert('Erreur', 'Le paiement a échoué. Veuillez réessayer.');
+      toast.error('Le paiement a échoué. Veuillez réessayer.');
     } finally {
       setProcessing(false);
     }
@@ -211,10 +195,7 @@ const ApplePayScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <View style={styles.loadingContent}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Chargement...</Text>
-        </View>
+        <ScreenSkeleton variant="list" />
       </View>
     );
   }

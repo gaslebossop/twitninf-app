@@ -6,11 +6,11 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { toast } from './ui/Toast';
 import {
   effectiveSubscriptionTier,
   canUseFeature,
@@ -172,13 +172,11 @@ export default function PremiumThemeSelector({
 
     if (!rowUnlocked(userTier, theme)) {
       const needPro = rowRequirement(theme) === 'pro';
-      Alert.alert(
-        needPro ? '⭐ Abonnement Pro requis' : '💎 Abonnement Plus requis',
-        needPro
+      toast.info(needPro ? '⭐ Abonnement Pro requis' : '💎 Abonnement Plus requis', {
+        description: needPro
           ? 'Ce thème est réservé au palier Pro.'
           : 'Ce thème est inclus à partir du palier Plus.',
-        [{ text: 'OK', style: 'cancel' }]
-      );
+      });
       return;
     }
 
@@ -196,13 +194,11 @@ export default function PremiumThemeSelector({
 
     if (!rowUnlocked(userTier, background)) {
       const needPro = rowRequirement(background) === 'pro';
-      Alert.alert(
-        needPro ? '⭐ Abonnement Pro requis' : '💎 Abonnement Plus requis',
-        needPro
+      toast.info(needPro ? '⭐ Abonnement Pro requis' : '💎 Abonnement Plus requis', {
+        description: needPro
           ? 'Cet arrière-plan est réservé au palier Pro.'
           : 'Cet arrière-plan est inclus à partir du palier Plus.',
-        [{ text: 'OK', style: 'cancel' }]
-      );
+      });
       return;
     }
 
@@ -220,13 +216,11 @@ export default function PremiumThemeSelector({
 
     if (!rowUnlocked(userTier, effect)) {
       const needPro = rowRequirement(effect) === 'pro';
-      Alert.alert(
-        needPro ? '⭐ Abonnement Pro requis' : '💎 Abonnement Plus requis',
-        needPro
+      toast.info(needPro ? '⭐ Abonnement Pro requis' : '💎 Abonnement Plus requis', {
+        description: needPro
           ? 'Cet effet est réservé au palier Pro.'
           : 'Cet effet est inclus à partir du palier Plus.',
-        [{ text: 'OK', style: 'cancel' }]
-      );
+      });
       return;
     }
 

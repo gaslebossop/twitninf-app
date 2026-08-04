@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,9 +12,11 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, fonts } from '../theme';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   STATUS_LABELS,
   closeTicket,
@@ -82,7 +83,9 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
     setSending(false);
 
     if (!result.ok) {
-      Alert.alert('Message non envoyé', result.message || 'Réessaie dans un instant.');
+      toast.success('Message non envoyé', {
+        description: result.message || 'Réessaie dans un instant.',
+      });
       return;
     }
 
@@ -93,24 +96,20 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
   }, [reply, ticketId, load, detail?.actor?.isStaff]);
 
   const onClose = useCallback(() => {
-    Alert.alert(
-      detail?.actor?.isStaff ? 'Clore ce ticket côté support ?' : 'Clore ce ticket ?',
-      detail?.actor?.isStaff
+    confirmAsync({
+      title: detail?.actor?.isStaff ? 'Clore ce ticket côté support ?' : 'Clore ce ticket ?',
+      message: detail?.actor?.isStaff
         ? 'Le fil sera fermé pour le support et pour l’utilisateur.'
         : 'Tu ne pourras plus y répondre. Si le problème revient, ouvre-en un nouveau.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Clore',
-          style: 'destructive',
-          onPress: async () => {
+      confirmLabel: 'Clore',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             const result = await closeTicket(ticketId);
             if (result.ok) await load();
-            else Alert.alert('Échec', result.message || 'Impossible de clore ce ticket.');
-          },
-        },
-      ],
-    );
+            else toast.error(result.message || 'Impossible de clore ce ticket.');
+          })();
+    });
   }, [ticketId, load, detail?.actor?.isStaff]);
 
   const ticket = detail?.ticket;
@@ -163,9 +162,7 @@ export default function SupportTicketScreen({ navigation, route }: Props) {
           keyboardShouldPersistTaps="handled"
         >
           {loading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator size="small" color={colors.accent} />
-            </View>
+            <ScreenSkeleton variant="thread" />
           ) : error ? (
             <View style={styles.centered} accessibilityRole="alert">
               <Ionicons name="cloud-offline-outline" size={22} color={colors.warning} />

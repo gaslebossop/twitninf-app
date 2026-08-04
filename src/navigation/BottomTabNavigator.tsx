@@ -110,7 +110,10 @@ export default function BottomTabNavigator() {
         // n'avaient pas de fond opaque. Cela se voyait d'autant plus avec une
         // transition animée, qui laissait passer un flash clair entre deux
         // onglets. L'équivalent v7 est `sceneStyle`, dans screenOptions.
-        sceneStyle: { backgroundColor: '#0A0B0F' },
+        // `colors.bg`, pas un hex figé : le `#0A0B0F` codé ici datait de la DA
+        // « Encre » et ne correspondait plus au noir des écrans (`#0A0A0A`).
+        // L'écart était petit mais visible en couture pendant une transition.
+        sceneStyle: { backgroundColor: colors.bg },
         // Les 9 onglets étaient tous montés dès le premier affichage et
         // continuaient de tourner en arrière-plan.
         lazy: true,

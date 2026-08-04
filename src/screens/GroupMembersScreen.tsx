@@ -2,8 +2,16 @@ import { fonts } from '../theme';
 import { ScreenBackground, BackButton } from '../components/ui';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  ScrollView, TextInput, Image, Alert, Modal, Animated,
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Image,
+  Modal,
+  Animated,
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +20,8 @@ import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
 import { API_CONFIG } from '../config/api';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 function getAvatarUri(avatar?: string | null): string | null {
   if (!avatar) return null;
@@ -55,7 +65,9 @@ function BottomActionSheet({
   const slide = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
-    if (visible) Animated.spring(slide, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+    if (visible) // `bounciness: 0` = pas de dépassement. La feuille se pose au lieu
+    // de dépasser sa position puis de revenir.
+    Animated.spring(slide, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 14 }).start();
     else Animated.timing(slide, { toValue: 300, duration: 200, useNativeDriver: true }).start();
   }, [visible]);
 
@@ -159,35 +171,37 @@ export default function GroupMembersScreen({ navigation, route }: any) {
     const ids = selectedAddIds.filter(Boolean);
     if (!ids.length) return;
     const res = await apiService.post(`/api/messages/conversations/${conversationId}/members`, { memberIds: ids });
-    if (!res?.success) { Alert.alert('Erreur', res?.message || 'Ajout impossible'); return; }
+    if (!res?.success) { toast.error(res?.message || 'Ajout impossible'); return; }
     setQuery(''); setResults([]); setSelectedAddIds([]);
     await load();
   };
 
   const transferOwner = async (targetUserId: string) => {
     const res = await apiService.post(`/api/messages/conversations/${conversationId}/transfer-owner`, { targetUserId });
-    if (!res?.success) return Alert.alert('Erreur', res?.message || 'Transfert impossible');
+    if (!res?.success) return toast.error(res?.message || 'Transfert impossible');
     await load();
   };
 
   const toggleAdmin = async (p: any) => {
     const role = p.role === 'admin' ? 'member' : 'admin';
     const res = await apiService.post(`/api/messages/conversations/${conversationId}/members/${p.id}/role`, { role });
-    if (!res?.success) return Alert.alert('Erreur', res?.message || 'Impossible');
+    if (!res?.success) return toast.error(res?.message || 'Impossible');
     await load();
   };
 
   const ban = async (p: any) => {
-    Alert.alert('Bannir', `Exclure @${p.username} du groupe ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Bannir', style: 'destructive', onPress: async () => {
+    confirmAsync({
+      title: 'Bannir',
+      message: `Exclure @${p.username} du groupe ?`,
+      confirmLabel: 'Bannir',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
           const res = await apiService.post(`/api/messages/conversations/${conversationId}/members/${p.id}/ban`, {});
-          if (!res?.success) return Alert.alert('Erreur', res?.message || 'Ban impossible');
+          if (!res?.success) return toast.error(res?.message || 'Ban impossible');
           await load();
-        },
-      },
-    ]);
+        })();
+    });
   };
 
   const buildActions = (p: any): ActionSheetAction[] => {

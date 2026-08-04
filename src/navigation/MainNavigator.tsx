@@ -65,6 +65,7 @@ import FollowRequestsScreen from '../screens/FollowRequestsScreen';
 import UserConnectionsScreen from '../screens/UserConnectionsScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import { navigationRef } from './NavigationService';
+import { colors } from '../theme';
 
 
 export type MainStackParamList = {
@@ -244,7 +245,10 @@ function MainNavigatorInner() {
         id={undefined}
         screenOptions={{
           headerShown: false,
-          cardStyle: { backgroundColor: '#0A0B0F' },
+          // Même correction que dans `BottomTabNavigator` : le fond de la pile
+          // doit être exactement le noir des écrans, sinon la transition
+          // laisse voir une bande d'un gris légèrement différent.
+          cardStyle: { backgroundColor: colors.bg },
           // Gèle les écrans hors champ : leurs timers et re-rendus s'arrêtent
           // tant qu'ils ne sont pas revisibles.
           freezeOnBlur: true,

@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
-import { BackButton } from '../components/ui';
+import { BackButton, ScreenSkeleton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
 
 // ─── TOKENS ── mappés sur la palette Pulse ──────────────────────
 const C = {
@@ -182,10 +183,10 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
       } else if (r.success) {
         setAvailableTargeting(r.data);
       } else {
-        Alert.alert('Erreur', r.message || 'Impossible de charger le ciblage.');
+        toast.error(r.message || 'Impossible de charger le ciblage.');
       }
     } catch { 
-      Alert.alert('Erreur', 'Impossible de charger les options de ciblage.'); 
+      toast.error('Impossible de charger les options de ciblage.'); 
     } finally { 
       setLoading(false); 
     }
@@ -194,7 +195,9 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
   const toggleGroup = (category: string, value: string) => {
     const i = selectedGroups.findIndex(g => g.category === category && g.value === value);
     if (i >= 0) { setSelectedGroups(p => p.filter((_, j) => j !== i)); return; }
-    if (selectedGroups.length >= 10) { Alert.alert('Limite', 'Maximum 10 segments sélectionnables.'); return; }
+    if (selectedGroups.length >= 10) { toast.info('Limite', {
+      description: 'Maximum 10 segments sélectionnables.',
+    }); return; }
     setSelectedGroups(p => [...p, { category, value }]);
   };
   const isSelected = (c: string, v: string) => selectedGroups.some(g => g.category === c && g.value === v);
@@ -229,12 +232,20 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
   const closeSearch = () => { setSearchModalVisible(false); setSearchQuery(''); setSearchUsers([]); setSearchTweets([]); };
 
   const submitAd = async () => {
-    if (!textContent.trim() && !imageUrl.trim()) { Alert.alert('Contenu manquant', 'Ajoutez un texte ou une image.'); return; }
+    if (!textContent.trim() && !imageUrl.trim()) { toast.error('Contenu manquant', {
+      description: 'Ajoutez un texte ou une image.',
+    }); return; }
     const views = parseInt(maxViews, 10);
-    if (!views || views <= 0) { Alert.alert('Objectif invalide', 'Saisissez un nombre de vues valide.'); return; }
+    if (!views || views <= 0) { toast.error('Objectif invalide', {
+      description: 'Saisissez un nombre de vues valide.',
+    }); return; }
     const cost = views * 0.10;
-    if (cost > walletBalance) { Alert.alert('Solde insuffisant', `Coût estimé : ${cost.toFixed(2)} TWC\nDisponible : ${walletBalance.toFixed(2)} TWC`); return; }
-    if (!selectedGroups.length) { Alert.alert('Audience requise', 'Sélectionnez au moins un segment.'); return; }
+    if (cost > walletBalance) { toast.error('Solde insuffisant', {
+      description: `Coût estimé : ${cost.toFixed(2)} TWC\nDisponible : ${walletBalance.toFixed(2)} TWC`,
+    }); return; }
+    if (!selectedGroups.length) { toast.error('Audience requise', {
+      description: 'Sélectionnez au moins un segment.',
+    }); return; }
     setSubmitting(true);
     try {
       const redirect_url = redirectTarget
@@ -246,22 +257,18 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
         redirect_url,
       });
       if (res.success) {
-        Alert.alert('Campagne créée 🎉', 'Votre publicité est maintenant active.', [{
-          text: 'Voir les stats', onPress: () => {
-            setActiveTab('stats'); fetchMyAds(); fetchWalletBalance();
-            setTextContent(''); setImageUrl(''); setMaxViews(''); setSelectedGroups([]); setRedirectTarget(null);
-          },
-        }]);
-      } else Alert.alert('Erreur', res.message || 'Erreur lors de la création.');
-    } catch { Alert.alert('Erreur réseau', 'Vérifiez votre connexion et réessayez.'); }
+        // On bascule directement sur les stats — c'est là que l'utilisateur
+        // voulait aller. Le toast ne fait que nommer ce qui vient de se passer.
+        setActiveTab('stats'); fetchMyAds(); fetchWalletBalance();
+        setTextContent(''); setImageUrl(''); setMaxViews(''); setSelectedGroups([]); setRedirectTarget(null);
+        toast.success('Campagne créée', { description: 'Ta publicité est maintenant active.' });
+      } else toast.error(res.message || 'Erreur lors de la création.');
+    } catch { toast.error('Vérifiez votre connexion et réessayez.'); }
     finally { setSubmitting(false); }
   };
 
   if (loading) return (
-    <View style={{ flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center', gap: 16 }}>
-      <ActivityIndicator size="large" color={C.accent} />
-      <Text style={{ color: C.t3, fontSize: 14, fontWeight: '500' }}>Chargement…</Text>
-    </View>
+    <ScreenSkeleton variant="list" />
   );
 
   const views = parseInt(maxViews || '0', 10);
@@ -315,10 +322,7 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
           </View>
 
           {searchLoading ? (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <ActivityIndicator color={C.accent} />
-              <Text style={{ color: C.t3, fontSize: 13 }}>Recherche…</Text>
-            </View>
+            <ScreenSkeleton variant="list" />
           ) : (
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {searchUsers.length > 0 && (

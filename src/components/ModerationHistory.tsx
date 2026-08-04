@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { moderationService, ModerationAction } from '../services/moderationService';
+import { toast } from './ui/Toast';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -69,7 +69,7 @@ export default function ModerationHistory({ onClose }: ModerationHistoryProps) {
       console.log('✅ Historique chargé avec succès');
     } catch (error) {
       console.error('❌ Erreur lors du chargement de l\'historique:', error);
-      Alert.alert('Erreur', 'Impossible de charger l\'historique de modération');
+      toast.error('Impossible de charger l\'historique de modération');
       setActions([]);
     } finally {
       setLoading(false);
@@ -320,7 +320,9 @@ export default function ModerationHistory({ onClose }: ModerationHistoryProps) {
                         <TouchableOpacity
                           style={styles.reverseButton}
                           onPress={() => {
-                            Alert.alert('Annuler l\'action', 'Cette fonctionnalité sera bientôt disponible');
+                            toast.error('Annuler l\'action', {
+                              description: 'Cette fonctionnalité sera bientôt disponible',
+                            });
                           }}
                           activeOpacity={0.7}
                         >

@@ -12,7 +12,6 @@ import {
   useWindowDimensions,
   SafeAreaView,
   Platform,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme';
@@ -31,6 +30,7 @@ import PremiumDisplayName from '../components/PremiumDisplayName';
 import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
 import UserSuggestions from '../components/UserSuggestions';
 import tokenStore from '../services/tokenStore';
+import { toast } from '../components/ui/Toast';
 
 type SearchRouteProp = RouteProp<{ Search: { query?: string; searchType?: string } }, 'Search'>;
 
@@ -99,23 +99,11 @@ export default function SearchScreen() {
   }, [user?.id]); // Se déclenche quand l'utilisateur change
 
   // Animations subtiles et professionnelles
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Animation d'entrée douce
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
 
     fetchTrendingHashtags();
   }, []);
@@ -416,7 +404,7 @@ export default function SearchScreen() {
         }
       }
       
-      Alert.alert('Erreur', 'Impossible d\'effectuer la recherche');
+      toast.error('Impossible d\'effectuer la recherche');
       setSearchResults({ users: [], tweets: [] });
       setDisplayedAiSummary('');
       setAiSummaryRefs({ users: [], tweets: [] });
@@ -552,7 +540,7 @@ export default function SearchScreen() {
             return tweet;
           })
         }));
-        Alert.alert('Erreur', 'Impossible de liker le tweet');
+        toast.error('Impossible de liker le tweet');
       } else {
         console.log(`✅ Like ${wasLiked ? 'supprimé' : 'ajouté'} avec succès pour le tweet ${tweetId}`);
       }
@@ -581,7 +569,7 @@ export default function SearchScreen() {
           return tweet;
         })
       }));
-      Alert.alert('Erreur', 'Impossible de liker le tweet');
+      toast.error('Impossible de liker le tweet');
     }
   };
 
@@ -657,7 +645,7 @@ export default function SearchScreen() {
             return tweet;
           })
         }));
-        Alert.alert('Erreur', 'Impossible de retweeter');
+        toast.error('Impossible de retweeter');
       } else {
         console.log(`✅ Retweet ${wasRetweeted ? 'supprimé' : 'ajouté'} avec succès pour le tweet ${tweetId}`);
       }
@@ -686,7 +674,7 @@ export default function SearchScreen() {
           return tweet;
         })
       }));
-      Alert.alert('Erreur', 'Impossible de retweeter');
+      toast.error('Impossible de retweeter');
     }
   };
 
@@ -701,25 +689,29 @@ export default function SearchScreen() {
   // Gestion du partage
   const handleShare = (tweetId: string) => {
     // Implémenter le partage
-    Alert.alert('Partage', 'Fonctionnalité de partage à venir');
+    toast.info('Partage', {
+      description: 'Fonctionnalité de partage à venir',
+    });
   };
 
   const handleBookmark = (tweetId: string) => {
     // 📌 Bookmark
     console.log('Bookmark:', tweetId);
-    Alert.alert('Succès', 'Tweet ajouté aux favoris');
+    toast.success('Tweet ajouté aux favoris');
   };
 
   const handleSkip = (tweetId: string) => {
     // ⏭️ Skip
     console.log('Skip:', tweetId);
-    Alert.alert('Tweet ignoré', 'Ce tweet n\'apparaîtra plus');
+    toast.info('Tweet ignoré', {
+      description: 'Ce tweet n\'apparaîtra plus',
+    });
   };
 
   const handleBlock = (userId: string) => {
     // 🚫 Block
     console.log('Block:', userId);
-    Alert.alert('Succès', 'Cet utilisateur a été bloqué');
+    toast.success('Cet utilisateur a été bloqué');
   };
 
   const formatNumber = (num: number) => {

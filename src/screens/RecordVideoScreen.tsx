@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Pressable,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +17,8 @@ import { File, Paths } from 'expo-file-system';
 import type { RtmpPublisherViewMethods } from 'react-native-nitro-rtmp-publisher';
 import { useAuth } from '../contexts/AuthContext';
 import { effectiveSubscriptionTier, type SubscriptionTier } from '../utils/subscriptionTier';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 /**
  * Caméra de l'app — enregistrement façon TikTok.
@@ -229,10 +230,9 @@ export default function RecordVideoScreen() {
     rtmpModule.rtmp.requestRtmpPermissions().then(({ granted }) => {
       setPermissionsGranted(granted);
       if (!granted) {
-        Alert.alert(
-          'Autorisations requises',
-          'Active la caméra et le micro pour TwitNinf dans Réglages pour filmer.',
-        );
+        toast.error('Autorisations requises', {
+          description: 'Active la caméra et le micro pour TwitNinf dans Réglages pour filmer.',
+        });
       }
     });
   }, []);
@@ -347,7 +347,9 @@ export default function RecordVideoScreen() {
       const path = toNativePath(target.uri);
       const accepted = publisher.startRecord(path);
       if (!accepted) {
-        Alert.alert('Enregistrement impossible', "La caméra n'a pas accepté de démarrer l'enregistrement.");
+        toast.error('Enregistrement impossible', {
+          description: "La caméra n'a pas accepté de démarrer l'enregistrement.",
+        });
         return false;
       }
       outputPathRef.current = path;
@@ -457,12 +459,13 @@ export default function RecordVideoScreen() {
   /** Jette la prise entière — voir la note en tête de fichier. */
   const restart = useCallback(() => {
     if (!hasFootage) return;
-    Alert.alert('Recommencer ?', 'La prise en cours sera perdue, segments compris.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Recommencer',
-        style: 'destructive',
-        onPress: () => {
+    confirmAsync({
+      title: 'Recommencer ?',
+      message: 'La prise en cours sera perdue, segments compris.',
+      confirmLabel: 'Recommencer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (() => {
           stopTicking();
           try {
             publisherRef.current?.stopRecord();
@@ -483,9 +486,8 @@ export default function RecordVideoScreen() {
           setElapsed(0);
           setHasFootage(false);
           setIsRecording(false);
-        },
-      },
-    ]);
+        })();
+    });
   }, [hasFootage, stopTicking]);
 
   const flipCamera = useCallback(() => {
@@ -498,7 +500,9 @@ export default function RecordVideoScreen() {
     const publisher = publisherRef.current;
     if (!publisher) return;
     if (!publisher.isLanternSupported()) {
-      Alert.alert('Torche indisponible', "Cette caméra n'a pas d'éclairage.");
+      toast.error('Torche indisponible', {
+        description: "Cette caméra n'a pas d'éclairage.",
+      });
       return;
     }
     const next = !torchOn;
@@ -526,7 +530,9 @@ export default function RecordVideoScreen() {
     if (hasFootage) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission requise', 'Autorise la galerie pour importer une vidéo.');
+      toast.error('Permission requise', {
+        description: 'Autorise la galerie pour importer une vidéo.',
+      });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

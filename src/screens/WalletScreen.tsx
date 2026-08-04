@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { fonts, colors as C } from '../theme';
-import { ScreenBackground } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton } from '../components/ui';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import NewEconomyService, { WalletData as NewWalletData } from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
+import { toast } from '../components/ui/Toast';
 
 interface WalletData {
   wallet: {
@@ -116,7 +116,7 @@ const WalletScreen: React.FC = () => {
         setWalletData(response.data);
       } catch (fallbackError) {
         console.error('Erreur fallback:', fallbackError);
-        Alert.alert('Erreur', 'Impossible de charger le portefeuille');
+        toast.error('Impossible de charger le portefeuille');
       }
     }
   };
@@ -172,17 +172,16 @@ const WalletScreen: React.FC = () => {
         });
       }
 
-      Alert.alert(
-        'Minage réussi!',
-        `Vous avez gagné ${reward} ${walletData?.currency.symbol} pour ${action}`
-      );
+      toast.reward('Minage réussi!', {
+        description: `Vous avez gagné ${reward} ${walletData?.currency.symbol} pour ${action}`,
+      });
 
       // Recharger les transactions
       await fetchTransactions();
     } catch (error: any) {
       console.error('Erreur lors du minage:', error);
       const message = error.response?.data?.message || 'Erreur lors du minage';
-      Alert.alert('Erreur', message);
+      toast.error(message);
     } finally {
       setMiningLoading(false);
     }
@@ -203,17 +202,16 @@ const WalletScreen: React.FC = () => {
 
       const { transaction, fee } = response.data;
       
-      Alert.alert(
-        'Transfert réussi!',
-        `Transfert de ${amount} ${walletData?.currency.symbol} effectué (frais: ${fee})`
-      );
+      toast.success('Transfert réussi!', {
+        description: `Transfert de ${amount} ${walletData?.currency.symbol} effectué (frais: ${fee})`,
+      });
 
       // Recharger les données
       await Promise.all([fetchWalletData(), fetchTransactions()]);
     } catch (error: any) {
       console.error('Erreur lors du transfert:', error);
       const message = error.response?.data?.message || 'Erreur lors du transfert';
-      Alert.alert('Erreur', message);
+      toast.error(message);
     }
   };
 
@@ -297,10 +295,7 @@ const WalletScreen: React.FC = () => {
   if (loading) {
     return (
       <ScreenBackground>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B35" />
-          <Text style={styles.loadingText}>Chargement du portefeuille...</Text>
-        </View>
+        <ScreenSkeleton variant="detail" />
       </ScreenBackground>
     );
   }
@@ -383,10 +378,7 @@ const WalletScreen: React.FC = () => {
         </View>
 
         {miningLoading && (
-          <View style={styles.miningLoading}>
-            <ActivityIndicator size="small" color="#FF6B35" />
-            <Text style={styles.miningText}>Minage en cours...</Text>
-          </View>
+          <ScreenSkeleton variant="detail" />
         )}
       </View>
 

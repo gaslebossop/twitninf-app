@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   StatusBar,
   Animated,
   Dimensions,
@@ -21,6 +20,9 @@ import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { useAuth } from '../contexts/AuthContext';
 import { moderationService, Tweet } from '../services/moderationService';
 import VerifiedBadge from '../components/VerifiedBadge';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { promptAsync } from '../components/ui/PromptSheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -58,17 +60,12 @@ export default function ContentModerationScreen() {
   
   const [selectedTweet, setSelectedTweet] = useState<Tweet | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'not_eligible' | 'high' | 'critical'>('all');
-  const [animationValue] = useState(new Animated.Value(0));
+  const [animationValue] = useState(new Animated.Value(1));
   const [tweets, setTweets] = useState<Tweet[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadTweets();
-    Animated.timing(animationValue, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
   }, []);
 
   const loadTweets = async () => {
@@ -84,7 +81,7 @@ export default function ContentModerationScreen() {
       console.log('✅ Tweets chargés avec succès');
     } catch (error) {
       console.error('❌ Erreur lors du chargement des tweets:', error);
-      Alert.alert('Erreur', 'Impossible de charger les tweets');
+      toast.error('Impossible de charger les tweets');
       setTweets([]);
     } finally {
       setLoading(false);
@@ -119,41 +116,31 @@ export default function ContentModerationScreen() {
 
     // Pour les actions destructives, demander un motif
     if (action === 'delete') {
-      Alert.prompt(
-        'Motif du bannissement',
-        'Veuillez indiquer le motif du bannissement :',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Bannir',
-            style: 'destructive',
-            onPress: async (motif) => {
-              if (!motif || motif.trim().length === 0) {
-                Alert.alert('Erreur', 'Veuillez indiquer un motif pour le bannissement');
-                return;
-              }
-              await executeAction(tweet, action, motif);
-            }
-          }
-        ],
-        'plain-text',
-        'Contenu inapproprié'
-      );
+      // `Alert.prompt` est iOS-only : sur Android l'appel ne faisait rien, donc
+      // bannir était impossible depuis un téléphone Android. Voir PromptSheet.
+      promptAsync({
+        title: 'Motif du bannissement',
+        message: 'Il sera visible dans l’historique de modération.',
+        placeholder: 'Contenu inapproprié',
+        defaultValue: 'Contenu inapproprié',
+        confirmLabel: 'Bannir',
+        icon: 'ban-outline',
+        destructive: true,
+        multiline: true,
+        maxLength: 300,
+      }).then((motif) => {
+        if (motif) executeAction(tweet, action, motif);
+      });
     } else {
-      Alert.alert(
-        `${actionTexts[action].charAt(0).toUpperCase() + actionTexts[action].slice(1)}`,
-        actionDescriptions[action],
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Confirmer',
-            style: 'default',
-            onPress: async () => {
+      confirmAsync({
+        title: `${actionTexts[action].charAt(0).toUpperCase() + actionTexts[action].slice(1)}`,
+        message: actionDescriptions[action],
+        confirmLabel: 'Confirmer',
+      }).then((ok) => {
+        if (ok) (async () => {
               await executeAction(tweet, action, 'Action de modération');
-            }
-          }
-        ]
-      );
+            })();
+      });
     }
   };
 
@@ -184,14 +171,14 @@ export default function ContentModerationScreen() {
           delete: 'utilisateur banni',
           not_eligible: 'marqué comme non éligible'
         };
-        Alert.alert('Succès', `Tweet ${actionTexts[action]} avec succès.`);
+        toast.success(`Tweet ${actionTexts[action]} avec succès.`);
         loadTweets(); // Recharger les données
       } else {
-        Alert.alert('Erreur', `Impossible d'effectuer cette action`);
+        toast.error(`Impossible d'effectuer cette action`);
       }
     } catch (error) {
       console.error('❌ Erreur lors de l\'action sur le tweet:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     }
   };
 

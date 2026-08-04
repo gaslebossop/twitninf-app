@@ -18,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tweet } from '../types/api';
 import { wp, hp, fontSize, spacing, borderRadius, iconSize, shadow } from '../utils/responsive';
 import { BackButton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 
 type CreateTweetABTestScreenNavigationProp = StackNavigationProp<any, 'CreateTweetABTest'>;
@@ -60,10 +62,9 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
   const handleAddVersion = () => {
     // Limite maximum de versions pour éviter les performances dégradées
     if (versions.length >= 10) {
-      Alert.alert(
-        'Limite atteinte',
-        'Vous ne pouvez pas ajouter plus de 10 versions pour un test A/B optimal.'
-      );
+      toast.error('Limite atteinte', {
+        description: 'Vous ne pouvez pas ajouter plus de 10 versions pour un test A/B optimal.',
+      });
       return;
     }
 
@@ -98,10 +99,9 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
   const handleRemoveVersion = (id: number) => {
     // Vérifications de sécurité multiples
     if (versions.length <= 2) {
-      Alert.alert(
-        'Impossible de supprimer',
-        'Vous devez garder au minimum 2 versions pour un test A/B efficace.'
-      );
+      toast.error('Impossible de supprimer', {
+        description: 'Vous devez garder au minimum 2 versions pour un test A/B efficace.',
+      });
       return;
     }
 
@@ -112,18 +112,13 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
     }
 
     // Confirmation avant suppression
-    Alert.alert(
-      'Supprimer la version',
-      `Êtes-vous sûr de vouloir supprimer "${versionToRemove.label}" ?`,
-      [
-        {
-          text: 'Annuler',
-          style: 'cancel',
-        },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: () => {
+    confirmAsync({
+      title: 'Supprimer la version',
+      message: `Êtes-vous sûr de vouloir supprimer "${versionToRemove.label}" ?`,
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (() => {
             // Suppression sécurisée avec vérification
             setVersions(prevVersions => {
               const filtered = prevVersions.filter(version => version.id !== id);
@@ -142,17 +137,15 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
                        `Version ${index + 1}`
               }));
             });
-          },
-        },
-      ]
-    );
+          })();
+    });
   };
 
   const handlePublish = async () => {
     const filledVersions = versions.filter(version => version.content.trim());
 
     if (filledVersions.length < 2) {
-      Alert.alert('Erreur', 'Veuillez remplir au moins 2 versions pour un test A/B efficace');
+      toast.error('Veuillez remplir au moins 2 versions pour un test A/B efficace');
       return;
     }
 
@@ -176,19 +169,13 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
       // Ici vous pouvez implémenter la logique de publication A/B avec l'API
       console.log('📊 Données du test A/B:', testData);
 
-      Alert.alert(
-        'Succès ! 🎉',
-        `Vos ${filledVersions.length} versions A/B ont été créées !`,
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+      toast.success(`${filledVersions.length} versions créées`, {
+        description: 'Le test A/B est lancé.',
+      });
+      navigation.goBack();
     } catch (error) {
       console.error('Erreur lors de la création du test A/B:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     } finally {
       setLoading(false);
     }

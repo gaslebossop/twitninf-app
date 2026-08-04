@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -17,6 +16,8 @@ import { ScreenBackground, BackButton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, radius } from '../theme';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 import {
   REASON_LABELS,
   InsightsError,
@@ -152,7 +153,9 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
       setIncognitoState(applied);
     } catch (e: any) {
       setIncognitoState(!value);
-      Alert.alert('Réglage impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Réglage impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     }
   };
 
@@ -161,31 +164,33 @@ export default function ProfileInsightsScreen({ navigation, route }: Props) {
       await dismissAlert(alert.id);
       setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
     } catch (e: any) {
-      Alert.alert('Action impossible', e?.message || 'Réessaie dans un instant.');
+      toast.error('Action impossible', {
+        description: e?.message || 'Réessaie dans un instant.',
+      });
     }
   };
 
   const onReport = (alert: ImpersonationAlert) => {
-    Alert.alert(
-      `Signaler @${alert.suspect?.username} ?`,
-      'Le compte part en modération pour usurpation d\'identité.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Signaler',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAsync({
+      title: `Signaler @${alert.suspect?.username} ?`,
+      message: 'Le compte part en modération pour usurpation d\'identité.',
+      confirmLabel: 'Signaler',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
             try {
               await reportAlert(alert.id);
               setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
-              Alert.alert('Signalement envoyé', 'Notre équipe examine ce compte.');
+              toast.success('Signalement envoyé', {
+                description: 'Notre équipe examine ce compte.',
+              });
             } catch (e: any) {
-              Alert.alert('Signalement impossible', e?.message || 'Réessaie dans un instant.');
+              toast.error('Signalement impossible', {
+                description: e?.message || 'Réessaie dans un instant.',
+              });
             }
-          },
-        },
-      ],
-    );
+          })();
+    });
   };
 
   const onRescan = async () => {

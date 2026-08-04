@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
   Platform,
   SafeAreaView,
   Image,
@@ -20,6 +19,8 @@ import { apiService } from '../services/api';
 import type { User } from '../types/api';
 import { BackButton } from '../components/ui';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 type AlgoConfig = {
   weights: Record<string, number>;
@@ -178,10 +179,10 @@ export default function SimilarityAlgorithmScreen() {
         setStats((res as any).data.stats);
         setDrafts({});
       } else {
-        Alert.alert('Erreur', (res as any).message || 'Impossible de charger la configuration');
+        toast.error((res as any).message || 'Impossible de charger la configuration');
       }
     } catch {
-      Alert.alert('Erreur', 'Connexion impossible');
+      toast.error('Connexion impossible');
     } finally {
       setLoading(false);
     }
@@ -194,7 +195,7 @@ export default function SimilarityAlgorithmScreen() {
       if (ov.success && (ov as any).data) setOverview((ov as any).data);
       if (tags.success && (tags as any).data) setRules((tags as any).data as HashtagRule[]);
     } catch {
-      Alert.alert('Erreur', 'Connexion impossible (visibilité)');
+      toast.error('Connexion impossible (visibilité)');
     } finally {
       setVisLoading(false);
     }
@@ -256,10 +257,12 @@ export default function SimilarityAlgorithmScreen() {
       } else {
         setLookupUser(null);
         setSelectedPreview(null);
-        Alert.alert('Introuvable', (res as any).message || 'Aucun compte avec ce pseudo.');
+        toast.error('Introuvable', {
+          description: (res as any).message || 'Aucun compte avec ce pseudo.',
+        });
       }
     } catch {
-      Alert.alert('Erreur', 'Connexion impossible');
+      toast.error('Connexion impossible');
     } finally {
       setLookupBusy(false);
     }
@@ -270,17 +273,21 @@ export default function SimilarityAlgorithmScreen() {
     const mult = Math.max(0, Math.min(5, userPct / 100));
     const res = await apiService.shadowbanSetUserVisibility(lookupUser.id, mult);
     if (res.success) {
-      Alert.alert('Enregistré', `@${lookupUser.username} : ${userPct} % de visibilité dans le fil auto.`);
+      toast.success('Enregistré', {
+        description: `@${lookupUser.username} : ${userPct} % de visibilité dans le fil auto.`,
+      });
       loadVisibility();
     } else {
-      Alert.alert('Erreur', (res as any).message || 'Échec');
+      toast.error((res as any).message || 'Échec');
     }
   };
 
   const addHashtagRule = async () => {
     const raw = stripAt(tagNew).replace(/^#+/u, '');
     if (!raw) {
-      Alert.alert('Hashtag', 'Indique un mot-clé (ex. actualite).');
+      toast.info('Hashtag', {
+        description: 'Indique un mot-clé (ex. actualite).',
+      });
       return;
     }
     const mult = Math.max(0.01, Math.min(5, hashtagStrengthPct / 100));
@@ -297,7 +304,7 @@ export default function SimilarityAlgorithmScreen() {
         setHashtagStrengthPct(100);
         await loadVisibility();
       } else {
-        Alert.alert('Erreur', (res as any).message || 'Échec');
+        toast.error((res as any).message || 'Échec');
       }
     } finally {
       setRulesBusy(false);
@@ -305,18 +312,18 @@ export default function SimilarityAlgorithmScreen() {
   };
 
   const deleteRule = (id: string, tag: string) => {
-    Alert.alert('Supprimer ?', `#${tag}`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
+    confirmAsync({
+      title: 'Supprimer ?',
+      message: `#${tag}`,
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
           const res = await apiService.shadowbanDeleteHashtag(id);
           if (res.success) await loadVisibility();
-          else Alert.alert('Erreur', (res as any).message);
-        },
-      },
-    ]);
+          else toast.error((res as any).message);
+        })();
+    });
   };
 
   const refreshAll = () => {
@@ -367,13 +374,15 @@ export default function SimilarityAlgorithmScreen() {
     try {
       const res = await apiService.updateSimilarityAlgorithmAdmin(config as any);
       if (res.success) {
-        Alert.alert('Enregistré', 'Les paramètres du moteur ont été mis à jour.');
+        toast.success('Enregistré', {
+          description: 'Les paramètres du moteur ont été mis à jour.',
+        });
         await loadAlgo();
       } else {
-        Alert.alert('Erreur', (res as any).message || 'Échec de la sauvegarde');
+        toast.error((res as any).message || 'Échec de la sauvegarde');
       }
     } catch {
-      Alert.alert('Erreur', 'Connexion impossible');
+      toast.error('Connexion impossible');
     } finally {
       setSaving(false);
     }

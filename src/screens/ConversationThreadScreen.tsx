@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -39,7 +38,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { io } from 'socket.io-client';
 import { colors, fonts } from '../theme';
-import { ScreenBackground } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
 import unreadService from '../services/unreadService';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -48,6 +47,7 @@ import StoryViewer from '../components/StoryViewer';
 import storiesService, { StoryGroup, resolveStoryMedia } from '../services/storiesService';
 import { certifiedNameColors, nameIsLit, type ProfileCustomization } from '../services/profileCustomizationService';
 import { API_CONFIG } from '../config/api';
+import { toast } from '../components/ui/Toast';
 
 interface MessageItem {
   id: string;
@@ -849,11 +849,11 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           setMessages((prev) => dedupeMessagesById(prev.map((m) => (m.id === optimisticId ? savedMessage : m))));
         } else {
           setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-          Alert.alert('Erreur', (res as any)?.message || 'Envoi impossible');
+          toast.error((res as any)?.message || 'Envoi impossible');
         }
       } catch (error) {
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-        Alert.alert('Erreur', error instanceof Error ? error.message : 'Envoi impossible');
+        toast.error(error instanceof Error ? error.message : 'Envoi impossible');
       } finally {
         setAttachmentSending(false);
       }
@@ -865,7 +865,9 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Autorisation requise', 'Autorise l\'accès à tes photos pour envoyer une image.');
+        toast.error('Autorisation requise', {
+          description: 'Autorise l\'accès à tes photos pour envoyer une image.',
+        });
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -878,7 +880,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       if (!asset?.uri) return;
       await sendAttachment(asset.uri, 'image');
     } catch (error) {
-      Alert.alert('Erreur', error instanceof Error ? error.message : 'Sélection impossible');
+      toast.error(error instanceof Error ? error.message : 'Sélection impossible');
     }
   }, [sendAttachment]);
 
@@ -886,7 +888,9 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Autorisation requise', 'Autorise l\'accès au micro pour envoyer un message vocal.');
+        toast.error('Autorisation requise', {
+          description: 'Autorise l\'accès au micro pour envoyer un message vocal.',
+        });
         return;
       }
       await Audio.setAudioModeAsync({
@@ -909,7 +913,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       setRecordingMs(0);
       setIsRecording(true);
     } catch (error) {
-      Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de démarrer l\'enregistrement');
+      toast.error(error instanceof Error ? error.message : 'Impossible de démarrer l\'enregistrement');
     }
   }, []);
 
@@ -973,14 +977,14 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         setRecordingDragX(0);
-        Animated.spring(micScale, { toValue: 1.25, friction: 9, tension: 140, useNativeDriver: true }).start();
+        Animated.spring(micScale, { toValue: 1.25, friction: 24, tension: 140, useNativeDriver: true }).start();
         recordingActionsRef.current.startRecording();
       },
       onPanResponderMove: (_evt, gesture) => {
         setRecordingDragX(Math.min(0, gesture.dx));
       },
       onPanResponderRelease: (_evt, gesture) => {
-        Animated.spring(micScale, { toValue: 1, friction: 9, tension: 140, useNativeDriver: true }).start();
+        Animated.spring(micScale, { toValue: 1, friction: 24, tension: 140, useNativeDriver: true }).start();
         setRecordingDragX(0);
         if (gesture.dx < -90) {
           recordingActionsRef.current.cancelRecording();
@@ -989,7 +993,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         }
       },
       onPanResponderTerminate: () => {
-        Animated.spring(micScale, { toValue: 1, friction: 9, tension: 140, useNativeDriver: true }).start();
+        Animated.spring(micScale, { toValue: 1, friction: 24, tension: 140, useNativeDriver: true }).start();
         setRecordingDragX(0);
         recordingActionsRef.current.cancelRecording();
       },
@@ -1419,9 +1423,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
         {/* ── Corps ── */}
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.textSecondary} size="large" />
-          </View>
+          <ScreenSkeleton variant="thread" />
         ) : (
           <KeyboardAvoidingView
             style={{ flex: 1 }}

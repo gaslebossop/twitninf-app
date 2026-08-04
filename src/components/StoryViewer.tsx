@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   Keyboard,
@@ -24,6 +23,8 @@ import { Video, ResizeMode } from 'expo-av';
 import { fonts } from '../theme';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import VerifiedBadge from './VerifiedBadge';
+import { toast } from './ui/Toast';
+import { confirmAsync } from './ui/ConfirmSheet';
 import storiesService, {
   StoryGroup,
   formatStoryAge,
@@ -244,22 +245,22 @@ export default function StoryViewer({
 
   const handleDelete = () => {
     if (!story) return;
-    Alert.alert('Supprimer la story', 'Cette story sera définitivement supprimée.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
+    confirmAsync({
+      title: 'Supprimer la story',
+      message: 'Cette story sera définitivement supprimée.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (async () => {
           const done = await storiesService.remove(story.id);
           if (done) {
             onStoryDeleted?.(story.id);
             goNext();
           } else {
-            Alert.alert('Erreur', 'Suppression impossible');
+            toast.error('Suppression impossible');
           }
-        },
-      },
-    ]);
+        })();
+    });
   };
 
   const handleSendReply = async () => {
@@ -271,7 +272,9 @@ export default function StoryViewer({
     setSendingReply(false);
     if (!result.success) {
       setPaused(false);
-      Alert.alert('Réponse impossible', result.message || 'Réessaie dans un instant.');
+      toast.error('Réponse impossible', {
+        description: result.message || 'Réessaie dans un instant.',
+      });
       return;
     }
     setReply('');
@@ -293,7 +296,9 @@ export default function StoryViewer({
     if (!result.success) {
       setLiked(previousLiked);
       setLikesCount(previousCount);
-      Alert.alert('Like impossible', result.message || 'Réessaie dans un instant.');
+      toast.error('Like impossible', {
+        description: result.message || 'Réessaie dans un instant.',
+      });
       return;
     }
     setLiked(result.liked);

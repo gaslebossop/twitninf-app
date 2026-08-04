@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   Dimensions,
@@ -25,7 +24,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiService } from '../services/api';
-import { BackButton } from '../components/ui';
+import { BackButton, ScreenSkeleton } from '../components/ui';
+import { toast } from '../components/ui/Toast';
+import { showActionSheet } from '../components/ui/ActionSheet';
 
 const { width } = Dimensions.get('window');
 
@@ -91,15 +92,10 @@ export default function EconomyManagementScreen() {
       
     } catch (error) {
       console.error('Erreur chargement économie:', error);
-      Alert.alert('Erreur', 'Impossible de charger les données économiques');
+      toast.error('Impossible de charger les données économiques');
     } finally {
       setLoading(false);
       // Toujours lancer l'animation pour éviter l'écran noir si une requête a échoué
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }).start();
     }
   }, []);
 
@@ -133,15 +129,15 @@ export default function EconomyManagementScreen() {
       }
 
       if (res?.success) {
-        Alert.alert('Succès', 'Opération effectuée avec succès');
+        toast.success('Opération effectuée avec succès');
         setModalVisible(false);
         loadData();
         if (activeTab === 'management') handleSearchUsers();
       } else {
-        Alert.alert('Erreur', res?.message || 'L\'opération a échoué');
+        toast.error(res?.message || 'L\'opération a échoué');
       }
     } catch (e) {
-      Alert.alert('Erreur', 'Une erreur technique est survenue');
+      toast.error('Une erreur technique est survenue');
     } finally {
       setProcessing(false);
     }
@@ -176,23 +172,26 @@ export default function EconomyManagementScreen() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    Alert.alert(
-      'Gestion Transaction',
-      'Souhaitez-vous simplement supprimer la trace ou également ajuster les soldes (remboursement) ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Supprimer Seul', 
-          onPress: async () => executeDelete(id, false),
-          style: 'destructive'
+    showActionSheet({
+      title: 'Supprimer cette transaction',
+      message: 'Deux effets très différents — le libellé seul ne suffisait pas à les distinguer.',
+      items: [
+        {
+          label: 'Supprimer la trace seule',
+          icon: 'document-outline',
+          hint: 'Les soldes des comptes concernés ne bougent pas.',
+          destructive: true,
+          onPress: () => executeDelete(id, false),
         },
-        { 
-          text: 'Supprimer & Ajuster (Refund)', 
-          onPress: async () => executeDelete(id, true),
-          style: 'default'
-        }
-      ]
-    );
+        {
+          label: 'Supprimer et rembourser',
+          icon: 'swap-horizontal-outline',
+          hint: 'Les soldes sont ajustés comme si la transaction n’avait pas eu lieu.',
+          destructive: true,
+          onPress: () => executeDelete(id, true),
+        },
+      ],
+    });
   };
 
   const executeDelete = async (id: string, refund: boolean) => {
@@ -200,13 +199,13 @@ export default function EconomyManagementScreen() {
     try {
       const res = await apiService.deleteEconomyTransaction(id, refund);
       if (res.success) {
-        Alert.alert('Succès', 'La transaction a été traitée.');
+        toast.success('La transaction a été traitée.');
         loadData();
       } else {
-        Alert.alert('Erreur', res.message);
+        toast.error(res.message);
       }
     } catch (e) {
-      Alert.alert('Erreur technique');
+      toast.error('Erreur technique');
     } finally {
       setProcessing(false);
     }
@@ -566,7 +565,9 @@ export default function EconomyManagementScreen() {
                   style={styles.hashCard}
                   onPress={() => {
                     Clipboard.setString(selectedTransaction.transactionHash);
-                    Alert.alert('Copié', 'Le hash a été copié');
+                    toast.success('Copié', {
+                      description: 'Le hash a été copié',
+                    });
                   }}
                 >
                   <Text style={styles.hashText}>{selectedTransaction.transactionHash}</Text>
@@ -643,10 +644,7 @@ export default function EconomyManagementScreen() {
       {/* Main Content Area */}
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {loading && !refreshing ? (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#f7931e" />
-            <Text style={styles.loadingText}>Synchronisation...</Text>
-          </View>
+          <ScreenSkeleton variant="list" />
         ) : (
           <>
             {activeTab === 'analytics' && renderAnalytics()}

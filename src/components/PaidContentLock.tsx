@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import { purchase, type PaidContentLock as Lock } from '../services/paidContentService';
+import { toast } from './ui/Toast';
+import { confirmAsync } from './ui/ConfirmSheet';
 
 /**
  * Verrou affiché sous l'aperçu d'un contenu payant.
@@ -31,14 +33,14 @@ export default function PaidContentLock({ lock, onUnlocked, compact = false }: P
   if (lock.has_access) return null;
 
   const confirmPurchase = () => {
-    Alert.alert(
-      'Débloquer ce contenu',
-      `${lock.price_twc} NF seront débités de ton portefeuille. L'accès est définitif.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Débloquer', style: 'default', onPress: runPurchase },
-      ],
-    );
+    confirmAsync({
+      title: 'Débloquer ce contenu',
+      message: `${lock.price_twc} NF seront débités de ton portefeuille. L'accès est définitif.`,
+      confirmLabel: 'Débloquer',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) (runPurchase)();
+    });
   };
 
   const runPurchase = async () => {
@@ -51,7 +53,9 @@ export default function PaidContentLock({ lock, onUnlocked, compact = false }: P
       // Le message du serveur est écrit pour être lu (« Solde insuffisant »,
       // « Tu possèdes déjà ce contenu ») : le remplacer par un texte générique
       // ferait perdre la seule information utile à cet instant précis.
-      Alert.alert('Achat impossible', error?.message || 'Réessaie dans un instant.');
+      toast.error('Achat impossible', {
+        description: error?.message || 'Réessaie dans un instant.',
+      });
     } finally {
       setBuying(false);
     }

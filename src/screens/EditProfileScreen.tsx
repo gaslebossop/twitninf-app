@@ -1,11 +1,13 @@
 import { fonts } from '../theme';
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Platform, Alert, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Platform, ActivityIndicator, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services';
+import { toast } from '../components/ui/Toast';
+import { confirmAsync } from '../components/ui/ConfirmSheet';
 
 export default function EditProfileScreen({ navigation }: any) {
   const { user, refreshCurrentUser } = useAuth();
@@ -65,13 +67,13 @@ export default function EditProfileScreen({ navigation }: any) {
         bio: trimmedBio.length > 0 ? trimmedBio : '',
       });
       if (!res.success) {
-        Alert.alert('Erreur', res.message || 'Impossible de mettre à jour le profil');
+        toast.error(res.message || 'Impossible de mettre à jour le profil');
         return;
       }
       await refreshCurrentUser();
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     } finally {
       setIsSaving(false);
     }
@@ -80,19 +82,19 @@ export default function EditProfileScreen({ navigation }: any) {
   const handleSave = async () => {
     const newUsername = username.trim();
     if (!newUsername) {
-      Alert.alert('Erreur', "Le nom d’utilisateur est requis");
+      toast.error("Le nom d’utilisateur est requis");
       return;
     }
     const hasUsernameChanged = newUsername.toLowerCase() !== (initialUsernameRef.current || '').toLowerCase();
     if ((user as any)?.verified && hasUsernameChanged) {
-      Alert.alert(
-        'Perte de vérification',
-        "En changeant de nom d’utilisateur, vous perdrez votre badge de vérification. Continuer ?",
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Continuer', style: 'destructive', onPress: performSave }
-        ]
-      );
+      confirmAsync({
+        title: 'Perte de vérification',
+        message: "En changeant de nom d’utilisateur, vous perdrez votre badge de vérification. Continuer ?",
+        confirmLabel: 'Continuer',
+        destructive: true,
+      }).then((ok) => {
+        if (ok) (performSave)();
+      });
       return;
     }
     await performSave();
@@ -102,7 +104,9 @@ export default function EditProfileScreen({ navigation }: any) {
     try {
       const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (libPerm.status !== 'granted') {
-        Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie.');
+        toast.error('Permission requise', {
+          description: 'Autorisez l\'accès à la galerie.',
+        });
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.9 });
@@ -114,13 +118,13 @@ export default function EditProfileScreen({ navigation }: any) {
       const uploading = await apiService.uploadUserAvatar(uri);
       if (uploading.success) {
         await refreshCurrentUser();
-        Alert.alert('Succès', 'Photo de profil mise à jour.');
+        toast.success('Photo de profil mise à jour.');
       } else {
-        Alert.alert('Erreur', uploading.message || 'Impossible de mettre à jour la photo');
+        toast.error(uploading.message || 'Impossible de mettre à jour la photo');
         setLocalAvatarUri(null);
       }
     } catch (e) {
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -130,7 +134,9 @@ export default function EditProfileScreen({ navigation }: any) {
     try {
       const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (libPerm.status !== 'granted') {
-        Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie.');
+        toast.error('Permission requise', {
+          description: 'Autorisez l\'accès à la galerie.',
+        });
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -146,12 +152,12 @@ export default function EditProfileScreen({ navigation }: any) {
       const uploading = await apiService.uploadUserBanner(uri);
       if (uploading.success) {
         await refreshCurrentUser();
-        Alert.alert('Succès', 'Bannière mise à jour.');
+        toast.success('Bannière mise à jour.');
       } else {
-        Alert.alert('Erreur', uploading.message || 'Impossible de mettre à jour la bannière');
+        toast.error(uploading.message || 'Impossible de mettre à jour la bannière');
       }
     } catch {
-      Alert.alert('Erreur', 'Une erreur est survenue');
+      toast.error('Une erreur est survenue');
     } finally {
       setIsUploadingBanner(false);
     }
