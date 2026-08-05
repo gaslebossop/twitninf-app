@@ -23,6 +23,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import 'react-native-gesture-handler';
 import { registerForPushNotifications, setupFranceDailyLocalNotifications } from './src/services/push';
 import { apiService } from './src/services';
+import ProfileCompletionGate from './src/components/ProfileCompletionGate';
 
 /**
  * Choix de la langue de lecture à la première connexion.
@@ -155,6 +156,7 @@ export default function App() {
                 />
                 <AppNavigator />
                 <ReadingLanguageGate />
+                <ProfileCompletionGate />
               </FunctionalEventProvider>
             </EventThemeProvider>
           </EventProvider>

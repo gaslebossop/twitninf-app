@@ -28,6 +28,7 @@ module.exports = ({ config }) => {
       infoPlist: {
         NSCameraUsageDescription: "L'application a besoin d'accéder à la caméra pour diffuser en direct.",
         NSMicrophoneUsageDescription: "L'application a besoin d'accéder au microphone pour diffuser en direct.",
+        NSLocationWhenInUseUsageDescription: "TwitNinf utilise votre position une fois par connexion, avec votre accord, pour les statistiques géographiques agrégées et la sécurité des sessions.",
         // Sans cette clé, iOS plafonne l'app à 60 fps sur les écrans ProMotion,
         // quel que soit le travail d'optimisation fait côté JS. Elle n'a d'effet
         // que dans un build natif : Expo Go reste à 60 fps.
@@ -48,6 +49,8 @@ module.exports = ({ config }) => {
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
         "POST_NOTIFICATIONS"
       ]
     },
@@ -66,6 +69,12 @@ module.exports = ({ config }) => {
   baseConfig.plugins = [
     "./plugins/withPodfileSwift5",
     "expo-secure-store",
+    [
+      "expo-location",
+      {
+        locationWhenInUsePermission: "TwitNinf utilise votre position une fois par connexion, avec votre accord, pour les statistiques géographiques agrégées et la sécurité des sessions."
+      }
+    ],
     [
       "expo-notifications",
       {
@@ -94,6 +103,8 @@ module.exports = ({ config }) => {
             "INTERNET",
             "ACCESS_NETWORK_STATE",
             "CAMERA",
+            "ACCESS_COARSE_LOCATION",
+            "ACCESS_FINE_LOCATION",
             "POST_NOTIFICATIONS",
             "VIBRATE",
             "WAKE_LOCK"

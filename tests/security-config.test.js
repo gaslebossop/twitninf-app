@@ -35,9 +35,13 @@ test('release Android configuration blocks cleartext and backups', () => {
 });
 
 test('release Android configuration applies least privilege', () => {
+  for (const permission of ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION']) {
+    assert.match(releaseManifest, new RegExp(`android.permission.${permission}`));
+    assert.ok(appConfig.android.permissions.includes(permission));
+  }
+
   for (const permission of [
-    'ACCESS_COARSE_LOCATION',
-    'ACCESS_FINE_LOCATION',
+    'ACCESS_BACKGROUND_LOCATION',
     'READ_EXTERNAL_STORAGE',
     'WRITE_EXTERNAL_STORAGE',
     'SYSTEM_ALERT_WINDOW',

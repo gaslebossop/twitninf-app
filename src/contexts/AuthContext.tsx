@@ -31,6 +31,12 @@ interface User {
   role?: 'user' | 'moderator' | 'admin' | 'super_admin';
   is_admin?: boolean;
   stream_key?: string;
+  declared_age?: number | null;
+  birth_day?: number | null;
+  birth_month?: number | null;
+  demographics_validated_at?: string | null;
+  location_consent_status?: 'granted' | 'denied' | 'restricted' | 'unavailable' | 'undetermined';
+  location_consent_updated_at?: string | null;
 }
 
 /**

@@ -12,8 +12,12 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
-import { userStatsService } from '../services/userStatsService';
+import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import { userStatsService, type DeepInsights } from '../services/userStatsService';
+import {
+  fetchCreatorProfile,
+  type CreatorProfile,
+} from '../services/creatorIntelligenceService';
 import { formatCompactCount } from '../utils/format';
 import { colors, fonts, withAlpha } from '../theme';
 
@@ -34,10 +38,17 @@ const CHART_BREAKDOWN_COLORS = {
 interface UserStats {
   totalTweets: number;
   totalViews: number;
+  totalLikes: number;
+  totalRetweets: number;
+  totalComments: number;
+  totalShares: number;
   followerCount: number;
   followingCount: number;
+  profileViews: number;
   engagementRate: number;
-  mostActiveHours: number[];
+  averageViewsPerTweet: number;
+  reachGrowth: number;
+  engagementGrowth: number;
   activityData: {
     hour: number;
     tweet_count: number;
@@ -51,7 +62,9 @@ interface UserStats {
     likes: number;
     retweets: number;
     comments: number;
+    shares: number;
     followers_gained?: number;
+    profile_views?: number;
   }[];
   engagementBreakdown: {
     likes: number;
@@ -67,8 +80,11 @@ interface UserStats {
     likes: number;
     retweets: number;
     comments: number;
+    shares: number;
     engagement_rate: number;
+    performance_score: number;
   }[];
+  deepInsights: DeepInsights | null;
 }
 
 interface UserStatsTabProps {
@@ -83,7 +99,7 @@ interface UserStatsTabProps {
 
 type Timeframe = '7d' | '30d' | '90d' | '1y';
 type Section = 'overview' | 'content' | 'audience';
-type MetricKey = 'views' | 'followers' | 'interactions' | 'tweets';
+type MetricKey = 'views' | 'followers' | 'interactions' | 'tweets' | 'profileViews';
 
 type Trend = { pct: number; positive: boolean } | null;
 
@@ -214,6 +230,7 @@ function InsightChart({
   height,
   selectedIndex,
   onSelect,
+  onInteractionChange,
 }: {
   labels: string[];
   values: number[];
@@ -222,6 +239,7 @@ function InsightChart({
   height: number;
   selectedIndex: number | null;
   onSelect: (index: number | null) => void;
+  onInteractionChange?: (active: boolean) => void;
 }) {
   const padLeft = 34;
   const padRight = 12;
@@ -268,8 +286,14 @@ function InsightChart({
       style={{ width, height }}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
-      onResponderGrant={(event) => handleTouch(event.nativeEvent.locationX)}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={(event) => {
+        onInteractionChange?.(true);
+        handleTouch(event.nativeEvent.locationX);
+      }}
       onResponderMove={(event) => handleTouch(event.nativeEvent.locationX)}
+      onResponderRelease={() => onInteractionChange?.(false)}
+      onResponderTerminate={() => onInteractionChange?.(false)}
       accessibilityRole="image"
       accessibilityLabel={`Courbe de ${values.length} points, maximum ${maximum}`}
     >
@@ -352,6 +376,146 @@ function InsightChart({
   );
 }
 
+/** Histogramme horaire inspectable, sans conflit avec le scroll vertical. */
+function HourlyActivityChart({
+  data,
+  width,
+  height,
+  selectedHour,
+  onSelect,
+  onInteractionChange,
+}: {
+  data: UserStats['activityData'];
+  width: number;
+  height: number;
+  selectedHour: number | null;
+  onSelect: (hour: number) => void;
+  onInteractionChange: (active: boolean) => void;
+}) {
+  const padLeft = 32;
+  const padRight = 8;
+  const padTop = 48;
+  const padBottom = 28;
+  const innerWidth = Math.max(1, width - padLeft - padRight);
+  const innerHeight = Math.max(1, height - padTop - padBottom);
+  const slotWidth = innerWidth / 24;
+  const barWidth = Math.max(4, slotWidth * 0.62);
+  const slots = Array.from({ length: 24 }, (_, hour) => {
+    const source = data.find((item) => sanitizeNumber(item.hour) === hour);
+    return {
+      hour,
+      score: sanitizeNumber(source?.activity_score),
+      tweets: sanitizeNumber(source?.tweet_count),
+      engagement: sanitizeNumber(source?.engagement_count),
+    };
+  });
+  const maximum = Math.max(1, ...slots.map((slot) => slot.score));
+  const selected = selectedHour !== null ? slots[selectedHour] : null;
+  const centerX = (hour: number) => padLeft + slotWidth * hour + slotWidth / 2;
+  const barHeight = (score: number) => Math.max(3, (score / maximum) * innerHeight);
+
+  const handleTouch = (locationX: number) => {
+    const raw = Math.floor((locationX - padLeft) / slotWidth);
+    onSelect(Math.min(23, Math.max(0, raw)));
+  };
+
+  const bubbleWidth = 154;
+  const bubbleLeft = selected
+    ? Math.min(Math.max(centerX(selected.hour) - bubbleWidth / 2, 0), Math.max(0, width - bubbleWidth))
+    : 0;
+
+  return (
+    <View>
+      <View
+        style={{ width, height }}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
+        onResponderGrant={(event) => {
+          onInteractionChange(true);
+          handleTouch(event.nativeEvent.locationX);
+        }}
+        onResponderMove={(event) => handleTouch(event.nativeEvent.locationX)}
+        onResponderRelease={() => onInteractionChange(false)}
+        onResponderTerminate={() => onInteractionChange(false)}
+        accessibilityRole="image"
+        accessibilityLabel="Activité de l’audience heure par heure. Fais glisser le doigt pour inspecter un créneau."
+      >
+        <Svg width={width} height={height}>
+          {[0, Math.round(maximum / 2), maximum].map((value, index) => {
+            const y = padTop + innerHeight - (value / maximum) * innerHeight;
+            return (
+              <React.Fragment key={`hour-grid-${index}`}>
+                <Line
+                  x1={padLeft}
+                  x2={width - padRight}
+                  y1={y}
+                  y2={y}
+                  stroke={colors.border}
+                  strokeWidth={1}
+                />
+                <SvgText
+                  x={padLeft - 7}
+                  y={y + 4}
+                  fill={colors.textMuted}
+                  fontSize={10}
+                  textAnchor="end"
+                >
+                  {formatCompactCount(value)}
+                </SvgText>
+              </React.Fragment>
+            );
+          })}
+
+          {slots.map((slot) => {
+            const heightValue = barHeight(slot.score);
+            const active = selectedHour === slot.hour;
+            const best = slot.score === maximum;
+            return (
+              <Rect
+                key={slot.hour}
+                x={centerX(slot.hour) - barWidth / 2}
+                y={padTop + innerHeight - heightValue}
+                width={barWidth}
+                height={heightValue}
+                rx={Math.min(4, barWidth / 2)}
+                fill={active || best ? colors.accent : withAlpha(colors.accent, 0.38)}
+                opacity={selectedHour === null || active ? 1 : 0.55}
+              />
+            );
+          })}
+
+          {[0, 6, 12, 18, 23].map((hour) => (
+            <SvgText
+              key={`hour-label-${hour}`}
+              x={centerX(hour)}
+              y={height - 7}
+              fill={colors.textMuted}
+              fontSize={10}
+              textAnchor="middle"
+            >
+              {hour}h
+            </SvgText>
+          ))}
+        </Svg>
+
+        {selected && (
+          <View style={[styles.hourBubble, { left: bubbleLeft, width: bubbleWidth }]} pointerEvents="none">
+            <Text style={styles.hourBubbleTitle}>{selected.hour}h–{(selected.hour + 1) % 24}h</Text>
+            <Text style={styles.hourBubbleText}>
+              Indice {formatCompactCount(selected.score)} · {formatCompactCount(selected.engagement)} interactions
+            </Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.chartGestureHint}>
+        <Ionicons name="move-outline" size={13} color={colors.textMuted} />
+        <Text style={styles.chartGestureHintText}>Maintiens et glisse pour comparer les heures</Text>
+      </View>
+    </View>
+  );
+}
+
 const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, baseStats }) => {
   const { width: viewportWidth } = useWindowDimensions();
   const compact = viewportWidth < 390;
@@ -363,6 +527,7 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
   const chartHeight = tablet ? 280 : 232;
 
   const [stats, setStats] = useState<UserStats | null>(null);
+  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -370,6 +535,8 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
   const [selectedSection, setSelectedSection] = useState<Section>('overview');
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('views');
   const [inspectedIndex, setInspectedIndex] = useState<number | null>(null);
+  const [inspectedHour, setInspectedHour] = useState<number | null>(null);
+  const [isInspectingChart, setIsInspectingChart] = useState(false);
   const requestSequence = useRef(0);
 
   const loadUserStats = useCallback(
@@ -378,6 +545,7 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
         setLoading(false);
         setRefreshing(false);
         setStats(null);
+        setCreatorProfile(null);
         setLoadError('Aucun utilisateur connecté.');
         return;
       }
@@ -388,22 +556,54 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
       setLoadError(null);
 
       try {
-        const statsResponse = await userStatsService.getUserStats(userId, selectedTimeframe);
+        const profileDays = selectedTimeframe === '7d'
+          ? 7
+          : selectedTimeframe === '30d'
+            ? 30
+            : selectedTimeframe === '90d'
+              ? 90
+              : 365;
+        const [statsResponse, profileResponse] = await Promise.all([
+          userStatsService.getUserStats(userId, selectedTimeframe),
+          // Cette analyse peut être réservée par le serveur selon le palier du
+          // compte. Un refus n'empêche jamais les statistiques classiques.
+          fetchCreatorProfile(profileDays),
+        ]);
         if (requestId !== requestSequence.current) return;
 
         const activityData = statsResponse.activityData || [];
+        const analytics = statsResponse.analytics;
         const adaptedStats: UserStats = {
-          totalTweets: sanitizeNumber(statsResponse.analytics.totalTweets),
-          totalViews: sanitizeNumber(statsResponse.analytics.totalViews),
-          followerCount: sanitizeNumber(statsResponse.analytics.followerCount),
-          followingCount: sanitizeNumber(statsResponse.analytics.followingCount),
-          engagementRate: sanitizeNumber(statsResponse.analytics.engagementRate),
-          activityData,
-          mostActiveHours: [...activityData]
-            .sort((a, b) => sanitizeNumber(b.activity_score) - sanitizeNumber(a.activity_score))
-            .slice(0, 5)
-            .map((item) => item.hour),
-          dailyStats: statsResponse.dailyStats || [],
+          totalTweets: sanitizeNumber(analytics.totalTweets),
+          totalViews: sanitizeNumber(analytics.totalViews),
+          totalLikes: sanitizeNumber(analytics.totalLikes),
+          totalRetweets: sanitizeNumber(analytics.totalRetweets),
+          totalComments: sanitizeNumber(analytics.totalComments),
+          totalShares: sanitizeNumber(analytics.totalShares),
+          followerCount: sanitizeNumber(analytics.followerCount),
+          followingCount: sanitizeNumber(analytics.followingCount),
+          profileViews: sanitizeNumber(analytics.profileViews),
+          engagementRate: sanitizeNumber(analytics.engagementRate),
+          averageViewsPerTweet: sanitizeNumber(analytics.averageViewsPerTweet),
+          reachGrowth: sanitizeNumber(analytics.reachGrowth),
+          engagementGrowth: sanitizeNumber(analytics.engagementGrowth),
+          activityData: activityData.map((item) => ({
+            hour: Math.min(23, Math.max(0, Math.round(sanitizeNumber(item.hour)))),
+            tweet_count: sanitizeNumber(item.tweet_count),
+            engagement_count: sanitizeNumber(item.engagement_count),
+            activity_score: sanitizeNumber(item.activity_score),
+          })),
+          dailyStats: (statsResponse.dailyStats || []).map((day) => ({
+            date: day.date,
+            tweets: sanitizeNumber(day.tweets),
+            views: sanitizeNumber(day.views),
+            likes: sanitizeNumber(day.likes),
+            retweets: sanitizeNumber(day.retweets),
+            comments: sanitizeNumber(day.comments),
+            shares: sanitizeNumber(day.shares),
+            followers_gained: sanitizeNumber(day.followers_gained),
+            profile_views: sanitizeNumber(day.profile_views),
+          })),
           engagementBreakdown: statsResponse.engagementBreakdown || {
             likes: 0,
             retweets: 0,
@@ -418,16 +618,21 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
             likes: sanitizeNumber(tweet.likes),
             retweets: sanitizeNumber(tweet.retweets),
             comments: sanitizeNumber(tweet.comments),
+            shares: sanitizeNumber(tweet.shares),
             engagement_rate: sanitizeNumber(tweet.engagement_rate),
+            performance_score: sanitizeNumber(tweet.performance_score),
           })),
+          deepInsights: statsResponse.deepInsights || null,
         };
 
         setStats(adaptedStats);
+        setCreatorProfile(profileResponse.ok && profileResponse.data ? profileResponse.data : null);
       } catch (error) {
         if (requestId !== requestSequence.current) return;
         console.error('Erreur lors du chargement des statistiques:', error);
         setLoadError('Impossible de charger les statistiques pour le moment.');
         setStats(null);
+        setCreatorProfile(null);
       } finally {
         if (requestId === requestSequence.current) {
           setLoading(false);
@@ -444,6 +649,8 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
 
   useEffect(() => {
     setInspectedIndex(null);
+    setInspectedHour(null);
+    setIsInspectingChart(false);
   }, [selectedMetric, selectedTimeframe, selectedSection]);
 
   const sortedDaily = useMemo(
@@ -474,6 +681,14 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
       sanitizeNumber(stats.engagementBreakdown.comments) +
       sanitizeNumber(stats.engagementBreakdown.shares)
     : 0;
+  const periodProfileViews = sanitizeNumber(stats?.profileViews) > 0
+    ? sanitizeNumber(stats?.profileViews)
+    : sortedDaily.reduce((total, day) => total + sanitizeNumber(day.profile_views), 0);
+  const averageViewsPerTweet = sanitizeNumber(stats?.averageViewsPerTweet) > 0
+    ? sanitizeNumber(stats?.averageViewsPerTweet)
+    : totalTweets > 0
+      ? sanitizeNumber(stats?.totalViews) / totalTweets
+      : 0;
   const netFollowers = sortedDaily.reduce(
     (total, day) => total + sanitizeNumber(day.followers_gained),
     0,
@@ -517,7 +732,11 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
       label: 'Interactions',
       value: formatCompactCount(totalInteractions),
       available: hasDaily,
-      selector: (day) => sanitizeNumber(day.likes) + sanitizeNumber(day.retweets) + sanitizeNumber(day.comments),
+      selector: (day) =>
+        sanitizeNumber(day.likes) +
+        sanitizeNumber(day.retweets) +
+        sanitizeNumber(day.comments) +
+        sanitizeNumber(day.shares),
       color: CHART_PRIMARY,
     },
     {
@@ -527,6 +746,14 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
       available: hasDaily,
       selector: (day) => sanitizeNumber(day.tweets),
       color: CHART_PRIMARY,
+    },
+    {
+      key: 'profileViews',
+      label: 'Visites du profil',
+      value: periodProfileViews > 0 ? formatCompactCount(periodProfileViews) : '—',
+      available: sortedDaily.some((day) => sanitizeNumber(day.profile_views) > 0),
+      selector: (day) => sanitizeNumber(day.profile_views),
+      color: CHART_SECONDARY,
     },
   ];
 
@@ -638,10 +865,12 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             accessibilityLabel={`${card.label}, ${card.value}`}
+            disabled={!card.available}
             onPress={() => setSelectedMetric(card.key)}
             style={(state: any) => [
               styles.metricCard,
               active && styles.metricCardActive,
+              !card.available && styles.metricCardDisabled,
               state.pressed && styles.controlPressed,
             ]}
           >
@@ -652,6 +881,222 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
       })}
     </ScrollView>
   );
+
+  const renderPerformanceSnapshot = () => {
+    if (!stats) return null;
+
+    const likes = sanitizeNumber(stats.totalLikes) || sanitizeNumber(stats.engagementBreakdown.likes);
+    const retweets = sanitizeNumber(stats.totalRetweets) || sanitizeNumber(stats.engagementBreakdown.retweets);
+    const comments = sanitizeNumber(stats.totalComments) || sanitizeNumber(stats.engagementBreakdown.comments);
+    const shares = sanitizeNumber(stats.totalShares) || sanitizeNumber(stats.engagementBreakdown.shares);
+    const interactionsPerPost = totalTweets > 0 ? totalInteractions / totalTweets : 0;
+    const averagePerformance = stats.topTweets.length > 0
+      ? stats.topTweets.reduce((total, tweet) => total + sanitizeNumber(tweet.performance_score), 0) /
+        stats.topTweets.length
+      : 0;
+    const decimal = (value: number, suffix = '') =>
+      `${value.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}${suffix}`;
+
+    const items = [
+      { key: 'rate', icon: 'pulse-outline', label: 'Taux d’engagement', value: decimal(stats.engagementRate, '%'), hint: 'interactions / vues' },
+      { key: 'averageViews', icon: 'eye-outline', label: 'Vues / publication', value: formatCompactCount(Math.round(averageViewsPerTweet)), hint: 'moyenne sur la période' },
+      { key: 'profile', icon: 'person-outline', label: 'Visites du profil', value: formatCompactCount(periodProfileViews), hint: 'intérêt pour ton compte' },
+      { key: 'perPost', icon: 'sparkles-outline', label: 'Interactions / publication', value: decimal(interactionsPerPost), hint: 'moyenne calculée' },
+      { key: 'likes', icon: 'heart-outline', label: 'J’aime', value: formatCompactCount(likes), hint: 'total de la période' },
+      { key: 'retweets', icon: 'repeat-outline', label: 'Republications', value: formatCompactCount(retweets), hint: 'total de la période' },
+      { key: 'comments', icon: 'chatbubble-outline', label: 'Commentaires', value: formatCompactCount(comments), hint: 'total de la période' },
+      { key: 'shares', icon: 'share-social-outline', label: 'Partages', value: formatCompactCount(shares), hint: 'total de la période' },
+      ...(averagePerformance > 0
+        ? [{ key: 'performance', icon: 'speedometer-outline', label: 'Score contenu', value: decimal(averagePerformance, '/100'), hint: 'moyenne du top contenu' }]
+        : []),
+      ...(stats.reachGrowth !== 0
+        ? [{ key: 'reachGrowth', icon: 'trending-up-outline', label: 'Croissance portée', value: `${stats.reachGrowth > 0 ? '+' : ''}${decimal(stats.reachGrowth, '%')}`, hint: 'évolution mesurée' }]
+        : []),
+      ...(stats.engagementGrowth !== 0
+        ? [{ key: 'engagementGrowth', icon: 'analytics-outline', label: 'Croissance engagement', value: `${stats.engagementGrowth > 0 ? '+' : ''}${decimal(stats.engagementGrowth, '%')}`, hint: 'évolution mesurée' }]
+        : []),
+    ];
+
+    return (
+      <View style={styles.block}>
+        <Text style={styles.blockTitle}>Performance détaillée</Text>
+        <Text style={styles.blockSubtitle}>Tous les signaux disponibles sur {periodLabel}</Text>
+        <View style={styles.performanceGrid}>
+          {items.map((item) => (
+            <View
+              key={item.key}
+              style={[styles.performanceTile, { width: tablet ? '23.5%' : '48%' }]}
+              accessible
+              accessibilityLabel={`${item.label} : ${item.value}`}
+            >
+              <View style={styles.performanceIcon}>
+                <Ionicons name={item.icon as any} size={16} color={colors.accent} />
+              </View>
+              <Text style={styles.performanceValue}>{item.value}</Text>
+              <Text style={styles.performanceLabel}>{item.label}</Text>
+              <Text style={styles.performanceHint}>{item.hint}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  const renderAlgorithmInsights = () => {
+    if (!creatorProfile) return null;
+
+    if (!creatorProfile.hasEnoughData || !creatorProfile.baseline) {
+      return (
+        <View style={styles.block}>
+          <View style={styles.algorithmHeading}>
+            <Text style={styles.blockTitle}>Analyse de l’algorithme</Text>
+            <View style={styles.algorithmBadge}><Text style={styles.algorithmBadgeText}>IA</Text></View>
+          </View>
+          <Text style={styles.blockEmptyText}>
+            {creatorProfile.sampleSize} publications analysées sur {creatorProfile.minimumRequired || 'davantage'} nécessaires. Les indicateurs prédictifs apparaîtront automatiquement avec plus d’historique.
+          </Text>
+        </View>
+      );
+    }
+
+    const baseline = creatorProfile.baseline;
+    const confidence = creatorProfile.confidence === 'high'
+      ? 'Fiabilité élevée'
+      : creatorProfile.confidence === 'medium'
+        ? 'Fiabilité moyenne'
+        : 'Fiabilité limitée';
+    const factors = [...(creatorProfile.factors || [])]
+      .filter((factor) => factor.applies)
+      .sort((a, b) => Math.abs(b.impactPercent) - Math.abs(a.impactPercent))
+      .slice(0, 6);
+
+    const baselineItems = [
+      { label: 'Engagement médian', value: baseline.medianEngagement },
+      { label: 'Engagement moyen', value: baseline.averageEngagement },
+      { label: 'Vues médianes', value: baseline.medianViews },
+      { label: 'Top 10 %', value: baseline.p90Engagement },
+      { label: 'Meilleur résultat', value: baseline.bestEverEngagement },
+      { label: 'Publications analysées', value: creatorProfile.sampleSize },
+    ];
+
+    return (
+      <View style={styles.block}>
+        <View style={styles.algorithmHeading}>
+          <View style={styles.algorithmTitleCopy}>
+            <View style={styles.algorithmTitleRow}>
+              <Text style={styles.blockTitle}>Analyse de l’algorithme</Text>
+              <View style={styles.algorithmBadge}><Text style={styles.algorithmBadgeText}>IA</Text></View>
+            </View>
+            <Text style={styles.blockSubtitle}>
+              {creatorProfile.historyDays || 'Historique'} jours · {confidence}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.algorithmMetricGrid}>
+          {baselineItems.map((item) => (
+            <View key={item.label} style={styles.algorithmMetric}>
+              <Text style={styles.algorithmMetricValue}>{formatCompactCount(item.value)}</Text>
+              <Text style={styles.algorithmMetricLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {creatorProfile.trend?.comparable && creatorProfile.trend.changePercent !== undefined && (
+          <View style={styles.algorithmTrend}>
+            <Ionicons
+              name={creatorProfile.trend.changePercent >= 0 ? 'trending-up' : 'trending-down'}
+              size={18}
+              color={creatorProfile.trend.changePercent >= 0 ? colors.success : colors.red}
+            />
+            <View style={styles.algorithmTrendCopy}>
+              <Text style={styles.algorithmTrendTitle}>Tendance récente</Text>
+              <Text style={styles.algorithmTrendText}>
+                {creatorProfile.trend.changePercent >= 0 ? '+' : ''}{creatorProfile.trend.changePercent.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}% par rapport à la période précédente
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {factors.length > 0 && (
+          <View style={styles.factorList}>
+            <Text style={styles.factorSectionTitle}>Ce qui influence tes performances</Text>
+            {factors.map((factor) => {
+              const positive = factor.impactPercent >= 0;
+              return (
+                <View key={factor.key} style={styles.factorRow}>
+                  <View style={styles.factorHead}>
+                    <Text style={styles.factorLabel} numberOfLines={1}>{factor.label}</Text>
+                    <Text style={[styles.factorImpact, { color: positive ? colors.success : colors.red }]}>
+                      {positive ? '+' : ''}{factor.impactPercent.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}%
+                    </Text>
+                  </View>
+                  <View style={styles.factorTrack}>
+                    <View
+                      style={[
+                        styles.factorFill,
+                        {
+                          width: `${Math.min(100, Math.abs(factor.impactPercent))}%`,
+                          backgroundColor: positive ? colors.success : colors.red,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.factorExplain}>{factor.explain}</Text>
+                  <Text style={styles.factorSample}>
+                    {factor.sample.with} publications avec · {factor.sample.without} sans · fiabilité {factor.confidence}%
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderUsageInsights = () => {
+    if (!stats?.deepInsights) return null;
+    const { behavior, location, privateProfile } = stats.deepInsights;
+    const birthday = privateProfile.birthDay && privateProfile.birthMonth
+      ? `${String(privateProfile.birthDay).padStart(2, '0')}/${String(privateProfile.birthMonth).padStart(2, '0')}`
+      : '—';
+    const items = [
+      { key: 'activeDays', icon: 'calendar-outline', label: 'Jours actifs', value: formatCompactCount(behavior.activeDays), hint: periodLabel },
+      { key: 'sessions', icon: 'log-in-outline', label: 'Connexions', value: formatCompactCount(behavior.loginSessions), hint: 'sessions distinctes' },
+      { key: 'devices', icon: 'phone-portrait-outline', label: 'Appareils', value: formatCompactCount(behavior.devices), hint: 'observés sur la période' },
+      { key: 'minutes', icon: 'timer-outline', label: 'Temps actif', value: `${formatCompactCount(behavior.totalMinutes)} min`, hint: 'mesuré par l’algorithme' },
+      { key: 'screens', icon: 'albums-outline', label: 'Écrans consultés', value: formatCompactCount(behavior.screenViews), hint: 'navigation réelle' },
+      { key: 'read', icon: 'eye-outline', label: 'Tweets lus', value: formatCompactCount(behavior.tweetsRead), hint: 'vues comportementales' },
+      { key: 'profiles', icon: 'people-outline', label: 'Profils ouverts', value: formatCompactCount(behavior.profilesOpened), hint: 'exploration de comptes' },
+      { key: 'searches', icon: 'search-outline', label: 'Recherches', value: formatCompactCount(behavior.searches), hint: 'requêtes effectuées' },
+      { key: 'media', icon: 'images-outline', label: 'Médias ouverts', value: formatCompactCount(behavior.mediaViews), hint: 'photos et vidéos' },
+      { key: 'refreshes', icon: 'refresh-outline', label: 'Actualisations', value: formatCompactCount(behavior.refreshes), hint: 'rafraîchissements du fil' },
+      { key: 'geoSessions', icon: 'location-outline', label: 'Connexions localisées', value: formatCompactCount(location.capturedSessions), hint: location.consentStatus === 'granted' ? 'consentement actif' : 'localisation inactive' },
+      { key: 'geoZones', icon: 'earth-outline', label: 'Zones détectées', value: `${location.countries} pays · ${location.regions} régions`, hint: 'données privées agrégées' },
+      { key: 'age', icon: 'person-outline', label: 'Âge déclaré', value: privateProfile.declaredAge ? `${privateProfile.declaredAge} ans` : '—', hint: 'visible uniquement par toi' },
+      { key: 'birthday', icon: 'gift-outline', label: 'Anniversaire', value: birthday, hint: 'jour et mois privés' },
+    ];
+
+    return (
+      <View style={styles.block}>
+        <Text style={styles.blockTitle}>Usage et profil</Text>
+        <Text style={styles.blockSubtitle}>Signaux réels enregistrés par l’application sur {periodLabel}</Text>
+        <View style={styles.performanceGrid}>
+          {items.map((item) => (
+            <View key={item.key} style={[styles.performanceTile, { width: tablet ? '23.5%' : '48%' }]}>
+              <View style={styles.performanceIcon}>
+                <Ionicons name={item.icon as any} size={16} color={colors.accent} />
+              </View>
+              <Text style={styles.performanceValue}>{item.value}</Text>
+              <Text style={styles.performanceLabel}>{item.label}</Text>
+              <Text style={styles.performanceHint}>{item.hint}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   const renderChart = () => {
     if (!hasDaily || activeSeries.values.length === 0) {
@@ -683,6 +1128,7 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
           height={chartHeight}
           selectedIndex={inspectedIndex}
           onSelect={setInspectedIndex}
+          onInteractionChange={setIsInspectingChart}
         />
       </View>
     );
@@ -751,7 +1197,18 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
             <Ionicons name="chatbubble-outline" size={13} color={colors.textMuted} />
             <Text style={styles.tweetStatText}>{formatCompactCount(tweet.comments)}</Text>
           </View>
-          <Text style={styles.tweetRate}>{sanitizeNumber(tweet.engagement_rate)}%</Text>
+          <View style={styles.tweetStat}>
+            <Ionicons name="share-social-outline" size={13} color={colors.textMuted} />
+            <Text style={styles.tweetStatText}>{formatCompactCount(tweet.shares)}</Text>
+          </View>
+        </View>
+        <View style={styles.tweetQualityRow}>
+          <Text style={styles.tweetRate}>{sanitizeNumber(tweet.engagement_rate)}% d’engagement</Text>
+          {tweet.performance_score > 0 && (
+            <View style={styles.tweetScoreBadge}>
+              <Text style={styles.tweetScoreText}>Score {Math.round(tweet.performance_score)}/100</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -774,6 +1231,45 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
         ) : (
           stats.topTweets.map(renderTweetItem)
         )}
+      </View>
+    );
+  };
+
+  const renderContentSignals = () => {
+    if (!stats?.deepInsights) return null;
+    const content = stats.deepInsights.content;
+    const decimalValue = (value: number) => value.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+    const items = [
+      { key: 'algoViews', icon: 'git-network-outline', label: 'Vues algorithmiques', value: formatCompactCount(content.algorithmicViews), hint: 'distribution progressive' },
+      { key: 'evaluations', icon: 'analytics-outline', label: 'Évaluations algo', value: formatCompactCount(content.algorithmEvaluations), hint: 'cycles de classement' },
+      { key: 'quality', icon: 'sparkles-outline', label: 'Qualité IA moyenne', value: decimalValue(content.averageQualityScore), hint: 'analyse des publications' },
+      { key: 'toxicity', icon: 'shield-checkmark-outline', label: 'Toxicité moyenne', value: decimalValue(content.averageToxicityScore), hint: 'signal de modération' },
+      { key: 'stories', icon: 'radio-button-on-outline', label: 'Stories créées', value: formatCompactCount(content.storiesCreated), hint: 'sur la période' },
+      { key: 'storyViews', icon: 'eye-outline', label: 'Vues des stories', value: formatCompactCount(content.storyViews), hint: 'vues cumulées' },
+      { key: 'storyLikes', icon: 'heart-outline', label: 'J’aime des stories', value: formatCompactCount(content.storyLikes), hint: 'réactions cumulées' },
+      { key: 'profileViews', icon: 'person-outline', label: 'Visites du profil', value: formatCompactCount(content.profileViews), hint: 'compteur canonique' },
+      { key: 'scheduled', icon: 'time-outline', label: 'Posts programmés', value: formatCompactCount(content.scheduledPosts), hint: `${content.publishedScheduledPosts} publiés` },
+      { key: 'offers', icon: 'lock-closed-outline', label: 'Contenus payants', value: formatCompactCount(content.paidOffers), hint: 'offres créées' },
+      { key: 'sales', icon: 'cart-outline', label: 'Ventes de contenus', value: formatCompactCount(content.paidSales), hint: 'hors remboursements' },
+      { key: 'revenue', icon: 'cash-outline', label: 'Revenu contenu', value: `${decimalValue(content.paidRevenueTwc)} TWC`, hint: 'net créateur' },
+    ];
+
+    return (
+      <View style={styles.block}>
+        <Text style={styles.blockTitle}>Signaux de contenu</Text>
+        <Text style={styles.blockSubtitle}>Algorithme, stories, programmation et contenus payants · {periodLabel}</Text>
+        <View style={styles.performanceGrid}>
+          {items.map((item) => (
+            <View key={item.key} style={[styles.performanceTile, { width: tablet ? '23.5%' : '48%' }]}>
+              <View style={styles.performanceIcon}>
+                <Ionicons name={item.icon as any} size={16} color={colors.accent} />
+              </View>
+              <Text style={styles.performanceValue}>{item.value}</Text>
+              <Text style={styles.performanceLabel}>{item.label}</Text>
+              <Text style={styles.performanceHint}>{item.hint}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     );
   };
@@ -809,10 +1305,67 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
       return sanitizeNumber(slot?.activity_score);
     });
     const hasActivity = hourlyActivity.some((value) => value > 0);
-    const maxActivity = Math.max(1, ...hourlyActivity);
+    const selectedActivity = inspectedHour !== null
+      ? stats.activityData.find((item) => item.hour === inspectedHour) || null
+      : null;
+    const bestActivitySlots = [...stats.activityData]
+      .filter((item) => sanitizeNumber(item.activity_score) > 0)
+      .sort((a, b) => sanitizeNumber(b.activity_score) - sanitizeNumber(a.activity_score))
+      .slice(0, 3);
+    const algorithmHours = (creatorProfile?.bestHours || []).slice(0, 5);
+    const audienceInsights = stats.deepInsights?.audience;
+
+    const renderDistribution = (
+      title: string,
+      subtitle: string,
+      rows: { label: string; count: number; percentage: number }[],
+      emptyText: string,
+    ) => (
+      <View style={styles.block}>
+        <Text style={styles.blockTitle}>{title}</Text>
+        <Text style={styles.blockSubtitle}>{subtitle}</Text>
+        {rows.length > 0 ? rows.map((row) => (
+          <View key={row.label} style={styles.barRow}>
+            <View style={styles.distributionHead}>
+              <Text style={styles.barLabel}>{row.label}</Text>
+              <Text style={styles.distributionPercent}>{row.percentage.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}%</Text>
+            </View>
+            <View style={styles.barLine}>
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, { width: `${Math.max(2, Math.min(100, row.percentage))}%`, backgroundColor: colors.cyan }]} />
+              </View>
+              <Text style={styles.barValue}>{formatCompactCount(row.count)}</Text>
+            </View>
+          </View>
+        )) : (
+          <Text style={styles.blockEmptyText}>{emptyText}</Text>
+        )}
+      </View>
+    );
 
     return (
       <>
+        {audienceInsights ? (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Audience engagée</Text>
+            <Text style={styles.blockSubtitle}>Personnes distinctes ayant interagi avec tes contenus sur {periodLabel}</Text>
+            <View style={styles.performanceGrid}>
+              {[
+                { label: 'Audience unique', value: audienceInsights.uniqueEngagedUsers, hint: 'personnes distinctes' },
+                { label: 'Audience fidèle', value: audienceInsights.returningUsers, hint: 'au moins 2 interactions' },
+                { label: 'Interactions', value: audienceInsights.totalInteractions, hint: 'tous types confondus' },
+                { label: 'Interactions / personne', value: audienceInsights.interactionsPerUser, hint: 'moyenne observée' },
+              ].map((item) => (
+                <View key={item.label} style={[styles.performanceTile, { width: tablet ? '23.5%' : '48%' }]}>
+                  <Text style={styles.performanceValue}>{Number(item.value).toLocaleString('fr-FR', { maximumFractionDigits: 1 })}</Text>
+                  <Text style={styles.performanceLabel}>{item.label}</Text>
+                  <Text style={styles.performanceHint}>{item.hint}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Total des abonnés</Text>
           <View style={styles.blockTotalRow}>
@@ -828,6 +1381,7 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
               height={chartHeight}
               selectedIndex={inspectedIndex}
               onSelect={setInspectedIndex}
+              onInteractionChange={setIsInspectingChart}
             />
           ) : (
             <Text style={styles.blockEmptyText}>
@@ -837,34 +1391,70 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
         </View>
 
         <View style={styles.block}>
-          <Text style={styles.blockTitle}>Heures d’activité</Text>
+          <Text style={styles.blockTitle}>Activité de l’audience</Text>
+          <Text style={styles.blockSubtitle}>
+            Indice horaire calculé à partir des publications et interactions observées
+          </Text>
           {hasActivity ? (
             <>
-              <View style={styles.hourGrid}>
-                {hourlyActivity.map((value, hour) => (
-                  <View key={hour} style={styles.hourColumn}>
-                    <View style={styles.hourTrack}>
-                      <View
-                        style={[
-                          styles.hourFill,
-                          {
-                            height: `${Math.max(3, (value / maxActivity) * 100)}%`,
-                            backgroundColor:
-                              value === maxActivity ? colors.accent : withAlpha(colors.accent, 0.4),
-                          },
-                        ]}
-                      />
+              <HourlyActivityChart
+                data={stats.activityData}
+                width={chartWidth}
+                height={chartHeight}
+                selectedHour={inspectedHour}
+                onSelect={setInspectedHour}
+                onInteractionChange={setIsInspectingChart}
+              />
+
+              {selectedActivity && (
+                <View style={styles.selectedHourSummary}>
+                  <View style={styles.selectedHourIcon}>
+                    <Ionicons name="time-outline" size={18} color={colors.accent} />
+                  </View>
+                  <View style={styles.selectedHourCopy}>
+                    <Text style={styles.selectedHourTitle}>
+                      {selectedActivity.hour}h–{(selectedActivity.hour + 1) % 24}h
+                    </Text>
+                    <Text style={styles.selectedHourText}>
+                      {formatCompactCount(selectedActivity.tweet_count)} publications · {formatCompactCount(selectedActivity.engagement_count)} interactions observées
+                    </Text>
+                  </View>
+                  <View style={styles.selectedHourScore}>
+                    <Text style={styles.selectedHourScoreValue}>{formatCompactCount(selectedActivity.activity_score)}</Text>
+                    <Text style={styles.selectedHourScoreLabel}>indice</Text>
+                  </View>
+                </View>
+              )}
+
+              <Text style={styles.hourSectionLabel}>
+                {algorithmHours.length > 0 ? 'Créneaux recommandés par l’algorithme' : 'Créneaux les plus actifs'}
+              </Text>
+              <View style={styles.bestHourList}>
+                {(algorithmHours.length > 0 ? algorithmHours : bestActivitySlots).map((slot, index) => {
+                  const hour = sanitizeNumber(slot.hour);
+                  const algorithmSlot = 'avgEngagement' in slot;
+                  const value = algorithmSlot
+                    ? sanitizeNumber(slot.avgEngagement)
+                    : sanitizeNumber(slot.activity_score);
+                  const sample = algorithmSlot
+                    ? sanitizeNumber(slot.tweets)
+                    : sanitizeNumber(slot.tweet_count);
+                  return (
+                    <View key={`${hour}-${index}`} style={[styles.bestHourRow, index > 0 && styles.bestHourDivider]}>
+                      <View style={[styles.bestHourRank, index === 0 && styles.bestHourRankFirst]}>
+                        <Text style={[styles.bestHourRankText, index === 0 && styles.bestHourRankTextFirst]}>{index + 1}</Text>
+                      </View>
+                      <View style={styles.bestHourCopy}>
+                        <Text style={styles.bestHourTime}>{hour}h–{(hour + 1) % 24}h</Text>
+                        <Text style={styles.bestHourSample}>{formatCompactCount(sample)} publications analysées</Text>
+                      </View>
+                      <View style={styles.bestHourValueCopy}>
+                        <Text style={styles.bestHourValue}>{formatCompactCount(value)}</Text>
+                        <Text style={styles.bestHourValueLabel}>{algorithmSlot ? 'engagement moy.' : 'indice'}</Text>
+                      </View>
                     </View>
-                    {hour % 6 === 0 && <Text style={styles.hourLabel}>{hour}h</Text>}
-                  </View>
-                ))}
-              </View>
-              <View style={styles.hourChips}>
-                {stats.mostActiveHours.map((hour, index) => (
-                  <View key={`${hour}-${index}`} style={styles.hourChip}>
-                    <Text style={styles.hourChipText}>{hour}h</Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </>
           ) : (
@@ -873,6 +1463,20 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
             </Text>
           )}
         </View>
+
+        {audienceInsights ? renderDistribution(
+          'Tranches d’âge',
+          `Répartition déclarée · groupes de ${audienceInsights.privacyThreshold} personnes minimum`,
+          audienceInsights.ageBands,
+          `Pas encore assez de profils renseignés pour afficher une tranche sans identifier indirectement quelqu’un.`,
+        ) : null}
+
+        {audienceInsights ? renderDistribution(
+          'Pays de l’audience',
+          `Localisations consenties · groupes de ${audienceInsights.privacyThreshold} personnes minimum`,
+          audienceInsights.countries,
+          `Pas encore assez de localisations consenties pour afficher une zone de manière anonyme.`,
+        ) : null}
       </>
     );
   };
@@ -922,11 +1526,15 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
             <>
               {renderMetricCards()}
               {renderChart()}
+              {renderPerformanceSnapshot()}
+              {renderUsageInsights()}
+              {renderAlgorithmInsights()}
               {renderBreakdown()}
             </>
           )}
           {selectedSection === 'content' && (
             <>
+              {renderContentSignals()}
               {renderTopTweets()}
               {renderBreakdown()}
             </>
@@ -945,6 +1553,7 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.scrollContent}
+      scrollEnabled={!isInspectingChart}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -1123,6 +1732,9 @@ const styles = StyleSheet.create({
     borderColor: colors.textPrimary,
     backgroundColor: colors.surfaceElevated,
   },
+  metricCardDisabled: {
+    opacity: 0.42,
+  },
   metricLabel: {
     color: colors.textSecondary,
     fontSize: 14,
@@ -1201,6 +1813,40 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: fonts.medium,
   },
+  hourBubble: {
+    position: 'absolute',
+    top: 4,
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+  },
+  hourBubbleTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontFamily: fonts.bold,
+  },
+  hourBubbleText: {
+    marginTop: 1,
+    color: colors.textSecondary,
+    fontSize: 9.5,
+    fontFamily: fonts.medium,
+  },
+  chartGestureHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 6,
+  },
+  chartGestureHintText: {
+    color: colors.textMuted,
+    fontSize: 10.5,
+    fontFamily: fonts.medium,
+  },
   chartEmptyState: {
     minHeight: 220,
     alignItems: 'center',
@@ -1242,6 +1888,191 @@ const styles = StyleSheet.create({
     fontSize: 20,
     letterSpacing: -0.4,
     fontFamily: fonts.display,
+  },
+  blockSubtitle: {
+    marginTop: 5,
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: fonts.regular,
+  },
+  performanceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 16,
+  },
+  performanceTile: {
+    minHeight: 138,
+    padding: 14,
+    borderRadius: 15,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  performanceIcon: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: colors.accentMuted,
+  },
+  performanceValue: {
+    marginTop: 12,
+    color: colors.textPrimary,
+    fontSize: 21,
+    lineHeight: 25,
+    fontFamily: fonts.displayHeavy,
+  },
+  performanceLabel: {
+    marginTop: 3,
+    color: colors.textSecondary,
+    fontSize: 11.5,
+    fontFamily: fonts.semibold,
+  },
+  performanceHint: {
+    marginTop: 3,
+    color: colors.textMuted,
+    fontSize: 9.5,
+    lineHeight: 13,
+    fontFamily: fonts.regular,
+  },
+  algorithmHeading: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  algorithmTitleCopy: {
+    flex: 1,
+  },
+  algorithmTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  algorithmBadge: {
+    minWidth: 26,
+    height: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    borderRadius: 999,
+    backgroundColor: colors.accentMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: withAlpha(colors.accent, 0.5),
+  },
+  algorithmBadgeText: {
+    color: colors.accentBright,
+    fontSize: 9,
+    letterSpacing: 0.6,
+    fontFamily: fonts.bold,
+  },
+  algorithmMetricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  algorithmMetric: {
+    width: '50%',
+    minHeight: 78,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  algorithmMetricValue: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontFamily: fonts.displayHeavy,
+  },
+  algorithmMetricLabel: {
+    marginTop: 3,
+    color: colors.textMuted,
+    fontSize: 10.5,
+    fontFamily: fonts.medium,
+  },
+  algorithmTrend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+  },
+  algorithmTrendCopy: {
+    flex: 1,
+  },
+  algorithmTrendTitle: {
+    color: colors.textPrimary,
+    fontSize: 12.5,
+    fontFamily: fonts.bold,
+  },
+  algorithmTrendText: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: fonts.regular,
+  },
+  factorList: {
+    marginTop: 22,
+  },
+  factorSectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontFamily: fonts.bold,
+  },
+  factorRow: {
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  factorHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  factorLabel: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontFamily: fonts.semibold,
+  },
+  factorImpact: {
+    fontSize: 12,
+    fontFamily: fonts.bold,
+  },
+  factorTrack: {
+    height: 5,
+    overflow: 'hidden',
+    marginTop: 9,
+    borderRadius: 3,
+    backgroundColor: colors.surfaceElevated,
+  },
+  factorFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  factorExplain: {
+    marginTop: 8,
+    color: colors.textSecondary,
+    fontSize: 11.5,
+    lineHeight: 17,
+    fontFamily: fonts.regular,
+  },
+  factorSample: {
+    marginTop: 4,
+    color: colors.textMuted,
+    fontSize: 9.5,
+    fontFamily: fonts.medium,
   },
   blockTotalRow: {
     flexDirection: 'row',
@@ -1364,51 +2195,150 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: fonts.bold,
   },
-
-  hourGrid: {
+  distributionHead: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  distributionPercent: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontFamily: fonts.bold,
+  },
+  tweetQualityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 9,
+  },
+  tweetScoreBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: colors.accentMuted,
+  },
+  tweetScoreText: {
+    color: colors.accentBright,
+    fontSize: 9.5,
+    fontFamily: fonts.bold,
+  },
+
+  selectedHourSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    marginTop: 14,
+    padding: 13,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  selectedHourIcon: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+    backgroundColor: colors.accentMuted,
+  },
+  selectedHourCopy: {
+    flex: 1,
+  },
+  selectedHourTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontFamily: fonts.bold,
+  },
+  selectedHourText: {
+    marginTop: 2,
+    color: colors.textMuted,
+    fontSize: 10.5,
+    lineHeight: 15,
+    fontFamily: fonts.regular,
+  },
+  selectedHourScore: {
     alignItems: 'flex-end',
-    gap: 2,
-    height: 132,
-    marginTop: 18,
   },
-  hourColumn: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'flex-end',
+  selectedHourScoreValue: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontFamily: fonts.displayHeavy,
   },
-  hourTrack: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  hourFill: {
-    width: '100%',
-    borderRadius: 2,
-  },
-  hourLabel: {
-    marginTop: 6,
+  selectedHourScoreLabel: {
     color: colors.textMuted,
     fontSize: 9,
     fontFamily: fonts.medium,
   },
-  hourChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 16,
+  hourSectionLabel: {
+    marginTop: 22,
+    marginBottom: 8,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontFamily: fonts.bold,
   },
-  hourChip: {
-    minHeight: 30,
-    paddingHorizontal: 12,
+  bestHourList: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  bestHourRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  bestHourDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  bestHourRank: {
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 15,
+    borderRadius: 9,
     backgroundColor: colors.surface,
   },
-  hourChipText: {
+  bestHourRankFirst: {
+    backgroundColor: colors.accentMuted,
+  },
+  bestHourRankText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: fonts.bold,
+  },
+  bestHourRankTextFirst: {
+    color: colors.accentBright,
+  },
+  bestHourCopy: {
+    flex: 1,
+  },
+  bestHourTime: {
     color: colors.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: fonts.semibold,
+  },
+  bestHourSample: {
+    marginTop: 2,
+    color: colors.textMuted,
+    fontSize: 10,
+    fontFamily: fonts.regular,
+  },
+  bestHourValueCopy: {
+    alignItems: 'flex-end',
+  },
+  bestHourValue: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontFamily: fonts.bold,
+  },
+  bestHourValueLabel: {
+    marginTop: 1,
+    color: colors.textMuted,
+    fontSize: 8.5,
+    fontFamily: fonts.medium,
   },
 
   skeletonBlock: {

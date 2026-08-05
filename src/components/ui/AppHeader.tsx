@@ -41,6 +41,8 @@ export default function AppHeader({ navigation, title, subtitle, badge, right, o
           <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
         </TouchableOpacity>
       ) : (
+        // La colonne reste réservée même dans un onglet : avec 40 px de
+        // chaque côté, le titre garde exactement le même axe que Portefeuille.
         <View style={styles.sideBtnCollapsed} />
       )}
 
@@ -78,7 +80,7 @@ const styles = StyleSheet.create({
     height: HEADER_CONTENT_HEIGHT,
   },
   sideBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  sideBtnCollapsed: { width: 0, height: 40 },
+  sideBtnCollapsed: { width: 40, height: 40 },
   titleBox: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '100%' },
   title: { color: colors.textPrimary, fontSize: 16, fontFamily: fonts.heading },

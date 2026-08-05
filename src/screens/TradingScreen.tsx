@@ -19,6 +19,7 @@ import NewEconomyService, { EconomicStats, ChartRange } from '../services/newEco
 import CurrencyService from '../services/currencyService';
 import SimpleChart from '../components/SimpleChart';
 import SimpleStatsPanel from '../components/SimpleStatsPanel';
+import { describeError, normalizeEconomicStats } from '../utils/tradingData';
 
 const { width } = Dimensions.get('window');
 const chartWidth = width - 40;
@@ -41,10 +42,11 @@ interface MarketData {
 }
 
 
-const TradingScreen: React.FC = () => {
+const TradingScreenContent: React.FC = () => {
   const navigation = useNavigation();
   const [marketData, setMarketData] = useState<MarketData | null>(null);
   const [economicStats, setEconomicStats] = useState<EconomicStats | null>(null);
+  const [marketError, setMarketError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timeframe, setTimeframe] = useState<'1H' | '1D' | '1W' | '1M'>('1D');
@@ -102,36 +104,40 @@ const TradingScreen: React.FC = () => {
   const loadMarketData = async (silent = false) => {
     try {
       if (!currencyId) return;
-      if (!silent) setLoading(true);
+      if (!silent) {
+        setLoading(true);
+        setMarketError(null);
+      }
       
-      const stats = await NewEconomyService.getEconomicStats(currencyId, TIMEFRAME_TO_RANGE[timeframe]);
+      const response = await NewEconomyService.getEconomicStats(currencyId, TIMEFRAME_TO_RANGE[timeframe]);
+      const stats = normalizeEconomicStats(response);
       setEconomicStats(stats);
-      
-      const currency = stats?.currency || ({} as any);
-      const safeNumber = (value: unknown, fallback = 0) =>
-        typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
-      // Transformer les données pour le composant sans faire confiance à la forme
-      // réseau : un champ manquant ne doit jamais crasher l'écran Trading.
+      // Tous les composants reçoivent le même objet normalisé. Auparavant,
+      // seule cette vue était protégée tandis que SimpleChart/SimpleStatsPanel
+      // continuaient à consommer la réponse API brute.
       const marketInfo: MarketData = {
-        price: safeNumber(currency.currentPrice, 0.01),
-        change24h: safeNumber(currency.priceChange24h),
-        volume: safeNumber(currency.volume24h),
-        marketCap: safeNumber(currency.marketCap),
-        trend: ['rising', 'falling', 'stable'].includes(currency.trend) ? currency.trend : 'stable',
-        priceHistory: Array.isArray(stats?.priceHistory)
-          ? stats.priceHistory.filter((point: any) => (
-              point &&
-              typeof point.date === 'string' &&
-              typeof point.price === 'number' &&
-              Number.isFinite(point.price)
-            ))
-          : [],
+        price: stats.currency.currentPrice,
+        change24h: stats.currency.priceChange24h,
+        volume: stats.currency.volume24h,
+        marketCap: stats.currency.marketCap,
+        trend: stats.currency.trend,
+        priceHistory: stats.priceHistory,
       };
       
       setMarketData(marketInfo);
+      setMarketError(null);
     } catch (error) {
-      console.error('Erreur lors du chargement des données:', error);
+      const message = describeError(error);
+      console.error('[Trading] Échec du chargement des données', {
+        stage: 'loadMarketData',
+        currencyId,
+        timeframe,
+        silent,
+        message,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      if (!silent || !marketData) setMarketError(message);
     } finally {
       setLoading(false);
     }
@@ -504,6 +510,24 @@ const TradingScreen: React.FC = () => {
   );
 
   const renderMainContent = () => {
+    if (marketError && !marketData) {
+      return (
+        <View style={styles.errorState} accessibilityRole="alert">
+          <View style={styles.errorIcon}>
+            <Ionicons name="warning-outline" size={26} color={colors.warning} />
+          </View>
+          <Text style={styles.errorTitle}>Trading momentanément indisponible</Text>
+          <Text style={styles.errorText}>
+            Les données du marché n’ont pas pu être chargées. L’erreur a été journalisée pour le diagnostic.
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => loadMarketData()} activeOpacity={0.8}>
+            <Ionicons name="refresh" size={18} color={colors.white} />
+            <Text style={styles.retryButtonText}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     if (currentView === 'stats' && economicStats) {
       return (
         <SimpleStatsPanel
@@ -613,6 +637,62 @@ const TradingScreen: React.FC = () => {
   );
 };
 
+interface TradingErrorBoundaryState {
+  error: Error | null;
+}
+
+/** Dernier filet de sécurité pour les erreurs de rendu/native component. */
+class TradingErrorBoundary extends React.Component<React.PropsWithChildren, TradingErrorBoundaryState> {
+  state: TradingErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): TradingErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[Trading] Crash de rendu intercepté', {
+      stage: 'render',
+      message: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <ScreenBackground>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <AppHeader title="Trading" subtitle="Cours, statistiques et actions TWC" />
+        <View style={styles.errorState} accessibilityRole="alert">
+          <View style={styles.errorIcon}>
+            <Ionicons name="bug-outline" size={26} color={colors.warning} />
+          </View>
+          <Text style={styles.errorTitle}>Le module Trading a rencontré une erreur</Text>
+          <Text style={styles.errorText}>
+            Le crash a été intercepté et enregistré. Tu peux relancer uniquement cet écran sans fermer l’app.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => this.setState({ error: null })}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="reload" size={18} color={colors.white} />
+            <Text style={styles.retryButtonText}>Relancer Trading</Text>
+          </TouchableOpacity>
+        </View>
+      </ScreenBackground>
+    );
+  }
+}
+
+const TradingScreen: React.FC = () => (
+  <TradingErrorBoundary>
+    <TradingScreenContent />
+  </TradingErrorBoundary>
+);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -651,6 +731,52 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  errorState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingBottom: 72,
+  },
+  errorIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.warningMuted,
+    marginBottom: 16,
+  },
+  errorTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  errorText: {
+    color: colors.textSecondary,
+    fontSize: 13.5,
+    lineHeight: 20,
+    textAlign: 'center',
+    maxWidth: 420,
+    marginBottom: 20,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: colors.accent,
+  },
+  retryButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontFamily: fonts.semibold,
   },
   priceContainer: {
     marginBottom: 20,

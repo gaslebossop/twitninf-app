@@ -15,11 +15,9 @@ export const HEADER_CONTENT_HEIGHT = 52;
  *
  * `insets.top` vient de la mesure native réelle de l'appareil : encoche,
  * Dynamic Island, hauteur de barre de statut Android — jamais une constante.
- * Cette app ne monte pas explicitement de `<SafeAreaProvider>` dans App.tsx,
- * mais `@react-navigation/stack` en fournit un en interne
- * (`SafeAreaProviderCompat`, dans `@react-navigation/elements`) qui enveloppe
- * déjà tout l'arbre de navigation : le hook fonctionne donc sur n'importe
- * quel écran de l'app sans configuration supplémentaire.
+ * `App.tsx` monte un `<SafeAreaProvider>` autour de tout l'arbre applicatif :
+ * la mesure est donc disponible sur chaque écran, y compris quand celui-ci
+ * est ouvert directement comme onglet de la navbar.
  *
  * Sur Android, la StatusBar de l'app est volontairement NON translucide
  * (voir `App.tsx`) : le système réserve déjà cet espace, et `insets.top` y

@@ -712,6 +712,47 @@ class ApiService {
     }
   }
 
+  async updateDemographics(data: {
+    declaredAge: number;
+    birthDay: number;
+    birthMonth: number;
+  }): Promise<ApiResponse<{
+    declared_age: number;
+    birth_day: number;
+    birth_month: number;
+    demographics_validated_at: string;
+  }>> {
+    return this.makeRequest('/api/auth/demographics', {
+      method: 'PUT',
+      body: data,
+      requiresAuth: true,
+    });
+  }
+
+  async recordSessionLocation(data: {
+    captureKey: string;
+    permissionStatus: 'granted' | 'denied' | 'restricted' | 'unavailable';
+    latitude?: number;
+    longitude?: number;
+    accuracy?: number | null;
+    countryCode?: string | null;
+    country?: string | null;
+    region?: string | null;
+    city?: string | null;
+    timezone?: string | null;
+    capturedAt?: string;
+  }): Promise<ApiResponse<{
+    recorded: boolean;
+    captured_at: string;
+    permission_status: string;
+  }>> {
+    return this.makeRequest('/api/auth/session-location', {
+      method: 'POST',
+      body: data,
+      requiresAuth: true,
+    });
+  }
+
   async uploadUserAvatar(fileUri: string): Promise<ApiResponse<{ url: string }>> {
     try {
       // Préparer FormData

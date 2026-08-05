@@ -1,6 +1,6 @@
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AppHeader, ScreenBackground } from '../components/ui';
 import UserStatsTab from '../components/UserStatsTab';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,7 +17,7 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
 
   return (
     <ScreenBackground>
-      <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
 
         <AppHeader
@@ -51,13 +51,13 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
             </View>
           </View>
         )}
-      </SafeAreaView>
+      </View>
     </ScreenBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
     backgroundColor: 'transparent',
   },

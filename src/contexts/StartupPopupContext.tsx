@@ -26,14 +26,14 @@ import React, {
  * le créneau, dans l'ordre de priorité ci-dessous. Elle libère le créneau en
  * cessant de le demander (fermeture), et la suivante prend le relais.
  */
-export type StartupPopupId = 'language' | 'patch' | 'birthday' | 'navbar';
+export type StartupPopupId = 'language' | 'patch' | 'birthday' | 'navbar' | 'profile';
 
 /**
  * Du plus bloquant au plus accessoire. La langue de lecture conditionne tout
  * le contenu du fil, elle passe donc en premier ; le choix des onglets est le
  * seul réellement reportable, il passe en dernier.
  */
-const PRIORITY: StartupPopupId[] = ['language', 'patch', 'birthday', 'navbar'];
+const PRIORITY: StartupPopupId[] = ['language', 'patch', 'birthday', 'navbar', 'profile'];
 
 interface StartupPopupContextValue {
   request: (id: StartupPopupId) => void;

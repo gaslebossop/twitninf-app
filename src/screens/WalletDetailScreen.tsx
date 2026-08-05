@@ -20,9 +20,8 @@ import SendCoinsModal from '../components/SendCoinsModal';
 import ExchangeModal from '../components/ExchangeModal';
 import { WalletTransaction } from '../services/walletService';
 import { useAuth } from '../contexts/AuthContext';
-import { ScreenBackground, Button, IconButton, BackButton, Skeleton, AppRefreshControl } from '../components/ui';
+import { AppHeader, ScreenBackground, Button, IconButton, Skeleton, AppRefreshControl } from '../components/ui';
 import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../theme';
-import { HEADER_CONTENT_HEIGHT, useHeaderMetrics } from '../hooks/useHeaderMetrics';
 
 interface TransactionHistoryItem {
   id: string;
@@ -72,7 +71,6 @@ const WalletDetailScreen: React.FC = () => {
   const navigation = useNavigation<WalletDetailScreenNavigationProp>();
   const { user } = useAuth();
   const { width } = useWindowDimensions();
-  const { top: headerTopInset } = useHeaderMetrics();
 
   // Mesuré à chaque rendu plutôt qu'au chargement du module : la rotation et
   // le mode fenêtré changent la largeur en cours de vie de l'écran.
@@ -414,17 +412,12 @@ const WalletDetailScreen: React.FC = () => {
   };
 
   const renderHeader = () => (
-    // Deux blocs distincts : l'espace de sécurité en haut (hauteur variable,
-    // réelle sur l'appareil) puis une rangée de contenu à hauteur FIXE — si
-    // les deux étaient fusionnés, l'inset grignoterait la place du contenu
-    // au lieu de s'ajouter par-dessus.
-    <View style={{ paddingTop: headerTopInset }}>
-      <View style={[styles.header, { paddingHorizontal: gutter }]}>
-        <BackButton navigation={navigation} />
-        <Text style={styles.headerTitle}>Portefeuille</Text>
-        <IconButton icon="layers-outline" onPress={() => navigation.navigate('CommunityCurrencies')} />
-      </View>
-    </View>
+    <AppHeader
+      navigation={navigation}
+      title="Portefeuille"
+      subtitle="Solde, échanges et historique"
+      right={<IconButton icon="layers-outline" onPress={() => navigation.navigate('CommunityCurrencies')} />}
+    />
   );
 
   const renderHero = () => {
@@ -800,20 +793,6 @@ const WalletDetailScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    // Hauteur fixe, identique sur tout l'app — le décalage lié à
-    // l'encoche/Dynamic Island vient du `paddingTop` posé sur le View parent
-    // (voir renderHeader), jamais deviné ici.
-    height: HEADER_CONTENT_HEIGHT,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontFamily: fonts.heading,
-    color: colors.textPrimary,
-  },
   scroll: {
     paddingTop: 28,
     width: '100%',

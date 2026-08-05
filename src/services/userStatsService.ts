@@ -56,12 +56,73 @@ export interface EngagementBreakdown {
   total: number;
 }
 
+export interface DeepInsights {
+  behavior: {
+    activeDays: number;
+    loginSessions: number;
+    devices: number;
+    lastSessionAt: string | null;
+    totalMinutes: number;
+    averageActiveSeconds: number;
+    screenViews: number;
+    tweetsRead: number;
+    profilesOpened: number;
+    searches: number;
+    bookmarks: number;
+    sharesSent: number;
+    mediaViews: number;
+    contentPauses: number;
+    contentReplays: number;
+    fullscreenOpens: number;
+    refreshes: number;
+  };
+  audience: {
+    uniqueEngagedUsers: number;
+    returningUsers: number;
+    totalInteractions: number;
+    interactionsPerUser: number;
+    demographicsCoverage: number;
+    ageBands: { label: string; count: number; percentage: number }[];
+    countries: { label: string; code: string; count: number; percentage: number }[];
+    privacyThreshold: number;
+  };
+  location: {
+    consentStatus: 'granted' | 'denied' | 'restricted' | 'unavailable' | 'undetermined';
+    capturedSessions: number;
+    countries: number;
+    regions: number;
+    lastCapturedAt: string | null;
+  };
+  content: {
+    storiesCreated: number;
+    storyViews: number;
+    storyLikes: number;
+    profileViews: number;
+    scheduledPosts: number;
+    publishedScheduledPosts: number;
+    paidOffers: number;
+    paidSales: number;
+    paidRevenueTwc: number;
+    averageQualityScore: number;
+    averageToxicityScore: number;
+    algorithmicViews: number;
+    algorithmEvaluations: number;
+  };
+  privateProfile: {
+    declaredAge: number | null;
+    birthDay: number | null;
+    birthMonth: number | null;
+    validated: boolean;
+  };
+}
+
 export interface UserStatsResponse {
   analytics: UserAnalytics;
   dailyStats: DailyStats[];
   topTweets: TweetAnalytics[];
   activityData: ActivityData[];
   engagementBreakdown: EngagementBreakdown;
+  deepInsights: DeepInsights | null;
   weeklyGrowth: {
     week: string;
     followers: number;
@@ -145,12 +206,13 @@ class UserStatsService {
   async getUserStats(userId: string, timeframe: '7d' | '30d' | '90d' | '1y' = '30d'): Promise<UserStatsResponse> {
     try {
       // Récupérer toutes les données en parallèle sans casser le flux si un endpoint tombe
-      const [overviewResult, dailyResult, topTweetsResult, activityResult, engagementResult] = await Promise.allSettled([
+      const [overviewResult, dailyResult, topTweetsResult, activityResult, engagementResult, deepResult] = await Promise.allSettled([
         apiService.get(`/api/user-stats/${userId}/overview?timeframe=${timeframe}`),
         apiService.get(`/api/user-stats/${userId}/daily?timeframe=${timeframe}`),
         apiService.get(`/api/user-stats/${userId}/top-tweets?timeframe=${timeframe}&limit=20`),
         apiService.get(`/api/user-stats/${userId}/activity?timeframe=${timeframe}`),
-        apiService.get(`/api/user-stats/${userId}/engagement-breakdown?timeframe=${timeframe}`)
+        apiService.get(`/api/user-stats/${userId}/engagement-breakdown?timeframe=${timeframe}`),
+        apiService.get(`/api/user-stats/${userId}/deep-insights?timeframe=${timeframe}`)
       ]);
 
       const overviewResponse = overviewResult.status === 'fulfilled' ? overviewResult.value : null;
@@ -158,12 +220,14 @@ class UserStatsService {
       const topTweetsResponse = topTweetsResult.status === 'fulfilled' ? topTweetsResult.value : null;
       const activityResponse = activityResult.status === 'fulfilled' ? activityResult.value : null;
       const engagementResponse = engagementResult.status === 'fulfilled' ? engagementResult.value : null;
+      const deepResponse = deepResult.status === 'fulfilled' ? deepResult.value : null;
 
       const overviewData = this.getSafeData<{ analytics?: UserAnalytics }>(overviewResponse);
       const dailyData = this.getSafeData<{ dailyStats?: DailyStats[] }>(dailyResponse);
       const topTweetsData = this.getSafeData<{ topTweets?: TweetAnalytics[] }>(topTweetsResponse);
       const activityDataRes = this.getSafeData<{ activityData?: ActivityData[] }>(activityResponse);
       const engagementData = this.getSafeData<{ engagementBreakdown?: EngagementBreakdown }>(engagementResponse);
+      const deepInsights = this.getSafeData<DeepInsights>(deepResponse);
 
       const dailyStats = dailyData?.dailyStats || [];
       const topTweets = topTweetsData?.topTweets || [];
@@ -187,14 +251,14 @@ class UserStatsService {
 
       const hasAnyRealData =
         !!overviewData?.analytics ||
+        !!deepInsights ||
         dailyStats.length > 0 ||
         topTweets.length > 0 ||
         activityData.length > 0 ||
         engagementBreakdown.total > 0;
 
       if (!hasAnyRealData) {
-        console.warn('⚠️ Aucune donnée stats exploitable, passage aux données simulées');
-        return this.getMockUserStats(timeframe);
+        throw new Error('Aucune donnee statistique reelle disponible');
       }
 
       return {
@@ -203,6 +267,7 @@ class UserStatsService {
         topTweets,
         activityData,
         engagementBreakdown,
+        deepInsights,
         // Aucun endpoint ne calcule encore une vraie croissance hebdomadaire
         // (voir `analytics.reachGrowth`/`engagementGrowth` toujours à 0 côté
         // API) : renvoyer des données simulées ICI les ferait passer pour
@@ -212,8 +277,7 @@ class UserStatsService {
       };
     } catch (error) {
       console.error('Erreur lors de la récupération des statistiques utilisateur:', error);
-      // Retourner des données simulées en cas d'erreur
-      return this.getMockUserStats(timeframe);
+      throw error;
     }
   }
 
@@ -252,7 +316,7 @@ class UserStatsService {
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des top tweets:', error);
-      return this.getMockTopTweets();
+      throw error;
     }
   }
 
@@ -265,7 +329,7 @@ class UserStatsService {
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération de l\'historique d\'activité:', error);
-      return this.getMockActivityData();
+      throw error;
     }
   }
 
@@ -278,7 +342,7 @@ class UserStatsService {
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des tendances de croissance:', error);
-      return this.getMockGrowthData();
+      throw error;
     }
   }
 
@@ -291,7 +355,7 @@ class UserStatsService {
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des heures optimales:', error);
-      return this.getMockOptimalTimes();
+      throw error;
     }
   }
 
@@ -327,6 +391,7 @@ class UserStatsService {
         shares: 1234,
         total: 32713,
       },
+      deepInsights: null,
       weeklyGrowth: this.getMockWeeklyGrowth(),
     };
   }

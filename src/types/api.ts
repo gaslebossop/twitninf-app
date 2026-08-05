@@ -51,6 +51,13 @@ export interface User {
    * pose la question à la première connexion (voir LanguagePickerModal).
    */
   preferred_language?: string | null;
+  /** Donnees privees, uniquement renvoyees sur /api/auth/me. */
+  declared_age?: number | null;
+  birth_day?: number | null;
+  birth_month?: number | null;
+  demographics_validated_at?: string | null;
+  location_consent_status?: 'granted' | 'denied' | 'restricted' | 'unavailable' | 'undetermined';
+  location_consent_updated_at?: string | null;
   /** Palier d'abonnement payant (API) */
   subscription_tier?: 'free' | 'plus' | 'pro';
   subscription_expires_at?: string | null;
