@@ -15,7 +15,6 @@ import {
   Animated,
   StatusBar,
   ImageBackground,
-  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -432,6 +431,7 @@ export default function KosporBirthdayScreen() {
           <Animated.View
             style={[
               styles.headerContainer,
+              { marginTop: insets.top + (screenHeight < 700 ? 12 : 20) },
               {
                 opacity: fadeAnim,
                 transform: [
@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
   
   // Header premium
   headerContainer: {
-    marginTop: Platform.OS === 'ios' ? 60 : StatusBar.currentHeight + 20,
+    marginTop: 0,
     marginHorizontal: 20,
     marginBottom: 30,
   },

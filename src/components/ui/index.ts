@@ -48,3 +48,5 @@ export { default as Card } from './GlassCard';
 export { default as Header } from './GlassHeader';
 export { default as Button } from './GlassButton';
 export { default as IconButton } from './GlassIconButton';
+
+export { default as AppHeader, shouldShowBackButton } from './AppHeader';

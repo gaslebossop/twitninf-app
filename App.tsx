@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Platform, StatusBar, View, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { fontAssets, colors } from './src/theme';
@@ -120,13 +121,16 @@ export default function App() {
   if (!fontsReady) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <AppLoadingScreen />
+        <SafeAreaProvider>
+          <AppLoadingScreen />
+        </SafeAreaProvider>
       </GestureHandlerRootView>
     );
   }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
       {/* Les deux hôtes sont montés le plus haut possible : leur calque se
           dessine APRÈS l'arbre applicatif, donc au-dessus de n'importe quel
           écran. `ToastProvider` enveloppe `ConfirmProvider` pour qu'un message
@@ -163,6 +167,7 @@ export default function App() {
       </ActionSheetProvider>
       </ConfirmProvider>
       </ToastProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

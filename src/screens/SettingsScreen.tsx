@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fonts, colors } from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { AppHeader, ScreenBackground } from '../components/ui';
 import {
   View,
   Text,
@@ -84,7 +84,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   // Calculs responsive
   const isSmallScreen = screenHeight < 700;
   const isMediumScreen = screenHeight >= 700 && screenHeight < 900;
-  const headerPaddingTop = Platform.OS === 'ios' ? (isSmallScreen ? 10 : 15) : (isSmallScreen ? 30 : 35);
 
 
   const handleTogglePrivateAccount = async (value: boolean) => {
@@ -152,22 +151,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
       <View style={styles.gradient}>
         {/* Header */}
-        <Animated.View 
-          style={[
-            styles.header, 
-            { 
-              paddingTop: headerPaddingTop,
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          <BackButton navigation={navigation} />
-          
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Paramètres</Text>
-            <Text style={styles.headerSubtitle}>Personnalisez votre expérience</Text>
-          </View>
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <AppHeader
+            navigation={navigation}
+            title="Paramètres"
+            subtitle="Personnalisez votre expérience"
+          />
         </Animated.View>
 
         <ScrollView
@@ -660,35 +649,6 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerContent: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontFamily: fonts.displayHeavy,
-    color: colors.textPrimary,
-    letterSpacing: -0.6,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   scrollView: {
     flex: 1,

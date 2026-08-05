@@ -35,7 +35,7 @@ export default function GlassHeader({
   const { top } = useHeaderMetrics();
 
   return (
-    <View style={[styles.container, { paddingTop: top }, style]}>
+    <View style={[styles.container, { paddingTop: top + 10 }, style]}>
       <View style={[styles.row, large && styles.rowLarge]}>
         {onBack ? (
           <TouchableOpacity
@@ -73,24 +73,24 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.bg,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle,
+    borderBottomColor: colors.border,
     zIndex: 20,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 6,
     height: 52,
   },
   rowLarge: {
     height: 64,
-    paddingHorizontal: 16,
+    paddingHorizontal: 6,
   },
   backBtn: {
     width: 38,
     height: 38,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
     padding: 4,
   },
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   titleWrapLarge: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingLeft: 2,
   },
   title: {

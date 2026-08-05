@@ -1,7 +1,7 @@
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { ScreenBackground, BackButton } from '../components/ui';
+import { SafeAreaView, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AppHeader, ScreenBackground } from '../components/ui';
 import UserStatsTab from '../components/UserStatsTab';
 import { useAuth } from '../contexts/AuthContext';
 import { colors, fonts } from '../theme';
@@ -12,30 +12,24 @@ interface AccountStatsScreenProps {
 
 const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) => {
   const { user } = useAuth();
+  const { height } = useWindowDimensions();
+  const emptyTop = Math.max(20, Math.min(48, Math.round(height * 0.055)));
 
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
 
-        <View style={styles.headerShell}>
-          <View style={styles.header}>
-            <View style={styles.roundSlot}>
-              <BackButton navigation={navigation} style={styles.roundButton} />
-            </View>
-
-            <View style={styles.titleGroup}>
-              <Text style={styles.title} numberOfLines={1}>Statistiques</Text>
-            </View>
-
-            <View
-              style={[styles.roundSlot, styles.roundButton]}
-              accessibilityLabel="Statistiques privées"
-            >
+        <AppHeader
+          navigation={navigation}
+          title="Statistiques"
+          subtitle="Votre activité et vos signaux privés"
+          right={(
+            <View style={styles.headerIcon} accessibilityLabel="Statistiques privées">
               <Ionicons name="lock-closed" size={16} color={colors.textSecondary} />
             </View>
-          </View>
-        </View>
+          )}
+        />
 
         {user?.id ? (
           <UserStatsTab
@@ -47,7 +41,7 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
             }}
           />
         ) : (
-          <View style={styles.emptyState} accessibilityRole="alert">
+          <View style={[styles.emptyState, { marginTop: emptyTop }]} accessibilityRole="alert">
             <View style={styles.emptyIcon}>
               <Ionicons name="person-outline" size={24} color={colors.warning} />
             </View>
@@ -67,54 +61,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
-  headerShell: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.bg,
-    zIndex: 10,
-  },
-  header: {
-    width: '100%',
-    maxWidth: 1236,
-    minHeight: 72,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 9,
-  },
-  /** Pastilles rondes de part et d'autre du titre : même gabarit des deux
-   * côtés pour que le titre reste optiquement centré. */
-  roundSlot: {
+  headerIcon: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  roundButton: {
-    width: 40,
-    height: 40,
-    padding: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-  },
-  titleGroup: {
-    flex: 1,
-    minWidth: 0,
-    paddingHorizontal: 10,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    textAlign: 'center',
-    fontFamily: fonts.heading,
   },
   emptyState: {
     width: '100%',
     maxWidth: 560,
-    marginTop: 48,
+    marginTop: 0,
     paddingHorizontal: 20,
     alignSelf: 'center',
     flexDirection: 'row',

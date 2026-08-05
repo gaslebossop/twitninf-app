@@ -1,5 +1,5 @@
 import React from 'react';
-import { TouchableOpacity, View, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import { TouchableOpacity, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme';
 
@@ -20,16 +20,16 @@ interface BackButtonProps {
  * en arrière n'a alors aucun sens. Seul le type du navigateur qui possède
  * CET écran fait foi — `navigation.canGoBack()` seul remonte jusqu'à un
  * navigateur parent et peut renvoyer vrai à tort sur un onglet.
- * Rend un espaceur de même gabarit plutôt que `null` : les en-têtes qui
- * centrent leur titre via `justifyContent: 'space-between'` gardent leur
- * équilibre visuel que le bouton soit affiché ou non.
+ * Sur les écrans de navbar, on ne réserve plus une fausse place invisible :
+ * la flèche est réellement absente. Les headers qui ont besoin d'un centrage
+ * strict doivent utiliser `AppHeader`, qui gère explicitement ses colonnes.
  */
 export default function BackButton({ navigation, style }: BackButtonProps) {
   const isTabScreen = navigation?.getState?.()?.type === 'tab';
   const canGoBack = !isTabScreen && !!navigation?.canGoBack?.();
 
   if (!canGoBack) {
-    return <View style={[styles.spacer, style]} />;
+    return null;
   }
 
   return (
@@ -41,5 +41,4 @@ export default function BackButton({ navigation, style }: BackButtonProps) {
 
 const styles = StyleSheet.create({
   button: { padding: 4 },
-  spacer: { width: 36, height: 36 },
 });

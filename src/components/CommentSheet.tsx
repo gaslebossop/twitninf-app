@@ -9,6 +9,7 @@ import {
   FlatList,
   Animated,
   Dimensions,
+  useWindowDimensions,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -26,6 +27,8 @@ import apiService from '../services/api';
 import { Tweet } from '../types/api';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const SHEET_OPEN_SPRING = { tension: 78, friction: 14 } as const;
+const SHEET_SETTLE_SPRING = { tension: 90, friction: 18 } as const;
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -311,6 +314,9 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
   const [currentCount, setCurrentCount] = useState(totalCount);
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const sheetHeight = Math.min(windowHeight * (windowHeight < 700 ? 0.82 : 0.74), windowHeight - insets.top - 12);
+  const closeDistance = Math.max(96, sheetHeight * 0.18);
   const { enabled: offlineEnabled, online, queueAction } = useOffline();
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -344,23 +350,21 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
   // PanResponder pour le slide de fermeture
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 5,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.35,
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           slideAnim.setValue(gestureState.dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
+        if (gestureState.dy > closeDistance || gestureState.vy > 0.85) {
           handleClose();
         } else {
           Animated.spring(slideAnim, {
             toValue: 0,
-            // 2·√65 ≈ 16 : la feuille relâchée revient en butée sans
-            // rebondir contre le bord de l'écran.
-            tension: 65,
-            friction: 16,
+            ...SHEET_SETTLE_SPRING,
             useNativeDriver: true,
           }).start();
         }
@@ -375,8 +379,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
       Animated.parallel([
         Animated.spring(slideAnim, {
           toValue: 0,
-          tension: 65,
-          friction: 11,
+          ...SHEET_OPEN_SPRING,
           useNativeDriver: true,
         }),
         Animated.timing(backdropAnim, {
@@ -647,7 +650,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
       </Animated.View>
 
       <Animated.View
-        style={[sheetStyles.sheet, { transform: [{ translateY: slideAnim }] }]}
+        style={[sheetStyles.sheet, { height: sheetHeight, maxHeight: windowHeight - insets.top - 8, transform: [{ translateY: slideAnim }] }]}
       >
         <View style={sheetStyles.handleBarArea} {...panResponder.panHandlers}>
           <View style={sheetStyles.handleBar} />
@@ -687,7 +690,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
                   />
                 )}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingTop: 12, paddingBottom: 20 }}
+                contentContainerStyle={{ paddingTop: windowWidth < 360 ? 8 : 12, paddingBottom: insets.bottom + 20 }}
                 keyboardShouldPersistTaps="handled"
                 ItemSeparatorComponent={() => <View style={sheetStyles.separator} />}
                 ListEmptyComponent={() => (

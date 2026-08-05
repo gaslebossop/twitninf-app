@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -11,7 +10,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import Constants from 'expo-constants';
 import { colors, fonts } from '../theme';
 import ReviewTutorial, { markTutorialSeen, tutorialSeen } from '../components/ReviewTutorial';
 import {
@@ -21,7 +19,7 @@ import {
   ReviewStats,
   ReviewVerdict,
 } from '../services/communityReviewService';
-import { ScreenSkeleton } from '../components/ui';
+import { AppHeader, ScreenSkeleton } from '../components/ui';
 
 /**
  * Revue communautaire — BÊTA.
@@ -83,29 +81,6 @@ const CommunityReviewScreen: React.FC<Props> = ({ navigation }) => {
   /* Doublon du state `voting` sous forme de ref : l'effet de focus est
      mémoïsé sur `load` seul, il ne verrait jamais la valeur à jour du state. */
   const votingRef = useRef(false);
-
-  /**
-   * Hauteur réelle de la barre d'état, appareil par appareil.
-   *
-   * L'écran dessine SOUS la barre d'état (`StatusBar translucent`, et en onglet
-   * il n'y a aucun en-tête de navigateur au-dessus) : sans cette marge, le titre
-   * et les boutons passent derrière l'heure et le niveau de batterie, et
-   * deviennent illisibles — voire intouchables sur les téléphones à encoche.
-   *
-   * `StatusBar.currentHeight` ne renvoie rien sur iOS, et une constante par
-   * plateforme se trompe forcément : 20 px sur un iPhone SE, 59 px sur un 14
-   * Pro. `Constants.statusBarHeight` (expo-constants) donne la vraie valeur des
-   * deux côtés — et on ne peut pas utiliser `useSafeAreaInsets` ici, il n'y a
-   * pas de `SafeAreaProvider` dans cette app.
-   */
-  const topInset = Constants.statusBarHeight || (Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 24);
-  const headerPaddingTop = topInset + 10;
-  /** Faux quand l'écran est monté comme onglet : il n'y a rien derrière.
-   * `canGoBack()` seul remonte jusqu'à un navigateur PARENT et peut renvoyer
-   * vrai à tort dans ce cas — seul le type du navigateur qui possède CET
-   * écran fait foi (voir components/ui/BackButton). */
-  const isTabScreen = navigation?.getState?.()?.type === 'tab';
-  const canGoBack = !isTabScreen && typeof navigation?.canGoBack === 'function' && navigation.canGoBack();
 
   /* Le didacticiel est lu au montage, pas à chaque rendu : le faire disparaître
      en pleine lecture parce qu'un autre écran a écrit le drapeau serait pire
@@ -302,33 +277,13 @@ const CommunityReviewScreen: React.FC<Props> = ({ navigation }) => {
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
-        {/* L'écran sert à la fois d'onglet de la tab bar et d'écran empilé
-            (réglages → Revue). En onglet il n'y a rien derrière : une flèche de
-            retour y serait un bouton qui ne fait rien. On garde la place vide
-            pour que le titre reste centré dans les deux cas. */}
-        {canGoBack ? (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.headerBtn} />
-        )}
-
-        <View style={styles.headerTitleBox}>
-          <View style={styles.headerTitleRow}>
-            <Text style={styles.headerTitle}>Revue communautaire</Text>
-            <View style={styles.betaTag}><Text style={styles.betaText}>BÊTA</Text></View>
-          </View>
-          <Text style={styles.headerSub}>Un texte anonymisé, une question</Text>
-        </View>
-
-        {/* Le didacticiel ne s'ouvre qu'une fois tout seul ; ce bouton est le
-            seul moyen de le revoir. */}
-        <TouchableOpacity onPress={() => setShowTutorial(true)} style={styles.headerBtn} activeOpacity={0.7}>
-          <Ionicons name="help-circle-outline" size={22} color={colors.textMuted} />
-        </TouchableOpacity>
-      </View>
+      <AppHeader
+        navigation={navigation}
+        title="Revue communautaire"
+        subtitle="Un texte anonymisé, une question"
+        badge="BÊTA"
+        onHelp={() => setShowTutorial(true)}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -392,26 +347,6 @@ const CommunityReviewScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitleBox: { flex: 1, alignItems: 'center' },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  headerTitle: { color: colors.textPrimary, fontSize: 16, fontFamily: fonts.heading },
-  betaTag: {
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 5,
-    backgroundColor: colors.accentMuted,
-  },
-  betaText: { color: colors.accentBright, fontSize: 8.5, fontFamily: fonts.bold, letterSpacing: 0.5 },
-  headerSub: { color: colors.textMuted, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 2 },
 
   scroll: { flex: 1 },
   // La tab bar absolue de l'app recouvre le bas des écrans : sans cette marge,
