@@ -1,6 +1,5 @@
 import { colors, fonts, glow } from '../theme';
-import { ScreenBackground, BackButton, Skeleton, HowItWorks, CoinBalancePill } from '../components/ui';
-import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
+import { AppHeader, ScreenBackground, Skeleton, HowItWorks, CoinBalancePill } from '../components/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -11,12 +10,9 @@ import {
   Dimensions,
   Animated,
   RefreshControl,
-  ActivityIndicator,
   StatusBar,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { LineChart } from 'react-native-chart-kit';
 import { useNavigation } from '@react-navigation/native';
 import NewEconomyService, { EconomicStats, ChartRange } from '../services/newEconomyService';
@@ -24,7 +20,7 @@ import CurrencyService from '../services/currencyService';
 import SimpleChart from '../components/SimpleChart';
 import SimpleStatsPanel from '../components/SimpleStatsPanel';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const chartWidth = width - 40;
 
 const TIMEFRAME_TO_RANGE: Record<'1H' | '1D' | '1W' | '1M', ChartRange> = {
@@ -47,7 +43,6 @@ interface MarketData {
 
 const TradingScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { top: headerTopInset } = useHeaderMetrics();
   const [marketData, setMarketData] = useState<MarketData | null>(null);
   const [economicStats, setEconomicStats] = useState<EconomicStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,14 +107,26 @@ const TradingScreen: React.FC = () => {
       const stats = await NewEconomyService.getEconomicStats(currencyId, TIMEFRAME_TO_RANGE[timeframe]);
       setEconomicStats(stats);
       
-      // Transformer les données pour le composant
+      const currency = stats?.currency || ({} as any);
+      const safeNumber = (value: unknown, fallback = 0) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+      // Transformer les données pour le composant sans faire confiance à la forme
+      // réseau : un champ manquant ne doit jamais crasher l'écran Trading.
       const marketInfo: MarketData = {
-        price: stats.currency.currentPrice,
-        change24h: stats.currency.priceChange24h,
-        volume: stats.currency.volume24h,
-        marketCap: stats.currency.marketCap,
-        trend: stats.currency.trend,
-        priceHistory: stats.priceHistory
+        price: safeNumber(currency.currentPrice, 0.01),
+        change24h: safeNumber(currency.priceChange24h),
+        volume: safeNumber(currency.volume24h),
+        marketCap: safeNumber(currency.marketCap),
+        trend: ['rising', 'falling', 'stable'].includes(currency.trend) ? currency.trend : 'stable',
+        priceHistory: Array.isArray(stats?.priceHistory)
+          ? stats.priceHistory.filter((point: any) => (
+              point &&
+              typeof point.date === 'string' &&
+              typeof point.price === 'number' &&
+              Number.isFinite(point.price)
+            ))
+          : [],
       };
       
       setMarketData(marketInfo);
@@ -166,25 +173,28 @@ const TradingScreen: React.FC = () => {
   };
 
   const formatPrice = (price: number) => {
-    return `${price.toFixed(4)}€`;
+    const value = Number.isFinite(price) ? price : 0;
+    return `${value.toFixed(4)}€`;
   };
 
   const formatVolume = (volume: number) => {
-    if (volume >= 1000000) {
-      return `${(volume / 1000000).toFixed(1)}M€`;
-    } else if (volume >= 1000) {
-      return `${(volume / 1000).toFixed(1)}k€`;
+    const value = Number.isFinite(volume) ? volume : 0;
+    if (value >= 1000000) {
+      return `${(value / 1000000).toFixed(1)}M€`;
+    } else if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)}k€`;
     }
-    return `${volume.toFixed(0)}€`;
+    return `${value.toFixed(0)}€`;
   };
 
   const formatMarketCap = (marketCap: number) => {
-    if (marketCap >= 1000000) {
-      return `${(marketCap / 1000000).toFixed(2)}M€`;
-    } else if (marketCap >= 1000) {
-      return `${(marketCap / 1000).toFixed(1)}k€`;
+    const value = Number.isFinite(marketCap) ? marketCap : 0;
+    if (value >= 1000000) {
+      return `${(value / 1000000).toFixed(2)}M€`;
+    } else if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)}k€`;
     }
-    return `${marketCap.toFixed(0)}€`;
+    return `${value.toFixed(0)}€`;
   };
 
   const getTrendColor = (trend: string, change: number) => {
@@ -200,41 +210,37 @@ const TradingScreen: React.FC = () => {
   };
 
   const renderHeader = () => (
-    <View style={[styles.header, { paddingTop: headerTopInset }]}>
-      <BackButton navigation={navigation} />
-      
-      <View style={styles.headerTitleContainer}>
-        <Text style={styles.headerTitle}>TwitCoins</Text>
-      </View>
-
-      {/* Le solde tient dans l'en-tête : décider d'acheter ou de vendre sans
-          savoir ce qu'on a n'a pas de sens. */}
-      <CoinBalancePill compact style={styles.headerBalance} />
-      
-      <View style={styles.headerActions}>
-        <TouchableOpacity 
-          style={[styles.viewToggle, currentView === 'chart' && styles.viewToggleActive]}
-          onPress={() => setCurrentView('chart')}
-        >
-          <Ionicons name="analytics" size={20} color={currentView === 'chart' ? '#fff' : 'rgba(255,255,255,0.6)'} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.viewToggle, currentView === 'stats' && styles.viewToggleActive]}
-          onPress={() => setCurrentView('stats')}
-        >
-          <Ionicons name="bar-chart" size={20} color={currentView === 'stats' ? '#fff' : 'rgba(255,255,255,0.6)'} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.refreshButton}
-          onPress={onRefresh}
-          disabled={refreshing}
-        >
-          <Ionicons name={refreshing ? "hourglass" : "refresh"} size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    <AppHeader
+      navigation={navigation}
+      title="TwitCoins"
+      subtitle="Cours, stats et actions TWC"
+      right={(
+        <View style={styles.headerActions}>
+          {/* Le solde tient dans l'en-tête : décider d'acheter ou de vendre sans
+              savoir ce qu'on a n'a pas de sens. */}
+          <CoinBalancePill compact style={styles.headerBalance} />
+          <TouchableOpacity
+            style={[styles.viewToggle, currentView === 'chart' && styles.viewToggleActive]}
+            onPress={() => setCurrentView('chart')}
+          >
+            <Ionicons name="analytics" size={20} color={currentView === 'chart' ? '#fff' : 'rgba(255,255,255,0.6)'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewToggle, currentView === 'stats' && styles.viewToggleActive]}
+            onPress={() => setCurrentView('stats')}
+          >
+            <Ionicons name="bar-chart" size={20} color={currentView === 'stats' ? '#fff' : 'rgba(255,255,255,0.6)'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <Ionicons name={refreshing ? "hourglass" : "refresh"} size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
+    />
   );
 
   const renderPriceHeader = () => {
@@ -409,19 +415,19 @@ const TradingScreen: React.FC = () => {
     const stats = [
       {
         label: 'Offre Totale',
-        value: `${economicStats.currency.circulatingSupply.toFixed(0)} TWC`,
+        value: `${formatMarketCap(economicStats.currency.circulatingSupply).replace('€', '')} TWC`,
         icon: 'pie-chart',
         color: colors.accent
       },
       {
         label: 'Multiplicateur',
-        value: `×${economicStats.currency.multiplier.toFixed(2)}`,
+        value: `×${(Number.isFinite(economicStats.currency.multiplier) ? economicStats.currency.multiplier : 1).toFixed(2)}`,
         icon: 'trending-up',
         color: colors.success
       },
       {
         label: 'Bonus Achat',
-        value: `${economicStats.currency.purchaseBonus.toFixed(1)}%`,
+        value: `${(Number.isFinite(economicStats.currency.purchaseBonus) ? economicStats.currency.purchaseBonus : 0).toFixed(1)}%`,
         icon: 'gift',
         color: colors.gold
       },
@@ -624,30 +630,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500', fontFamily: fonts.medium,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    // paddingTop réel posé à l'appel (useHeaderMetrics), pas une valeur devinée.
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
   howItWorks: { marginHorizontal: 16, marginBottom: 16 },
   headerBalance: { marginRight: 8 },
-  headerTitleContainer: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontFamily: fonts.heading,
-    color: colors.textPrimary,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',

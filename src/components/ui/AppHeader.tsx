@@ -2,7 +2,8 @@ import React from 'react';
 import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../../theme';
-import { useHeaderMetrics } from '../../hooks/useHeaderMetrics';
+import { HEADER_CONTENT_HEIGHT, useHeaderMetrics } from '../../hooks/useHeaderMetrics';
+import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
@@ -28,10 +29,13 @@ export function shouldShowBackButton(navigation?: any) {
 /** Header unique de l'app, aligné sur la Revue communautaire. */
 export default function AppHeader({ navigation, title, subtitle, badge, right, onHelp, style, contentStyle }: AppHeaderProps) {
   const { top } = useHeaderMetrics();
+  const { width, space } = useResponsiveLayout();
+  const gutter = width >= 900 ? 24 : space(16, 12, 24);
   const showBack = shouldShowBackButton(navigation);
 
   return (
-    <View style={[styles.header, { paddingTop: top + 10 }, style]}>
+    <View style={[styles.shell, { paddingTop: top }, style]}>
+      <View style={[styles.header, { paddingHorizontal: gutter }]}>
       {showBack ? (
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.sideBtn} hitSlop={hitSlop} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
@@ -55,23 +59,27 @@ export default function AppHeader({ navigation, title, subtitle, badge, right, o
           <Ionicons name="help-circle-outline" size={22} color={colors.textMuted} />
         </TouchableOpacity>
       ) : <View style={styles.sideBtn} />)}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingBottom: 12,
+  shell: {
     backgroundColor: colors.bg,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+    zIndex: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: HEADER_CONTENT_HEIGHT,
   },
   sideBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   sideBtnCollapsed: { width: 0, height: 40 },
-  titleBox: { flex: 1, alignItems: 'center', minWidth: 0 },
+  titleBox: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '100%' },
   title: { color: colors.textPrimary, fontSize: 16, fontFamily: fonts.heading },
   subtitle: { color: colors.textMuted, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 2 },

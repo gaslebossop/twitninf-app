@@ -22,7 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import TweetMonetizationService from '../services/tweetMonetizationService';
 import NewEconomyService from '../services/newEconomyService';
 import { colors, fonts, withAlpha, radius } from '../theme';
-import { ScreenBackground, GlassHeader, GlassCard, GlassButton, SectionLabel, Skeleton, celebrateReward } from '../components/ui';
+import { AppHeader, ScreenBackground, GlassCard, GlassButton, SectionLabel, Skeleton, celebrateReward } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 
 if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExperimental) {
@@ -451,7 +451,7 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
   if (loading) {
     return (
       <ScreenBackground>
-        <GlassHeader title="Monétisation" subtitle="Gagne des TWC avec tes tweets" />
+        <AppHeader navigation={navigation} title="Monétisation" subtitle="Gagne des TWC avec tes tweets" />
         <View style={styles.content}>
           <Skeleton width="100%" height={148} rounded={16} style={{ marginBottom: 20 }} />
           <View style={styles.tabRow}>
@@ -471,19 +471,16 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
   // navigateur PARENT (le Stack racine) — ce n'est pas ce qu'on veut savoir.
   // Seul le type du navigateur qui possède CET écran fait foi : jamais de
   // flèche retour quand on est affiché comme onglet.
-  const isTabScreen = navigation?.getState?.()?.type === 'tab';
-  const showBackButton = !isTabScreen && !!navigation?.canGoBack?.();
-
   const notAuthenticated = !isAuthenticated || !user;
   const eligibleCount = eligibleTweets.filter((t) => t.eligibility.isEligible).length;
   const contentMaxWidth = isWide ? { maxWidth: 640, alignSelf: 'center' as const, width: '100%' as const } : null;
 
   return (
     <ScreenBackground>
-      <GlassHeader
+      <AppHeader
+        navigation={navigation}
         title="Monétisation"
         subtitle="Gagne des TWC avec tes tweets"
-        onBack={showBackButton ? () => navigation.goBack() : undefined}
       />
 
       {notAuthenticated ? (
