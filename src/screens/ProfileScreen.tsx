@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fonts, colors, withAlpha } from '../theme';
-import { ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  FlatList,
   Animated,
   Dimensions,
   StatusBar,
   SafeAreaView,
   Platform,
   ActivityIndicator,
-  RefreshControl,
   TextInput,
   Modal,
   Pressable,
@@ -67,8 +67,12 @@ import { useProfileBannerHeight } from '../hooks/useProfileBannerHeight';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import useForegroundInterval from '../hooks/useForegroundInterval';
 
 const { height } = Dimensions.get('window');
+
+/** Référence stable : un `[]` littéral changerait d'identité à chaque rendu. */
+const EMPTY_TWEETS: Tweet[] = [];
 /** Même fond que le feed / navigation (TweetsScreen, tabs) */
 const PROFILE_BODY_BG = colors.bg;
 const AVATAR_SIZE = 84;
@@ -222,7 +226,23 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     }, [loadProfileTweets]),
   );
 
-  const updateTweetInteraction = (
+  /**
+   * Les quatre handlers passés à `TweetCard` doivent garder la même identité
+   * d'un rendu à l'autre, sinon le comparateur de la carte (voir
+   * `components/TweetCard`) échoue et les cinquante cartes se re-rendent au
+   * moindre like. Ils lisent donc l'état courant par référence plutôt que par
+   * capture de closure.
+   */
+  const profileTweetsRef = useRef(profileTweets);
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    profileTweetsRef.current = profileTweets;
+  }, [profileTweets]);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  const updateTweetInteraction = useCallback((
     tweetId: string,
     interaction: 'is_liked' | 'is_retweeted',
     stat: 'likes' | 'retweets',
@@ -248,32 +268,48 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         },
       } as Tweet;
     }));
-  };
+  }, []);
 
-  const handleLike = async (tweetId: string) => {
-    const wasLiked = !!profileTweets.find((tweet) => tweet.id === tweetId)?.user_interaction?.is_liked;
+  const handleLike = useCallback(async (tweetId: string) => {
+    const wasLiked = !!profileTweetsRef.current.find((tweet) => tweet.id === tweetId)?.user_interaction?.is_liked;
     updateTweetInteraction(tweetId, 'is_liked', 'likes', !wasLiked);
     const response = await apiService.likeTweet(tweetId);
     if (!response?.success) updateTweetInteraction(tweetId, 'is_liked', 'likes', wasLiked);
-    if (activeTab === 'likes' && wasLiked && response?.success) {
+    if (activeTabRef.current === 'likes' && wasLiked && response?.success) {
       setProfileTweets((current) => current.filter((tweet) => tweet.id !== tweetId));
     }
-  };
+  }, [updateTweetInteraction]);
 
-  const handleRetweet = async (tweetId: string) => {
-    const wasRetweeted = !!profileTweets.find((tweet) => tweet.id === tweetId)?.user_interaction?.is_retweeted;
+  const handleRetweet = useCallback(async (tweetId: string) => {
+    const wasRetweeted = !!profileTweetsRef.current.find((tweet) => tweet.id === tweetId)?.user_interaction?.is_retweeted;
     updateTweetInteraction(tweetId, 'is_retweeted', 'retweets', !wasRetweeted);
     const response = await apiService.retweet(tweetId);
     if (!response?.success) updateTweetInteraction(tweetId, 'is_retweeted', 'retweets', wasRetweeted);
-  };
+  }, [updateTweetInteraction]);
 
-  const handleReply = (tweetId: string) => {
+  const handleReply = useCallback((tweetId: string) => {
     navigation.navigate('CreateTweet', { parentTweetId: tweetId, replyTo: tweetId });
-  };
+  }, [navigation]);
 
-  const handleDeleteTweet = (tweetId: string) => {
+  const handleDeleteTweet = useCallback((tweetId: string) => {
     setProfileTweets((current) => current.filter((tweet) => tweet.id !== tweetId));
-  };
+  }, []);
+
+  const tweetKeyExtractor = useCallback((tweet: Tweet) => tweet.id, []);
+
+  const renderTweetItem = useCallback(
+    ({ item }: { item: Tweet }) => (
+      <TweetCard
+        tweet={item}
+        onLike={handleLike}
+        onRetweet={handleRetweet}
+        onReply={handleReply}
+        onDelete={handleDeleteTweet}
+        compact={false}
+      />
+    ),
+    [handleLike, handleRetweet, handleReply, handleDeleteTweet],
+  );
 
   const insets = useSafeAreaInsets();
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -333,22 +369,27 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     } finally { setPremiumLoading(false); }
   };
 
+  // L'abonnement socket vit indépendamment du sondage : il n'a pas de raison
+  // de s'arrêter en arrière-plan, contrairement au minuteur ci-dessous.
   useEffect(() => {
-    const checkLiveStatus = async () => {
-      if (!user?.id) return;
-      try {
-        const { liveService } = require('../services/liveService');
-        const lives = await liveService.getLives();
-        setIsLive(!!lives.find((l: any) => l.hostId === user.id));
-      } catch { }
-    };
     const { socket } = require('../services/liveService');
     const handleLiveEnded = ({ liveId }: { liveId: string }) => { if (liveId === user?.id) setIsLive(false); };
     socket.on('liveEnded', handleLiveEnded);
-    checkLiveStatus();
-    const timer = setInterval(checkLiveStatus, 30000);
-    return () => { clearInterval(timer); socket.off('liveEnded', handleLiveEnded); };
+    return () => { socket.off('liveEnded', handleLiveEnded); };
   }, [user?.id]);
+
+  // `useForegroundInterval` plutôt qu'un `setInterval` nu : le sondage battait
+  // aussi app en arrière-plan, réveillant le thread JS toutes les 30 s.
+  const checkLiveStatus = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const { liveService } = require('../services/liveService');
+      const lives = await liveService.getLives();
+      setIsLive(!!lives.find((l: any) => l.hostId === user.id));
+    } catch { }
+  }, [user?.id]);
+
+  useForegroundInterval(checkLiveStatus, 30000);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -469,16 +510,34 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <EventBanner />
 
-      <ScrollView
+      {/*
+        Le contenu de l'onglet est virtualisé : l'écran montait jusqu'à
+        cinquante `TweetCard` avant la première frame. Tout ce qui précède les
+        posts (hero, stats, stories, onglets) devient l'en-tête de la liste, et
+        garde exactement sa place et son défilement.
+
+        `removeClippedSubviews` reste à `false`, comme sur l'ancien ScrollView :
+        le hero et les parures premium débordent en `position: absolute`, et le
+        clipping les ferait disparaître.
+      */}
+      <FlatList
         style={S.scroll}
         contentContainerStyle={{ paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
         bounces={!refreshing}
         removeClippedSubviews={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+          <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
+        data={tabLoading ? EMPTY_TWEETS : profileTweets}
+        keyExtractor={tweetKeyExtractor}
+        renderItem={renderTweetItem}
+        initialNumToRender={6}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        ListHeaderComponent={
+          <>
 
         {/* ── Hero bannière + PP ── */}
         <View style={S.profileHero}>
@@ -940,24 +999,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           ))}
         </View>
 
-        {/* ── CONTENU ONGLET ── */}
-        {tabLoading ? (
+          </>
+        }
+        ListEmptyComponent={
+          tabLoading ? (
           <View style={S.emptyWrap}>
             <ActivityIndicator size="small" color={colors.accent} />
-          </View>
-        ) : profileTweets.length > 0 ? (
-          <View>
-            {profileTweets.map((tweet) => (
-              <TweetCard
-                key={tweet.id}
-                tweet={tweet}
-                onLike={handleLike}
-                onRetweet={handleRetweet}
-                onReply={handleReply}
-                onDelete={handleDeleteTweet}
-                compact={false}
-              />
-            ))}
           </View>
         ) : (
           <View style={S.emptyWrap}>
@@ -984,7 +1031,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 : 'Pas encore de likes'}
             </Text>
           </View>
-        )}
+          )
+        }
+        ListFooterComponent={
+          <>
 
         {/* ── PREMIUM BANNER ── */}
         {subTier !== 'pro' && (
@@ -1014,7 +1064,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           <Text style={S.logoutText}>Se déconnecter</Text>
         </TouchableOpacity>
 
-      </ScrollView>
+          </>
+        }
+      />
 
       {/* ── VISIONNEUSE DE STORIES (avatar) ── */}
       <StoryViewer

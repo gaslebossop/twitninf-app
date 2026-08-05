@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   StyleSheet,
   Animated,
   Easing,
@@ -33,6 +34,7 @@ import IosNativeBadge from '../components/IosNativeBadge';
 import { formatCompactCount } from '../utils/format';
 import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import { useProfileBannerHeight } from '../hooks/useProfileBannerHeight';
+import useForegroundInterval from '../hooks/useForegroundInterval';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import ProfileStories, { useProfileStories } from '../components/ProfileStories';
 import { STORY_GRADIENT } from '../components/StoryRing';
@@ -62,6 +64,9 @@ import {
 } from '../components/PremiumProfileEntrance';
 
 const PROFILE_BODY_BG = colors.bg;
+
+/** Référence stable : un `[]` littéral changerait d'identité à chaque rendu. */
+const EMPTY_TWEETS: Tweet[] = [];
 
 const AVATAR_SIZE = 84;
 const AVATAR_BORDER = 4;
@@ -117,7 +122,7 @@ export default function UserProfileScreen() {
   const [likedTweets, setLikedTweets] = useState<{ [key: string]: boolean }>({});
   const [retweetedTweets, setRetweetedTweets] = useState<{ [key: string]: boolean }>({});
   const [tabLoading, setTabLoading] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList<Tweet>>(null);
 
   const [isLive, setIsLive] = useState(false);
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -154,37 +159,35 @@ export default function UserProfileScreen() {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const followButtonAnim = useRef(new Animated.Value(1)).current;
 
-  // 📡 Vérifier le statut Live
-  useEffect(() => {
+  // 📡 Vérifier le statut Live — suspendu quand l'app passe en arrière-plan.
+  const checkLiveStatus = useCallback(async () => {
     if (!userProfile?.id) return;
-
-    const checkLiveStatus = async () => {
-      try {
-        const { liveService } = require('../services/liveService');
-        const lives = await liveService.getLives();
-        const userLive = lives.find((l: any) => l.hostId === userProfile.id);
-        setIsLive(!!userLive);
-      } catch (e) {
-        console.error('[UserProfile] Error checking live status:', e);
-      }
-    };
-
-    checkLiveStatus();
-    const timer = setInterval(checkLiveStatus, 20000);
-    return () => clearInterval(timer);
+    try {
+      const { liveService } = require('../services/liveService');
+      const lives = await liveService.getLives();
+      const userLive = lives.find((l: any) => l.hostId === userProfile.id);
+      setIsLive(!!userLive);
+    } catch (e) {
+      console.error('[UserProfile] Error checking live status:', e);
+    }
   }, [userProfile?.id]);
+
+  useForegroundInterval(checkLiveStatus, 20000);
 
   // Animation Pulse LIVE
   useEffect(() => {
-    if (isLive) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
-    }
-  }, [isLive]);
+    if (!isLive) return;
+    // La boucle n'était jamais arrêtée : elle survivait à la fin du direct et
+    // au démontage de l'écran, et continuait de tourner pour la session.
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [isLive, pulseAnim]);
 
   const params = route.params as RouteParams;
   const userId = params?.userId;
@@ -206,7 +209,7 @@ export default function UserProfileScreen() {
       const resolvedUserId = userId || userProfile?.id;
       if (resolvedUserId) {
         setTabLoading(true);
-        scrollRef.current?.scrollTo({ y: 0, animated: false });
+        scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
         await fetchUserTweets();
         setTabLoading(false);
       }
@@ -300,9 +303,28 @@ export default function UserProfileScreen() {
     setRetweetedTweets((prev) => ({ ...prev, ...initialRetweets }));
   }, [tweets]);
 
-  const handleLike = async (tweetId: string) => {
+  /**
+   * Identité stable des handlers passés à `TweetCard` : son comparateur
+   * (`components/TweetCard`) compare les callbacks par référence, donc une
+   * closure recréée à chaque rendu re-rendrait toutes les cartes montées.
+   * L'état courant est lu par référence.
+   */
+  const likedTweetsRef = useRef(likedTweets);
+  const retweetedTweetsRef = useRef(retweetedTweets);
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    likedTweetsRef.current = likedTweets;
+  }, [likedTweets]);
+  useEffect(() => {
+    retweetedTweetsRef.current = retweetedTweets;
+  }, [retweetedTweets]);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  const handleLike = useCallback(async (tweetId: string) => {
     try {
-      const wasLiked = likedTweets[tweetId] || false;
+      const wasLiked = likedTweetsRef.current[tweetId] || false;
       setLikedTweets((prev) => ({ ...prev, [tweetId]: !wasLiked }));
       setTweets((prev) => prev.map((t) => {
         if (t.id !== tweetId) return t;
@@ -316,18 +338,18 @@ export default function UserProfileScreen() {
           if (t.id !== tweetId) return t;
           return { ...t, stats: { ...(t.stats || {}), likes: wasLiked ? (t.stats?.likes || 0) : Math.max(0, (t.stats?.likes || 0) - 1) }, user_interaction: { ...(t as any).user_interaction, is_liked: wasLiked } } as Tweet;
         }));
-      } else if (activeTab === 'likes' && wasLiked) {
+      } else if (activeTabRef.current === 'likes' && wasLiked) {
         setTweets((prev) => prev.filter((t) => t.id !== tweetId));
       }
     } catch (error) {
-      const wasLiked = likedTweets[tweetId] || false;
+      const wasLiked = likedTweetsRef.current[tweetId] || false;
       setLikedTweets((prev) => ({ ...prev, [tweetId]: wasLiked }));
     }
-  };
+  }, []);
 
-  const handleRetweet = async (tweetId: string) => {
+  const handleRetweet = useCallback(async (tweetId: string) => {
     try {
-      const wasRetweeted = retweetedTweets[tweetId] || false;
+      const wasRetweeted = retweetedTweetsRef.current[tweetId] || false;
       setRetweetedTweets((prev) => ({ ...prev, [tweetId]: !wasRetweeted }));
       setTweets((prev) => prev.map((t) => {
         if (t.id !== tweetId) return t;
@@ -339,26 +361,59 @@ export default function UserProfileScreen() {
         setRetweetedTweets((prev) => ({ ...prev, [tweetId]: wasRetweeted }));
       }
     } catch (error) {
-      const wasRetweeted = retweetedTweets[tweetId] || false;
+      const wasRetweeted = retweetedTweetsRef.current[tweetId] || false;
       setRetweetedTweets((prev) => ({ ...prev, [tweetId]: wasRetweeted }));
     }
-  };
+  }, []);
 
-  const handleReply = (tweetId: string) => {
+  const handleReply = useCallback((tweetId: string) => {
     (navigation as any).navigate('CreateTweet' as never, { replyTo: tweetId, isReply: true } as never);
-  };
+  }, [navigation]);
 
-  const handleShare = (tweetId: string) => { };
+  const handleShare = useCallback((tweetId: string) => { }, []);
 
-  const handleDeleteTweet = (tweetId: string) => {
+  const handleDeleteTweet = useCallback((tweetId: string) => {
     setTweets((current) => current.filter((tweet) => tweet.id !== tweetId));
-  };
+  }, []);
 
-  const handleBookmark = (tweetId: string) => {
+  const handleBookmark = useCallback((tweetId: string) => {
     // 📌 Bookmark
     console.log('Bookmark:', tweetId);
     toast.success('Tweet ajouté aux favoris');
-  };
+  }, []);
+
+  /**
+   * L'état d'interaction vit à côté des tweets : on le fusionne une fois par
+   * changement plutôt qu'à chaque rendu de chaque ligne.
+   */
+  const tweetsWithInteractions = React.useMemo(
+    () =>
+      tweets.map((tweet) => ({
+        ...tweet,
+        user_interaction: {
+          is_liked: likedTweets[tweet.id] || false,
+          is_retweeted: retweetedTweets[tweet.id] || false,
+        },
+      })) as Tweet[],
+    [tweets, likedTweets, retweetedTweets],
+  );
+
+  const tweetKeyExtractor = useCallback((tweet: Tweet) => tweet.id, []);
+
+  const renderTweetItem = useCallback(
+    ({ item }: { item: Tweet }) => (
+      <TweetCard
+        tweet={item}
+        onLike={handleLike}
+        onRetweet={handleRetweet}
+        onReply={handleReply}
+        onShare={handleShare}
+        onDelete={handleDeleteTweet}
+        compact={false}
+      />
+    ),
+    [handleLike, handleRetweet, handleReply, handleShare, handleDeleteTweet],
+  );
 
   const handleSkip = (tweetId: string) => {
     // ⏭️ Skip
@@ -495,6 +550,13 @@ export default function UserProfileScreen() {
 
   const isOwnProfile = !!(currentUser?.id && userProfile && currentUser.id === userProfile.id);
 
+  // Compte privé non suivi : la liste reste vide et le message prend sa place.
+  // Comme avant, la règle ne s'applique pas tant que l'onglet charge — sinon
+  // les tweets déjà affichés disparaîtraient à chaque changement d'onglet.
+  const isLockedPrivateProfile =
+    !!userProfile.is_private_account && !isOwnProfile && followStatus !== 'active' && !tabLoading;
+  const showsTweets = !isLockedPrivateProfile;
+
   const premiumTier = userProfile.premium
     ? effectiveSubscriptionTier(true, userProfile.subscription_tier)
     : 'free';
@@ -518,7 +580,27 @@ export default function UserProfileScreen() {
       </View>
 
       {/* ── SCROLLABLE BODY ── */}
-      <ScrollView
+      {/*
+        La scène d'arrivée (fondu + 8 px) enveloppe désormais la liste plutôt
+        que son contenu : avec une liste virtualisée il n'y a plus de conteneur
+        unique à animer. À 8 px de course, le mouvement est le même à l'œil.
+      */}
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: fadeAnim,
+          width: '100%',
+          transform: [
+            {
+              translateY: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [8, 0],
+              }),
+            },
+          ],
+        }}
+      >
+      <FlatList
         ref={scrollRef}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -526,21 +608,15 @@ export default function UserProfileScreen() {
         bounces={!refreshing}
         removeClippedSubviews={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-      >
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            width: '100%',
-            transform: [
-              {
-                translateY: fadeAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [8, 0],
-                }),
-              },
-            ],
-          }}
-        >
+        data={showsTweets ? tweetsWithInteractions : EMPTY_TWEETS}
+        keyExtractor={tweetKeyExtractor}
+        renderItem={renderTweetItem}
+        initialNumToRender={6}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        ListHeaderComponent={
+          <>
 
           <View style={S.profileHero}>
             {/*
@@ -927,11 +1003,13 @@ export default function UserProfileScreen() {
           </View>
 
           {/* Tweet list */}
-          <View style={{ paddingBottom: 40 }}>
             {tabLoading && (
               <ScreenSkeleton variant="detail" />
             )}
-            {userProfile.is_private_account && !isOwnProfile && followStatus !== 'active' && !tabLoading ? (
+          </>
+        }
+        ListEmptyComponent={
+          tabLoading ? null : isLockedPrivateProfile ? (
               <View style={S.emptyContainer}>
                 <Ionicons name="lock-closed" size={48} color={colors.borderSubtle} />
                 <Text style={S.emptyTitle}>Ce compte est privé</Text>
@@ -939,7 +1017,7 @@ export default function UserProfileScreen() {
                   Abonnez-vous pour voir les publications de {userProfile.username}
                 </Text>
               </View>
-            ) : tweets.length === 0 && !tabLoading ? (
+            ) : (
               <View style={S.emptyContainer}>
                 <Ionicons name="chatbubble-outline" size={48} color={colors.borderSubtle} />
                 <Text style={S.emptyTitle}>Aucun contenu</Text>
@@ -947,33 +1025,11 @@ export default function UserProfileScreen() {
                   {userProfile.username} n'a pas encore publié de {activeTab}
                 </Text>
               </View>
-            ) : (
-              tweets.map((tweet) => {
-                const tweetWithInteractions = {
-                  ...tweet,
-                  user_interaction: {
-                    is_liked: likedTweets[tweet.id] || false,
-                    is_retweeted: retweetedTweets[tweet.id] || false,
-                  }
-                } as Tweet;
-                return (
-                  <TweetCard
-                    key={tweet.id}
-                    tweet={tweetWithInteractions}
-                    onLike={handleLike}
-                    onRetweet={handleRetweet}
-                    onReply={handleReply}
-                    onShare={handleShare}
-                    onDelete={handleDeleteTweet}
-                    compact={false}
-                  />
-                );
-              })
-            )}
-          </View>
-
-        </Animated.View>
-      </ScrollView>
+            )
+        }
+        ListFooterComponent={<View style={{ height: 40 }} />}
+      />
+      </Animated.View>
 
       <StoryViewer
         visible={storyViewerVisible}

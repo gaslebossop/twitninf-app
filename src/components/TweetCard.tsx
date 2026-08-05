@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -62,7 +62,29 @@ interface TweetCardProps {
 
 const { width } = Dimensions.get('window');
 
-export default function TweetCard({
+/**
+ * Formatage hors du composant : recréer ces fonctions à chaque rendu ne coûte
+ * rien en soi, mais `toLocaleDateString` en coûte beaucoup, et une carte
+ * montée cinquante fois le payait cinquante fois par rendu.
+ */
+const formatNumber = (num: number) => {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
+  return num.toString();
+};
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+  if (diffInHours < 1) return 'À l\'instant';
+  if (diffInHours < 24) return `${Math.floor(diffInHours)}h`;
+  if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}j`;
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+};
+
+function TweetCard({
   tweet,
   onLike,
   onRetweet,
@@ -292,22 +314,12 @@ export default function TweetCard({
     setIsExpanded(!isExpanded);
   };
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
-    return num.toString();
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-    
-    if (diffInHours < 1) return 'À l\'instant';
-    if (diffInHours < 24) return `${Math.floor(diffInHours)}h`;
-    if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}j`;
-    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-  };
+  // Le libellé ne dépend que de la date de publication : inutile de le
+  // recalculer quand un compteur bouge.
+  const dateLabel = useMemo(
+    () => formatDate(tweet.created_at || (tweet as any).createdAt || ''),
+    [tweet.created_at, (tweet as any).createdAt],
+  );
 
   return (
     <Pressable
@@ -423,7 +435,7 @@ export default function TweetCard({
                       color: eventTheme.colors.textSecondary,
                     }
                   ]}>
-                    · {formatDate(tweet.created_at || tweet.createdAt || '')}
+                    · {dateLabel}
                   </Text>
                 </View>
               </View>
@@ -678,6 +690,57 @@ export default function TweetCard({
     </Pressable>
   );
 }
+
+/**
+ * Même rôle que le comparateur de `feed/TweetRow` : sans lui, un like sur une
+ * carte re-rendait les cinquante cartes montées d'un écran de profil.
+ *
+ * Le thème d'événement n'a pas à y figurer : il est lu par un contexte à
+ * l'intérieur de la carte, donc il la re-rend de lui-même.
+ */
+function areEqual(prev: TweetCardProps, next: TweetCardProps) {
+  if (
+    prev.compact !== next.compact ||
+    prev.onLike !== next.onLike ||
+    prev.onRetweet !== next.onRetweet ||
+    prev.onReply !== next.onReply ||
+    prev.onShare !== next.onShare ||
+    prev.onBookmark !== next.onBookmark ||
+    prev.onSkip !== next.onSkip ||
+    prev.onBlock !== next.onBlock ||
+    prev.onDelete !== next.onDelete
+  ) {
+    return false;
+  }
+
+  const a = prev.tweet;
+  const b = next.tweet;
+  if (a === b) return true;
+
+  return (
+    a.id === b.id &&
+    a.content === b.content &&
+    a.stats?.likes === b.stats?.likes &&
+    a.stats?.retweets === b.stats?.retweets &&
+    a.stats?.replies === b.stats?.replies &&
+    a.stats?.views === b.stats?.views &&
+    a.user_interaction?.is_liked === b.user_interaction?.is_liked &&
+    a.user_interaction?.is_retweeted === b.user_interaction?.is_retweeted &&
+    // L'accès au contenu payant change l'affichage du verrou.
+    (a as any).paid_content?.has_access === (b as any).paid_content?.has_access &&
+    // L'auteur peut changer d'habillage sans que le tweet change d'identité.
+    a.author?.id === b.author?.id &&
+    a.author?.username === b.author?.username &&
+    a.author?.full_name === b.author?.full_name &&
+    a.author?.avatar === b.author?.avatar &&
+    a.author?.verified === b.author?.verified &&
+    (a.author as any)?.verification_style === (b.author as any)?.verification_style &&
+    (a.author as any)?.profile_customization ===
+      (b.author as any)?.profile_customization
+  );
+}
+
+export default memo(TweetCard, areEqual);
 
 const styles = StyleSheet.create({
   container: {

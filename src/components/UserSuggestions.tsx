@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { colors, fonts, radius } from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -6,11 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Animated,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { apiService } from '../services';
@@ -76,7 +74,7 @@ export default function UserSuggestions() {
   if (loading && suggestions.length === 0) {
     return (
       <View style={S.loadingContainer}>
-        <ActivityIndicator size="small" color="#4F7CFF" />
+        <ActivityIndicator size="small" color={colors.accent} />
       </View>
     );
   }
@@ -110,10 +108,7 @@ export default function UserSuggestions() {
             onPress={() => (navigation as any).navigate('UserProfile', { userId: user.id, username: user.username })}
             style={S.card}
           >
-            <LinearGradient
-              colors={['rgba(255,255,255,0.09)', 'rgba(255,255,255,0.02)']}
-              style={S.cardGradient}
-            >
+            <View style={S.cardBody}>
               <View style={S.cardHeader}>
                 <Avatar size={54} username={user.username} uri={user.avatar} />
                 <View style={S.userInfo}>
@@ -159,7 +154,8 @@ export default function UserSuggestions() {
                     <Ionicons 
                         name={reason.includes('intérêt') ? 'sparkles' : (reason.includes('publications') ? 'heart' : 'people')} 
                         size={10} 
-                        color="#4F7CFF" 
+                        color={colors.accent}
+                    
                     />
                     <Text style={S.reasonText}>{reason}</Text>
                   </View>
@@ -181,7 +177,7 @@ export default function UserSuggestions() {
                   disabled={followLoading[user.id]}
                 >
                   {followLoading[user.id] ? (
-                    <ActivityIndicator size="small" color={followingMap[user.id] ? "#71767b" : "#000"} />
+                    <ActivityIndicator size="small" color={followingMap[user.id] ? colors.textSecondary : colors.onAccent} />
                   ) : (
                     <Text style={[
                       S.followBtnText,
@@ -192,31 +188,41 @@ export default function UserSuggestions() {
                   )}
                 </TouchableOpacity>
               </View>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
         ))}
         
-        {/* Card finale "Voir plus" */}
-        <TouchableOpacity 
-          style={[S.card, S.moreCard]}
-          onPress={() => (navigation as any).navigate('Search', { focus: 'users' })}
-        >
-           <Ionicons name="add-circle-outline" size={40} color="#71767b" />
-           <Text style={S.moreText}>Voir plus</Text>
-        </TouchableOpacity>
+        {/*
+          La carte « Voir plus » en pointillés vivait ici. Elle naviguait vers
+          `Search` — l'écran où ce carrousel est justement affiché, et le seul.
+          Un cul-de-sac, avec en prime un style d'espace réservé au milieu de
+          cartes pleines. « Actualiser », dans l'en-tête, tire de nouveaux
+          comptes et rend le service qu'elle prétendait rendre.
+        */}
       </ScrollView>
     </View>
   );
 }
 
+/**
+ * Styles repris entièrement sur le thème.
+ *
+ * Ils étaient écrits en hexadécimaux hérités d'une autre application —
+ * `#4F7CFF`, `#e7e9ea`, `#71767b`, `#eff3f4`, `rgba(29,155,240,…)` — soit un
+ * bleu et des gris qui n'existent nulle part ailleurs dans twitninf. À côté du
+ * magenta de marque et du noir neutre du reste de l'écran, le bloc paraissait
+ * collé depuis un autre produit. Tout passe par `colors` (voir `theme/colors`,
+ * qui interdit explicitement les couleurs en dur).
+ */
 const S = StyleSheet.create({
   container: {
     marginVertical: 12,
-    backgroundColor: 'rgba(29, 155, 240, 0.03)',
     paddingVertical: 16,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(47, 51, 54, 0.5)',
+    // Le fond bleuté et les deux bordures pleine largeur encadraient la
+    // section comme un encart publicitaire. Une simple hairline haute suffit
+    // à la séparer de ce qui précède.
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   loadingContainer: {
     height: 180,
@@ -235,23 +241,16 @@ const S = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  titleIconGradient: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   title: {
     fontSize: 17,
-    fontWeight: '800', fontFamily: fonts.bold,
-    color: '#e7e9ea',
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
     letterSpacing: 0.3,
   },
   seeAll: {
     fontSize: 14,
-    color: '#4F7CFF',
-    fontWeight: '600', fontFamily: fonts.semibold,
+    color: colors.accent,
+    fontFamily: fonts.semibold,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -261,18 +260,15 @@ const S = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: 190,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderRadius: radius.xl,
+    // Bloc plein et hairline, pas de dégradé ni d'ombre portée : la carte
+    // appartient à la page, elle ne flotte pas au-dessus.
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
-  cardGradient: {
+  cardBody: {
     flex: 1,
     padding: 16,
     justifyContent: 'space-between',
@@ -292,17 +288,17 @@ const S = StyleSheet.create({
   },
   fullName: {
     fontSize: 16,
-    fontWeight: '700', fontFamily: fonts.bold,
-    color: '#e7e9ea',
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
   },
   username: {
     fontSize: 14,
-    color: '#71767b',
+    color: colors.textSecondary,
     marginTop: 1,
   },
   bio: {
     fontSize: 13,
-    color: '#71767b',
+    color: colors.textSecondary,
     marginTop: 10,
     lineHeight: 18,
   },
@@ -319,16 +315,16 @@ const S = StyleSheet.create({
   reasonPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(29, 155, 240, 0.1)',
+    backgroundColor: colors.accentSoft,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: radius.md,
     gap: 4,
   },
   reasonText: {
     fontSize: 10,
-    color: '#4F7CFF',
-    fontWeight: '600', fontFamily: fonts.semibold,
+    color: colors.accent,
+    fontFamily: fonts.semibold,
   },
   footer: {
     flexDirection: 'row',
@@ -342,45 +338,34 @@ const S = StyleSheet.create({
   },
   statsNum: {
     fontSize: 14,
-    fontWeight: '700', fontFamily: fonts.bold,
-    color: '#e7e9ea',
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
   },
   statsLabel: {
     fontSize: 12,
-    color: '#71767b',
+    color: colors.textSecondary,
   },
+  // Même bouton que celui des résultats de recherche, dans le même écran :
+  // il était blanc et arrondi façon X, à côté d'un « Suivre » magenta.
   followBtn: {
-    backgroundColor: '#eff3f4',
+    backgroundColor: colors.accent,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: radius.md,
     minWidth: 90,
     alignItems: 'center',
   },
   followingBtn: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#536471',
+    borderColor: colors.borderStrong,
   },
   followBtnText: {
-    color: '#0B0C0F',
+    color: colors.onAccent,
     fontSize: 14,
-    fontWeight: '700', fontFamily: fonts.bold,
+    fontFamily: fonts.bold,
   },
   followingBtnText: {
-    color: '#e7e9ea',
+    color: colors.textPrimary,
   },
-  moreCard: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderStyle: 'dashed',
-    borderColor: '#2f3336',
-  },
-  moreText: {
-    color: '#71767b',
-    fontSize: 14,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    marginTop: 8,
-  }
 });

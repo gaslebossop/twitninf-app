@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
   Animated,
-  RefreshControl,
   StatusBar,
   useWindowDimensions,
 } from 'react-native';
@@ -21,7 +20,7 @@ import SendCoinsModal from '../components/SendCoinsModal';
 import ExchangeModal from '../components/ExchangeModal';
 import { WalletTransaction } from '../services/walletService';
 import { useAuth } from '../contexts/AuthContext';
-import { ScreenBackground, Button, IconButton, BackButton, Skeleton } from '../components/ui';
+import { ScreenBackground, Button, IconButton, BackButton, Skeleton, AppRefreshControl } from '../components/ui';
 import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../theme';
 import { HEADER_CONTENT_HEIGHT, useHeaderMetrics } from '../hooks/useHeaderMetrics';
 
@@ -740,12 +739,7 @@ const WalletDetailScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingHorizontal: gutter, maxWidth: columnMax }]}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.accent}
-            colors={[colors.accent]}
-          />
+          <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
         <Animated.View style={[styles.animated, { opacity: fadeAnim, transform: [{ translateY: riseAnim }] }]}>

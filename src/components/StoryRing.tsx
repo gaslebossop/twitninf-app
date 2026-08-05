@@ -1,5 +1,8 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+// `expo-image` plutôt que `Image` de React Native : cache disque et décodage
+// hors du thread JS. Sans `transition`, l'apparition reste identique.
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../theme';
@@ -42,7 +45,14 @@ export default function StoryRing({
   const outer = size + (ring + gap) * 2;
 
   const photo = uri ? (
-    <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+    <Image
+      source={{ uri }}
+      style={{ width: size, height: size, borderRadius: size / 2 }}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      transition={0}
+      recyclingKey={uri}
+    />
   ) : (
     <View
       style={[

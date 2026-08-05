@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   ReactNode,
@@ -209,10 +210,16 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     [enabled, userId, refreshPending],
   );
 
+  // Le fil consomme ce contexte : sans mémoïsation, chaque rendu du provider
+  // (un changement d'état réseau, une action mise en file) donnait une valeur
+  // neuve et re-rendait tous les consommateurs.
+  const value = useMemo(
+    () => ({ enabled, online, pending, pendingActions, queue, queueAction, flush }),
+    [enabled, online, pending, pendingActions, queue, queueAction, flush],
+  );
+
   return (
-    <OfflineContext.Provider
-      value={{ enabled, online, pending, pendingActions, queue, queueAction, flush }}
-    >
+    <OfflineContext.Provider value={value}>
       {children}
     </OfflineContext.Provider>
   );

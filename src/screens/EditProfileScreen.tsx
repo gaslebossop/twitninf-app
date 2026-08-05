@@ -1,6 +1,9 @@
 import { fonts } from '../theme';
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Platform, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Platform, ActivityIndicator } from 'react-native';
+// `expo-image` : cache disque et décodage hors du thread JS. `transition={0}`
+// pour garder exactement l'apparition d'avant.
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -179,7 +182,7 @@ export default function EditProfileScreen({ navigation }: any) {
         <Text style={styles.label}>Bannière du profil</Text>
         <View style={styles.bannerPreview}>
           {(user as any)?.banner ? (
-            <Image source={{ uri: (user as any).banner as string }} style={styles.bannerPreviewImg} resizeMode="cover" />
+            <Image source={{ uri: (user as any).banner as string }} style={styles.bannerPreviewImg} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={(user as any).banner as string} />
           ) : (
             <View style={styles.bannerPlaceholder} />
           )}
@@ -201,7 +204,7 @@ export default function EditProfileScreen({ navigation }: any) {
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrap}>
             {localAvatarUri || (user as any)?.avatar ? (
-              <Image source={{ uri: localAvatarUri || ((user as any)?.avatar as string) }} style={styles.avatarImage} />
+              <Image source={{ uri: localAvatarUri || ((user as any)?.avatar as string) }} style={styles.avatarImage} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={localAvatarUri || ((user as any)?.avatar as string)} />
             ) : (
               <Text style={styles.avatarInitials}>{((user?.username as string) || 'U').charAt(0).toUpperCase()}</Text>
             )}

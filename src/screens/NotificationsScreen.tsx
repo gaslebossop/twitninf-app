@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { fonts, colors } from '../theme';
-import { ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   StyleSheet,
-  RefreshControl,
   StatusBar,
-  Image,
+  Platform,
 } from 'react-native';
+// `expo-image` plutôt que `Image` de React Native : cache disque et décodage
+// hors du thread JS, sur des vignettes montées en liste. `transition={0}` :
+// aucune apparition en fondu, le rendu reste celui d'avant.
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
@@ -119,7 +123,7 @@ interface NotificationItemProps {
   onDelete: (id: string) => void;
 }
 
-function NotificationItem({ notification, onOpen, onDelete }: NotificationItemProps) {
+function NotificationItemBase({ notification, onOpen, onDelete }: NotificationItemProps) {
   const { sender, tweet, type, is_read, created_at, content, message } = notification;
   const entityType = String(content?.entity_type || type);
   const storyIsVideo = content?.story_media_type === 'video';
@@ -196,7 +200,10 @@ function NotificationItem({ notification, onOpen, onDelete }: NotificationItemPr
               <Image
                 source={{ uri: tweet.image }}
                 style={styles.tweetThumb}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={0}
+                recyclingKey={tweet.image}
               />
             )}
           </View>
@@ -205,7 +212,14 @@ function NotificationItem({ notification, onOpen, onDelete }: NotificationItemPr
         {(entityType === 'story_like' || entityType === 'story_reply') && (
           <View style={styles.storyNotificationCard}>
             {storyPreview ? (
-              <Image source={{ uri: storyPreview }} style={styles.storyNotificationThumb} resizeMode="cover" />
+              <Image
+                source={{ uri: storyPreview }}
+                style={styles.storyNotificationThumb}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={0}
+                recyclingKey={storyPreview}
+              />
             ) : (
               <View style={[styles.storyNotificationThumb, styles.storyNotificationFallback]}>
                 <Ionicons name={storyIsVideo ? 'play' : 'image-outline'} size={20} color="#fff" />
@@ -248,6 +262,22 @@ function NotificationItem({ notification, onOpen, onDelete }: NotificationItemPr
     </TouchableOpacity>
   );
 }
+
+/**
+ * Une ligne ne dépend que de sa notification et des deux handlers, qui sont
+ * stables : sans ce `memo`, marquer une notification comme lue re-rendait la
+ * cinquantaine de lignes de l'écran.
+ */
+const NotificationItem = React.memo(
+  NotificationItemBase,
+  (prev, next) =>
+    prev.onOpen === next.onOpen &&
+    prev.onDelete === next.onDelete &&
+    prev.notification === next.notification,
+);
+
+/** Référence stable : un `[]` littéral changerait d'identité à chaque rendu. */
+const EMPTY_NOTIFICATIONS: SimpleNotification[] = [];
 
 // ─── Onglets ──────────────────────────────────────────────────────────────────
 
@@ -318,7 +348,9 @@ export default function NotificationsScreen() {
     } catch { }
   };
 
-  const handleMarkAsRead = async (id: string) => {
+  // Identité stable : ces deux handlers descendent dans chaque ligne, et le
+  // `memo` de `NotificationItem` les compare par référence.
+  const handleMarkAsRead = useCallback(async (id: string) => {
     try {
       // apiService avale déjà les erreurs réseau et renvoie { success: false }
       // plutôt que de rejeter : on retente donc sur la valeur de retour, pas
@@ -331,9 +363,9 @@ export default function NotificationsScreen() {
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       unreadService.notifyChanged();
     } catch { }
-  };
+  }, []);
 
-  const handleOpenNotification = async (notification: SimpleNotification) => {
+  const handleOpenNotification = useCallback(async (notification: SimpleNotification) => {
     if (!notification.is_read) {
       await handleMarkAsRead(notification.id);
     }
@@ -368,9 +400,9 @@ export default function NotificationsScreen() {
     if (notification.tweet?.id) {
       navigation.navigate('TweetDetail', { tweetId: String(notification.tweet.id) });
     }
-  };
+  }, [handleMarkAsRead, navigation]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     confirmAsync({
       title: 'Supprimer',
       message: 'Supprimer cette notification ?',
@@ -386,13 +418,30 @@ export default function NotificationsScreen() {
             } catch { }
           })();
     });
-  };
+  }, []);
 
-  const filtered = notifications.filter(n => {
-    if (activeTab === 'verified') return n.sender?.verified === true;
-    if (activeTab === 'mentions') return n.type === 'mention' || n.type === 'reply';
-    return true;
-  });
+  const filtered = React.useMemo(
+    () =>
+      notifications.filter(n => {
+        if (activeTab === 'verified') return n.sender?.verified === true;
+        if (activeTab === 'mentions') return n.type === 'mention' || n.type === 'reply';
+        return true;
+      }),
+    [notifications, activeTab],
+  );
+
+  const keyExtractor = useCallback((n: SimpleNotification) => n.id, []);
+
+  const renderNotification = useCallback(
+    ({ item }: { item: SimpleNotification }) => (
+      <NotificationItem
+        notification={item}
+        onOpen={handleOpenNotification}
+        onDelete={handleDelete}
+      />
+    ),
+    [handleOpenNotification, handleDelete],
+  );
 
   // ─── Loading ────────────────────────────────────────────────────────────
   if (loading && notifications.length === 0) {
@@ -446,17 +495,27 @@ export default function NotificationsScreen() {
       </View>
 
       {/* ── Liste ── */}
-      <ScrollView
+      {/*
+        Liste virtualisée : les cinquante notifications étaient toutes montées
+        avant la première frame. La bannière d'alerte et les demandes
+        d'abonnement deviennent l'en-tête, à la même place.
+      */}
+      <FlatList
         style={styles.list}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.accent}
-          />
+          <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         showsVerticalScrollIndicator={false}
-      >
+        data={error ? EMPTY_NOTIFICATIONS : filtered}
+        keyExtractor={keyExtractor}
+        renderItem={renderNotification}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          <>
         <BanAlertBanner />
 
         {pendingFollowRequests > 0 && (
@@ -475,7 +534,10 @@ export default function NotificationsScreen() {
           </TouchableOpacity>
         )}
 
-        {error ? (
+          </>
+        }
+        ListEmptyComponent={
+          error ? (
           <View style={styles.centered}>
             <Ionicons name="wifi-outline" size={44} color={colors.textSecondary} />
             <Text style={styles.errorText}>{error}</Text>
@@ -483,7 +545,7 @@ export default function NotificationsScreen() {
               <Text style={styles.retryBtnText}>Réessayer</Text>
             </TouchableOpacity>
           </View>
-        ) : filtered.length === 0 ? (
+        ) : (
           <View style={styles.centered}>
             <Ionicons name="notifications-outline" size={52} color={colors.textMuted} />
             <Text style={styles.emptyTitle}>Aucune notification</Text>
@@ -493,17 +555,9 @@ export default function NotificationsScreen() {
                 : 'Aucune notification dans cet onglet.'}
             </Text>
           </View>
-        ) : (
-          filtered.map(n => (
-            <NotificationItem
-              key={n.id}
-              notification={n}
-              onOpen={handleOpenNotification}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
-      </ScrollView>
+          )
+        }
+      />
     </View>
     </ScreenBackground>
   );

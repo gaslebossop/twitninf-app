@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fonts } from '../theme';
 import { ScreenBackground, ScreenSkeleton } from '../components/ui';
 import {
@@ -468,13 +468,27 @@ export default function SearchScreen() {
     }
   };
 
+  /**
+   * Handlers d'identité stable : le comparateur de `TweetCard` compare les
+   * callbacks par référence. L'état des interactions est donc lu par
+   * référence plutôt que capturé dans la closure.
+   */
+  const likedTweetsRef = useRef(likedTweets);
+  const retweetedTweetsRef = useRef(retweetedTweets);
+  useEffect(() => {
+    likedTweetsRef.current = likedTweets;
+  }, [likedTweets]);
+  useEffect(() => {
+    retweetedTweetsRef.current = retweetedTweets;
+  }, [retweetedTweets]);
+
   // Gestion des likes
-  const handleLike = async (tweetId: string) => {
+  const handleLike = useCallback(async (tweetId: string) => {
     console.log(`❤️ Gestion du like pour le tweet ${tweetId}`);
-    console.log(`📊 État actuel - Liked: ${likedTweets[tweetId]}, Retweeted: ${retweetedTweets[tweetId]}`);
-    
+    console.log(`📊 État actuel - Liked: ${likedTweetsRef.current[tweetId]}, Retweeted: ${retweetedTweetsRef.current[tweetId]}`);
+
     try {
-      const wasLiked = likedTweets[tweetId] || false;
+      const wasLiked = likedTweetsRef.current[tweetId] || false;
       console.log(`❤️ Changement de like: ${wasLiked} -> ${!wasLiked}`);
       
       // Optimistic update - mettre à jour l'état local immédiatement
@@ -547,7 +561,7 @@ export default function SearchScreen() {
     } catch (error) {
       console.error(`❌ Erreur lors du like du tweet ${tweetId}:`, error);
       // Revert en cas d'erreur
-      const wasLiked = likedTweets[tweetId] || false;
+      const wasLiked = likedTweetsRef.current[tweetId] || false;
       setLikedTweets(prev => ({ ...prev, [tweetId]: wasLiked }));
       setSearchResults(prev => ({
         ...prev,
@@ -571,15 +585,15 @@ export default function SearchScreen() {
       }));
       toast.error('Impossible de liker le tweet');
     }
-  };
+  }, []);
 
   // Gestion des retweets
-  const handleRetweet = async (tweetId: string) => {
+  const handleRetweet = useCallback(async (tweetId: string) => {
     console.log(`🔄 Gestion du retweet pour le tweet ${tweetId}`);
-    console.log(`📊 État actuel - Liked: ${likedTweets[tweetId]}, Retweeted: ${retweetedTweets[tweetId]}`);
-    
+    console.log(`📊 État actuel - Liked: ${likedTweetsRef.current[tweetId]}, Retweeted: ${retweetedTweetsRef.current[tweetId]}`);
+
     try {
-      const wasRetweeted = retweetedTweets[tweetId] || false;
+      const wasRetweeted = retweetedTweetsRef.current[tweetId] || false;
       console.log(`🔄 Changement de retweet: ${wasRetweeted} -> ${!wasRetweeted}`);
       
       // Optimistic update - mettre à jour l'état local immédiatement
@@ -652,7 +666,7 @@ export default function SearchScreen() {
     } catch (error) {
       console.error(`❌ Erreur lors du retweet du tweet ${tweetId}:`, error);
       // Revert en cas d'erreur
-      const wasRetweeted = retweetedTweets[tweetId] || false;
+      const wasRetweeted = retweetedTweetsRef.current[tweetId] || false;
       setRetweetedTweets(prev => ({ ...prev, [tweetId]: wasRetweeted }));
       setSearchResults(prev => ({
         ...prev,
@@ -676,23 +690,23 @@ export default function SearchScreen() {
       }));
       toast.error('Impossible de retweeter');
     }
-  };
+  }, []);
 
   // Gestion des réponses
-  const handleReply = (tweetId: string) => {
+  const handleReply = useCallback((tweetId: string) => {
     (navigation as any).navigate('CreateTweet', {
       replyTo: tweetId,
       isReply: true
     });
-  };
+  }, [navigation]);
 
   // Gestion du partage
-  const handleShare = (tweetId: string) => {
+  const handleShare = useCallback((tweetId: string) => {
     // Implémenter le partage
     toast.info('Partage', {
       description: 'Fonctionnalité de partage à venir',
     });
-  };
+  }, []);
 
   const handleBookmark = (tweetId: string) => {
     // 📌 Bookmark

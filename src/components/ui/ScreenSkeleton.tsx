@@ -7,6 +7,7 @@ import Animated, {
   withTiming,
   interpolate,
   Easing,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { colors, withAlpha } from '../../theme';
 import TweetSkeleton from '../feed/TweetSkeleton';
@@ -56,6 +57,9 @@ function useShimmer() {
       -1,
       true,
     );
+    // Une boucle infinie survit au démontage du squelette : sans cette
+    // annulation, elle continue de tourner pour le reste de la session.
+    return () => cancelAnimation(shimmer);
   }, [shimmer]);
 
   return useAnimatedStyle(() => ({

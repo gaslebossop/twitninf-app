@@ -4,7 +4,6 @@ import {
   Animated,
   Dimensions,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
@@ -18,6 +17,10 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+// `expo-image` plutôt que `Image` de React Native : cache disque et décodage
+// hors du thread JS, sur des avatars et pièces jointes montés en liste.
+// `transition={0}` : aucune apparition en fondu, le rendu ne change pas.
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
@@ -433,7 +436,7 @@ function StoryReplyReference({
       </Text>
       <View style={styles.storyReplyPreview}>
         {preview ? (
-          <Image source={{ uri: preview }} style={styles.storyReplyMedia} resizeMode="cover" />
+          <Image source={{ uri: preview }} style={styles.storyReplyMedia} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={preview} />
         ) : (
           <LinearGradient
             colors={['#33223D', '#17151C']}
@@ -1132,7 +1135,34 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   // ─── Rendu d'un message ───────────────────────────────────────────────────
 
-  const renderItem = ({ item, index }: { item: MessageItem; index: number }) => {
+  /**
+   * Descente automatique en bas du fil.
+   *
+   * Avant : un `setTimeout` armé à CHAQUE changement de taille du contenu, y
+   * compris pendant la frappe. Deux corrections — plus de minuteur, et on ne
+   * force plus la descente si le lecteur a remonté la conversation, ce qui la
+   * lui arrachait des mains à la moindre arrivée de message.
+   */
+  const isAtBottomRef = useRef(true);
+
+  const handleListScroll = useCallback((event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    isAtBottomRef.current = distanceFromBottom < 80;
+  }, []);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (!isAtBottomRef.current) return;
+    flatListRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
+  /**
+   * Mémoïsé : une closure recréée à chaque rendu invalide la mémoïsation
+   * interne de la FlatList, si bien que toutes les bulles montées se
+   * re-rendaient à chaque frappe dans le compositeur.
+   */
+  const renderItem = useCallback(({ item, index }: { item: MessageItem; index: number }) => {
     const senderId = String(item.sender_id || item?.sender?.id || '');
     const sender = item?.sender || participantMap[senderId] || {};
     const fromMe = !!(myId && senderId && String(myId) === senderId);
@@ -1230,7 +1260,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
             <View style={styles.avatarSlot}>
               {isLastOfGroup &&
                 (senderAvatar ? (
-                  <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} />
+                  <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
                 ) : (
                   <View style={[styles.rowAvatar, styles.rowAvatarFallback]}>
                     <Text style={styles.rowAvatarText}>
@@ -1258,7 +1288,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               style={styles.bubbleTouch}
             >
               {attachmentType === 'image' && attachmentUrl ? (
-                <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, bubbleRadius]} resizeMode="cover" />
+                <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, bubbleRadius]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
               ) : attachmentType === 'audio' && attachmentUrl ? (
                 <VoiceMessageBubble
                   uri={attachmentUrl}
@@ -1313,7 +1343,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           <View style={styles.seenRow}>
             {!isGroup ? (
               avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.seenAvatar} />
+                <Image source={{ uri: avatarUri }} style={styles.seenAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={avatarUri} />
               ) : (
                 <View style={[styles.seenAvatar, styles.rowAvatarFallback]}>
                   <Text style={styles.seenAvatarText}>
@@ -1325,7 +1355,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               seenReaders.slice(0, 3).map(([uid]) => {
                 const uri = getAvatarUri(participantMap[String(uid)]?.avatar || null);
                 return uri ? (
-                  <Image key={uid} source={{ uri }} style={[styles.seenAvatar, { marginLeft: -5 }]} />
+                  <Image key={uid} source={{ uri }} style={[styles.seenAvatar, { marginLeft: -5 }]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
                 ) : (
                   <View key={uid} style={[styles.seenAvatar, styles.rowAvatarFallback, { marginLeft: -5 }]}>
                     <Text style={styles.seenAvatarText}>
@@ -1340,7 +1370,16 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         )}
       </Reanimated.View>
     );
-  };
+  }, [
+    messages,
+    participantMap,
+    myId,
+    isGroup,
+    expandedMessageId,
+    openImageViewer,
+    lastOutgoingMessageId,
+    sendReaction,
+  ]);
 
   const typingLabel = useMemo(() => {
     if (typingUsers.length === 0) return '';
@@ -1438,9 +1477,9 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() =>
-                setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 60)
-              }
+              onScroll={handleListScroll}
+              scrollEventThrottle={160}
+              onContentSizeChange={handleContentSizeChange}
               ListHeaderComponent={
                 <View style={styles.threadIntro}>
                   <StoryRing
@@ -1474,7 +1513,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                       participantMap[String(typingUsers[0]?.user_id || '')]?.avatar || conversationAvatar || null,
                     );
                     return uri ? (
-                      <Image source={{ uri }} style={styles.rowAvatar} />
+                      <Image source={{ uri }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
                     ) : (
                       <View style={[styles.rowAvatar, styles.rowAvatarFallback]} />
                     );
@@ -1588,7 +1627,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               <GestureDetector gesture={viewerPanGesture}>
                 <Reanimated.View style={[styles.imageViewerBody, viewerImageAnimatedStyle]}>
                   {viewerImageUrl && (
-                    <Image source={{ uri: viewerImageUrl }} style={styles.imageViewerImage} resizeMode="contain" />
+                    <Image source={{ uri: viewerImageUrl }} style={styles.imageViewerImage} contentFit="contain" cachePolicy="memory-disk" transition={0} recyclingKey={viewerImageUrl} />
                   )}
                 </Reanimated.View>
               </GestureDetector>

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { getNavbarPrefs, saveNavbarPrefs, OptionalTabKey } from '../services/navbarPreferences';
 
@@ -76,8 +76,15 @@ export function NavbarPrefsProvider({ children }: { children: ReactNode }) {
     [user?.id],
   );
 
+  // Objet littéral = nouvelle identité à chaque rendu du provider, donc
+  // re-rendu de tous les consommateurs même quand rien n'a bougé.
+  const value = useMemo(
+    () => ({ loading, configured, selected, save }),
+    [loading, configured, selected, save],
+  );
+
   return (
-    <NavbarPrefsContext.Provider value={{ loading, configured, selected, save }}>
+    <NavbarPrefsContext.Provider value={value}>
       {children}
     </NavbarPrefsContext.Provider>
   );

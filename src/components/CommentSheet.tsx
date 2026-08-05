@@ -12,10 +12,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  Image,
   ActivityIndicator,
   PanResponder,
 } from 'react-native';
+// `expo-image` plutôt que `Image` de React Native : cache disque et décodage
+// hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
+// reste identique.
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOffline } from '../contexts/OfflineContext';
@@ -78,6 +81,10 @@ const MiniAvatar = ({ user, size = 36 }: { user: { id: string; username: string;
       <Image
         source={{ uri: user.avatar }}
         style={{ width: size, height: size, borderRadius: size / 2 }}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        transition={0}
+        recyclingKey={user.avatar}
       />
     );
   }

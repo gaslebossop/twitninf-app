@@ -17,6 +17,18 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+// La barre de progression passe par Reanimated : elle tourne pendant TOUTE la
+// lecture d'une story, et `width` n'est pas animable par le native driver
+// d'`Animated` — chaque frame traversait donc le pont JS, en concurrence avec
+// le décodage de la photo ou de la vidéo. Mêmes durées, même easing.
+import Reanimated, {
+  cancelAnimation,
+  Easing as REasing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode } from 'expo-av';
@@ -73,9 +85,7 @@ export default function StoryViewer({
   const [likesCount, setLikesCount] = useState(0);
   const [likeBusy, setLikeBusy] = useState(false);
 
-  const progress = useRef(new Animated.Value(0)).current;
-  const progressValue = useRef(0);
-  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const progress = useSharedValue(0);
   const translateY = useRef(new Animated.Value(0)).current;
   const pressStartedAt = useRef(0);
   const seenRef = useRef<Set<string>>(new Set());
@@ -85,13 +95,6 @@ export default function StoryViewer({
   const story = stories[storyIndex];
   const author = story?.author || group?.user || null;
   const isMine = !!(author?.id && currentUserId && String(author.id) === String(currentUserId));
-
-  useEffect(() => {
-    const id = progress.addListener(({ value }) => {
-      progressValue.current = value;
-    });
-    return () => progress.removeListener(id);
-  }, [progress]);
 
   // Réinitialise la position à chaque ouverture : rouvrir le viewer sur un
   // autre auteur ne doit pas reprendre là où la session précédente s'est arrêtée.
@@ -113,9 +116,12 @@ export default function StoryViewer({
   }, [groups, onClose, visible]);
 
   const stopAnimation = useCallback(() => {
-    animationRef.current?.stop();
-    animationRef.current = null;
-  }, []);
+    cancelAnimation(progress);
+  }, [progress]);
+
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
 
   const goNext = useCallback(() => {
     stopAnimation();
@@ -143,23 +149,23 @@ export default function StoryViewer({
       setStoryIndex(Math.max(0, (previousGroup?.stories?.length || 1) - 1));
       return;
     }
-    progress.setValue(0);
+    progress.value = 0;
     setStoryIndex(0);
   }, [groupIndex, groups, progress, stopAnimation, storyIndex]);
 
   const runProgress = useCallback(
     (from: number, duration: number) => {
       stopAnimation();
-      progress.setValue(from);
-      const animation = Animated.timing(progress, {
-        toValue: 1,
-        duration: Math.max(300, duration),
-        useNativeDriver: false,
-      });
-      animationRef.current = animation;
-      animation.start(({ finished }) => {
-        if (finished) goNext();
-      });
+      progress.value = from;
+      progress.value = withTiming(
+        1,
+        { duration: Math.max(300, duration), easing: REasing.inOut(REasing.ease) },
+        (finished) => {
+          // `cancelAnimation` rappelle avec `finished` à faux : une pause ne
+          // fait donc pas passer à la story suivante.
+          if (finished) runOnJS(goNext)();
+        },
+      );
     },
     [goNext, progress, stopAnimation],
   );
@@ -172,7 +178,7 @@ export default function StoryViewer({
     setLikesCount(Number(story.likes_count || 0));
     setReply('');
     setReplySent(false);
-    progressValue.current = 0;
+    progress.value = 0;
     runProgress(0, story.duration_ms || 5000);
 
     if (!isMine && !seenRef.current.has(story.id)) {
@@ -195,8 +201,8 @@ export default function StoryViewer({
       stopAnimation();
       return;
     }
-    const remaining = (1 - progressValue.current) * (story.duration_ms || 5000);
-    if (remaining > 0) runProgress(progressValue.current, remaining);
+    const remaining = (1 - progress.value) * (story.duration_ms || 5000);
+    if (remaining > 0) runProgress(progress.value, remaining);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused]);
 
@@ -406,16 +412,11 @@ export default function StoryViewer({
           <View style={styles.progressRow}>
             {stories.map((item, index) => (
               <View key={item.id} style={styles.progressTrack}>
-                <Animated.View
+                <Reanimated.View
                   style={[
                     styles.progressFill,
                     index < storyIndex && styles.progressFillDone,
-                    index === storyIndex && {
-                      width: progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0%', '100%'],
-                      }),
-                    },
+                    index === storyIndex && progressStyle,
                   ]}
                 />
               </View>

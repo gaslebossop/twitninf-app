@@ -27,7 +27,11 @@ module.exports = ({ config }) => {
       deploymentTarget: "15.1",
       infoPlist: {
         NSCameraUsageDescription: "L'application a besoin d'accéder à la caméra pour diffuser en direct.",
-        NSMicrophoneUsageDescription: "L'application a besoin d'accéder au microphone pour diffuser en direct."
+        NSMicrophoneUsageDescription: "L'application a besoin d'accéder au microphone pour diffuser en direct.",
+        // Sans cette clé, iOS plafonne l'app à 60 fps sur les écrans ProMotion,
+        // quel que soit le travail d'optimisation fait côté JS. Elle n'a d'effet
+        // que dans un build natif : Expo Go reste à 60 fps.
+        CADisableMinimumFrameDurationOnPhone: true
       }
     },
     android: {

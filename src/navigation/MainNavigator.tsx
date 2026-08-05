@@ -1,5 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+/**
+ * Pile NATIVE (et non plus la pile JS de `@react-navigation/stack`).
+ *
+ * Les transitions de cette pile étaient animées sur le thread JS, en
+ * concurrence avec le premier rendu de l'écran d'arrivée : la pire seconde de
+ * l'app pour le thread le plus chargé. Elles sont désormais pilotées par
+ * UIKit / le natif Android.
+ *
+ * Compatible Expo Go : `native-stack` est du JS pur et s'appuie sur
+ * `react-native-screens` 4.16, exactement la version du binaire d'Expo Go.
+ *
+ * AUCUN écran n'est en `presentation: 'modal'`, et c'est délibéré.
+ *
+ * Une pile native présente une modale par-dessus le contrôleur de navigation,
+ * au sens d'UIKit. Tout écran poussé ENSUITE atterrit dans le contrôleur du
+ * dessous, donc derrière la modale : on voyait Réglages, et la page ouverte
+ * depuis Réglages s'affichait dessous. Ce n'était pas un oubli de réglage mais
+ * une conséquence du modèle natif — la pile JS, elle, empilait tout à plat
+ * dans un même conteneur et ne faisait pas la distinction.
+ *
+ * Les 36 écrans concernés sont donc des cartes ordinaires, animées par
+ * `slide_from_bottom` : ils montent toujours depuis le bas, mais s'empilent
+ * normalement, et ce qu'on ouvre depuis eux s'affiche bien au-dessus.
+ */
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import CreateTweetScreen from '../screens/CreateTweetScreen';
@@ -49,8 +73,6 @@ import VideoCaptionScreen from '../screens/VideoCaptionScreen';
 import type { VideoOverlay } from '../utils/videoFilters';
 import TwitNinfVideo from '../screens/twitninfvideo';
 import MessagesScreen from '../screens/MessagesScreen';
-import LivesScreen from '../screens/LivesScreen';
-import NotificationsScreen from '../screens/NotificationsScreen';
 import LiveViewerScreen from '../screens/LiveViewerScreen';
 import GoLiveScreen from '../screens/GoLiveScreen';
 import KosporBirthdayPopup from '../components/KosporBirthdayPopup';
@@ -121,10 +143,6 @@ export type MainStackParamList = {
   PolicierCongoAdmin: undefined;
   Video: undefined;
   Messages: undefined;
-  // Atteignables depuis l'écran Plus quand elles n'ont pas de place dans la
-  // barre d'onglets, plafonnée à cinq (voir navigation/tabLayout).
-  Lives: undefined;
-  Notifications: undefined;
   CreateVideo: undefined;
   /**
    * `returnTo` : écran à qui rendre la prise, au lieu d'enchaîner sur
@@ -182,7 +200,7 @@ export type MainStackParamList = {
   EditTweet: { tweetId: string; content?: string };
 };
 
-const MainStack = createStackNavigator<MainStackParamList>();
+const MainStack = createNativeStackNavigator<MainStackParamList>();
 
 export default function MainNavigator() {
   return (
@@ -254,7 +272,8 @@ function MainNavigatorInner() {
           // Même correction que dans `BottomTabNavigator` : le fond de la pile
           // doit être exactement le noir des écrans, sinon la transition
           // laisse voir une bande d'un gris légèrement différent.
-          cardStyle: { backgroundColor: colors.bg },
+          // (`contentStyle` est le nom de `cardStyle` côté pile native.)
+          contentStyle: { backgroundColor: colors.bg },
           // Gèle les écrans hors champ : leurs timers et re-rendus s'arrêtent
           // tant qu'ils ne sont pas revisibles.
           freezeOnBlur: true,
@@ -273,7 +292,8 @@ function MainNavigatorInner() {
         name="UserProfile" 
         component={UserProfileScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -282,7 +302,8 @@ function MainNavigatorInner() {
         name="CreateTweet" 
         component={CreateTweetScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -291,7 +312,8 @@ function MainNavigatorInner() {
         name="CreateTweetABTest" 
         component={CreateTweetABTestScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -304,7 +326,8 @@ function MainNavigatorInner() {
         name="EditProfile" 
         component={EditProfileScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -312,7 +335,8 @@ function MainNavigatorInner() {
         name="AccountManager" 
         component={AccountManagerScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -320,7 +344,8 @@ function MainNavigatorInner() {
         name="AddAccount" 
         component={AddAccountScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -329,7 +354,8 @@ function MainNavigatorInner() {
         name="Moderation" 
         component={ModerationScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -338,7 +364,8 @@ function MainNavigatorInner() {
         name="UserManagement" 
         component={UserManagementScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -347,7 +374,8 @@ function MainNavigatorInner() {
         name="Analytics" 
         component={AnalyticsScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -356,7 +384,8 @@ function MainNavigatorInner() {
         name="ContentModeration" 
         component={ContentModerationScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -365,7 +394,8 @@ function MainNavigatorInner() {
         name="Settings" 
         component={SettingsScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -374,7 +404,8 @@ function MainNavigatorInner() {
         name="AccountStats"
         component={AccountStatsScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -383,7 +414,8 @@ function MainNavigatorInner() {
         name="Monetization" 
         component={MonetizationScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -392,7 +424,8 @@ function MainNavigatorInner() {
         name="NewEconomy" 
         component={NewEconomyScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -401,7 +434,8 @@ function MainNavigatorInner() {
         name="Trading" 
         component={TradingScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -410,7 +444,8 @@ function MainNavigatorInner() {
         name="WalletDetail"
         component={WalletDetailScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -419,7 +454,8 @@ function MainNavigatorInner() {
         name="CommunityCurrencies"
         component={CommunityCurrenciesScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -436,7 +472,8 @@ function MainNavigatorInner() {
         name="Casino"
         component={CasinoScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -445,7 +482,8 @@ function MainNavigatorInner() {
         name="TweetMonetization" 
         component={TweetMonetizationScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -454,7 +492,8 @@ function MainNavigatorInner() {
         name="EventManagement" 
         component={EventManagementScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -463,7 +502,8 @@ function MainNavigatorInner() {
         name="FunctionalEventManagement" 
         component={FunctionalEventManagementScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -472,7 +512,8 @@ function MainNavigatorInner() {
         name="KosporBirthday" 
         component={KosporBirthdayScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -481,7 +522,8 @@ function MainNavigatorInner() {
         name="VerificationStyle" 
         component={VerificationStyleScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -490,7 +532,8 @@ function MainNavigatorInner() {
         name="CreateTargetingAd" 
         component={CreateTargetingAdScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -499,7 +542,8 @@ function MainNavigatorInner() {
         name="CreateCampaign" 
         component={CreateCampaignScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -508,7 +552,8 @@ function MainNavigatorInner() {
         name="CreateAdvertisement" 
         component={CreateAdvertisementScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -517,7 +562,8 @@ function MainNavigatorInner() {
         name="EconomyManagement" 
         component={EconomyManagementScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -526,7 +572,8 @@ function MainNavigatorInner() {
         name="SimilarityAlgorithm"
         component={SimilarityAlgorithmScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -535,7 +582,8 @@ function MainNavigatorInner() {
         name="PolicierCongoAdmin" 
         component={PolicierCongoAdminScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -561,36 +609,12 @@ function MainNavigatorInner() {
         }}
       />
 
-      {/* Live et Activité : ils n'ont plus de place dans la barre, qui est
-          plafonnée à cinq onglets pour empêcher UIKit de fabriquer son propre
-          « More » (voir MoreScreen). On les atteint donc par la pile, comme
-          Vidéos et Messages juste au-dessus. Quand Activité redevient un
-          onglet, `navigate('Notifications')` est capté par le navigateur
-          d'onglets avant de remonter ici : les deux entrées coexistent sans
-          se marcher dessus. */}
-      <MainStack.Screen
-        name="Lives"
-        component={LivesScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
-      />
-
-      <MainStack.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{
-          presentation: 'card',
-          headerShown: false,
-        }}
-      />
-
       <MainStack.Screen
         name="CreateVideo"
         component={CreateVideoScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -636,7 +660,8 @@ function MainNavigatorInner() {
         name="LiveViewer"
         component={LiveViewerScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -645,7 +670,8 @@ function MainNavigatorInner() {
         name="GoLive"
         component={GoLiveScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -654,7 +680,8 @@ function MainNavigatorInner() {
         name="DeveloperPortal" 
         component={DeveloperPortalScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -663,7 +690,8 @@ function MainNavigatorInner() {
         name="PolicierCongoChat" 
         component={PolicierCongoChatScreen}
         options={{
-          presentation: 'modal',
+          presentation: 'card',
+          animation: 'slide_from_bottom',
           headerShown: false,
         }}
       />
@@ -780,7 +808,7 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="EditTweet"
         component={EditTweetScreen}
-        options={{ presentation: 'modal', headerShown: false }}
+        options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
       />
 
     </MainStack.Navigator>

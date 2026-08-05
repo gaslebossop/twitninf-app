@@ -10,12 +10,15 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Image,
   Animated,
   KeyboardAvoidingView,
   Platform,
   Dimensions,
 } from 'react-native';
+// `expo-image` plutôt que `Image` de React Native : cache disque et décodage
+// hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
+// reste identique.
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
@@ -195,7 +198,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
     const initials = (user.full_name || user.username).slice(0, 2).toUpperCase();
     const colors = ['#1d4ed8', '#7c3aed', '#db2777', '#059669', '#d97706'];
     const colorIdx = user.id.charCodeAt(0) % colors.length;
-    if (uri) return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
+    if (uri) return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />;
     return (
       <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors[colorIdx], alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: '#fff', fontWeight: '800', fontFamily: fonts.bold, fontSize: size * 0.32 }}>{initials}</Text>

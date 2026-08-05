@@ -1,5 +1,5 @@
 import { fonts } from '../theme';
-import { ScreenBackground } from '../components/ui';
+import { ScreenBackground, AppRefreshControl } from '../components/ui';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import { withoutOrphanReplies } from '../utils/feed';
 import AlgoCheckCard from '../components/feed/AlgoCheckCard';
@@ -20,7 +20,6 @@ import {
   StyleSheet,
   SafeAreaView,
   Platform,
-  RefreshControl,
   UIManager,
   StatusBar,
   Image,
@@ -1263,7 +1262,7 @@ export default function TweetsScreen() {
         contentContainerStyle={S.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} />
+          <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         onEndReached={onEndReached}
         onEndReachedThreshold={0.6}

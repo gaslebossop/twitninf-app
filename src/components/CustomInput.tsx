@@ -1,14 +1,24 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
-  Animated,
   ViewStyle,
   TextStyle,
   TextInputProps,
 } from 'react-native';
+// Reanimated plutôt qu'`Animated` : `borderColor` et `backgroundColor` ne
+// passent pas par le native driver, donc l'animation de focus traversait le
+// pont à chaque frame — sur un composant présent dans TOUS les formulaires.
+// `interpolateColor` fait le même dégradé sur le thread UI.
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolateColor,
+  Easing,
+} from 'react-native-reanimated';
 import { fontSize, spacing, borderRadius, hp } from '../utils/responsive';
 import { colors, fonts } from '../theme';
 
@@ -38,18 +48,12 @@ export default function CustomInput({
   ...props
 }: CustomInputProps) {
   const [isFocused, setIsFocused] = useState(false);
-  const focusAnim = useRef(new Animated.Value(0)).current;
+  const focusAnim = useSharedValue(0);
 
-  const animate = (to: number) =>
-    Animated.timing(focusAnim, {
-      toValue: to,
-      duration: 180,
-      useNativeDriver: false,
-    }).start();
-
-  useEffect(() => {
-    // garde l'état visuel cohérent si la valeur est pré-remplie
-  }, []);
+  // Mêmes 180 ms et mêmes couleurs qu'avant.
+  const animate = (to: number) => {
+    focusAnim.value = withTiming(to, { duration: 180, easing: Easing.inOut(Easing.ease) });
+  };
 
   const handleFocus = (e: any) => {
     setIsFocused(true);
@@ -63,17 +67,16 @@ export default function CustomInput({
     onBlur?.(e);
   };
 
-  const borderColor = error
-    ? colors.red
-    : focusAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [colors.border, colors.accent],
-      });
-
-  const backgroundColor = focusAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [colors.surface, colors.surfaceAlt],
-  });
+  const animatedFrame = useAnimatedStyle(() => ({
+    borderColor: error
+      ? colors.red
+      : interpolateColor(focusAnim.value, [0, 1], [colors.border, colors.accent]),
+    backgroundColor: interpolateColor(
+      focusAnim.value,
+      [0, 1],
+      [colors.surface, colors.surfaceAlt],
+    ),
+  }));
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -84,7 +87,7 @@ export default function CustomInput({
       <Animated.View
         style={[
           styles.inputContainer,
-          { borderColor, backgroundColor },
+          animatedFrame,
           isFocused && styles.inputContainerFocused,
           inputStyle,
         ]}

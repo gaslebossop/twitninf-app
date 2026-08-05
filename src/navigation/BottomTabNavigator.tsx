@@ -1,12 +1,8 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import {
-  createNativeBottomTabNavigator,
-  type NativeBottomTabIcon,
-  type NativeBottomTabNavigationOptions,
-} from '@react-navigation/bottom-tabs/unstable';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View, StyleSheet, Platform, Dimensions } from 'react-native';
+import { View, StyleSheet, Platform, Dimensions } from 'react-native';
+import { BlurView } from 'expo-blur';
 import AnimatedTabIcon from '../components/AnimatedTabIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
@@ -30,88 +26,11 @@ import TradingScreen from '../screens/TradingScreen';
 import WalletDetailScreen from '../screens/WalletDetailScreen';
 import AccountStatsScreen from '../screens/AccountStatsScreen';
 import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
-import MoreScreen from '../screens/MoreScreen';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
-import { resolveTabLayout } from './tabLayout';
 
 const Tab = createBottomTabNavigator();
-const NativeTab = createNativeBottomTabNavigator();
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-
-type TabName =
-  | 'Accueil'
-  | 'Video'
-  | 'Live'
-  | 'Recherche'
-  | 'Notifications'
-  | 'Messages'
-  | 'Profil'
-  | 'Casino'
-  | 'Revue'
-  | 'Plus'
-  | 'Trading'
-  | 'WalletDetail'
-  | 'AccountStats'
-  | 'TweetMonetization'
-  | 'KosporBirthday';
-
-type NativeSfSymbolName = Extract<NativeBottomTabIcon, { type: 'sfSymbol' }>['name'];
-
-interface TabDefinition {
-  name: TabName;
-  component: React.ComponentType<any>;
-}
-
-const TAB_LABELS: Record<TabName, string> = {
-  Accueil: 'Accueil',
-  Video: 'Vidéos',
-  Live: 'Live',
-  Recherche: 'Recherche',
-  Notifications: 'Activité',
-  Messages: 'Messages',
-  Profil: 'Profil',
-  Casino: 'Casino',
-  Revue: 'Revue',
-  Plus: 'Plus',
-  Trading: 'Trading',
-  WalletDetail: 'Wallet',
-  AccountStats: 'Stats',
-  TweetMonetization: 'Gains',
-  KosporBirthday: 'Kospor',
-};
-
-const NATIVE_TAB_ICONS: Record<
-  Exclude<TabName, 'Recherche'>,
-  { default: NativeSfSymbolName; selected: NativeSfSymbolName }
-> = {
-  Accueil: { default: 'house', selected: 'house.fill' },
-  Video: { default: 'play.rectangle', selected: 'play.rectangle.fill' },
-  Live: {
-    default: 'dot.radiowaves.left.and.right',
-    selected: 'dot.radiowaves.left.and.right',
-  },
-  Notifications: { default: 'bell', selected: 'bell.fill' },
-  Messages: { default: 'envelope', selected: 'envelope.fill' },
-  Profil: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
-  Casino: { default: 'dice', selected: 'dice.fill' },
-  Revue: { default: 'hammer', selected: 'hammer.fill' },
-  Plus: { default: 'ellipsis.circle', selected: 'ellipsis.circle.fill' },
-  Trading: { default: 'chart.xyaxis.line', selected: 'chart.xyaxis.line' },
-  WalletDetail: { default: 'wallet.pass', selected: 'wallet.pass.fill' },
-  AccountStats: { default: 'chart.bar', selected: 'chart.bar.fill' },
-  TweetMonetization: { default: 'banknote', selected: 'banknote.fill' },
-  KosporBirthday: { default: 'gift', selected: 'gift.fill' },
-};
-
-const nativeTabIcon = (name: TabName): NativeBottomTabNavigationOptions['tabBarIcon'] => {
-  if (name === 'Recherche') return undefined;
-  const icons = NATIVE_TAB_ICONS[name];
-  return ({ focused }) => ({
-    type: 'sfSymbol',
-    name: focused ? icons.selected : icons.default,
-  });
-};
 
 export default function BottomTabNavigator() {
   const { isUserBanned, isUserSuspended } = useAuth();
@@ -119,10 +38,7 @@ export default function BottomTabNavigator() {
   const [activeLiveCount, setActiveLiveCount] = React.useState(0);
   // Onglets optionnels choisis à l'onboarding (voir NavbarPrefsContext) — les
   // autres restent joignables depuis Réglages, jamais totalement retirés.
-  const {
-    loading: navbarPrefsLoading,
-    selected: selectedOptionalTabs,
-  } = useNavbarPrefs();
+  const { selected: selectedOptionalTabs } = useNavbarPrefs();
   const showVideoTab = selectedOptionalTabs.includes('video');
   const showMessagesTab = selectedOptionalTabs.includes('messages');
   const showCasinoTab = selectedOptionalTabs.includes('casino');
@@ -168,165 +84,6 @@ export default function BottomTabNavigator() {
   React.useEffect(() => unreadService.subscribe(refreshCounts), [refreshCounts]);
 
   const isRestricted = isUserBanned || isUserSuspended;
-
-  const optionalTabs: TabDefinition[] = [
-    ...(showVideoTab ? [{ name: 'Video' as const, component: TwitNinfVideo }] : []),
-    ...(showMessagesTab ? [{ name: 'Messages' as const, component: MessagesScreen }] : []),
-    ...(showCasinoTab ? [{ name: 'Casino' as const, component: CasinoScreen }] : []),
-    ...(showRevueTab ? [{ name: 'Revue' as const, component: CommunityReviewScreen }] : []),
-    ...(showTradingTab ? [{ name: 'Trading' as const, component: TradingScreen }] : []),
-    ...(showWalletTab ? [{ name: 'WalletDetail' as const, component: WalletDetailScreen }] : []),
-    ...(showAnalyticsTab ? [{ name: 'AccountStats' as const, component: AccountStatsScreen }] : []),
-    ...(showMonetizationTab
-      ? [{ name: 'TweetMonetization' as const, component: TweetMonetizationScreen }]
-      : []),
-  ];
-
-  const eventTabs: TabDefinition[] = isEventActive
-    ? [{ name: 'KosporBirthday', component: KosporBirthdayScreen }]
-    : [];
-
-  const classicTabs: TabDefinition[] = isRestricted
-    ? [
-        { name: 'Notifications', component: NotificationsScreen },
-        { name: 'Profil', component: ProfileScreen },
-      ]
-    : [
-        { name: 'Accueil', component: TweetsScreen },
-        ...optionalTabs.slice(0, showVideoTab ? 1 : 0),
-        { name: 'Live', component: LivesScreen },
-        { name: 'Recherche', component: SearchScreen },
-        { name: 'Notifications', component: NotificationsScreen },
-        ...optionalTabs.slice(showVideoTab ? 1 : 0),
-        ...eventTabs,
-        { name: 'Profil', component: ProfileScreen },
-      ];
-
-  // Exactement cinq onglets, jamais plus : au-delà, UITabBarController
-  // remplace le cinquième par SON « More » — une UITableView grise, non
-  // stylable, toujours en dernière position, qui embarquerait Profil avec
-  // elle. Tout ce qui ne tient pas ici part dans MoreScreen, qui applique la
-  // même règle de répartition (voir navigation/tabLayout).
-  const layout = resolveTabLayout(selectedOptionalTabs);
-
-  const dynamicTab: TabDefinition =
-    layout.dynamic === 'messages'
-      ? { name: 'Messages', component: MessagesScreen }
-      : layout.dynamic === 'revue'
-        ? { name: 'Revue', component: CommunityReviewScreen }
-        : { name: 'Notifications', component: NotificationsScreen };
-
-  const nativeTabs: TabDefinition[] = isRestricted
-    ? classicTabs
-    : [
-        { name: 'Accueil', component: TweetsScreen },
-        { name: 'Recherche', component: SearchScreen },
-        dynamicTab,
-        { name: 'Plus', component: MoreScreen },
-        { name: 'Profil', component: ProfileScreen },
-      ];
-
-  // Activité perd sa place dès que le slot dynamique est occupé : son badge
-  // remonte alors sur l'onglet Plus, sinon l'alerte deviendrait invisible.
-  // Messages n'a pas besoin du même report — quand il est sélectionné, il est
-  // prioritaire sur le slot dynamique, donc toujours visible dans la barre.
-  const displacedBadgeCount = layout.showsNotifications ? 0 : notificationCount;
-
-  const badgeFor = (name: string) =>
-    name === 'Notifications'
-      ? notificationCount
-      : name === 'Messages'
-        ? messageCount
-        : name === 'Live'
-          ? activeLiveCount
-          : name === 'Plus'
-            ? displacedBadgeCount
-            : 0;
-
-  if (Platform.OS === 'ios') {
-    // UITabBarController ne supporte pas qu'on lui remplace sa topologie au
-    // milieu de sa première transaction de montage. Les préférences passent
-    // d'abord par une valeur par défaut avant d'être hydratées depuis
-    // AsyncStorage. Attendre cette hydratation empêche UIKit de sélectionner
-    // un contrôleur qui vient d'être retiré de son tableau `viewControllers`.
-    if (navbarPrefsLoading) {
-      return (
-        <View style={styles.nativeTabsLoading}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
-      );
-    }
-
-    // Les préférences restent modifiables depuis Réglages et un événement
-    // peut s'activer à chaud. Dans ce cas, recréer le conteneur UIKit est plus
-    // sûr que de muter la liste de view controllers d'une instance existante.
-    const nativeTabsTopologyKey = nativeTabs.map((screen) => screen.name).join('|');
-
-    return (
-      <NativeTab.Navigator
-        key={nativeTabsTopologyKey}
-        id={undefined}
-        screenOptions={({ route }) => {
-          const name = route.name as TabName;
-          const badgeCount = badgeFor(name);
-          const isSearch = name === 'Recherche';
-
-          return {
-            headerShown: false,
-            title: TAB_LABELS[name],
-            lazy: true,
-            tabBarActiveTintColor: colors.accent,
-            tabBarBadge: badgeCount > 0 ? badgeCount : undefined,
-            tabBarBadgeStyle: { backgroundColor: colors.accent },
-            // Liquid Glass en permanence, et pas seulement sous le doigt.
-            //
-            // `[UITabBarAppearance new]` part déjà du fond par défaut, qui
-            // sous iOS 26 EST le verre. Deux réglages l'écrasaient :
-            // `systemChromeMaterialDark` remplaçait le verre par un
-            // `UIBlurEffect` classique, et surtout `backgroundColor` peignait
-            // un aplat quasi opaque par-dessus. Il ne restait du verre que le
-            // reflet de l'élément pressé — d'où l'impression qu'il
-            // n'apparaissait qu'au doigt.
-            //
-            // `systemDefault` est traité à part côté natif : c'est la seule
-            // valeur qui laisse `backgroundEffect` intact (voir
-            // RNSTabBarAppearanceCoordinator.mm). Ne rien passer ne suffirait
-            // pas — bottom-tabs retomberait sur `systemMaterialDark`.
-            tabBarBlurEffect: 'systemDefault',
-            tabBarControllerMode: 'tabBar',
-            tabBarMinimizeBehavior: 'onScrollDown',
-            // react-native-screens repasse par défaut le premier ScrollView
-            // descendant de l'onglet en `contentInsetAdjustmentBehavior:
-            // 'automatic'` (au lieu du `'never'` de React Native), pour que les
-            // listes respectent une barre de navigation native. Cette app n'en
-            // a pas : chaque écran dessine son propre header et réserve déjà
-            // l'encoche via `useHeaderMetrics()` (`insets.top`). Laisser UIKit
-            // ajouter le même inset une seconde fois décalait le haut du
-            // contenu d'une hauteur de Dynamic Island, et seulement sur les
-            // écrans dont la liste se trouve en tête de chaîne — d'où un
-            // décalage qui n'apparaissait que sur certains onglets.
-            overrideScrollViewContentInsetAdjustmentBehavior: false,
-            // Recherche prend le system item : icône loupe et libellé
-            // localisés par UIKit. Contrairement à ce que disait le commentaire
-            // précédent, ça ne lui donne PAS la lentille séparée d'iOS 26 —
-            // react-native-screens 4.25 n'expose aucun rôle `.search`, donc
-            // Recherche est un onglet comme les autres et compte dans les cinq.
-            tabBarSystemItem: isSearch ? 'search' : undefined,
-            tabBarLabel: isSearch ? undefined : TAB_LABELS[name],
-            tabBarIcon: isSearch ? undefined : nativeTabIcon(name),
-          };
-        }}
-      >
-        {nativeTabs.map((screen) => (
-          <NativeTab.Screen
-            key={screen.name}
-            name={screen.name}
-            component={screen.component}
-          />
-        ))}
-      </NativeTab.Navigator>
-    );
-  }
 
   // La barre peut maintenant porter jusqu'à 5 onglets optionnels (+ Live et
   // l'événement, conditionnels) : à 9 icônes ou plus, un gabarit fixe de 50pt
@@ -431,15 +188,29 @@ export default function BottomTabNavigator() {
           bottom: 0,
           left: 0,
           right: 0,
-          height: 85,
-          backgroundColor: colors.bg,
+          height: Platform.OS === 'ios' ? 83 : 85,
+          backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.bg,
           borderTopWidth: 0,
-          borderTopColor: colors.border,
-          paddingBottom: 20,
-          paddingTop: 8,
-          elevation: 0,
+          borderTopColor: Platform.OS === 'ios' ? 'transparent' : colors.border,
+          paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+          paddingTop: Platform.OS === 'ios' ? 8 : 8,
+          shadowColor: Platform.OS === 'ios' ? '#000' : 'transparent',
+          shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
+          shadowRadius: Platform.OS === 'ios' ? 15 : 0,
+          shadowOffset: { width: 0, height: Platform.OS === 'ios' ? -2 : 0 },
+          elevation: Platform.OS === 'ios' ? 0 : 0,
         },
-        tabBarBackground: () => <View style={styles.androidBackground} />,
+        tabBarBackground: () => (
+          Platform.OS === 'ios' ? (
+            <BlurView
+              intensity={60}
+              tint="systemChromeMaterialDark"
+              style={styles.blurBackground}
+            />
+          ) : (
+            <View style={styles.androidBackground} />
+          )
+        ),
         tabBarItemStyle: {
           paddingVertical: 0,
         },
@@ -447,24 +218,123 @@ export default function BottomTabNavigator() {
         tabBarHideOnKeyboard: true,
       })}
     >
-      {classicTabs.map((screen) => (
-        <Tab.Screen
-          key={screen.name}
-          name={screen.name}
-          component={screen.component}
-          options={screen.name === 'KosporBirthday' ? { tabBarLabel: 'Kospor' } : undefined}
-        />
-      ))}
+      {isRestricted ? (
+        <>
+          <Tab.Screen
+            name="Notifications"
+            component={NotificationsScreen}
+          />
+          <Tab.Screen
+            name="Profil"
+            component={ProfileScreen}
+          />
+        </>
+      ) : (
+        <>
+          <Tab.Screen
+            name="Accueil"
+            component={TweetsScreen}
+          />
+          {showVideoTab && (
+            <Tab.Screen
+              name="Video"
+              component={TwitNinfVideo}
+            />
+          )}
+          {/* Toujours monté. L'onglet n'apparaissait qu'en présence d'un live
+              déjà en cours, or c'est le seul chemin vers « Passer en direct » :
+              tant que personne ne diffusait, personne ne pouvait commencer.
+              L'écran a d'ailleurs un état vide écrit pour ce cas précis
+              (« Sois le premier à diffuser ! »), jusqu'ici inatteignable. */}
+          <Tab.Screen
+            name="Live"
+            component={LivesScreen}
+          />
+
+          <Tab.Screen
+            name="Recherche"
+            component={SearchScreen}
+          />
+          <Tab.Screen
+            name="Notifications"
+            component={NotificationsScreen}
+          />
+          {showMessagesTab && (
+            <Tab.Screen
+              name="Messages"
+              component={MessagesScreen}
+            />
+          )}
+          {showCasinoTab && (
+            <Tab.Screen
+              name="Casino"
+              component={CasinoScreen}
+            />
+          )}
+          {/* Revue communautaire (BÊTA). Elle reste aussi accessible depuis les
+              réglages et depuis MainNavigator — même double entrée que Casino,
+              qui est à la fois un onglet et un écran de la pile. */}
+          {showRevueTab && (
+            <Tab.Screen
+              name="Revue"
+              component={CommunityReviewScreen}
+            />
+          )}
+          {/* Trading, Portefeuille, Analytiques, Monétisation : même double
+              entrée (onglet + Réglages) que Casino/Revue ci-dessus. */}
+          {showTradingTab && (
+            <Tab.Screen
+              name="Trading"
+              component={TradingScreen}
+            />
+          )}
+          {showWalletTab && (
+            <Tab.Screen
+              name="WalletDetail"
+              component={WalletDetailScreen}
+            />
+          )}
+          {showAnalyticsTab && (
+            <Tab.Screen
+              name="AccountStats"
+              component={AccountStatsScreen}
+            />
+          )}
+          {showMonetizationTab && (
+            <Tab.Screen
+              name="TweetMonetization"
+              component={TweetMonetizationScreen}
+            />
+          )}
+          {isEventActive && (
+            <Tab.Screen
+              name="KosporBirthday"
+              component={KosporBirthdayScreen}
+              options={{
+                tabBarLabel: 'Kospor',
+              }}
+            />
+          )}
+          <Tab.Screen
+            name="Profil"
+            component={ProfileScreen}
+          />
+        </>
+      )}
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  nativeTabsLoading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
+  blurBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(11, 12, 15, 0.62)',
+    borderTopWidth: 0.5,
+    borderTopColor: colors.border,
   },
   androidBackground: {
     position: 'absolute',

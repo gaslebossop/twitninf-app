@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
-  RefreshControl,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -14,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, fonts } from '../theme';
-import { ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -227,7 +226,7 @@ export default function MessagesScreen({ navigation }: any) {
     setRefreshing(false);
   };
 
-  const openConversation = (item: ConvItem) => {
+  const openConversation = useCallback((item: ConvItem) => {
     if (!item.isGroup && (item.username.toLowerCase() === 'policiercongo' || item.isAI)) {
       navigation.navigate('PolicierCongoChat');
       return;
@@ -248,7 +247,7 @@ export default function MessagesScreen({ navigation }: any) {
       isGroup: !!item.isGroup,
       memberCount: item.memberCount || 0,
     });
-  };
+  }, [navigation]);
 
   const openProfile = (author: { id: string; username: string }) => {
     navigation.navigate('UserProfile', { userId: author.id, username: author.username });
@@ -289,7 +288,11 @@ export default function MessagesScreen({ navigation }: any) {
     [conversations],
   );
 
-  const renderConversation = ({ item }: { item: ConvItem }) => {
+  /**
+   * Mémoïsé : sans identité stable, chaque frappe dans la recherche re-rendait
+   * toutes les lignes montées de la liste.
+   */
+  const renderConversation = useCallback(({ item }: { item: ConvItem }) => {
     const avatarUri = getAvatarUri(item.avatar);
     const targetId = item.otherUserId ? String(item.otherUserId) : '';
     const hasStory = !item.isGroup && !!targetId && storyUserIds.has(targetId);
@@ -357,7 +360,7 @@ export default function MessagesScreen({ navigation }: any) {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [storyUserIds, unseenStoryUserIds, openConversation]);
 
   return (
     <ScreenBackground>
@@ -406,7 +409,7 @@ export default function MessagesScreen({ navigation }: any) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />
+            <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
           ListHeaderComponent={
             <View>

@@ -7,6 +7,7 @@ import Animated, {
   withTiming,
   interpolate,
   Easing,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { colors, withAlpha } from '../../theme';
 
@@ -26,6 +27,9 @@ function SkeletonRow({ delay = 0 }: { delay?: number }) {
       -1,
       true
     );
+    // Une boucle infinie survit au démontage du squelette : sans cette
+    // annulation, elle continue de tourner pour le reste de la session.
+    return () => cancelAnimation(shimmer);
   }, [shimmer]);
 
   const pulse = useAnimatedStyle(() => ({

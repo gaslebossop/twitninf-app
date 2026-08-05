@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { navigationRef } from './NavigationService';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Platform } from 'react-native';
@@ -26,22 +26,11 @@ export type RootStackParamList = {
 const RootStack = createStackNavigator<RootStackParamList>();
 
 const TransparentTheme = {
-  ...DarkTheme,
-  // Les couleurs restent celles du thème sombre — l'app est noire — mais le
-  // drapeau `dark` ne sert QU'À une chose ici : bottom-tabs le convertit en
-  // `colorScheme` sur le conteneur natif des onglets, et un conteneur en
-  // style « dark » rend un Liquid Glass sombre et terne. En `light`, la barre
-  // reprend le verre clair d'Apple, cohérent avec le
-  // `userInterfaceStyle: "light"` déjà déclaré dans app.config.js.
-  // Aucun écran ne lit `useTheme()`, donc rien d'autre n'en dépend.
-  dark: false,
+  ...DefaultTheme,
   colors: {
-    ...DarkTheme.colors,
-    primary: colors.accent,
+    ...DefaultTheme.colors,
     background: 'transparent',
     card: 'transparent',
-    text: colors.textPrimary,
-    border: colors.border,
   },
 };
 

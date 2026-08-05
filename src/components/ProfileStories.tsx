@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -13,6 +12,10 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
+// `expo-image` plutôt que `Image` de React Native : cache disque et décodage
+// hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
+// reste identique.
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts } from '../theme';
@@ -240,7 +243,7 @@ export default function ProfileStories({
               >
                 <View style={styles.ringInner}>
                   {cover ? (
-                    <Image source={{ uri: cover }} style={styles.thumb} />
+                    <Image source={{ uri: cover }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={cover} />
                   ) : (
                     <View style={[styles.thumb, styles.thumbFallback]}>
                       <Ionicons name="bookmark" size={20} color={colors.textSecondary} />
@@ -310,7 +313,7 @@ export default function ProfileStories({
                       onPress={() => toggleSelected(story.id)}
                     >
                       {uri ? (
-                        <Image source={{ uri }} style={styles.gridThumb} />
+                        <Image source={{ uri }} style={styles.gridThumb} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
                       ) : (
                         <View style={[styles.gridThumb, styles.thumbFallback]}>
                           <Ionicons name="videocam" size={18} color={colors.textSecondary} />

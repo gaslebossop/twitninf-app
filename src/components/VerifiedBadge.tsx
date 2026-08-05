@@ -29,7 +29,7 @@ interface VerifiedBadgeProps {
   style?: StyleProp<any>;
 }
 
-export default function VerifiedBadge({
+function VerifiedBadge({
   verificationStyle = 'default',
   size = 20,
   animated = true,
@@ -701,6 +701,16 @@ export default function VerifiedBadge({
     />
   );
 }
+
+/**
+ * Mémoïsé : la pastille embarque jusqu'à huit boucles d'animation et un SVG,
+ * et elle est rendue une à deux fois par ligne de liste. Sans ce `memo`, le
+ * moindre re-rendu du parent la reconstruisait entièrement.
+ *
+ * L'animation elle-même n'est pas touchée : `animated` garde sa valeur par
+ * défaut et aucun appelant ne change de comportement.
+ */
+export default React.memo(VerifiedBadge);
 
 const styles = StyleSheet.create({
   /** `overflow: visible` : le halo déborde volontairement de la pastille. */

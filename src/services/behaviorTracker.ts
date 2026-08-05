@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiService } from './api';
-import { Platform, Dimensions } from 'react-native';
+import { Platform, Dimensions, AppState, type AppStateStatus } from 'react-native';
 import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import { Accelerometer } from 'expo-sensors';
@@ -36,10 +36,51 @@ class BehaviorTracker {
   private motionSubscription: any = null;
   private lastBatteryLevel: number = -1;
 
+  // Poignées des minuteurs et du capteur : sans elles, rien ne pouvait être
+  // arrêté quand l'app passait en arrière-plan. Ce singleton entretenait donc
+  // en permanence deux `setInterval` et un listener d'accéléromètre à 500 ms —
+  // un événement de pont deux fois par seconde, pour la vie du process.
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private systemCheckTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor() {
     this.loadSettings();
     this.startPeriodicFlush();
     this.setupAdvancedSensors();
+    this.watchAppState();
+  }
+
+  /**
+   * Suspend capteur et minuteurs hors avant-plan, et les relance au retour.
+   * La collecte reste identique quand l'app est utilisée : seule disparaît
+   * celle qui se faisait écran éteint.
+   */
+  private watchAppState() {
+    AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') this.resume();
+      else this.suspend();
+    });
+  }
+
+  private suspend() {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+    if (this.systemCheckTimer) {
+      clearInterval(this.systemCheckTimer);
+      this.systemCheckTimer = null;
+    }
+    this.motionSubscription?.remove?.();
+    this.motionSubscription = null;
+    // La file part avant la mise en veille : sinon les actions de la session
+    // attendraient le prochain retour au premier plan.
+    void this.flushQueue();
+  }
+
+  private resume() {
+    if (!this.flushTimer) this.startPeriodicFlush();
+    if (!this.motionSubscription && !this.systemCheckTimer) this.setupAdvancedSensors();
   }
 
   /**
@@ -60,7 +101,7 @@ class BehaviorTracker {
     });
 
     // 3. Periodic system check
-    setInterval(async () => {
+    this.systemCheckTimer = setInterval(async () => {
       const currentBattery = await Battery.getBatteryLevelAsync();
       if (Math.abs(currentBattery - this.lastBatteryLevel) > 0.01) {
         this.trackAction('system_stats_sync', null, 'app', {
@@ -242,7 +283,7 @@ class BehaviorTracker {
   }
 
   private startPeriodicFlush() {
-    setInterval(() => this.flushQueue(), this.flushInterval);
+    this.flushTimer = setInterval(() => this.flushQueue(), this.flushInterval);
   }
 
   async setEnabled(enabled: boolean) {

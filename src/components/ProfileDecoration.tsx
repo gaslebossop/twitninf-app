@@ -326,10 +326,19 @@ function scatter(index: number, salt: number) {
   return x - Math.floor(x);
 }
 
-/** Dérive linéaire bouclée, 0 → 1. Sans reset visible : les extrémités sont à opacité nulle. */
-function useDrift(duration: number, delay: number) {
+/**
+ * Dérive linéaire bouclée, 0 → 1. Sans reset visible : les extrémités sont à
+ * opacité nulle.
+ *
+ * `enabled` existe parce qu'un hook ne peut pas être appelé conditionnellement :
+ * `AnimatedNameFill` doit l'appeler avant de savoir si l'effet en a besoin.
+ * Sans ce garde-fou, un nom sans effet lançait quand même sa boucle — une par
+ * ligne de fil, pour rien.
+ */
+function useDrift(duration: number, delay: number, enabled: boolean = true) {
   const value = useRef(new Animated.Value(0)).current;
   useEffect(() => {
+    if (!enabled) return;
     const anim = Animated.loop(
       Animated.timing(value, {
         toValue: 1,
@@ -343,7 +352,7 @@ function useDrift(duration: number, delay: number) {
       clearTimeout(timer);
       anim.stop();
     };
-  }, [duration, delay, value]);
+  }, [duration, delay, value, enabled]);
   return value;
 }
 
@@ -630,7 +639,9 @@ export function AnimatedNameFill({
   // En « Certifié », la couleur vient du badge et non de la palette d'accent.
   const accent = effect === 'certified' ? certif.from : accentBase;
   const secondary = effect === 'certified' ? certif.to : secondaryBase;
-  const sweep = useDrift(2600, 0);
+  // Un nom sans effet — le cas courant dans le fil — n'a rien à animer : la
+  // boucle ne démarre plus pour rien, une par ligne montée.
+  const sweep = useDrift(2600, 0, effect !== 'none');
   // Horloge PARTAGÉE avec la pastille de certif : côte à côte et de même
   // couleur, les deux doivent respirer ensemble (voir utils/litPulse).
   const pulse = litPulse();
@@ -785,7 +796,8 @@ export function ProfileTitleChip({
 }) {
   const title = customization?.profile_title?.trim();
   const [accent, secondary] = decorationColors(customization);
-  const sweep = useDrift(4200, 0);
+  // Sans titre, la puce ne s'affiche pas : sa boucle n'a pas à tourner.
+  const sweep = useDrift(4200, 0, !!title);
   const entrance = useFadeIn(700, 160);
 
   if (!title) return null;

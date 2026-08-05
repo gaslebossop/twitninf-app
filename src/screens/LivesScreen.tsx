@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { liveService, LiveRoom } from '../services/liveService';
 import { apiService } from '../services';
 import { ScreenSkeleton } from '../components/ui';
+import useForegroundInterval from '../hooks/useForegroundInterval';
 
 const { width, height } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 49;
@@ -33,14 +34,18 @@ export default function LivesScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Animation pulse pour le bouton LIVE
+  // La boucle n'était jamais arrêtée : elle continuait de tourner après le
+  // démontage de l'écran, pour le reste de la session.
   useEffect(() => {
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.12, duration: 800, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
       ])
-    ).start();
-  }, []);
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [pulseAnim]);
 
   const fetchLives = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -73,15 +78,18 @@ export default function LivesScreen() {
     socket.on('newLive', handleNewLive);
     socket.on('liveEnded', handleLiveEnded);
 
-    // Refresh interval
-    const interval = setInterval(fetchLives, 30000);
-
     return () => {
       socket.off('newLive', handleNewLive);
       socket.off('liveEnded', handleLiveEnded);
-      clearInterval(interval);
     };
   }, []);
+
+  // Rafraîchissement périodique, suspendu hors avant-plan : ce sondage battait
+  // toutes les 30 s même app fermée.
+  const refreshLives = useCallback(() => {
+    void fetchLives();
+  }, [fetchLives]);
+  useForegroundInterval(refreshLives, 30000, { runImmediately: false });
 
   const handleGoLive = () => {
     navigation.navigate('GoLive');

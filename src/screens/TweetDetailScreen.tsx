@@ -1,6 +1,6 @@
 import { colors, fonts, glow, withAlpha } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, TextInput, Animated, LayoutAnimation, UIManager, Modal, KeyboardAvoidingView } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -45,6 +45,188 @@ interface RouteParams {
    */
   isThread?: boolean;
 }
+
+/**
+ * Formateurs sortis du composant : `toLocaleDateString` est le poste le plus
+ * cher d'une ligne de réponse, et il était réinstancié à chaque frappe dans le
+ * compositeur.
+ */
+const formatTime = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor(diff / (1000 * 60));
+
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+};
+
+const formatNumber = (num: number) => {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return num.toString();
+};
+
+interface ReplyItemProps {
+  reply: Tweet;
+  navigation: any;
+  onLike: (replyId: string) => void;
+  onRetweet: (replyId: string) => void;
+  liking: boolean;
+  retweeting: boolean;
+  likeAnim: Animated.Value;
+  retweetAnim: Animated.Value;
+}
+
+/**
+ * Une réponse, isolée et mémoïsée.
+ *
+ * Le bloc vivait en ligne dans le `.map()` de l'écran : taper un caractère
+ * dans le compositeur re-rendait les vingt réponses, animations et badges
+ * compris. Le rendu est repris tel quel, à l'identique.
+ */
+function ReplyItemBase({
+  reply,
+  navigation,
+  onLike,
+  onRetweet,
+  liking,
+  retweeting,
+  likeAnim,
+  retweetAnim,
+}: ReplyItemProps) {
+  return (
+                  <View style={styles.replyItem}>
+                    <View style={styles.replyThread}>
+                      <View style={styles.threadLine} />
+                    </View>
+                    <View style={styles.replyContent}>
+                      <TouchableOpacity activeOpacity={0.8} onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}>
+                        <View style={styles.replyHeader}>
+                          <TouchableOpacity
+                            style={styles.replyAvatarContainer}
+                            onPress={() => {
+                              const author: any = (reply as any)?.author || {};
+                              if (author?.id || author?.username) {
+                                (navigation as any).navigate('UserProfile', {
+                                  userId: author.id,
+                                  username: author.username,
+                                });
+                              }
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Avatar size={32} username={reply.author?.username || 'U'} uri={(reply.author as any)?.avatar} />
+                          </TouchableOpacity>
+                          <View style={styles.replyAuthorInfo}>
+                            <TouchableOpacity
+                              onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}
+                              activeOpacity={0.8}
+                            >
+                              <View style={styles.replyAuthorRow}>
+                                <PremiumDisplayName
+                                  text={reply.author?.full_name || reply.author?.username || 'Utilisateur'}
+                                  baseStyle={styles.replyAuthorName}
+                                  isPremium={!!(reply.author as any)?.premium}
+                                  subscriptionTierRaw={(reply.author as any)?.subscription_tier}
+                                  fontId="system"
+                                  effectId="none"
+                                  numberOfLines={1}
+                                  customization={(reply.author as any)?.profile_customization as ProfileCustomization | undefined}
+                                  verified={!!(reply.author as any)?.verified}
+                                  verificationStyle={(reply.author as any)?.verification_style || 'default'}
+                                />
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                  <Text style={styles.replyAuthorHandle}>
+                                    @{reply.author?.username}
+                                  </Text>
+                                  {(reply.author as any)?.verified && (
+                                    <View style={{ marginLeft: 6 }}>
+                                      <VerifiedBadge
+                                        verificationStyle={(reply.author as any)?.verification_style || 'default'}
+                                        size={14}
+                                        animated={true}
+                                        tint={
+                                          certifiedNameColors(
+                                            (reply.author as any)?.verification_style,
+                                            (reply.author as any)?.profile_customization as ProfileCustomization | undefined,
+                                          ).from
+                                        }
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+                                <Text style={styles.replyTime}>
+                                  · {formatTime(reply.created_at || (reply as any).createdAt || Date.now())}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.replyText}>{reply.content}</Text>
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+
+                      {/* Actions pour les réponses avec like/retweet */}
+                      <View style={styles.replyItemActions}>
+                        <TouchableOpacity
+                          style={styles.replyActionBtn}
+                          onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}
+                        >
+                          <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.replyActionBtn}
+                          onPress={() => onRetweet(reply.id)}
+                          disabled={retweeting}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Animated.View style={{ transform: [{ scale: retweetAnim }] }}>
+                              <Ionicons
+                                name={(reply as any)?.user_interaction?.is_retweeted ? 'repeat' : 'repeat-outline'}
+                                size={16}
+                                color={(reply as any)?.user_interaction?.is_retweeted ? colors.success : colors.textMuted}
+                              />
+                            </Animated.View>
+                            <Text style={[styles.replyActionCount, { color: (reply as any)?.user_interaction?.is_retweeted ? colors.success : colors.textMuted }]}>
+                              {formatNumber(reply.stats?.retweets || 0)}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.replyActionBtn}
+                          onPress={() => onLike(reply.id)}
+                          disabled={liking}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Animated.View style={{ transform: [{ scale: likeAnim }] }}>
+                              <Ionicons
+                                name={(reply as any)?.user_interaction?.is_liked ? 'heart' : 'heart-outline'}
+                                size={16}
+                                color={(reply as any)?.user_interaction?.is_liked ? colors.like : colors.textMuted}
+                              />
+                            </Animated.View>
+                            <Text style={[styles.replyActionCount, { color: (reply as any)?.user_interaction?.is_liked ? colors.like : colors.textMuted }]}>
+                              {formatNumber(reply.stats?.likes || 0)}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.replyActionBtn}>
+                          <Ionicons name="share-outline" size={16} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+  );
+}
+
+const ReplyItem = React.memo(ReplyItemBase);
 
 export default function TweetDetailScreen() {
   const route = useRoute();
@@ -422,9 +604,26 @@ export default function TweetDetailScreen() {
     }
   };
 
-  const handleReplyLike = async (replyId: string) => {
-    if (replyLiking[replyId]) return;
-    const target = replies.find(r => r.id === replyId);
+  /**
+   * Identité stable : ces deux handlers descendent dans chaque `ReplyItem`
+   * mémoïsé. L'état courant est lu par référence.
+   */
+  const repliesRef = useRef(replies);
+  const replyLikingRef = useRef(replyLiking);
+  const replyRetweetingRef = useRef(replyRetweeting);
+  useEffect(() => {
+    repliesRef.current = replies;
+  }, [replies]);
+  useEffect(() => {
+    replyLikingRef.current = replyLiking;
+  }, [replyLiking]);
+  useEffect(() => {
+    replyRetweetingRef.current = replyRetweeting;
+  }, [replyRetweeting]);
+
+  const handleReplyLike = useCallback(async (replyId: string) => {
+    if (replyLikingRef.current[replyId]) return;
+    const target = repliesRef.current.find(r => r.id === replyId);
     if (!target) return;
     const wasLiked = (target as any)?.user_interaction?.is_liked || false;
     const currentLikes = target.stats?.likes || 0;
@@ -451,11 +650,11 @@ export default function TweetDetailScreen() {
     } finally {
       setReplyLiking(prev => ({ ...prev, [replyId]: false }));
     }
-  };
+  }, []);
 
-  const handleReplyRetweet = async (replyId: string) => {
-    if (replyRetweeting[replyId]) return;
-    const target = replies.find(r => r.id === replyId);
+  const handleReplyRetweet = useCallback(async (replyId: string) => {
+    if (replyRetweetingRef.current[replyId]) return;
+    const target = repliesRef.current.find(r => r.id === replyId);
     if (!target) return;
     const wasRetweeted = (target as any)?.user_interaction?.is_retweeted || false;
     const currentRetweets = target.stats?.retweets || 0;
@@ -482,7 +681,7 @@ export default function TweetDetailScreen() {
     } finally {
       setReplyRetweeting(prev => ({ ...prev, [replyId]: false }));
     }
-  };
+  }, []);
 
   const handleReply = async () => {
     if (isContentLocked) return refuseLocked();
@@ -534,24 +733,6 @@ export default function TweetDetailScreen() {
     // Cette fonction sera appelée après une action de modération
     // Optionnel : rafraîchir les données ou naviguer
     console.log('🎯 Action de modération effectuée sur le tweet:', tweet?.id);
-  };
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor(diff / (1000 * 60));
-    
-    if (minutes < 60) return `${minutes}m`;
-    if (hours < 24) return `${hours}h`;
-    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-  };
-
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-    return num.toString();
   };
 
   return (
@@ -1037,132 +1218,18 @@ export default function TweetDetailScreen() {
                   </View>
                 </View>
                 
-                {replies.map((reply, index) => (
-                  <View key={reply.id} style={styles.replyItem}>
-                    <View style={styles.replyThread}>
-                      <View style={styles.threadLine} />
-                    </View>
-                    <View style={styles.replyContent}>
-                      <TouchableOpacity activeOpacity={0.8} onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}>
-                        <View style={styles.replyHeader}>
-                          <TouchableOpacity
-                            style={styles.replyAvatarContainer}
-                            onPress={() => {
-                              const author: any = (reply as any)?.author || {};
-                              if (author?.id || author?.username) {
-                                (navigation as any).navigate('UserProfile', {
-                                  userId: author.id,
-                                  username: author.username,
-                                });
-                              }
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <Avatar size={32} username={reply.author?.username || 'U'} uri={(reply.author as any)?.avatar} />
-                          </TouchableOpacity>
-                          <View style={styles.replyAuthorInfo}>
-                            <TouchableOpacity
-                              onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}
-                              activeOpacity={0.8}
-                            >
-                              <View style={styles.replyAuthorRow}>
-                                <PremiumDisplayName
-                                  text={reply.author?.full_name || reply.author?.username || 'Utilisateur'}
-                                  baseStyle={styles.replyAuthorName}
-                                  isPremium={!!(reply.author as any)?.premium}
-                                  subscriptionTierRaw={(reply.author as any)?.subscription_tier}
-                                  fontId="system"
-                                  effectId="none"
-                                  numberOfLines={1}
-                                  customization={(reply.author as any)?.profile_customization as ProfileCustomization | undefined}
-                                  verified={!!(reply.author as any)?.verified}
-                                  verificationStyle={(reply.author as any)?.verification_style || 'default'}
-                                />
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                  <Text style={styles.replyAuthorHandle}>
-                                    @{reply.author?.username}
-                                  </Text>
-                                  {(reply.author as any)?.verified && (
-                                    <View style={{ marginLeft: 6 }}>
-                                      <VerifiedBadge
-                                        verificationStyle={(reply.author as any)?.verification_style || 'default'}
-                                        size={14}
-                                        animated={true}
-                                        tint={
-                                          certifiedNameColors(
-                                            (reply.author as any)?.verification_style,
-                                            (reply.author as any)?.profile_customization as ProfileCustomization | undefined,
-                                          ).from
-                                        }
-                                      />
-                                    </View>
-                                  )}
-                                </View>
-                                <Text style={styles.replyTime}>
-                                  · {formatTime(reply.created_at || (reply as any).createdAt || Date.now())}
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                        <TouchableOpacity
-                          onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.replyText}>{reply.content}</Text>
-                        </TouchableOpacity>
-                      </TouchableOpacity>
-                      
-                      {/* Actions pour les réponses avec like/retweet */}
-                      <View style={styles.replyItemActions}>
-                        <TouchableOpacity
-                          style={styles.replyActionBtn}
-                          onPress={() => (navigation as any).push('TweetDetail', { tweetId: reply.id, isThread: true })}
-                        >
-                          <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.replyActionBtn}
-                          onPress={() => handleReplyRetweet(reply.id)}
-                          disabled={!!replyRetweeting[reply.id]}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Animated.View style={{ transform: [{ scale: getReplyRetweetAnim(reply.id) }] }}>
-                              <Ionicons
-                                name={(reply as any)?.user_interaction?.is_retweeted ? 'repeat' : 'repeat-outline'}
-                                size={16}
-                                color={(reply as any)?.user_interaction?.is_retweeted ? colors.success : colors.textMuted}
-                              />
-                            </Animated.View>
-                            <Text style={[styles.replyActionCount, { color: (reply as any)?.user_interaction?.is_retweeted ? colors.success : colors.textMuted }]}>
-                              {formatNumber(reply.stats?.retweets || 0)}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.replyActionBtn}
-                          onPress={() => handleReplyLike(reply.id)}
-                          disabled={!!replyLiking[reply.id]}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Animated.View style={{ transform: [{ scale: getReplyLikeAnim(reply.id) }] }}>
-                              <Ionicons
-                                name={(reply as any)?.user_interaction?.is_liked ? 'heart' : 'heart-outline'}
-                                size={16}
-                                color={(reply as any)?.user_interaction?.is_liked ? colors.like : colors.textMuted}
-                              />
-                            </Animated.View>
-                            <Text style={[styles.replyActionCount, { color: (reply as any)?.user_interaction?.is_liked ? colors.like : colors.textMuted }]}>
-                              {formatNumber(reply.stats?.likes || 0)}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.replyActionBtn}>
-                          <Ionicons name="share-outline" size={16} color={colors.textMuted} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
+                {replies.map((reply) => (
+                  <ReplyItem
+                    key={reply.id}
+                    reply={reply}
+                    navigation={navigation}
+                    onLike={handleReplyLike}
+                    onRetweet={handleReplyRetweet}
+                    liking={!!replyLiking[reply.id]}
+                    retweeting={!!replyRetweeting[reply.id]}
+                    likeAnim={getReplyLikeAnim(reply.id)}
+                    retweetAnim={getReplyRetweetAnim(reply.id)}
+                  />
                 ))}
               </View>
             )}

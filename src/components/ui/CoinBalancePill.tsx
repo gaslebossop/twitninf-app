@@ -1,5 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+// Reanimated pour l'éclat : `backgroundColor` ne passe pas par le native
+// driver d'`Animated`, chaque frame traversait donc le pont JS. Même durées,
+// mêmes couleurs, mais sur le thread UI.
+import Animated, {
+  Easing,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, fonts, radius, withAlpha } from '../../theme';
@@ -39,7 +50,7 @@ export default function CoinBalancePill({
   const [shown, setShown] = useState<number | null>(balance);
   const fromRef = useRef<number | null>(balance);
   const rafRef = useRef<number | null>(null);
-  const flash = useRef(new Animated.Value(0)).current;
+  const flash = useSharedValue(0);
 
   useEffect(() => {
     if (balance === null) return;
@@ -54,11 +65,11 @@ export default function CoinBalancePill({
     // Un gain s'éclaire brièvement en or, une dépense non : on souligne ce qui
     // fait plaisir, on n'insiste pas sur ce qui coûte.
     if (balance > from) {
-      flash.setValue(0);
-      Animated.sequence([
-        Animated.timing(flash, { toValue: 1, duration: 140, easing: Easing.out(Easing.quad), useNativeDriver: false }),
-        Animated.timing(flash, { toValue: 0, duration: 520, easing: Easing.in(Easing.quad), useNativeDriver: false }),
-      ]).start();
+      flash.value = 0;
+      flash.value = withSequence(
+        withTiming(1, { duration: 140, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 520, easing: Easing.in(Easing.quad) }),
+      );
     }
 
     const start = Date.now();
@@ -75,10 +86,13 @@ export default function CoinBalancePill({
     };
   }, [balance, flash]);
 
-  const backgroundColor = flash.interpolate({
-    inputRange: [0, 1],
-    outputRange: [colors.surface, withAlpha(colors.gold, 0.24)],
-  });
+  const flashStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      flash.value,
+      [0, 1],
+      [colors.surface, withAlpha(colors.gold, 0.24)],
+    ),
+  }));
 
   return (
     <Tappable
@@ -87,7 +101,7 @@ export default function CoinBalancePill({
       style={style}
       accessibilityLabel={`Solde : ${shown === null ? 'inconnu' : money(shown)} ${symbol}`}
     >
-      <Animated.View style={[styles.pill, compact && styles.pillCompact, { backgroundColor }]}>
+      <Animated.View style={[styles.pill, compact && styles.pillCompact, flashStyle]}>
         <View style={styles.dot}>
           <Ionicons name="diamond" size={compact ? 10 : 11} color={colors.gold} />
         </View>

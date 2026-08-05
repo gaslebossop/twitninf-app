@@ -1,5 +1,5 @@
 import { fonts } from '../theme';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -27,10 +27,16 @@ export default function UltraRecommendationBanner({
   const [slideAnim] = useState(new Animated.Value(-100));
   const [glowAnim] = useState(new Animated.Value(0));
 
+  // La boucle de halo n'était pas référencée : elle continuait de tourner
+  // après la sortie de la bannière, et jusqu'au démontage de l'écran.
+  const entranceRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => () => entranceRef.current?.stop(), []);
+
   useEffect(() => {
     if (isVisible) {
       // Animation d'entrée
-      Animated.parallel([
+      entranceRef.current = Animated.parallel([
         Animated.spring(slideAnim, {
           toValue: 0,
           useNativeDriver: true,
@@ -51,8 +57,11 @@ export default function UltraRecommendationBanner({
             }),
           ])
         ),
-      ]).start();
+      ]);
+      entranceRef.current.start();
     } else {
+      entranceRef.current?.stop();
+      entranceRef.current = null;
       // Animation de sortie
       Animated.timing(slideAnim, {
         toValue: -100,

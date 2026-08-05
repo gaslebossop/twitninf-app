@@ -53,8 +53,21 @@ interface ReadingLanguageContextType {
    * une page de fil ne doit pas déclencher dix requêtes.
    */
   requestTranslation: (tweetId: string) => void;
-  /** Traduction connue pour ce tweet, ou `undefined` tant qu'elle n'est pas chargée. */
+  /**
+   * Traduction connue pour ce tweet, ou `undefined` tant qu'elle n'est pas
+   * chargée. Lit un cache tenu en référence : la fonction ne change JAMAIS
+   * d'identité, donc elle ne fait pas re-rendre les consommateurs.
+   */
   translationFor: (tweetId: string) => CachedTranslation | undefined;
+  /**
+   * Abonnement aux mises à jour du cache.
+   *
+   * Le cache était un état du provider : chaque lot de traductions reçu
+   * changeait la valeur du contexte, donc re-rendait TOUTES les lignes
+   * montées du fil — ce qui annulait le comparateur de `feed/TweetRow`. Il vit
+   * désormais dans une référence, et chaque tweet s'abonne pour lui seul.
+   */
+  subscribeTranslations: (listener: () => void) => () => void;
 }
 
 const ReadingLanguageContext = createContext<ReadingLanguageContextType | undefined>(undefined);
@@ -87,8 +100,17 @@ export function useTweetAutoTranslation(tweet: {
    */
   translation?: TweetTranslationLike | null;
 }) {
-  const { requestTranslation, translationFor, preferredLanguage } = useReadingLanguage();
+  const { requestTranslation, translationFor, subscribeTranslations, preferredLanguage } =
+    useReadingLanguage();
   const [override, setOverride] = useState<TweetTranslationLike | null | undefined>(undefined);
+
+  // Abonnement ciblé : ce tweet ne se re-rend que quand SA traduction arrive,
+  // au lieu de suivre chaque lot reçu pour le fil entier.
+  const tweetId = tweet?.id;
+  const cached = React.useSyncExternalStore(
+    subscribeTranslations,
+    () => (tweetId ? translationFor(tweetId) : undefined),
+  );
 
   const translatable = !!tweet?.translation_enabled;
   // `undefined` = le serveur n'a rien dit ; `null` = il a dit « rien à
@@ -112,7 +134,7 @@ export function useTweetAutoTranslation(tweet: {
   }, [preferredLanguage]);
 
   const automatic = translatable
-    ? (serverAnswered ? embedded : translationFor(tweet.id))
+    ? (serverAnswered ? embedded : cached)
     : undefined;
   const active = override !== undefined ? override : (automatic ?? null);
 
@@ -141,7 +163,14 @@ export function ReadingLanguageProvider({ children }: { children: React.ReactNod
   );
   const [languages, setLanguages] = useState<ReadableLanguage[]>(FALLBACK_LANGUAGES);
   const [saving, setSaving] = useState(false);
-  const [cache, setCache] = useState<Record<string, CachedTranslation>>({});
+
+  // Cache hors état React : voir `subscribeTranslations` dans le type du
+  // contexte pour la raison.
+  const cache = useRef<Record<string, CachedTranslation>>({});
+  const listeners = useRef<Set<() => void>>(new Set());
+  const emit = useCallback(() => {
+    listeners.current.forEach((listener) => listener());
+  }, []);
 
   const pending = useRef<Set<string>>(new Set());
   const requested = useRef<Set<string>>(new Set());
@@ -156,10 +185,11 @@ export function ReadingLanguageProvider({ children }: { children: React.ReactNod
   // Le cache est indexé par tweet, pas par (tweet, langue) : changer de langue
   // le vide entièrement, sinon les cartes garderaient l'ancienne traduction.
   useEffect(() => {
-    setCache({});
+    cache.current = {};
     pending.current.clear();
     requested.current.clear();
-  }, [preferredLanguage]);
+    emit();
+  }, [preferredLanguage, emit]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -185,8 +215,9 @@ export function ReadingLanguageProvider({ children }: { children: React.ReactNod
     if (!response?.success || !response.data?.translations) return;
     // Le serveur omet les tweets sans traduction dans cette langue : ils
     // resteront simplement en version originale.
-    setCache((current) => ({ ...current, ...response.data!.translations }));
-  }, [preferredLanguage]);
+    cache.current = { ...cache.current, ...response.data!.translations };
+    emit();
+  }, [preferredLanguage, emit]);
 
   const requestTranslation = useCallback(
     (tweetId: string) => {
@@ -202,7 +233,14 @@ export function ReadingLanguageProvider({ children }: { children: React.ReactNod
     [flush, preferredLanguage],
   );
 
-  const translationFor = useCallback((tweetId: string) => cache[tweetId], [cache]);
+  const translationFor = useCallback((tweetId: string) => cache.current[tweetId], []);
+
+  const subscribeTranslations = useCallback((listener: () => void) => {
+    listeners.current.add(listener);
+    return () => {
+      listeners.current.delete(listener);
+    };
+  }, []);
 
   const choose = useCallback(
     async (code: string) => {
@@ -238,8 +276,18 @@ export function ReadingLanguageProvider({ children }: { children: React.ReactNod
       choose,
       requestTranslation,
       translationFor,
+      subscribeTranslations,
     }),
-    [preferredLanguage, languages, isAuthenticated, saving, choose, requestTranslation, translationFor],
+    [
+      preferredLanguage,
+      languages,
+      isAuthenticated,
+      saving,
+      choose,
+      requestTranslation,
+      translationFor,
+      subscribeTranslations,
+    ],
   );
 
   return (
