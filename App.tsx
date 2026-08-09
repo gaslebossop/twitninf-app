@@ -25,6 +25,7 @@ import { registerForPushNotifications, setupFranceDailyLocalNotifications } from
 import { apiService } from './src/services';
 import ProfileCompletionGate from './src/components/ProfileCompletionGate';
 import ConsentGate from './src/components/ConsentGate';
+import FollowOnboardingGate from './src/components/FollowOnboardingGate';
 
 /**
  * Choix de la langue de lecture à la première connexion.
@@ -161,6 +162,7 @@ export default function App() {
                 {/* Dernier de la file des popups de démarrage : le socle légal
                     se pose une fois que les autres questions sont passées. */}
                 <ConsentGate />
+                <FollowOnboardingGate />
               </FunctionalEventProvider>
             </EventThemeProvider>
           </EventProvider>

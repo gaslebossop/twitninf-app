@@ -404,6 +404,20 @@ export interface TweetTranslation {
   updated_at?: string;
 }
 
+/** Un compte proposé à l'inscription, avec de quoi juger s'il vaut le suivi. */
+export interface OnboardingSuggestion {
+  id: string;
+  username: string;
+  full_name: string;
+  avatar?: string | null;
+  bio?: string | null;
+  verified?: boolean;
+  premium?: boolean;
+  followers: number;
+  recent_tweets: number;
+  recent_likes: number;
+}
+
 /**
  * Une finalité de traitement telle que décrite par le serveur. Les libellés
  * sont volontairement absents du code de l'app : voir `getConsentState`.

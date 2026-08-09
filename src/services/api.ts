@@ -14,6 +14,7 @@ import {
   BatchTranslationsResponse,
   ReadingLanguageResponse,
   ConsentState,
+  OnboardingSuggestion,
   Notification,
   NotificationWithRelations,
   NotificationSettings,
@@ -750,6 +751,35 @@ class ApiService {
     return this.makeRequest('/api/auth/session-location', {
       method: 'POST',
       body: data,
+      requiresAuth: true,
+    });
+  }
+
+  /**
+   * Comptes les plus influents proposés à l'inscription.
+   *
+   * Distinct de `/suggestions`, qui s'appuie sur le graphe social : à
+   * l'inscription il n'y a pas de graphe.
+   */
+  async getOnboardingSuggestions(limit = 12): Promise<ApiResponse<{
+    suggestions: OnboardingSuggestion[];
+    minimum_follows: number;
+  }>> {
+    return this.makeRequest(`/api/users/onboarding/suggestions?limit=${limit}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+  }
+
+  /** Enregistre les abonnements choisis et clôt l'étape, en un seul appel. */
+  async submitOnboardingFollows(userIds: string[]): Promise<ApiResponse<{
+    followed: string[];
+    total_followed: number;
+    needs_follow_onboarding: boolean;
+  }>> {
+    return this.makeRequest('/api/users/onboarding/follows', {
+      method: 'POST',
+      body: { userIds },
       requiresAuth: true,
     });
   }

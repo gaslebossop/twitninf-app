@@ -44,6 +44,10 @@ interface User {
   consent_accepted_at?: string | null;
   consent_preferences?: Record<string, boolean>;
   needs_consent?: boolean;
+  // Étape d'abonnements de l'inscription, calculée par le serveur.
+  follow_onboarding_completed_at?: string | null;
+  needs_follow_onboarding?: boolean;
+  follow_onboarding_minimum?: number;
 }
 
 /**

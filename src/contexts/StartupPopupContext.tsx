@@ -26,7 +26,9 @@ import React, {
  * le créneau, dans l'ordre de priorité ci-dessous. Elle libère le créneau en
  * cessant de le demander (fermeture), et la suivante prend le relais.
  */
-export type StartupPopupId = 'language' | 'patch' | 'birthday' | 'navbar' | 'profile' | 'consent';
+export type StartupPopupId =
+  | 'language' | 'patch' | 'birthday' | 'navbar' | 'profile'
+  | 'consent' | 'follow_onboarding';
 
 /**
  * Du plus bloquant au plus accessoire.
@@ -44,7 +46,14 @@ export type StartupPopupId = 'language' | 'patch' | 'birthday' | 'navbar' | 'pro
  * Ensuite : la langue de lecture conditionne tout le contenu du fil, et le
  * choix des onglets est le seul réellement reportable, il ferme la marche.
  */
-const PRIORITY: StartupPopupId[] = ['consent', 'language', 'patch', 'birthday', 'navbar', 'profile'];
+const PRIORITY: StartupPopupId[] = [
+  'consent',
+  // Juste derrière le socle légal : sans abonnement, le recommandeur n'a aucun
+  // signal et sert un fil générique. Cette étape conditionne donc tout ce que
+  // la personne verra ensuite, y compris pendant les popups suivantes.
+  'follow_onboarding',
+  'language', 'patch', 'birthday', 'navbar', 'profile',
+];
 
 interface StartupPopupContextValue {
   request: (id: StartupPopupId) => void;
