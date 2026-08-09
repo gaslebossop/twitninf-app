@@ -269,7 +269,11 @@ export default function PremiumUpsellModal({
                 <Ionicons name={tier === 'pro' ? 'star' : 'diamond'} size={12} color="#000" />
                 <Text style={styles.kickerBadgeText}>{tier === 'pro' ? 'PREMIUM PRO' : 'PLUS'}</Text>
               </LinearGradient>
-              <Text style={styles.kicker}>30 jours · sans reconduction</Text>
+              {/* La durée vient de la tarification serveur : l'écrire en dur a
+                  déjà promis un mois là où la période en couvre cinq jours. */}
+              <Text style={styles.kicker}>
+                {pricing?.duration_days ?? 5} jours · sans reconduction
+              </Text>
             </View>
 
             <GradientText gradient={gradient} style={styles.title}>

@@ -32,7 +32,9 @@ export interface SubscriptionPricing {
 const LEGACY_PRICING: SubscriptionPricing = {
   currency_symbol: 'NF',
   nf_price_eur: null,
-  duration_days: 30,
+  // Période standard de l'offre : annoncer un mois ici promettrait six fois la
+  // durée réellement vendue.
+  duration_days: 5,
   plus: { eur: 0, nf: 0, live: false },
   pro: { eur: 0, nf: 0, live: false },
   upgrade: { eur: 0, nf: 0, live: false },

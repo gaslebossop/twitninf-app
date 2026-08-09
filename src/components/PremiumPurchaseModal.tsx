@@ -7,10 +7,17 @@ import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import PremiumCheckoutSheet from './PremiumCheckoutSheet';
 import { toast } from './ui/Toast';
 
+/** Ce que l'API renvoie d'utile après un achat confirmé. */
+export interface PremiumPurchaseResult {
+  subscription_tier?: string;
+  duration_days?: number;
+  subscription_expires_at?: string;
+}
+
 interface PremiumPurchaseModalProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (purchase?: PremiumPurchaseResult) => void;
 }
 
 /**
@@ -68,7 +75,7 @@ export default function PremiumPurchaseModal({
       }
       await refreshCurrentUser();
       await loadWallet();
-      onSuccess?.();
+      onSuccess?.(purchase as PremiumPurchaseResult);
       onClose();
     } catch (error: any) {
       toast.error('Achat impossible', {

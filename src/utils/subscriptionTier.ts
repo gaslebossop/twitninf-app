@@ -2,18 +2,31 @@
 
 export type SubscriptionTier = 'free' | 'plus' | 'pro';
 
-export const SUBSCRIPTION_PLANS = {
-  PLUS_TWC: 299,
-  PRO_TWC: 599,
-  UPGRADE_PLUS_TO_PRO_TWC: 599 - 299,
-} as const;
+/**
+ * Durée d'un abonnement, en jours.
+ *
+ * ⚠ Doit rester aligné sur `DEFAULT_DURATION_DAYS`
+ * (`api/src/constants/subscriptionTiers.js`). Ne sert QU'AU REPLI d'affichage :
+ * la valeur qui fait foi arrive dans `duration_days` de /subscription-pricing.
+ */
+export const SUBSCRIPTION_DURATION_DAYS = 5;
 
-/** Lignes marketing (icônes Ionicons) — modale abonnement profil */
-export const SUBSCRIPTION_TRUST_BADGES: { icon: string; text: string }[] = [
-  { icon: 'shield-checkmark', text: '15 € convertis en NF au cours du moment' },
-  { icon: 'calendar-outline', text: '30 jours, sans reconduction automatique' },
-  { icon: 'flash-outline', text: 'Tous les avantages actifs immédiatement' },
-];
+/**
+ * Reste à courir sur un abonnement, en clair. Sans cette information, un
+ * abonné voit « Membre Premium » sans jamais savoir quand ça s'arrête.
+ */
+export function subscriptionRemainingLabel(expiresAt?: string | Date | null): string {
+  if (!expiresAt) return 'Sans échéance sur ce compte';
+  const end = new Date(expiresAt);
+  if (Number.isNaN(end.getTime())) return '';
+  const msLeft = end.getTime() - Date.now();
+  if (msLeft <= 0) return 'Abonnement terminé';
+  const hoursLeft = Math.ceil(msLeft / 3600000);
+  if (hoursLeft <= 24) return `Se termine dans ${hoursLeft} h`;
+  const daysLeft = Math.ceil(msLeft / 86400000);
+  const dateLabel = end.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  return `Encore ${daysLeft} jour${daysLeft > 1 ? 's' : ''} · jusqu'au ${dateLabel}`;
+}
 
 export const SUBSCRIPTION_PLUS_FEATURES: { icon: string; text: string }[] = [
   { icon: 'image-outline', text: 'Bannière de profil personnalisable' },

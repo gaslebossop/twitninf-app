@@ -151,7 +151,8 @@ export default function PremiumCheckoutSheet({
   const walletReady = !walletLoading && !walletError;
   const enough = priceIsLive && walletReady && walletBalance >= requiredNf;
   const missing = Math.max(0, requiredNf - walletBalance);
-  const days = pricing?.duration_days || 30;
+  // Repli sur la période standard de l'offre, jamais sur un mois.
+  const days = pricing?.duration_days || 5;
   const perDay = priceIsLive && days > 0 ? Number(price?.eur || 0) / days : null;
   const symbol = pricing?.currency_symbol || 'NF';
   const coverage = requiredNf > 0 ? Math.min(1, Math.max(0, walletBalance / requiredNf)) : 0;

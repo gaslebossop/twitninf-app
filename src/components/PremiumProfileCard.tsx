@@ -10,17 +10,21 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import PremiumBadge from './PremiumBadge';
+import { subscriptionRemainingLabel } from '../utils/subscriptionTier';
 
 interface PremiumProfileCardProps {
   isPremium: boolean;
+  /** Fin de l'abonnement en cours : affichée telle quelle sur la carte. */
+  expiresAt?: string | null;
   onUpgrade?: () => void;
   style?: any;
 }
 
-export default function PremiumProfileCard({ 
-  isPremium, 
+export default function PremiumProfileCard({
+  isPremium,
+  expiresAt,
   onUpgrade,
-  style 
+  style
 }: PremiumProfileCardProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const shimmerAnim = useRef(new Animated.Value(0)).current;
@@ -117,6 +121,13 @@ export default function PremiumProfileCard({
             <Text style={styles.premiumDescription}>
               Bannière perso, contour animé sur la photo, avantages timeline.
             </Text>
+
+            <View style={styles.premiumExpiry}>
+              <Ionicons name="time-outline" size={14} color="#ffffff" />
+              <Text style={styles.premiumExpiryText}>
+                {subscriptionRemainingLabel(expiresAt)}
+              </Text>
+            </View>
 
             <View style={styles.premiumFeatures}>
               <View style={styles.feature}>
@@ -278,6 +289,22 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginBottom: 15,
     opacity: 0.9,
+  },
+  premiumExpiry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 15,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+  },
+  premiumExpiryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   premiumFeatures: {
     gap: 8,

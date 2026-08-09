@@ -32,7 +32,7 @@ import PremiumBadge from '../components/PremiumBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import PremiumCheckoutSheet from '../components/PremiumCheckoutSheet';
 import { useProfileScreenTracking } from '../hooks/useBehaviorTracking';
-import { SUBSCRIPTION_PLANS, effectiveSubscriptionTier, SUBSCRIPTION_TRUST_BADGES, SUBSCRIPTION_PLUS_FEATURES, SUBSCRIPTION_PRO_EXTRAS } from '../utils/subscriptionTier';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import NewEconomyService from '../services/newEconomyService';
 import { useEventStyles } from '../hooks/useEventStyles';
 import { EventBanner } from '../components/EventBanner';
@@ -317,7 +317,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState(false);
-  const [checkoutTier, setCheckoutTier] = useState<'plus' | 'pro'>('pro');
 
   const loadWalletBalance = async () => {
     setWalletLoading(true);
@@ -334,7 +333,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   };
 
   const handleOpenPremiumModal = () => {
-    setCheckoutTier('pro');
+    // Le palier est choisi dans la feuille elle-même, plus en amont.
     setShowPremiumModal(true);
     void loadWalletBalance();
   };
@@ -361,8 +360,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       setCustomizationHydrated(true);
       setShowPremiumModal(false);
       const label = tier === 'pro' ? 'Pro' : 'Plus';
+      // La durée vient de la réponse d'achat : l'annoncer en dur a déjà promis
+      // un mois là où l'abonnement en couvrait cinq jours.
+      const days = Number(purchase?.duration_days) || 5;
       toast.success('Félicitations !', {
-        description: `Abonnement ${label} activé pour 1 mois.`,
+        description: `Abonnement ${label} activé pour ${days} jour${days > 1 ? 's' : ''}.`,
       });
     } catch (error: any) {
       toast.error(error?.message || 'Une erreur est survenue.');
@@ -496,13 +498,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   /** Taille des pastilles, accordée au corps réel du pseudo (voir nameBadgeSize). */
   const badgeSize = nameBadgeSize(visibleCustomization, S.fullName.fontSize);
-  const modalPrice =
-    subTier === 'plus' && checkoutTier === 'pro'
-      ? SUBSCRIPTION_PLANS.UPGRADE_PLUS_TO_PRO_TWC
-      : checkoutTier === 'pro'
-        ? SUBSCRIPTION_PLANS.PRO_TWC
-        : SUBSCRIPTION_PLANS.PLUS_TWC;
-  const premiumModalScrollMax = Math.max(340, height * 0.88 - 96);
 
   return (
     <ScreenBackground>
@@ -1093,196 +1088,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         onPurchase={(tier) => handlePurchaseSubscription(tier)}
       />
 
-      {/* Ancienne modale conservée hors rendu pendant la transition. */}
-      <Modal
-        visible={false}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowPremiumModal(false)}
-      >
-        <View style={[S.premiumOverlay, { padding: 16 }]}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowPremiumModal(false)} />
-          <View
-            style={[
-              S.premiumModal,
-              { maxHeight: height * 0.92, width: '100%', maxWidth: 420, alignSelf: 'center' },
-            ]}
-            onStartShouldSetResponder={() => true}
-          >
-            <View style={[S.premiumModalInner, S.premiumModalBorder]}>
-              <TouchableOpacity
-                style={S.premiumClose}
-                onPress={() => setShowPremiumModal(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
-
-              <ScrollView
-                style={{ maxHeight: premiumModalScrollMax }}
-                contentContainerStyle={{ paddingBottom: 24 }}
-                showsVerticalScrollIndicator
-                nestedScrollEnabled
-                bounces
-                keyboardShouldPersistTaps="handled"
-              >
-                <LinearGradient
-                  colors={['rgba(255, 210, 77, 0.22)', 'rgba(254, 44, 85, 0.14)', 'transparent']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={S.premiumHero}
-                >
-                  <Text style={S.premiumHeroKicker}>TWITNINF PREMIUM</Text>
-                  <Text style={S.premiumTitle}>Brille sur la timeline</Text>
-                  <Text style={S.premiumSubtitle}>
-                    Bannière personnalisable, contour animé autour de la photo pour Plus/Pro, badges
-                    selon ton palier. Un seul paiement en TWC pour 30 jours — pas de prélèvement
-                    carte dans cette étape.
-                  </Text>
-                </LinearGradient>
-
-                <View style={S.trustRow}>
-                  {SUBSCRIPTION_TRUST_BADGES.map((t, i) => (
-                    <View key={i} style={S.trustChip}>
-                      <Ionicons name={t.icon as any} size={15} color={colors.gold} />
-                      <Text style={S.trustChipText} numberOfLines={3}>
-                        {t.text}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                <Text style={S.premiumSectionLabel}>Choisis ton palier</Text>
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                  <TouchableOpacity
-                    style={[S.tierPickCard, checkoutTier === 'plus' && S.tierPickCardActive]}
-                    onPress={() => setCheckoutTier('plus')}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={S.tierPickTitle}>Plus</Text>
-                    <Text style={S.tierPickPrice}>{SUBSCRIPTION_PLANS.PLUS_TWC} TWC</Text>
-                    <Text style={S.tierPickHint}>Bannière perso, contour animé, badge diamant</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[S.tierPickCard, checkoutTier === 'pro' && S.tierPickCardActive]}
-                    onPress={() => setCheckoutTier('pro')}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={S.tierPickTitle}>Pro</Text>
-                    <Text style={S.tierPickPrice}>{SUBSCRIPTION_PLANS.PRO_TWC} TWC</Text>
-                    <Text style={S.tierPickHint}>Tout Plus + badge étoile Pro</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={S.premiumSectionLabel}>
-                  {checkoutTier === 'pro' ? 'Tout ce qui est inclus (Plus + Pro)' : 'Inclus avec Plus'}
-                </Text>
-                <View style={S.featureBlock}>
-                  {SUBSCRIPTION_PLUS_FEATURES.map((f, i) => (
-                    <View key={`p-${i}`} style={S.featureRow}>
-                      <View style={S.featureIconWrap}>
-                        <Ionicons name={f.icon as any} size={17} color={colors.cyan} />
-                      </View>
-                      <Text style={S.featureText}>{f.text}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                {checkoutTier === 'pro' ? (
-                  <>
-                    <Text style={[S.premiumSectionLabel, { marginTop: 16 }]}>Exclusifs Pro</Text>
-                    <View style={S.featureBlock}>
-                      {SUBSCRIPTION_PRO_EXTRAS.map((f, i) => (
-                        <View key={`x-${i}`} style={S.featureRow}>
-                          <View style={[S.featureIconWrap, S.featureIconWrapGold]}>
-                            <Ionicons name={f.icon as any} size={17} color={colors.gold} />
-                          </View>
-                          <Text style={S.featureText}>{f.text}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </>
-                ) : (
-                  <View style={S.proTease}>
-                    <Ionicons name="lock-closed" size={16} color={colors.gold} style={{ marginTop: 2 }} />
-                    <Text style={S.proTeaseText}>
-                      Encore {SUBSCRIPTION_PRO_EXTRAS.length} avantages réservés au palier Pro (badge
-                      étoile, priorité bêta…). Passe Pro pour tout déverrouiller.
-                    </Text>
-                  </View>
-                )}
-
-                <View style={S.premiumPricingRow}>
-                  <View style={{ alignItems: 'center' }}>
-                    <Text style={S.pricingLabel}>À payer</Text>
-                    <Text style={S.pricingAmount}>
-                      {modalPrice} <Text style={S.pricingUnit}>TWC</Text>
-                    </Text>
-                    <Text style={S.pricingHint}>30 jours</Text>
-                  </View>
-                  <View style={S.pricingSep} />
-                  <View style={{ alignItems: 'center' }}>
-                    <Text style={S.pricingLabel}>Ton solde</Text>
-                    <Text
-                      style={[
-                        S.pricingAmount,
-                        { color: walletBalance >= modalPrice ? colors.success : colors.red },
-                      ]}
-                    >
-                      {walletBalance} <Text style={S.pricingUnit}>TWC</Text>
-                    </Text>
-                    {walletBalance < modalPrice && (
-                      <Text style={S.pricingWarn}>
-                        Crédite ton portefeuille (boutique TWC) puis reviens ici
-                      </Text>
-                    )}
-                  </View>
-                </View>
-
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-                  <TouchableOpacity
-                    style={S.premiumCancelBtn}
-                    onPress={() => setShowPremiumModal(false)}
-                  >
-                    <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Plus tard</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[S.premiumConfirmBtn, { opacity: walletBalance >= modalPrice ? 1 : 0.5 }]}
-                    onPress={() => handlePurchaseSubscription(checkoutTier)}
-                    disabled={premiumLoading || walletBalance < modalPrice}
-                  >
-                    <LinearGradient
-                      colors={
-                        walletBalance >= modalPrice
-                          ? [colors.gold, colors.warning, colors.warning]
-                          : [colors.surfaceAlt, colors.surface]
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={S.premiumConfirmGradient}
-                    >
-                      {premiumLoading ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <>
-                          <Ionicons
-                            name={checkoutTier === 'pro' ? 'star' : 'diamond'}
-                            size={17}
-                            color="#fff"
-                          />
-                          <Text style={S.premiumConfirmLabel}>
-                            {checkoutTier === 'pro' ? 'Passer Pro' : 'Activer Plus'}
-                          </Text>
-                        </>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
     </ScreenBackground>
   );

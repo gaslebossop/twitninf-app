@@ -175,6 +175,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           >
             <PremiumProfileCard
               isPremium={user?.premium || false}
+              expiresAt={user?.subscription_expires_at}
               onUpgrade={() => setShowPremiumPopup(true)}
             />
           </Animated.View>
@@ -576,10 +577,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       <PremiumPurchaseModal
         visible={showPremiumPopup}
         onClose={() => setShowPremiumPopup(false)}
-        onSuccess={() => {
+        onSuccess={(purchase) => {
           setShowPremiumPopup(false);
+          const days = Number(purchase?.duration_days) || 5;
           toast.info('Bienvenue dans Premium Pro', {
-            description: 'Tous tes avantages sont actifs pour 5 jours.',
+            description: `Tous tes avantages sont actifs pour ${days} jour${days > 1 ? 's' : ''}.`,
           });
         }}
       />
