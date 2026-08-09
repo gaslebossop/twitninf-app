@@ -26,14 +26,25 @@ import React, {
  * le créneau, dans l'ordre de priorité ci-dessous. Elle libère le créneau en
  * cessant de le demander (fermeture), et la suivante prend le relais.
  */
-export type StartupPopupId = 'language' | 'patch' | 'birthday' | 'navbar' | 'profile';
+export type StartupPopupId = 'language' | 'patch' | 'birthday' | 'navbar' | 'profile' | 'consent';
 
 /**
- * Du plus bloquant au plus accessoire. La langue de lecture conditionne tout
- * le contenu du fil, elle passe donc en premier ; le choix des onglets est le
- * seul réellement reportable, il passe en dernier.
+ * Du plus bloquant au plus accessoire.
+ *
+ * `consent` passe AVANT tout le reste, et ce n'est pas un choix esthétique :
+ * `profile` demande l'âge, la date de naissance et la localisation. Collecter
+ * ces données avant que la politique de confidentialité ait été acceptée
+ * reviendrait à traiter des données personnelles sans base légale. Le socle
+ * légal doit donc être posé en premier.
+ *
+ * C'est aussi la seule popup qui ne se referme pas sans réponse : elle garde le
+ * créneau tant qu'elle n'a pas obtenu son accord, ce qui met mécaniquement les
+ * autres en attente.
+ *
+ * Ensuite : la langue de lecture conditionne tout le contenu du fil, et le
+ * choix des onglets est le seul réellement reportable, il ferme la marche.
  */
-const PRIORITY: StartupPopupId[] = ['language', 'patch', 'birthday', 'navbar', 'profile'];
+const PRIORITY: StartupPopupId[] = ['consent', 'language', 'patch', 'birthday', 'navbar', 'profile'];
 
 interface StartupPopupContextValue {
   request: (id: StartupPopupId) => void;

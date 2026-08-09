@@ -13,6 +13,7 @@ import {
   TweetTranslationsResponse,
   BatchTranslationsResponse,
   ReadingLanguageResponse,
+  ConsentState,
   Notification,
   NotificationWithRelations,
   NotificationSettings,
@@ -747,6 +748,37 @@ class ApiService {
     permission_status: string;
   }>> {
     return this.makeRequest('/api/auth/session-location', {
+      method: 'POST',
+      body: data,
+      requiresAuth: true,
+    });
+  }
+
+  /**
+   * Socle de consentement en vigueur et etat du compte.
+   *
+   * Les libelles viennent du serveur : ils ne sont PAS codes dans l'app, pour
+   * qu'une finalite ajoutee ou un texte corrige s'applique sans publier une
+   * nouvelle version sur les stores.
+   */
+  async getConsentState(): Promise<ApiResponse<ConsentState>> {
+    return this.makeRequest('/api/auth/consent', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+  }
+
+  async recordConsent(data: {
+    version: string;
+    accepted: Record<string, boolean>;
+    source: 'registration' | 'startup_gate' | 'settings';
+  }): Promise<ApiResponse<{
+    version: string;
+    accepted_at: string;
+    preferences: Record<string, boolean>;
+    needs_consent: boolean;
+  }>> {
+    return this.makeRequest('/api/auth/consent', {
       method: 'POST',
       body: data,
       requiresAuth: true,

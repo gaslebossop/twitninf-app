@@ -37,6 +37,13 @@ interface User {
   demographics_validated_at?: string | null;
   location_consent_status?: 'granted' | 'denied' | 'restricted' | 'unavailable' | 'undetermined';
   location_consent_updated_at?: string | null;
+  // Consentement RGPD. `needs_consent` est calculé par le serveur : il compare
+  // la version acceptée au socle en vigueur, donc une app ancienne ne peut pas
+  // se croire à jour à tort.
+  consent_version?: string | null;
+  consent_accepted_at?: string | null;
+  consent_preferences?: Record<string, boolean>;
+  needs_consent?: boolean;
 }
 
 /**

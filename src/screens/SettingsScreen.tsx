@@ -41,6 +41,7 @@ import { useReadingLanguage } from '../contexts/ReadingLanguageContext';
 import ReadingLanguageModal from '../components/ReadingLanguageModal';
 import { PATCH_NOTES } from '../data/patchNotes';
 import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
+import { ConsentSheet } from '../components/ConsentGate';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
@@ -73,6 +74,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [showPatchNotes, setShowPatchNotes] = useState(false);
   const [showNavbarCustomization, setShowNavbarCustomization] = useState(false);
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
+  const [showConsent, setShowConsent] = useState(false);
   const { preferredLanguage, languages } = useReadingLanguage();
   const currentLanguageLabel =
     languages.find((language) => language.code === preferredLanguage)?.label || 'Non définie';
@@ -201,6 +203,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'lock-closed-outline',
               !!user?.is_private_account,
               handleTogglePrivateAccount
+            )}
+
+            {/* Le RGPD (art. 7.3) exige que retirer un accord soit aussi simple
+                que de le donner : même écran, accessible à tout moment. */}
+            {renderActionButton(
+              'Tes données et tes accords',
+              'Personnalisation, statistiques d\'audience, notifications de découverte',
+              'shield-checkmark-outline',
+              () => setShowConsent(true)
             )}
           </Animated.View>
 
@@ -621,6 +632,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Retour sur les finalités optionnelles du consentement */}
+      <ConsentSheet
+        visible={showConsent}
+        mode="settings"
+        onClose={() => setShowConsent(false)}
+      />
 
       {/* Modal Personnalisation de la navbar */}
       <NavbarOnboardingModal

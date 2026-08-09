@@ -58,6 +58,16 @@ export interface User {
   demographics_validated_at?: string | null;
   location_consent_status?: 'granted' | 'denied' | 'restricted' | 'unavailable' | 'undetermined';
   location_consent_updated_at?: string | null;
+  /**
+   * Consentement RGPD. `needs_consent` est calcule par le SERVEUR (il compare
+   * la version acceptee au socle en vigueur) : c'est cette valeur qu'il faut
+   * lire, jamais une comparaison de versions faite dans l'app.
+   */
+  consent_version?: string | null;
+  consent_accepted_at?: string | null;
+  consent_preferences?: Record<string, boolean>;
+  consent_required_version?: string;
+  needs_consent?: boolean;
   /** Palier d'abonnement payant (API) */
   subscription_tier?: 'free' | 'plus' | 'pro';
   subscription_expires_at?: string | null;
@@ -392,6 +402,40 @@ export interface TweetTranslation {
   source_language?: string | null;
   model?: string | null;
   updated_at?: string;
+}
+
+/**
+ * Une finalité de traitement telle que décrite par le serveur. Les libellés
+ * sont volontairement absents du code de l'app : voir `getConsentState`.
+ */
+export interface ConsentPurpose {
+  key: string;
+  title: string;
+  summary: string;
+  legalBasis?: 'contract' | 'consent' | 'legal_obligation' | 'legitimate_interest';
+  /** Chemin relatif du document à lire, à résoudre contre l'URL de l'API. */
+  documentPath?: string;
+}
+
+/** Traitement obligatoire, présenté comme information et non comme choix. */
+export interface ConsentNotice {
+  key: string;
+  title: string;
+  summary: string;
+}
+
+export interface ConsentState {
+  version: string;
+  minimum_age: number;
+  /** Socle contractuel : refuser rend le compte inutilisable. */
+  required: ConsentPurpose[];
+  /** Finalités facultatives, refusables une par une. */
+  optional: ConsentPurpose[];
+  notices: ConsentNotice[];
+  accepted_version: string | null;
+  accepted_at: string | null;
+  preferences: Record<string, boolean>;
+  needs_consent: boolean;
 }
 
 /** Une langue proposée au lecteur ; `original: true` pour le français source. */
