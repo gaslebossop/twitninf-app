@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 
 import { colors, fonts } from '../theme';
-import { Header, Tappable, EmptyState, HowItWorks } from '../components/ui';
+import { Header, Tappable, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
 import NfMapCanvas, { type MapCoordinate, type MapMarker } from '../components/map/NfMapCanvas';
