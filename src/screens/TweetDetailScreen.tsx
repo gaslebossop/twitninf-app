@@ -21,6 +21,7 @@ import Avatar from '../components/Avatar';
 import PremiumTweetHolo, { usePremiumAuthorTheme } from '../components/PremiumTweetHolo';
 import { useAuth } from '../contexts/AuthContext';
 import ClickableMentions from '../components/ClickableMentions';
+import TweetImages from '../components/feed/TweetImages';
 import PaidContentLock from '../components/PaidContentLock';
 import LockedText from '../components/LockedText';
 import TweetLanguageSwitcher from '../components/TweetLanguageSwitcher';
@@ -993,6 +994,17 @@ export default function TweetDetailScreen() {
                     ]}
                   />
                 </TranslationReveal>
+              )}
+
+              {/* Images jointes. Comme dans le fil, l'affichage ne teste jamais
+                  le drapeau `tweet.images` : il ne conditionne que la
+                  publication. Pas de `onPress` ici — on est déjà sur le tweet. */}
+              {!isContentLocked && (
+                <TweetImages
+                  urls={(Array.isArray(tweet.media_urls) ? tweet.media_urls : []).filter(
+                    (url) => typeof url === 'string' && !/\.(mp4|mov|m3u8|webm)(\?|$)/i.test(url)
+                  )}
+                />
               )}
 
               {/* Sélecteur de langue — seulement si l'auteur a publié avec l'option */}

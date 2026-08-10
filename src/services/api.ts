@@ -862,6 +862,47 @@ class ApiService {
     }
   }
 
+  /**
+   * Envoie une image à joindre à un tweet et renvoie son URL publique.
+   *
+   * En deux temps : l'image part pendant que l'auteur finit d'écrire, et la
+   * publication reste une requête JSON. Un 404 signifie que le drapeau
+   * `tweet.images` n'est pas encore ouvert pour ce compte — la route existe,
+   * mais elle n'est pas la sienne.
+   */
+  async uploadTweetImage(fileUri: string): Promise<ApiResponse<{ url: string }>> {
+    try {
+      const formData = new FormData();
+      const fileName = fileUri.split('/').pop() || `tweet_${Date.now()}.jpg`;
+      formData.append('image', { uri: fileUri, name: fileName, type: 'image/jpeg' } as any);
+
+      if (!this.token) {
+        this.token = await tokenStore.getAccessToken();
+      }
+
+      const res = await fetch(`${API_CONFIG.BASE_URL}/api/tweets/media`, {
+        method: 'POST',
+        headers: {
+          ...(await buildClientHeaders()),
+          Authorization: this.token ? `Bearer ${this.token}` : '',
+          // Pas de Content-Type : fetch pose lui-même la frontière multipart.
+        } as any,
+        body: formData as any,
+      });
+
+      const text = await res.text();
+      let json: any;
+      try { json = JSON.parse(text); } catch { json = { success: res.ok, message: text }; }
+      if (!res.ok) {
+        return { success: false, message: json?.message || `HTTP ${res.status}` } as any;
+      }
+      return json;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Envoi de l\'image impossible';
+      return { success: false, message, errors: [] } as any;
+    }
+  }
+
   async uploadUserBanner(fileUri: string): Promise<ApiResponse<{ url: string }>> {
     try {
       const formData = new FormData();

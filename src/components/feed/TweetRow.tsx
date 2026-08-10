@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Avatar from '../Avatar';
 import ClickableMentions from '../ClickableMentions';
+import TweetImages from './TweetImages';
 import TweetLanguageSwitcher from '../TweetLanguageSwitcher';
 import TranslationReveal from '../TranslationReveal';
 import { useTweetAutoTranslation } from '../../contexts/ReadingLanguageContext';
@@ -155,6 +156,23 @@ function TweetRow({
   ).from;
   const sourceContent = isRetweet && originalTweet?.content ? originalTweet.content : tweet.content;
   const displayMentions = isRetweet && originalTweet?.mentions ? originalTweet.mentions : tweet.mentions;
+
+  /**
+   * Images jointes — même source que le texte : sur un retweet pur, elles
+   * appartiennent au tweet d'origine. Les lire sur la ligne du retweet, qui
+   * n'en porte aucune, afficherait un retweet dépouillé de la photo pour
+   * laquelle il a été fait.
+   *
+   * Les vidéos passent par un écran dédié et ne doivent pas atterrir dans la
+   * grille : un `.mp4` y serait rendu comme une image, donc vide.
+   */
+  const displayMediaUrls: string[] = React.useMemo(() => {
+    const source = isRetweet && originalTweet ? originalTweet : tweet;
+    const urls = Array.isArray((source as any)?.media_urls) ? (source as any).media_urls : [];
+    return urls.filter(
+      (url: unknown) => typeof url === 'string' && !/\.(mp4|mov|m3u8|webm)(\?|$)/i.test(url)
+    );
+  }, [isRetweet, originalTweet, tweet]);
 
   /**
    * « Traduction (bêta) » dans le fil.
@@ -460,6 +478,17 @@ function TweetRow({
               <TouchableOpacity style={S.seeMoreBtn} onPress={handleToggleExpand} activeOpacity={0.7}>
                 <Text style={S.seeMoreText}>{isExpanded ? 'Voir moins' : 'Voir plus'}</Text>
               </TouchableOpacity>
+            )}
+
+            {/* Images jointes. Affichées pour TOUT LE MONDE, sans tester le
+                drapeau : il ne conditionne que la publication. Masquées sur un
+                contenu payant verrouillé, où l'image ferait partie de ce qui
+                est vendu. */}
+            {!isContentLocked && displayMediaUrls.length > 0 && (
+              <TweetImages
+                urls={displayMediaUrls}
+                onPress={() => onAction({ type: 'open', tweetId: tweet.id })}
+              />
             )}
 
             {/* Sélecteur de langue — uniquement sur les tweets publiés avec l'option */}

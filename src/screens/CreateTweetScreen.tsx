@@ -13,6 +13,7 @@ import {
   SafeAreaView,
   useWindowDimensions,
   StatusBar,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,7 +45,12 @@ import { serializeOverlays, type VideoOverlay } from '../utils/videoFilters';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
+import { useFlag } from '../contexts/FeatureFlagContext';
+import { FLAGS } from '../config/featureFlagKeys';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+
+/** Plafond du modèle `Tweet` côté API (`media_urls` : 4 maximum). */
+const MAX_TWEET_IMAGES = 4;
 
 interface CreateTweetScreenProps {
   navigation: any;
@@ -89,6 +95,9 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   // pouvait ni écrire sa légende ici, ni régler la visibilité du tweet. Elle
   // est maintenant une pièce jointe du tweet en cours d'écriture.
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  /** Images jointes, en URI locale. Elles ne partent qu'à la publication. */
+  const [imageUris, setImageUris] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
   /** Habillage renvoyé par l'éditeur — vide pour une vidéo importée. */
   const [videoEdit, setVideoEdit] = useState<{
     overlays: VideoOverlay[];
@@ -288,6 +297,71 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const canAttachVideo = !quoteTweetId;
 
   /**
+   * Images : sous drapeau, et exclusives de la vidéo.
+   *
+   * Le drapeau ne conditionne QUE la publication. L'affichage, lui, n'est
+   * jamais conditionné (voir `TweetRow`) : un tweet illustré doit rester
+   * lisible par ceux qui ne sont pas encore dans le palier, sinon le
+   * déploiement progressif ferait apparaître des tweets vides.
+   */
+  const canAttachImages = useFlag(FLAGS.TWEET_IMAGES) && !quoteTweetId && !videoUri;
+
+  /**
+   * Choix des images. `allowsMultipleSelection` avec la limite restante :
+   * refuser après coup une sélection de dix images serait une perte de temps
+   * pour l'auteur, autant ne pas la lui laisser faire.
+   */
+  const pickImages = useCallback(async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      toast.error('Permission requise', {
+        description: "L'accès à la galerie est nécessaire pour choisir une image.",
+      });
+      return;
+    }
+
+    const remaining = MAX_TWEET_IMAGES - imageUris.length;
+    if (remaining <= 0) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: remaining > 1,
+      selectionLimit: remaining,
+      quality: 1,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+    setImageUris((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, MAX_TWEET_IMAGES));
+  }, [imageUris.length]);
+
+  const removeImage = useCallback((uri: string) => {
+    setImageUris((current) => current.filter((entry) => entry !== uri));
+  }, []);
+
+  /**
+   * Envoie les images choisies et renvoie leurs URLs publiques.
+   *
+   * En série et non en parallèle : sur un réseau mobile, quatre envois
+   * simultanés se disputent la même bande passante et échouent ensemble.
+   * Un échec interrompt la publication plutôt que de publier un tweet amputé
+   * d'une image que son auteur croyait jointe.
+   */
+  const uploadImages = async (): Promise<string[] | null> => {
+    const urls: string[] = [];
+    for (const uri of imageUris) {
+      const response = await apiService.uploadTweetImage(uri);
+      if (!response.success || !response.data?.url) {
+        toast.error('Image non envoyée', {
+          description: response.message || 'Réessaie dans un instant.',
+        });
+        return null;
+      }
+      urls.push(response.data.url);
+    }
+    return urls;
+  };
+
+  /**
    * Choix d'une vidéo dans la galerie.
    *
    * Filmer ne passe plus par ici : `RecordVideo` s'en charge (voir
@@ -407,9 +481,9 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   };
 
   const handleSubmit = async () => {
-    // Une vidéo se suffit à elle-même : seule une publication sans média
+    // Un média se suffit à lui-même : seule une publication sans rien joint
     // exige du texte.
-    if (!content.trim() && !videoUri) {
+    if (!content.trim() && !videoUri && imageUris.length === 0) {
       toast.error('Le contenu du tweet ne peut pas être vide');
       return;
     }
@@ -429,6 +503,15 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         return;
       }
       await submitVideoTweet();
+      return;
+    }
+
+    // Même raison que pour la vidéo : la file hors ligne ne rejoue qu'un tweet
+    // texte, mettre des images en attente reviendrait à les perdre.
+    if (imageUris.length > 0 && offlineEnabled && !online) {
+      toast.info('Hors ligne', {
+        description: "L'envoi d'images demande une connexion. Réessaie une fois en ligne.",
+      });
       return;
     }
 
@@ -461,6 +544,17 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     try {
       setLoading(true);
 
+      // Les images partent AVANT la publication : un échec d'envoi doit se
+      // solder par « rien n'est publié », pas par un tweet sans ses images.
+      let mediaUrls: string[] = [];
+      if (imageUris.length > 0) {
+        setUploadingImages(true);
+        const uploaded = await uploadImages();
+        setUploadingImages(false);
+        if (!uploaded) return;
+        mediaUrls = uploaded;
+      }
+
       const tweetData: CreateTweetRequest = {
         content: content.trim(),
         parent_tweet_id: parentTweetId,
@@ -468,6 +562,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         is_sensitive: isSensitive,
         translation_enabled: translationEnabled,
         language: 'fr',
+        ...(mediaUrls.length > 0 ? { media_urls: mediaUrls } : {}),
       };
 
       // Si c'est une citation, utiliser la route retweet avec commentaire
@@ -610,7 +705,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
   };
 
   const isSubmitDisabled =
-    (!content.trim() && !videoUri) || content.length > MAX_CHARS || loading;
+    (!content.trim() && !videoUri && imageUris.length === 0) || content.length > MAX_CHARS || loading;
   const isOverLimit = charCount > MAX_CHARS;
   const charPercentage = (charCount / MAX_CHARS) * 100;
 
@@ -870,9 +965,45 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                   </View>
                 )}
 
+                {/* Images jointes — aperçus + retrait individuel */}
+                {imageUris.length > 0 && (
+                  <View style={styles.imageStrip}>
+                    {imageUris.map((uri) => (
+                      <View key={uri} style={styles.imageThumbWrap}>
+                        <Image source={{ uri }} style={styles.imageThumb} resizeMode="cover" />
+                        {!loading && (
+                          <TouchableOpacity
+                            style={styles.imageRemove}
+                            onPress={() => removeImage(uri)}
+                            accessibilityLabel="Retirer cette image"
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="close" size={14} color={colors.white} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                    {uploadingImages && (
+                      <Text style={styles.imageHint}>Envoi des images…</Text>
+                    )}
+                  </View>
+                )}
+
                 {/* Options du tweet — chips pleins style segmented */}
                 <View style={styles.tweetOptions}>
-                  {canAttachVideo && !videoUri && (
+                  {canAttachImages && imageUris.length < MAX_TWEET_IMAGES && (
+                    <TouchableOpacity
+                      style={styles.optionChip}
+                      onPress={pickImages}
+                      activeOpacity={0.8}
+                      accessibilityLabel="Ajouter une image"
+                    >
+                      <Ionicons name="image-outline" size={17} color={colors.textMuted} />
+                      <Text style={styles.optionText}>IMAGE</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {canAttachVideo && !videoUri && imageUris.length === 0 && (
                     <TouchableOpacity
                       style={styles.optionChip}
                       onPress={handleAddVideo}
@@ -1243,6 +1374,33 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   // ── Vidéo jointe ──
+  imageStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+  },
+  imageThumbWrap: { position: 'relative' },
+  imageThumb: {
+    width: 84,
+    height: 84,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+  },
+  imageRemove: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: withAlpha(colors.black, 0.6),
+  },
+  imageHint: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
+
   videoAttachment: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -19,6 +19,18 @@ export const FLAGS = {
    * une fois l'essai terminé (voir `components/feed/TweetRow.tsx`).
    */
   QUICK_REPORT: 'fil.test',
+
+  /**
+   * Joindre des images à un tweet.
+   *
+   * Posé le 2026-08-10, montée automatique vers 100 % le 2026-08-24 (abonnés
+   * servis deux fois plus vite). **Ne protège que la PUBLICATION** : l'affichage
+   * des images n'est jamais conditionné, sinon un tweet illustré apparaîtrait
+   * vide à qui n'est pas encore dans le palier.
+   *
+   * À retirer une fois la montée terminée et la fonctionnalité acquise.
+   */
+  TWEET_IMAGES: 'tweet.images',
 } as const;
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS];
