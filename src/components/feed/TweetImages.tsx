@@ -1,5 +1,5 @@
 /**
- * Images jointes à un tweet.
+ * Images jointes à un tweet, et leur visionneuse.
  *
  * ── Jamais derrière le drapeau ──
  * `tweet.images` conditionne la PUBLICATION, pas la lecture. Pendant un
@@ -12,24 +12,111 @@
  * colonnes. Le ratio est FIXE et l'image recadrée (`cover`) : sans hauteur
  * connue avant chargement, chaque arrivée d'image décalerait le contenu déjà
  * lu — c'est le défaut qui fait perdre sa place dans un fil qu'on parcourt.
+ *
+ * ── Animations ──
+ * Deux, et seulement deux, parce qu'elles répondent à quelque chose :
+ *   - l'appui enfonce légèrement la vignette — retour tactile immédiat, avant
+ *     même que la visionneuse s'ouvre ;
+ *   - une image apparaît en fondu la PREMIÈRE FOIS qu'on la voit.
+ *
+ * Le « première fois » est essentiel. Les lignes du fil sont recyclées : sans
+ * mémoire des images déjà vues, remonter le fil rejouerait le fondu à chaque
+ * réapparition, ce qui donne exactement l'effet clinquant et faux qu'on ne
+ * veut pas. Rien n'est animé au montage de la ligne elle-même.
  */
 
-import React from 'react';
-import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { colors } from '../../theme';
+import ImageViewer from './ImageViewer';
 
 interface TweetImagesProps {
   urls: string[];
-  /** Ouvre le tweet : la grille du fil n'est pas une visionneuse. */
-  onPress?: () => void;
+  /** Appelé avant l'ouverture — sert à neutraliser l'appui de la ligne. */
+  onBeforeOpen?: () => void;
 }
 
 /** Plafond du modèle côté API — au-delà, la grille ne tiendrait plus. */
 const MAX_VISIBLE = 4;
 
-function TweetImages({ urls, onPress }: TweetImagesProps) {
-  const images = (urls || []).filter((url) => typeof url === 'string' && url.length > 0).slice(0, MAX_VISIBLE);
+/**
+ * Images déjà affichées dans cette session. Volontairement au niveau du
+ * module : le recyclage détruit l'état des composants, c'est précisément ce
+ * qu'il ne faut pas oublier ici.
+ */
+const alreadySeen = new Set<string>();
+
+function TweetImageCell({
+  url,
+  full,
+  label,
+  onPress,
+}: {
+  url: string;
+  full: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  const pressed = useSharedValue(0);
+  // Lu une seule fois : si l'image est déjà connue, elle est opaque d'emblée
+  // et aucun fondu n'est joué.
+  const firstTime = useRef(!alreadySeen.has(url));
+  const opacity = useSharedValue(firstTime.current ? 0 : 1);
+
+  const handleLoad = useCallback(() => {
+    if (!firstTime.current) return;
+    alreadySeen.add(url);
+    firstTime.current = false;
+    opacity.value = withTiming(1, { duration: 220 });
+  }, [opacity, url]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: 1 - pressed.value * 0.02 }],
+  }));
+
+  return (
+    <Pressable
+      style={[styles.cell, full ? styles.cellFull : styles.cellHalf]}
+      onPress={onPress}
+      onPressIn={() => {
+        pressed.value = withSpring(1, { damping: 20, stiffness: 300 });
+      }}
+      onPressOut={() => {
+        pressed.value = withSpring(0, { damping: 20, stiffness: 300 });
+      }}
+      accessibilityRole="imagebutton"
+      accessibilityLabel={label}
+    >
+      <Animated.View style={[styles.fill, animatedStyle]}>
+        <Image source={{ uri: url }} style={styles.fill} resizeMode="cover" onLoad={handleLoad} />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function TweetImages({ urls, onBeforeOpen }: TweetImagesProps) {
+  const images = (urls || [])
+    .filter((url) => typeof url === 'string' && url.length > 0)
+    .slice(0, MAX_VISIBLE);
+
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+
+  const open = useCallback(
+    (index: number) => {
+      onBeforeOpen?.();
+      setViewerIndex(index);
+    },
+    [onBeforeOpen]
+  );
+
   if (images.length === 0) return null;
 
   const single = images.length === 1;
@@ -38,26 +125,26 @@ function TweetImages({ urls, onPress }: TweetImagesProps) {
   const lastSpansFullWidth = images.length === 3;
 
   return (
-    <View style={styles.grid}>
-      {images.map((url, index) => {
-        const full = single || (lastSpansFullWidth && index === 2);
-        return (
-          <TouchableOpacity
+    <>
+      <View style={styles.grid}>
+        {images.map((url, index) => (
+          <TweetImageCell
             key={`${url}-${index}`}
-            style={[styles.cell, full ? styles.cellFull : styles.cellHalf]}
-            activeOpacity={onPress ? 0.9 : 1}
-            onPress={onPress}
-            disabled={!onPress}
-            accessibilityRole="image"
-            accessibilityLabel={
-              images.length === 1 ? 'Image du tweet' : `Image ${index + 1} sur ${images.length}`
-            }
-          >
-            <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
-          </TouchableOpacity>
-        );
-      })}
-    </View>
+            url={url}
+            full={single || (lastSpansFullWidth && index === 2)}
+            label={single ? 'Image du tweet' : `Image ${index + 1} sur ${images.length}`}
+            onPress={() => open(index)}
+          />
+        ))}
+      </View>
+
+      <ImageViewer
+        urls={images}
+        initialIndex={viewerIndex ?? 0}
+        visible={viewerIndex !== null}
+        onClose={() => setViewerIndex(null)}
+      />
+    </>
   );
 }
 
@@ -78,7 +165,7 @@ const styles = StyleSheet.create({
   // réponses, et mesurer le conteneur ferait rendre deux fois.
   cellFull: { flexBasis: '100%', aspectRatio: 16 / 10 },
   cellHalf: { flexBasis: '48.8%', flexGrow: 1, aspectRatio: 1 },
-  image: { width: '100%', height: '100%' },
+  fill: { width: '100%', height: '100%' },
 });
 
 export default React.memo(TweetImages);

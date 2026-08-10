@@ -485,10 +485,9 @@ function TweetRow({
                 contenu payant verrouillé, où l'image ferait partie de ce qui
                 est vendu. */}
             {!isContentLocked && displayMediaUrls.length > 0 && (
-              <TweetImages
-                urls={displayMediaUrls}
-                onPress={() => onAction({ type: 'open', tweetId: tweet.id })}
-              />
+              // `blockRowPress` : sans lui, l'appui sur une vignette ouvrirait
+              // aussi le tweet derrière la visionneuse.
+              <TweetImages urls={displayMediaUrls} onBeforeOpen={blockRowPress} />
             )}
 
             {/* Sélecteur de langue — uniquement sur les tweets publiés avec l'option */}
