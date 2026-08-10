@@ -42,8 +42,11 @@ import { colors, fonts } from '../theme';
 import { Tappable, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
-import NfMapCanvas, { type MapCoordinate, type MapMarker } from '../components/map/NfMapCanvas';
-import { viewportBounds } from '../utils/mercator';
+import NfMapCanvas, {
+  type MapBounds,
+  type MapCoordinate,
+  type MapMarker,
+} from '../components/map/NfMapCanvas';
 import {
   nfMapService,
   type NfMapFriend,
@@ -95,7 +98,8 @@ export default function NfMapScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviting, setInviting] = useState<string | null>(null);
 
-  const viewportRef = useRef({ width: 390, height: 700 });
+  /** Bornes réellement affichées, telles que la carte les rapporte. */
+  const [bounds, setBounds] = useState<MapBounds | null>(null);
 
   const isGhost = !settings || settings.sharing_mode === 'ghost';
 
@@ -120,8 +124,7 @@ export default function NfMapScreen() {
     }
   }, []);
 
-  const loadNearby = useCallback(async (nextCenter: MapCoordinate, nextZoom: number) => {
-    const bounds = viewportBounds(nextCenter, nextZoom, viewportRef.current);
+  const loadNearby = useCallback(async (bounds: MapBounds) => {
     setPeople(await nfMapService.nearby(bounds));
   }, []);
 
@@ -136,9 +139,10 @@ export default function NfMapScreen() {
    * autant d'appels que de relâchements, dont un seul comptait : le dernier.
    */
   useEffect(() => {
-    const timer = setTimeout(() => loadNearby(center, zoom), 280);
+    if (!bounds) return undefined;
+    const timer = setTimeout(() => loadNearby(bounds), 280);
     return () => clearTimeout(timer);
-  }, [center, zoom, loadNearby]);
+  }, [bounds, loadNearby]);
 
   /**
    * Position de l'appareil : demandée pour CENTRER la carte, ce qui ne suppose
@@ -261,22 +265,15 @@ export default function NfMapScreen() {
   return (
     <View style={styles.screen}>
       {/* La carte occupe tout l'écran ; les commandes flottent au-dessus. */}
-      <View
-        style={StyleSheet.absoluteFill}
-        onLayout={(event) => {
-          viewportRef.current = {
-            width: event.nativeEvent.layout.width,
-            height: event.nativeEvent.layout.height,
-          };
-        }}
-      >
+      <View style={StyleSheet.absoluteFill}>
         <NfMapCanvas
           center={center}
           zoom={zoom}
           markers={markers}
-          onRegionChange={(nextCenter, nextZoom) => {
+          onRegionChange={(nextCenter, nextZoom, nextBounds) => {
             setCenter(nextCenter);
             setZoom(nextZoom);
+            setBounds(nextBounds);
           }}
           renderMarker={(marker) => {
             const person = marker.data;
@@ -324,11 +321,6 @@ export default function NfMapScreen() {
           <Ionicons name="options-outline" size={20} color={colors.textPrimary} />
         </Tappable>
       </View>
-
-      {/* Mention obligatoire par la licence des fonds de carte. */}
-      <Text style={[styles.attribution, { bottom: insets.bottom + 196 }]}>
-        © OpenStreetMap · CARTO
-      </Text>
 
       <Tappable
         style={[styles.locate, { bottom: insets.bottom + 260 }]}
@@ -435,7 +427,7 @@ export default function NfMapScreen() {
                   tintColor={colors.accent}
                   onRefresh={async () => {
                     setRefreshing(true);
-                    await Promise.all([loadFriends(), loadNearby(center, zoom)]);
+                    await Promise.all([loadFriends(), bounds ? loadNearby(bounds) : Promise.resolve()]);
                     setRefreshing(false);
                   }}
                 />
@@ -561,13 +553,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.accent,
   },
 
-  attribution: {
-    position: 'absolute',
-    left: 10,
-    fontFamily: fonts.regular,
-    fontSize: 9,
-    color: colors.textMuted,
-  },
   locate: {
     position: 'absolute',
     right: 16,

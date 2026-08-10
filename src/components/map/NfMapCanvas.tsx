@@ -1,64 +1,42 @@
 /**
- * 🗺️ Carte glissante — tuiles + marqueurs, sans dépendance native.
+ * 🗺️ Carte de la Carte NF, sur `react-native-maps`.
  *
- * ── Pourquoi pas `react-native-maps`, et ce que ce choix a coûté ──
- * Écrite à la main pour éviter une dépendance native, donc une recompilation
- * avant toute mise en ligne. Le calcul était mauvais : l'app doit de toute
- * façon être recompilée pour livrer quoi que ce soit, et ce fichier a produit
- * deux régressions visibles (téléportation au relâchement, puis carte
- * entièrement vide). Une bibliothèque éprouvée réglerait d'un coup le rognage,
- * la gestion des tuiles, l'inertie et le zoom continu. À reconsidérer.
+ * ── Pourquoi cette bibliothèque, après une version écrite à la main ──
+ * La première version posait ses propres tuiles pour éviter une dépendance
+ * native, donc une recompilation. Le calcul était mauvais : l'app doit de
+ * toute façon être recompilée pour livrer quoi que ce soit, et ce fichier a
+ * produit deux régressions visibles — la carte qui se téléporte au
+ * relâchement, puis la carte entièrement vide (une couche sans dimensions
+ * rogne tout son contenu). Zoom continu, inertie, gestion mémoire des tuiles
+ * et rognage sont des problèmes déjà résolus ; les réécrire coûtait plus que
+ * la dépendance.
  *
- * ── Deux pièges déjà payés, à ne pas réintroduire ──
- *   1. **Une vue rogne ses enfants sur ses propres limites.** Une couche sans
- *      dimensions (`width: 0`) n'affiche RIEN sur Android : c'est ce qui a
- *      rendu la carte entièrement vide. La couche est donc dimensionnée à
- *      chaque rendu sur la boîte englobant ce qu'elle contient, et les enfants
- *      sont placés relativement à cette boîte, à coordonnées positives.
- *   2. **Ne jamais remettre la translation à zéro pour « recentrer ».** Voir
- *      ci-dessous.
+ * ── Ce que ce composant garde de l'ancien ──
+ * Exactement la même interface (`center`, `zoom`, `markers`, `renderMarker`,
+ * `onRegionChange`), pour que l'écran et l'API n'aient rien à savoir du
+ * changement. Les marqueurs restent des vues React : les avatars affichés sont
+ * ceux de l'app, pas des pastilles dessinées par la carte.
  *
- * ── Ce qui fait qu'elle ne saute plus ──
- * Première version : la couche était translatée pendant le geste, puis remise
- * à zéro au relâchement pendant qu'on recalculait le centre. La remise à zéro
- * se fait sur le thread UI, le nouveau centre arrive un ou deux rendus plus
- * tard : entre les deux, la carte revenait au point de départ puis sautait à
- * l'arrivée. D'où l'impression de téléportation, d'autant plus visible que les
- * tuiles mettaient du temps à charger.
- *
- * La règle qui règle ça : **les tuiles et les marqueurs sont posés en
- * coordonnées ABSOLUES du plan monde**, jamais relativement au centre courant.
- * Recalculer la liste des tuiles n'en déplace donc aucune ; seule la
- * transformation de la couche fait bouger la carte, et elle suit le doigt en
- * continu sans jamais être remise à zéro. Il n'y a plus qu'un seul moment où
- * la carte se réancre volontairement : le changement de niveau de zoom, où les
- * tuiles changent de résolution.
+ * ── Fond de carte ──
+ * Sur iOS, le fournisseur par défaut est Apple Maps : aucune clé, rien à
+ * configurer. Sur Android, Google Maps exige une clé dans `app.json`
+ * (`android.config.googleMaps.apiKey`) — sans elle, la carte s'affiche grise.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, StyleSheet, View, type ImageStyle, type ViewStyle } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  runOnJS,
-  useAnimatedReaction,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
-
-import { colors } from '../../theme';
-import {
-  TILE_SIZE,
-  clamp,
-  latLonToWorld,
-  tilesAroundWorldPoint,
-  worldToLatLon,
-  type WorldTile,
-} from '../../utils/mercator';
+import { StyleSheet, View } from 'react-native';
+import MapView, { Marker, type Region } from 'react-native-maps';
 
 export interface MapCoordinate {
   latitude: number;
   longitude: number;
+}
+
+export interface MapBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
 }
 
 export interface MapMarker<T = unknown> {
@@ -68,44 +46,30 @@ export interface MapMarker<T = unknown> {
   data: T;
 }
 
-const MIN_ZOOM = 3;
-const MAX_ZOOM = 17;
-
-/** Demi-largeur reservee a une epingle autour de son point d'ancrage. */
-const MARKER_BOX = 64;
-
-/** Déplacement au-delà duquel on étend la liste des tuiles, en pixels. */
-const TILE_REFRESH_DISTANCE = 96;
-
 /**
- * Fond de carte.
+ * Conversion entre le niveau de zoom « tuiles » (3 à 17, celui que manipule
+ * l'écran) et l'étendue en degrés attendue par `react-native-maps`.
  *
- * CARTO « Voyager » plutôt que le rendu standard d'OpenStreetMap : couleurs
- * douces, mer bleue, étiquettes lisibles — beaucoup plus proche de ce qu'on
- * attend d'une carte sociale que du plan routier détaillé d'OSM, qui charge
- * l'écran de routes secondaires sous les avatars.
- *
- * Surchargeable par l'environnement, et il FAUDRA le faire : ces fonds
- * gratuits ne tiennent pas le trafic d'une application grand public, et leur
- * licence impose de citer OpenStreetMap et CARTO dans l'écran.
+ * Le monde fait 360° de large sur `2^zoom` tuiles : une fenêtre couvre donc
+ * `360 / 2^zoom` degrés de longitude, à peu près. Rester dans l'unité « zoom »
+ * côté écran évite d'avoir à raisonner en deltas dans le reste du code.
  */
-const TILE_URL =
-  process.env.EXPO_PUBLIC_NF_MAP_TILE_URL ||
-  'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-
-function tileUrl(tile: WorldTile): string {
-  return TILE_URL.replace('{z}', String(tile.z))
-    .replace('{x}', String(tile.x))
-    .replace('{y}', String(tile.y));
-}
+const deltaForZoom = (zoom: number) => 360 / Math.pow(2, zoom);
+const zoomForDelta = (delta: number) => Math.log2(360 / Math.max(delta, 1e-6));
 
 interface NfMapCanvasProps<T> {
   center: MapCoordinate;
   zoom: number;
   markers: Array<MapMarker<T>>;
   renderMarker: (marker: MapMarker<T>) => React.ReactNode;
-  /** Appelé au relâchement seulement — pas à chaque image du geste. */
-  onRegionChange: (center: MapCoordinate, zoom: number) => void;
+  /**
+   * Appelé quand le déplacement est terminé, pas pendant.
+   *
+   * Les bornes viennent de la carte elle-même : les recalculer à partir du
+   * centre et du zoom serait une approximation, alors que la carte connaît
+   * exactement ce qu'elle affiche.
+   */
+  onRegionChange: (center: MapCoordinate, zoom: number, bounds: MapBounds) => void;
   style?: any;
 }
 
@@ -117,260 +81,116 @@ export default function NfMapCanvas<T>({
   onRegionChange,
   style,
 }: NfMapCanvasProps<T>) {
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const mapRef = useRef<MapView | null>(null);
 
   /**
-   * Origine du repère : le point du plan monde auquel les enfants sont ancrés.
-   * Ne change qu'au changement de zoom ou lorsqu'on saute ailleurs — jamais
-   * pendant un déplacement.
+   * Dernière région annoncée au parent.
+   *
+   * Le parent renvoie ce centre en `props`, et sans cette mémoire on
+   * réappliquerait notre propre écho à la carte : elle serait recadrée juste
+   * après chaque déplacement, ce qui redonnerait exactement le sursaut qu'on
+   * a passé deux versions à supprimer.
    */
-  const [origin, setOrigin] = useState(() => latLonToWorld(center.latitude, center.longitude, zoom));
-  const [renderedZoom, setRenderedZoom] = useState(Math.round(zoom));
+  const lastReported = useRef<{ center: MapCoordinate; zoom: number }>({ center, zoom });
 
-  /** Déplacement courant depuis l'origine, en pixels du plan monde. */
-  const panX = useSharedValue(0);
-  const panY = useSharedValue(0);
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
-  const pinchScale = useSharedValue(1);
+  const initialRegion = useMemo<Region>(
+    () => ({
+      latitude: center.latitude,
+      longitude: center.longitude,
+      latitudeDelta: deltaForZoom(zoom),
+      longitudeDelta: deltaForZoom(zoom),
+    }),
+    // Volontairement figée : `initialRegion` ne sert qu'au premier rendu, la
+    // suite passe par `animateToRegion`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
-  /** Copie JS du déplacement, rafraîchie par paliers : sert UNIQUEMENT à
-   *  décider quelles tuiles exister, jamais où les poser. */
-  const [tilePan, setTilePan] = useState({ x: 0, y: 0 });
-
-  /** Dernier centre annoncé au parent : évite de se réancrer sur son propre écho. */
-  const lastReported = useRef<MapCoordinate>(center);
-
-  // ── Réancrage volontaire ──
-  // Le parent a sauté ailleurs (« me localiser », « voir cet ami ») ou changé
-  // de zoom. On repose l'origine et on repart d'un déplacement nul.
+  // Le parent a sauté ailleurs (« me localiser », « voir cet ami »). On anime
+  // vers la nouvelle région ; un déplacement au doigt, lui, ne repasse jamais
+  // ici puisqu'il correspond à notre propre écho.
   useEffect(() => {
-    const sameAsEcho =
-      Math.abs(center.latitude - lastReported.current.latitude) < 1e-9 &&
-      Math.abs(center.longitude - lastReported.current.longitude) < 1e-9;
-    const sameZoom = Math.round(zoom) === renderedZoom;
-    if (sameAsEcho && sameZoom) return;
+    const echo = lastReported.current;
+    const sameCenter =
+      Math.abs(center.latitude - echo.center.latitude) < 1e-9 &&
+      Math.abs(center.longitude - echo.center.longitude) < 1e-9;
+    const sameZoom = Math.abs(zoom - echo.zoom) < 1e-6;
+    if (sameCenter && sameZoom) return;
 
-    setOrigin(latLonToWorld(center.latitude, center.longitude, Math.round(zoom)));
-    setRenderedZoom(Math.round(zoom));
-    lastReported.current = center;
-    panX.value = 0;
-    panY.value = 0;
-    setTilePan({ x: 0, y: 0 });
-  }, [center, zoom, renderedZoom, panX, panY]);
-
-  /** Centre visuel courant, en géographique. */
-  const currentCenter = useCallback(
-    (dx: number, dy: number): MapCoordinate =>
-      worldToLatLon(origin.x + dx, origin.y + dy, renderedZoom),
-    [origin, renderedZoom]
-  );
-
-  const commitRegion = useCallback(
-    (dx: number, dy: number) => {
-      const next = currentCenter(dx, dy);
-      lastReported.current = next;
-      onRegionChange(next, renderedZoom);
-    },
-    [currentCenter, onRegionChange, renderedZoom]
-  );
-
-  const commitZoom = useCallback(
-    (factor: number, dx: number, dy: number) => {
-      const next = clamp(Math.round(renderedZoom + Math.log2(factor)), MIN_ZOOM, MAX_ZOOM);
-      const visual = currentCenter(dx, dy);
-      lastReported.current = visual;
-      // Même centre, autre résolution : c'est le seul saut assumé.
-      onRegionChange(visual, next);
-    },
-    [currentCenter, onRegionChange, renderedZoom]
-  );
-
-  const extendTiles = useCallback((x: number, y: number) => setTilePan({ x, y }), []);
-
-  // Étend la couverture pendant le déplacement. Comme les tuiles sont posées en
-  // absolu, en ajouter n'en bouge aucune : ça peut donc arriver n'importe quand.
-  useAnimatedReaction(
-    () => ({ x: panX.value, y: panY.value }),
-    (now, previous) => {
-      if (!previous) return;
-      if (
-        Math.abs(now.x - previous.x) > TILE_REFRESH_DISTANCE ||
-        Math.abs(now.y - previous.y) > TILE_REFRESH_DISTANCE
-      ) {
-        runOnJS(extendTiles)(now.x, now.y);
-      }
-    }
-  );
-
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        .onStart(() => {
-          startX.value = panX.value;
-          startY.value = panY.value;
-        })
-        .onUpdate((event) => {
-          // La carte suit le doigt : aller vers la droite ramène l'ouest.
-          panX.value = startX.value - event.translationX;
-          panY.value = startY.value - event.translationY;
-        })
-        .onEnd(() => {
-          // Aucune remise à zéro ici : le déplacement RESTE appliqué, et le
-          // parent apprend simplement le nouveau centre. C'est ce qui supprime
-          // l'aller-retour de l'ancienne version.
-          runOnJS(commitRegion)(panX.value, panY.value);
-          runOnJS(extendTiles)(panX.value, panY.value);
-        }),
-    [commitRegion, extendTiles, panX, panY, startX, startY]
-  );
-
-  const pinch = useMemo(
-    () =>
-      Gesture.Pinch()
-        .onUpdate((event) => {
-          pinchScale.value = Math.min(Math.max(event.scale, 0.35), 3);
-        })
-        .onEnd((event) => {
-          const factor = Math.min(Math.max(event.scale, 0.35), 3);
-          runOnJS(commitZoom)(factor, panX.value, panY.value);
-          pinchScale.value = withTiming(1, { duration: 120 });
-        }),
-    [commitZoom, panX, panY, pinchScale]
-  );
-
-  const gestures = useMemo(() => Gesture.Simultaneous(pan, pinch), [pan, pinch]);
-
-  const layerStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: viewport.width / 2 - panX.value },
-      { translateY: viewport.height / 2 - panY.value },
-      { scale: pinchScale.value },
-    ] as const,
-  }));
-
-  const tiles = useMemo(() => {
-    if (viewport.width === 0) return [];
-    return tilesAroundWorldPoint(
-      { x: origin.x + tilePan.x, y: origin.y + tilePan.y },
-      renderedZoom,
-      viewport,
-      2
+    lastReported.current = { center, zoom };
+    mapRef.current?.animateToRegion(
+      {
+        latitude: center.latitude,
+        longitude: center.longitude,
+        latitudeDelta: deltaForZoom(zoom),
+        longitudeDelta: deltaForZoom(zoom),
+      },
+      350
     );
-  }, [origin, tilePan, renderedZoom, viewport]);
-
-  const markerWorlds = useMemo(
-    () =>
-      markers.map((marker) => ({
-        marker,
-        world: latLonToWorld(marker.latitude, marker.longitude, renderedZoom),
-      })),
-    [markers, renderedZoom]
-  );
+  }, [center, zoom]);
 
   /**
-   * Boîte englobant tout ce qui est rendu, et positions RELATIVES à cette boîte.
+   * `tracksViewChanges` : le marqueur est photographié une fois puis figé.
    *
-   * Une vue ne peut pas contenir ce qui déborde d'elle : Android rogne ses
-   * enfants sur ses propres limites. Une couche sans dimensions n'affiche donc
-   * rien du tout — c'est ce qui cassait la carte. On mesure ce qu'on rend, on
-   * dimensionne la couche dessus, et on décale les enfants pour qu'ils soient
-   * tous à des coordonnées positives à l'intérieur.
-   *
-   * La boîte bouge quand la liste des tuiles change, mais son décalage est
-   * appliqué au même rendu que celui des enfants : rien ne bouge à l'écran.
-   * La propriété qui évite le sursaut est préservée — les positions restent
-   * dérivées du plan monde, jamais du centre courant.
+   * Figé trop tôt, la photo est prise avant l'arrivée de l'avatar distant, et
+   * le marqueur reste vide pour toujours. On laisse donc le suivi actif un
+   * court instant après chaque changement de liste, puis on le coupe — le
+   * garder actif redessine chaque marqueur à chaque image et fait tomber la
+   * carte à quelques images par seconde dès qu'il y en a une dizaine.
    */
-  const layout = useMemo(() => {
-    const xs: number[] = [];
-    const ys: number[] = [];
+  const [tracksChanges, setTracksChanges] = useState(true);
+  useEffect(() => {
+    setTracksChanges(true);
+    const timer = setTimeout(() => setTracksChanges(false), 2000);
+    return () => clearTimeout(timer);
+  }, [markers]);
 
-    for (const tile of tiles) {
-      xs.push(tile.worldLeft, tile.worldLeft + TILE_SIZE);
-      ys.push(tile.worldTop, tile.worldTop + TILE_SIZE);
-    }
-    for (const { world } of markerWorlds) {
-      // Marge autour du marqueur : son épingle déborde de son point d'ancrage.
-      xs.push(world.x - MARKER_BOX, world.x + MARKER_BOX);
-      ys.push(world.y - MARKER_BOX, world.y + MARKER_BOX);
-    }
-
-    if (xs.length === 0) {
-      return { left: 0, top: 0, width: 0, height: 0, minX: origin.x, minY: origin.y };
-    }
-
-    const minX = Math.min(...xs);
-    const minY = Math.min(...ys);
-    const maxX = Math.max(...xs);
-    const maxY = Math.max(...ys);
-
-    return {
-      // Position de la boîte dans le repère ancré à l'origine.
-      left: minX - origin.x,
-      top: minY - origin.y,
-      width: maxX - minX,
-      height: maxY - minY,
-      minX,
-      minY,
-    };
-  }, [tiles, markerWorlds, origin]);
+  const handleRegionChangeComplete = useCallback(
+    (region: Region) => {
+      const next = { latitude: region.latitude, longitude: region.longitude };
+      const nextZoom = zoomForDelta(region.longitudeDelta);
+      lastReported.current = { center: next, zoom: nextZoom };
+      onRegionChange(next, nextZoom, {
+        north: region.latitude + region.latitudeDelta / 2,
+        south: region.latitude - region.latitudeDelta / 2,
+        east: region.longitude + region.longitudeDelta / 2,
+        west: region.longitude - region.longitudeDelta / 2,
+      });
+    },
+    [onRegionChange]
+  );
 
   return (
-    <GestureDetector gesture={gestures}>
-      <View
-        style={[styles.root, style]}
-        onLayout={(event) => {
-          const { width, height } = event.nativeEvent.layout;
-          setViewport({ width, height });
-        }}
+    <View style={[styles.root, style]}>
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        initialRegion={initialRegion}
+        onRegionChangeComplete={handleRegionChangeComplete}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        showsCompass={false}
+        toolbarEnabled={false}
+        rotateEnabled={false}
+        pitchEnabled={false}
       >
-        <Animated.View
-          style={[
-            styles.layer,
-            { left: layout.left, top: layout.top, width: layout.width, height: layout.height },
-            layerStyle,
-          ]}
-        >
-          {tiles.map((tile) => (
-            <Image
-              key={`${tile.z}/${tile.worldLeft}/${tile.worldTop}`}
-              source={{ uri: tileUrl(tile) }}
-              style={[
-                styles.tile,
-                { left: tile.worldLeft - layout.minX, top: tile.worldTop - layout.minY },
-              ]}
-              // Les tuiles n'ont pas de contenu propre : décrites, elles
-              // noieraient les marqueurs sous un lecteur d'écran.
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            />
-          ))}
-
-          {markerWorlds.map(({ marker, world }) => (
-            <View
-              key={marker.id}
-              style={[styles.marker, { left: world.x - layout.minX, top: world.y - layout.minY }]}
-              pointerEvents="box-none"
-            >
-              {renderMarker(marker)}
-            </View>
-          ))}
-        </Animated.View>
-      </View>
-    </GestureDetector>
+        {markers.map((marker) => (
+          <Marker
+            key={marker.id}
+            coordinate={{ latitude: marker.latitude, longitude: marker.longitude }}
+            // Ancré par le bas : centré sur son milieu, le marqueur
+            // désignerait un point trop au nord.
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={tracksChanges}
+          >
+            {renderMarker(marker)}
+          </Marker>
+        ))}
+      </MapView>
+    </View>
   );
 }
 
-// Types explicites : sans eux, `StyleSheet.create` infère une union des trois
-// familles de styles, et une tuile ne s'accepte plus comme style d'`Image`.
 const styles = StyleSheet.create({
-  root: { flex: 1, overflow: 'hidden', backgroundColor: '#A9C9E8' } as ViewStyle,
-  // Taille et position calculees a chaque rendu : la couche epouse ce qu'elle
-  // contient, sinon Android rogne les tuiles qui debordent.
-  layer: { position: 'absolute' } as ViewStyle,
-  tile: { position: 'absolute', width: TILE_SIZE, height: TILE_SIZE } as ImageStyle,
-  // Le marqueur est ancré par son centre bas, comme une épingle posée sur le
-  // point : centré sur son milieu, il désignerait un endroit trop au nord.
-  marker: { position: 'absolute', transform: [{ translateX: -22 }, { translateY: -48 }] } as ViewStyle,
+  root: { flex: 1, overflow: 'hidden' },
 });

@@ -28,7 +28,11 @@ module.exports = ({ config }) => {
       infoPlist: {
         NSCameraUsageDescription: "L'application a besoin d'accéder à la caméra pour diffuser en direct.",
         NSMicrophoneUsageDescription: "L'application a besoin d'accéder au microphone pour diffuser en direct.",
-        NSLocationWhenInUseUsageDescription: "TwitNinf utilise votre position une fois par connexion, avec votre accord, pour les statistiques géographiques agrégées et la sécurité des sessions.",
+        // Décrit les DEUX usages, y compris la Carte NF. Apple refuse une
+        // description qui ne couvre pas l'usage réel, et c'est ce texte que
+        // l'utilisateur lit avant d'accepter : le partage sur une carte ne
+        // pouvait pas rester caché derrière « statistiques agrégées ».
+        NSLocationWhenInUseUsageDescription: "TwitNinf utilise votre position pour les statistiques géographiques agrégées et la sécurité des sessions, et — uniquement si vous l'activez — pour vous afficher sur la Carte NF auprès des comptes liés à vous. Le partage sur la carte est désactivé par défaut et s'efface automatiquement.",
         // Sans cette clé, iOS plafonne l'app à 60 fps sur les écrans ProMotion,
         // quel que soit le travail d'optimisation fait côté JS. Elle n'a d'effet
         // que dans un build natif : Expo Go reste à 60 fps.
