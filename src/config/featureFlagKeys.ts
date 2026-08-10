@@ -31,6 +31,16 @@ export const FLAGS = {
    * À retirer une fois la montée terminée et la fonctionnalité acquise.
    */
   TWEET_IMAGES: 'tweet.images',
+
+  /**
+   * Carte NF : voir sur une carte les comptes qu'on suit, avec leur photo de
+   * profil, là où ils ont accepté d'être vus.
+   *
+   * Posé le 2026-08-10, montée automatique sur 30 jours (100 % le 2026-09-09).
+   * Conditionne TOUTE la fonctionnalité, lecture comprise — contrairement à
+   * `TWEET_IMAGES`, il n'y a rien à afficher à qui n'y a pas accès.
+   */
+  NF_MAP: 'fil.cartenf',
 } as const;
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS];

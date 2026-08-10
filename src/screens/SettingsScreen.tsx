@@ -45,6 +45,8 @@ import { ConsentSheet } from '../components/ConsentGate';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
+import { useFlag } from '../contexts/FeatureFlagContext';
+import { FLAGS } from '../config/featureFlagKeys';
 
 const { width, height } = Dimensions.get('window');
 
@@ -54,6 +56,7 @@ interface SettingsScreenProps {
 }
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
+  const nfMapEnabled = useFlag(FLAGS.NF_MAP);
   const { user, refreshCurrentUser } = useAuth();
   const { isAdmin, isSuperAdmin } = useAdminPermissions();
   const { activeEvent, hasActiveEvent } = useEvents();
@@ -440,6 +443,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           'Lancer l\'événement Kospor Birthday',
           'gift-outline',
           () => navigation.navigate('FunctionalEventManagement')
+        )}
+
+        {/* Carte NF — sous drapeau : l'entrée n'apparaît que pour les comptes
+            dont le palier est ouvert. */}
+        {nfMapEnabled && renderActionButton(
+          'Carte NF',
+          'Vois où sont les comptes que tu suis, et choisis ce que tu montres',
+          'map-outline',
+          () => navigation.navigate('NfMap' as never)
         )}
 
         {/* Déploiement progressif des fonctionnalités (admin uniquement) */}
