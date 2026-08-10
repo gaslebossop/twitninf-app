@@ -1,12 +1,22 @@
 /**
  * 🗺️ Carte glissante — tuiles + marqueurs, sans dépendance native.
  *
- * ── Pourquoi pas `react-native-maps` ──
- * L'app a un dossier `android/` : toute dépendance native impose une
- * recompilation avant la moindre mise en ligne. Une carte faite de tuiles
- * `<Image>` et de gestes Reanimated — tous deux déjà installés — se déploie
- * par une simple mise à jour. Les marqueurs sont des vues React natives, donc
- * les avatars sont ceux de l'app.
+ * ── Pourquoi pas `react-native-maps`, et ce que ce choix a coûté ──
+ * Écrite à la main pour éviter une dépendance native, donc une recompilation
+ * avant toute mise en ligne. Le calcul était mauvais : l'app doit de toute
+ * façon être recompilée pour livrer quoi que ce soit, et ce fichier a produit
+ * deux régressions visibles (téléportation au relâchement, puis carte
+ * entièrement vide). Une bibliothèque éprouvée réglerait d'un coup le rognage,
+ * la gestion des tuiles, l'inertie et le zoom continu. À reconsidérer.
+ *
+ * ── Deux pièges déjà payés, à ne pas réintroduire ──
+ *   1. **Une vue rogne ses enfants sur ses propres limites.** Une couche sans
+ *      dimensions (`width: 0`) n'affiche RIEN sur Android : c'est ce qui a
+ *      rendu la carte entièrement vide. La couche est donc dimensionnée à
+ *      chaque rendu sur la boîte englobant ce qu'elle contient, et les enfants
+ *      sont placés relativement à cette boîte, à coordonnées positives.
+ *   2. **Ne jamais remettre la translation à zéro pour « recentrer ».** Voir
+ *      ci-dessous.
  *
  * ── Ce qui fait qu'elle ne saute plus ──
  * Première version : la couche était translatée pendant le geste, puis remise
@@ -60,6 +70,9 @@ export interface MapMarker<T = unknown> {
 
 const MIN_ZOOM = 3;
 const MAX_ZOOM = 17;
+
+/** Demi-largeur reservee a une epingle autour de son point d'ancrage. */
+const MARKER_BOX = 64;
 
 /** Déplacement au-delà duquel on étend la liste des tuiles, en pixels. */
 const TILE_REFRESH_DISTANCE = 96;
@@ -246,16 +259,62 @@ export default function NfMapCanvas<T>({
     );
   }, [origin, tilePan, renderedZoom, viewport]);
 
-  // Position absolue des marqueurs : indépendante du déplacement, donc jamais
-  // recalculée en glissant.
-  const placedMarkers = useMemo(
+  const markerWorlds = useMemo(
     () =>
-      markers.map((marker) => {
-        const world = latLonToWorld(marker.latitude, marker.longitude, renderedZoom);
-        return { marker, left: world.x - origin.x, top: world.y - origin.y };
-      }),
-    [markers, origin, renderedZoom]
+      markers.map((marker) => ({
+        marker,
+        world: latLonToWorld(marker.latitude, marker.longitude, renderedZoom),
+      })),
+    [markers, renderedZoom]
   );
+
+  /**
+   * Boîte englobant tout ce qui est rendu, et positions RELATIVES à cette boîte.
+   *
+   * Une vue ne peut pas contenir ce qui déborde d'elle : Android rogne ses
+   * enfants sur ses propres limites. Une couche sans dimensions n'affiche donc
+   * rien du tout — c'est ce qui cassait la carte. On mesure ce qu'on rend, on
+   * dimensionne la couche dessus, et on décale les enfants pour qu'ils soient
+   * tous à des coordonnées positives à l'intérieur.
+   *
+   * La boîte bouge quand la liste des tuiles change, mais son décalage est
+   * appliqué au même rendu que celui des enfants : rien ne bouge à l'écran.
+   * La propriété qui évite le sursaut est préservée — les positions restent
+   * dérivées du plan monde, jamais du centre courant.
+   */
+  const layout = useMemo(() => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+
+    for (const tile of tiles) {
+      xs.push(tile.worldLeft, tile.worldLeft + TILE_SIZE);
+      ys.push(tile.worldTop, tile.worldTop + TILE_SIZE);
+    }
+    for (const { world } of markerWorlds) {
+      // Marge autour du marqueur : son épingle déborde de son point d'ancrage.
+      xs.push(world.x - MARKER_BOX, world.x + MARKER_BOX);
+      ys.push(world.y - MARKER_BOX, world.y + MARKER_BOX);
+    }
+
+    if (xs.length === 0) {
+      return { left: 0, top: 0, width: 0, height: 0, minX: origin.x, minY: origin.y };
+    }
+
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+
+    return {
+      // Position de la boîte dans le repère ancré à l'origine.
+      left: minX - origin.x,
+      top: minY - origin.y,
+      width: maxX - minX,
+      height: maxY - minY,
+      minX,
+      minY,
+    };
+  }, [tiles, markerWorlds, origin]);
 
   return (
     <GestureDetector gesture={gestures}>
@@ -266,14 +325,20 @@ export default function NfMapCanvas<T>({
           setViewport({ width, height });
         }}
       >
-        <Animated.View style={[styles.layer, layerStyle]}>
+        <Animated.View
+          style={[
+            styles.layer,
+            { left: layout.left, top: layout.top, width: layout.width, height: layout.height },
+            layerStyle,
+          ]}
+        >
           {tiles.map((tile) => (
             <Image
               key={`${tile.z}/${tile.worldLeft}/${tile.worldTop}`}
               source={{ uri: tileUrl(tile) }}
               style={[
                 styles.tile,
-                { left: tile.worldLeft - origin.x, top: tile.worldTop - origin.y },
+                { left: tile.worldLeft - layout.minX, top: tile.worldTop - layout.minY },
               ]}
               // Les tuiles n'ont pas de contenu propre : décrites, elles
               // noieraient les marqueurs sous un lecteur d'écran.
@@ -282,8 +347,12 @@ export default function NfMapCanvas<T>({
             />
           ))}
 
-          {placedMarkers.map(({ marker, left, top }) => (
-            <View key={marker.id} style={[styles.marker, { left, top }]} pointerEvents="box-none">
+          {markerWorlds.map(({ marker, world }) => (
+            <View
+              key={marker.id}
+              style={[styles.marker, { left: world.x - layout.minX, top: world.y - layout.minY }]}
+              pointerEvents="box-none"
+            >
               {renderMarker(marker)}
             </View>
           ))}
@@ -297,9 +366,9 @@ export default function NfMapCanvas<T>({
 // familles de styles, et une tuile ne s'accepte plus comme style d'`Image`.
 const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden', backgroundColor: '#A9C9E8' } as ViewStyle,
-  // La couche n'a pas de taille : ses enfants sont posés en absolu autour de
-  // son origine, y compris en coordonnées négatives.
-  layer: { position: 'absolute', left: 0, top: 0, width: 0, height: 0 } as ViewStyle,
+  // Taille et position calculees a chaque rendu : la couche epouse ce qu'elle
+  // contient, sinon Android rogne les tuiles qui debordent.
+  layer: { position: 'absolute' } as ViewStyle,
   tile: { position: 'absolute', width: TILE_SIZE, height: TILE_SIZE } as ImageStyle,
   // Le marqueur est ancré par son centre bas, comme une épingle posée sur le
   // point : centré sur son milieu, il désignerait un endroit trop au nord.
