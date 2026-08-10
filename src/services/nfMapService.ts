@@ -9,7 +9,25 @@
 import { apiService } from './api';
 
 export type SharingMode = 'ghost' | 'city' | 'precise';
-export type MapAudience = 'mutuals' | 'followers';
+/**
+ * Qui peut me voir. `connections` = n'importe quel lien, dans un sens ou dans
+ * l'autre — c'est le réglage le plus proche de « mes amis ». Dans tous les cas
+ * un lien est requis : la carte ne montre jamais un inconnu.
+ */
+export type MapAudience = 'mutuals' | 'followers' | 'connections';
+
+/** Un compte lié à moi, qu'il partage sa position ou non. */
+export interface NfMapFriend {
+  id: string;
+  username: string;
+  full_name: string | null;
+  avatar: string | null;
+  verified: boolean;
+  premium: boolean;
+  is_sharing: boolean;
+  i_follow: boolean;
+  follows_me: boolean;
+}
 
 export interface NfMapSettings {
   sharing_mode: SharingMode;
@@ -66,6 +84,28 @@ export const nfMapService = {
   /** Disparaître tout de suite, sans attendre l'expiration. */
   async clearPosition(): Promise<void> {
     await apiService.delete(`${BASE}/position`);
+  },
+
+  /**
+   * Mes liens et leur état de partage.
+   *
+   * C'est la réponse à « pourquoi ma carte est vide » : un ami qui ne partage
+   * pas apparaît ici par son nom, jamais par une position — il n'en a aucune
+   * à montrer tant qu'il n'a rien activé.
+   */
+  async friends(): Promise<{ people: NfMapFriend[]; sharingCount: number }> {
+    const response = await apiService.get(`${BASE}/friends`);
+    if (!response?.success) return { people: [], sharingCount: 0 };
+    return {
+      people: response.data?.people || [],
+      sharingCount: response.data?.sharing_count || 0,
+    };
+  },
+
+  /** Demande à un ami d'activer sa position. Une fois par jour et par personne. */
+  async invite(userId: string): Promise<boolean> {
+    const response = await apiService.post(`${BASE}/invite/${userId}`);
+    return !!response?.data?.sent;
   },
 
   /**
