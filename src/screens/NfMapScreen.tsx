@@ -32,6 +32,7 @@ import {
   Text,
   TextInput,
   View,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -43,6 +44,8 @@ import { Tappable, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
 import MapPin from '../components/map/MapPin';
+import MapCluster from '../components/map/MapCluster';
+import { clusterize, degreesPerPixel, type Cluster } from '../utils/mapCluster';
 import NfMapCanvas, {
   type MapBounds,
   type MapCoordinate,
@@ -95,6 +98,14 @@ function freshness(iso: string): string {
   if (minutes < 2) return 'à l’instant';
   if (minutes < 60) return `il y a ${minutes} min`;
   return `il y a ${Math.round(minutes / 60)} h`;
+}
+
+/** Un compte, tel qu'il entre dans le regroupement. */
+interface ClusterPerson {
+  id: string;
+  latitude: number;
+  longitude: number;
+  person: NfMapPerson;
 }
 
 export default function NfMapScreen() {
@@ -236,6 +247,17 @@ export default function NfMapScreen() {
     }
   }, []);
 
+  /**
+   * Ouvre un groupe en zoomant dessus. Deux niveaux d'un coup : un seul ne
+   * suffit souvent pas à séparer des gens d'un même quartier, et on aurait à
+   * retoucher plusieurs fois le même tas.
+   */
+  const zoomOnCluster = useCallback((cluster: Cluster<ClusterPerson>) => {
+    setCenter({ latitude: cluster.latitude, longitude: cluster.longitude });
+    setZoom((current) => Math.min(current + 2, 17));
+    setSelected(null);
+  }, []);
+
   const focusOn = useCallback((person: NfMapPerson) => {
     setCenter({ latitude: Number(person.latitude), longitude: Number(person.longitude) });
     setZoom(FOCUS_ZOOM);
@@ -243,12 +265,34 @@ export default function NfMapScreen() {
     setSheet('peek');
   }, []);
 
-  const markers: Array<MapMarker<NfMapPerson | null>> = useMemo(() => {
-    const list: Array<MapMarker<NfMapPerson | null>> = people.map((person) => ({
-      id: person.id,
-      latitude: Number(person.latitude),
-      longitude: Number(person.longitude),
-      data: person,
+  /**
+   * Marqueurs REGROUPÉS.
+   *
+   * Sans regroupement, vingt personnes d'une même agglomération donnent vingt
+   * épingles empilées — illisible, et vingt vues natives redessinées à chaque
+   * image. C'est ce qui faisait ramer puis tomber la carte au dézoom, puisque
+   * dézoomer rapproche tout le monde sans réduire le nombre de vues.
+   */
+  const markers: Array<MapMarker<Cluster<ClusterPerson> | null>> = useMemo(() => {
+    const scale = bounds
+      ? degreesPerPixel(bounds.east - bounds.west, Dimensions.get('window').width)
+      : 0;
+
+    const clusters = clusterize(
+      people.map((person) => ({
+        id: person.id,
+        latitude: Number(person.latitude),
+        longitude: Number(person.longitude),
+        person,
+      })),
+      scale
+    );
+
+    const list: Array<MapMarker<Cluster<ClusterPerson> | null>> = clusters.map((cluster) => ({
+      id: cluster.id,
+      latitude: cluster.latitude,
+      longitude: cluster.longitude,
+      data: cluster,
     }));
 
     // Se voir soi-même est le seul moyen de vérifier ce que les autres voient.
@@ -261,7 +305,7 @@ export default function NfMapScreen() {
       });
     }
     return list;
-  }, [people, myPosition, isGhost]);
+  }, [people, myPosition, isGhost, bounds]);
 
   const visibleFriends = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -297,15 +341,31 @@ export default function NfMapScreen() {
             setBounds(nextBounds);
           }}
           renderMarker={(marker) => {
-            const person = marker.data;
-            if (!person) return <MapPin username="moi" label="Toi" self />;
+            const cluster = marker.data;
+            if (!cluster) return <MapPin username="moi" label="Toi" self />;
 
+            // Plusieurs personnes au même endroit : un seul marqueur, qui
+            // s'ouvre en zoomant. Les afficher toutes ne montrerait qu'un tas.
+            if (cluster.items.length > 1) {
+              const first = cluster.items[0].person;
+              return (
+                <Tappable onPress={() => zoomOnCluster(cluster)} haptic="select">
+                  <MapCluster
+                    count={cluster.items.length}
+                    username={first.username}
+                    avatar={first.avatar}
+                  />
+                </Tappable>
+              );
+            }
+
+            const person = cluster.items[0].person;
             return (
               <Tappable onPress={() => setSelected(person)} haptic="select">
                 <MapPin
                   username={person.username}
                   avatar={person.avatar}
-                  label={(person.full_name || person.username).split(' ')[0]}
+                  label={person.username}
                   approximate={person.sharing_mode === 'city'}
                   selected={selected?.id === person.id}
                 />
@@ -326,12 +386,17 @@ export default function NfMapScreen() {
           onPress={() => setSheet('list')}
           accessibilityLabel="Chercher un ami"
         >
-          <Ionicons name="search" size={17} color={colors.textMuted} />
-          <Text style={styles.searchPlaceholder} numberOfLines={1}>
-            {sharingFriends.length > 0
-              ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
-              : 'Chercher un ami'}
-          </Text>
+          {/* Rangée dans une vue interne : `Tappable` pose le style sur sa vue
+              externe, alors que ses enfants vivent dans un `Pressable` sans
+              style — la loupe se retrouvait au-dessus du texte. */}
+          <View style={styles.pillRow}>
+            <Ionicons name="search" size={17} color={colors.textMuted} />
+            <Text style={styles.searchPlaceholder} numberOfLines={1}>
+              {sharingFriends.length > 0
+                ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
+                : 'Chercher un ami'}
+            </Text>
+          </View>
         </Tappable>
 
         <Tappable
@@ -404,7 +469,8 @@ export default function NfMapScreen() {
         </Tappable>
 
         {sheet === 'peek' && (
-          <Tappable style={styles.peek} onPress={() => setSheet('list')} haptic="tap">
+          <Tappable style={styles.peekTouch} onPress={() => setSheet('list')} haptic="tap">
+            <View style={styles.peek}>
             <View style={styles.peekAvatars}>
               {sharingFriends.slice(0, 5).map((friend, index) => (
                 <View
@@ -428,6 +494,7 @@ export default function NfMapScreen() {
             </View>
 
             <Ionicons name="chevron-up" size={18} color={colors.textMuted} />
+            </View>
           </Tappable>
         )}
 
@@ -544,16 +611,18 @@ export default function NfMapScreen() {
                   onPress={() => changeMode(mode.id)}
                   haptic="select"
                 >
-                  <Ionicons
-                    name={mode.icon as any}
-                    size={20}
-                    color={active ? colors.accent : colors.textMuted}
-                  />
-                  <View style={styles.modeText}>
-                    <Text style={[styles.modeLabel, active && styles.modeLabelActive]}>{mode.label}</Text>
-                    <Text style={styles.modeHint}>{mode.hint}</Text>
+                  <View style={styles.modeRow}>
+                    <Ionicons
+                      name={mode.icon as any}
+                      size={20}
+                      color={active ? colors.accent : colors.textMuted}
+                    />
+                    <View style={styles.modeText}>
+                      <Text style={[styles.modeLabel, active && styles.modeLabelActive]}>{mode.label}</Text>
+                      <Text style={styles.modeHint}>{mode.hint}</Text>
+                    </View>
+                    {active && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                   </View>
-                  {active && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                 </Tappable>
               );
             })}
@@ -568,8 +637,10 @@ export default function NfMapScreen() {
                   toast.success('Position effacée');
                 }}
               >
-                <Ionicons name="flash-off-outline" size={16} color={colors.red} />
-                <Text style={styles.disappearText}>Disparaître maintenant</Text>
+                <View style={styles.pillRow}>
+                  <Ionicons name="flash-off-outline" size={16} color={colors.red} />
+                  <Text style={styles.disappearText}>Disparaître maintenant</Text>
+                </View>
               </Tappable>
             )}
           </ScrollView>
@@ -615,15 +686,15 @@ const styles = StyleSheet.create({
 
   searchPill: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     height: 42,
+    justifyContent: 'center',
     paddingHorizontal: 14,
     borderRadius: 21,
     backgroundColor: colors.surface,
     ...floating,
   },
+  /** Rangée interne — voir le commentaire au point d'usage. */
+  pillRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchPlaceholder: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.textSecondary },
 
   locate: {
@@ -684,7 +755,8 @@ const styles = StyleSheet.create({
   handleZone: { alignItems: 'center', paddingTop: 8, paddingBottom: 8 },
   handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border },
 
-  peek: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18 },
+  peekTouch: { paddingHorizontal: 18 },
+  peek: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   peekAvatars: { flexDirection: 'row' },
   peekAvatar: { borderRadius: 17, borderWidth: 2, borderColor: colors.bg },
   // Empilement à la façon d'une pile de jetons : montre qu'il y a du monde
@@ -733,10 +805,8 @@ const styles = StyleSheet.create({
   friendActionText: { fontFamily: fonts.semibold, fontSize: 13, color: colors.accent },
 
   sheetContent: { padding: 16, gap: 10, paddingBottom: 40 },
+  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   mode: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
     padding: 14,
     borderRadius: 14,
     backgroundColor: colors.surface,
@@ -750,10 +820,7 @@ const styles = StyleSheet.create({
   modeHint: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.textMuted },
 
   disappear: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
     paddingVertical: 13,
     borderRadius: 12,
     backgroundColor: colors.surface,
