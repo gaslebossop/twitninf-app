@@ -62,16 +62,26 @@ export default function ClickableMentions({ text, mentions = [], style, numberOf
     }
   };
 
-  // Fonction pour parser le texte et rendre les mentions et hashtags cliquables
-  const renderTextWithMentions = () => {
-    // Pattern regex pour détecter mentions et hashtags
-    const mentionPattern = /@(\w+)/g;
-    const hashtagPattern = /#(\w+)/g;
-    const parts = [];
+  /**
+   * Découpage du texte, calculé une seule fois par contenu.
+   *
+   * Ce composant est monté sur CHAQUE ligne du fil. Le découpage tournait à
+   * chaque rendu : deux balayages d'expression régulière sur tout le corps du
+   * tweet, plus la construction de deux tableaux — y compris pour un simple
+   * like, et y compris pour l'immense majorité des tweets qui ne contiennent
+   * ni mention ni hashtag. C'est du travail sur le thread JS, donc du travail
+   * qui se voit pendant le défilement.
+   */
+  const parts = React.useMemo(() => {
+    // Sortie immédiate : un `indexOf` coûte une fraction d'un balayage de
+    // regex, et il tranche pour la plupart des tweets.
+    if (!text || (text.indexOf('@') < 0 && text.indexOf('#') < 0)) return null;
+
+    const parts: any[] = [];
     let lastIndex = 0;
-    
+
     // Combiner tous les matches (mentions et hashtags)
-    const allMatches = [];
+    const allMatches: any[] = [];
     let match;
 
     // Trouver toutes les mentions dans le texte
@@ -141,13 +151,16 @@ export default function ClickableMentions({ text, mentions = [], style, numberOf
       });
     }
 
-    // Si aucun élément cliquable trouvé, retourner le texte normal
-    if (parts.length === 0) {
-      return <Text style={[styles.text, style]} numberOfLines={numberOfLines}>{text}</Text>;
-    }
+    return parts.length ? parts : null;
+  }, [text]);
 
-    // Rendre chaque partie en utilisant des Text imbriqués pour maintenir la continuité
-    return (
+  // Rien de cliquable : un seul `Text`, aucun sous-arbre à construire.
+  if (!parts) {
+    return <Text style={[styles.text, style]} numberOfLines={numberOfLines}>{text}</Text>;
+  }
+
+  // Rendre chaque partie en utilisant des Text imbriqués pour maintenir la continuité
+  return (
       <Text style={[styles.text, style]} numberOfLines={numberOfLines}>
         {parts.map((part) => {
           if (part.type === 'mention') {
@@ -181,10 +194,7 @@ export default function ClickableMentions({ text, mentions = [], style, numberOf
           }
         })}
       </Text>
-    );
-  };
-
-  return renderTextWithMentions();
+  );
 }
 
 const styles = StyleSheet.create({

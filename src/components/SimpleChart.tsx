@@ -36,8 +36,10 @@ interface SimpleChartProps {
 const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) => {
   const [chartType, setChartType] = React.useState<'line' | 'area'>('area');
 
-  // Vérification de sécurité robuste
-  if (!currency || typeof currency.currentPrice !== 'number') {
+  // Vérification de sécurité robuste. `Number.isFinite` et pas `typeof
+  // === 'number'` : NaN est un `number`, et c'est précisément lui qui casse
+  // la géométrie du graphique jusque dans le rendu natif.
+  if (!currency || !Number.isFinite(currency.currentPrice)) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -49,7 +51,17 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
 
   // Préparer les données pour le graphique
   const prepareChartData = () => {
-    if (!data || data.length === 0) {
+    // Un seul point est aussi inexploitable que zéro : toute la géométrie du
+    // graphique divise par `length - 1`, ce qui donne 0/0 → NaN, et un NaN
+    // envoyé à react-native-svg part dans le rendu natif (hors de portée de
+    // l'ErrorBoundary JS). L'API renvoie couramment un seul point : le
+    // `priceHistory` est filtré côté serveur sur la fenêtre demandée (1 h,
+    // 24 h…) et une monnaie calme n'a qu'un relevé dans l'intervalle.
+    const usable = (data || []).filter(
+      (point) => point && Number.isFinite(point.price),
+    );
+
+    if (usable.length < 2) {
       // Générer des données réalistes basées sur le prix actuel
       const basePrice = currency.currentPrice;
       const demoData = Array.from({ length: 50 }, (_, i) => {
@@ -75,7 +87,7 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
       });
       return demoData;
     }
-    return data.slice(-50); // Prendre les 50 derniers points pour plus de fluidité
+    return usable.slice(-50); // Prendre les 50 derniers points pour plus de fluidité
   };
 
   const chartData = prepareChartData();
@@ -83,13 +95,16 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
   const maxPrice = Math.max(...prices);
   const minPrice = Math.min(...prices);
   const priceRange = maxPrice - minPrice || 0.001;
+  // `prepareChartData` garantit au moins 2 points ; ce garde-fou protège
+  // quand même la division qui alimente les coordonnées SVG.
+  const lastIndex = Math.max(1, chartData.length - 1);
 
   // Créer le chemin SVG pour la ligne
   const createPath = () => {
     if (chartData.length < 2) return '';
 
     const points = chartData.map((point, index) => {
-      const x = (index / (chartData.length - 1)) * chartWidth;
+      const x = (index / lastIndex) * chartWidth;
       const y = chartHeight - ((point.price - minPrice) / priceRange) * chartHeight;
       return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
     }).join(' ');
@@ -102,8 +117,7 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
     if (chartData.length < 2) return '';
 
     const linePath = createPath();
-    const lastX = ((chartData.length - 1) / (chartData.length - 1)) * chartWidth;
-    const areaPath = `${linePath} L ${lastX} ${chartHeight} L 0 ${chartHeight} Z`;
+    const areaPath = `${linePath} L ${chartWidth} ${chartHeight} L 0 ${chartHeight} Z`;
     
     return areaPath;
   };
@@ -202,21 +216,26 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
             ))}
 
             {/* Ligne ou aire de prix */}
-            <Path
-              d={pathData}
-              fill={chartType === 'area' ? fillColor : 'none'}
-              stroke={strokeColor}
-              strokeWidth={chartType === 'area' ? 2.5 : 3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            {pathData ? (
+              <Path
+                d={pathData}
+                fill={chartType === 'area' ? fillColor : 'none'}
+                stroke={strokeColor}
+                strokeWidth={chartType === 'area' ? 2.5 : 3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : null}
 
             {/* Points de données (seulement quelques-uns pour ne pas surcharger) */}
             {chartData.filter((_, index) => index % 5 === 0).map((point, originalIndex) => {
               const index = originalIndex * 5;
-              const x = (index / (chartData.length - 1)) * chartWidth;
+              const x = (index / lastIndex) * chartWidth;
               const y = chartHeight - ((point.price - minPrice) / priceRange) * chartHeight;
-              
+
+              // Aucune coordonnée non finie ne doit atteindre le rendu natif.
+              if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
               return (
                 <Circle
                   key={`point-${index}`}

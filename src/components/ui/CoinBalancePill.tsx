@@ -36,6 +36,16 @@ function money(n: number): string {
 
 const COUNT_MS = 420;
 
+// Les deux bornes de l'éclat sont calculées ICI, au chargement du module, et
+// pas dans le worklet plus bas. `withAlpha` est une fonction JS ordinaire :
+// appelée depuis un worklet, elle s'exécute sur le thread UI (le thread
+// PRINCIPAL sur iOS), où Reanimated refuse d'appeler une fonction non
+// workletisée et lève une erreur. Cette erreur-là traverse JSI en exception
+// C++ : ni LogBox ni ErrorBoundary ne la voient, le process est tué net
+// (SIGABRT). Des chaînes constantes, elles, sont simplement copiées.
+const FLASH_FROM = colors.surface;
+const FLASH_TO = withAlpha(colors.gold, 0.24);
+
 export default function CoinBalancePill({
   style,
   compact = false,
@@ -87,11 +97,7 @@ export default function CoinBalancePill({
   }, [balance, flash]);
 
   const flashStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      flash.value,
-      [0, 1],
-      [colors.surface, withAlpha(colors.gold, 0.24)],
-    ),
+    backgroundColor: interpolateColor(flash.value, [0, 1], [FLASH_FROM, FLASH_TO]),
   }));
 
   return (

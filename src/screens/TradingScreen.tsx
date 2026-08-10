@@ -7,22 +7,17 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
   Animated,
   RefreshControl,
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart } from 'react-native-chart-kit';
 import { useNavigation } from '@react-navigation/native';
 import NewEconomyService, { EconomicStats, ChartRange } from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
 import SimpleChart from '../components/SimpleChart';
 import SimpleStatsPanel from '../components/SimpleStatsPanel';
 import { describeError, normalizeEconomicStats } from '../utils/tradingData';
-
-const { width } = Dimensions.get('window');
-const chartWidth = width - 40;
 
 const TIMEFRAME_TO_RANGE: Record<'1H' | '1D' | '1W' | '1M', ChartRange> = {
   '1H': '1h', '1D': '24h', '1W': '7d', '1M': '30d',
@@ -148,34 +143,6 @@ const TradingScreenContent: React.FC = () => {
     setRefreshing(true);
     await loadMarketData();
     setRefreshing(false);
-  };
-
-  const getTimeframeData = () => {
-    if (!marketData?.priceHistory) return [];
-    
-    const now = new Date();
-    let cutoffDate: Date;
-    
-    switch (timeframe) {
-      case '1H':
-        cutoffDate = new Date(now.getTime() - 60 * 60 * 1000);
-        break;
-      case '1D':
-        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        break;
-      case '1W':
-        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case '1M':
-        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      default:
-        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    }
-    
-    return marketData.priceHistory
-      .filter(point => new Date(point.date) >= cutoffDate)
-      .slice(-50); // Maximum 50 points pour la performance
   };
 
   const formatPrice = (price: number) => {
@@ -307,111 +274,6 @@ const TradingScreenContent: React.FC = () => {
           </View>
         </View>
       </Animated.View>
-    );
-  };
-
-  const renderTimeframeSelector = () => (
-    <View style={styles.timeframeContainer}>
-      {(['1H', '1D', '1W', '1M'] as const).map((tf) => (
-        <TouchableOpacity
-          key={tf}
-          style={[
-            styles.timeframeButton,
-            timeframe === tf && styles.timeframeButtonActive
-          ]}
-          onPress={() => setTimeframe(tf)}
-        >
-          <Text style={[
-            styles.timeframeText,
-            timeframe === tf && styles.timeframeTextActive
-          ]}>
-            {tf}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
-  const renderChart = () => {
-    const data = getTimeframeData();
-    
-    if (!data.length) {
-      return (
-        <View style={styles.chartContainer}>
-          <Text style={styles.noDataText}>Données insuffisantes pour ce timeframe</Text>
-        </View>
-      );
-    }
-
-    const prices = data.map(point => point.price);
-    const labels = data.map((point, index) => {
-      if (index % Math.ceil(data.length / 6) === 0) {
-        const date = new Date(point.date);
-        return timeframe === '1H' 
-          ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-          : date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-      }
-      return '';
-    });
-
-    const chartData = {
-      labels,
-      datasets: [{
-        data: prices,
-        color: (opacity = 1) => marketData?.change24h >= 0 
-          ? `rgba(16, 185, 129, ${opacity})` 
-          : `rgba(239, 68, 68, ${opacity})`,
-        strokeWidth: 3
-      }]
-    };
-
-    const chartConfig = {
-      backgroundColor: 'transparent',
-      backgroundGradientFrom: '#15171C',
-      backgroundGradientTo: '#1B1E25',
-      color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-      labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.6})`,
-      style: {
-        borderRadius: 16
-      },
-      propsForDots: {
-        r: "4",
-        strokeWidth: "2",
-        stroke: marketData?.change24h >= 0 ? "#10B981" : "#EF4444"
-      },
-      propsForBackgroundLines: {
-        strokeDasharray: "5,5",
-        stroke: "rgba(255,255,255,0.1)"
-      }
-    };
-
-    return (
-      <View style={styles.chartContainer}>
-        <View style={styles.chartCard}>
-          <View style={styles.chartHeader}>
-            <Text style={styles.chartTitle}>Prix Evolution</Text>
-            <View style={styles.chartLegend}>
-              <View style={[styles.legendDot, { 
-                backgroundColor: marketData?.change24h >= 0 ? '#10B981' : '#EF4444' 
-              }]} />
-              <Text style={styles.legendText}>Prix TWC</Text>
-            </View>
-          </View>
-          
-          <LineChart
-            data={chartData}
-            width={chartWidth - 40}
-            height={220}
-            chartConfig={chartConfig}
-            bezier
-            style={styles.chart}
-            withInnerLines={true}
-            withOuterLines={false}
-            withVerticalLabels={true}
-            withHorizontalLabels={true}
-          />
-        </View>
-      </View>
     );
   };
 

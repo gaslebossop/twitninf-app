@@ -21,6 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { colors, fonts, glow, radius } from '../theme';
 import { ScreenBackground, HowItWorks, celebrateReward } from '../components/ui';
+import SlotReel3D, { cellForSymbol } from '../components/casino/SlotReel3D';
 import CasinoService, { CasinoConfig, CasinoResult, CasinoHistoryRow, WheelMode } from '../services/casinoService';
 import NewEconomyService from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
@@ -409,6 +410,11 @@ export default function CasinoScreen() {
 
   const reelAnims = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
   const [reelStrips, setReelStrips] = useState<string[][]>([['🍒', '🍒', '🍒'], ['🍋', '🍋', '🍋'], ['🔔', '🔔', '🔔']]);
+  // ESSAI 3D (temporaire) — le bouton n'apparaît qu'en développement. Les deux
+  // rendus partagent la même partie : c'est le même résultat serveur qui pilote
+  // la bande 2D et le tambour, seul l'affichage change.
+  const [use3D, setUse3D] = useState(false);
+  const [reel3D, setReel3D] = useState<{ cells: number[]; key: number }>({ cells: [0, 1, 3], key: 0 });
 
   const celebrateAnim = useRef(new Animated.Value(0)).current;
   const [celebrating, setCelebrating] = useState(false);
@@ -619,6 +625,15 @@ export default function CasinoScreen() {
       const PADDING = 14;
 
       const targets = [0, 1, 2].map(i => res.reels?.[i]?.label || pick());
+
+      // Le tambour 3D se cale sur l'`id` du symbole (`cherry`, `seven`…), pas
+      // sur l'emoji : si le serveur introduit un symbole absent de la bande,
+      // `cellForSymbol` renvoie null et on laisse tourner la version 2D plutôt
+      // que d'afficher un rouleau qui ment sur le résultat.
+      const cells3D = [0, 1, 2].map(i => cellForSymbol(res.reels?.[i]?.id ?? ''));
+      if (cells3D.every((cell): cell is number => cell !== null)) {
+        setReel3D(prev => ({ cells: cells3D, key: prev.key + 1 }));
+      }
       // La bande repart des trois symboles actuellement visibles (le rouleau
       // est toujours au repos sur la fin de la bande précédente) : sans ça il
       // « sautait » d'un cran au démarrage au lieu de défiler. Les trois
@@ -852,19 +867,36 @@ export default function CasinoScreen() {
                 <LinearGradient colors={BRASS_RIM} style={styles.slotCabinet}>
                   <View style={styles.slotWindow}>
                     {[0, 1, 2].map(i => (
-                      <View key={i} style={styles.slotReel}>
-                        <Animated.View style={{ transform: [{ translateY: reelAnims[i] }] }}>
-                          {reelStrips[i].map((symbol, position) => (
-                            <View key={position} style={styles.slotCell}>
-                              <Text style={styles.slotSymbol}>{symbol}</Text>
-                            </View>
-                          ))}
-                        </Animated.View>
-                      </View>
+                      use3D ? (
+                        <SlotReel3D
+                          key={`r3d-${i}`}
+                          style={styles.slotReel3D}
+                          targetCell={reel3D.cells[i]}
+                          spinKey={reel3D.key}
+                          durationMs={REEL_STOP_MS[i]}
+                        />
+                      ) : (
+                        <View key={i} style={styles.slotReel}>
+                          <Animated.View style={{ transform: [{ translateY: reelAnims[i] }] }}>
+                            {reelStrips[i].map((symbol, position) => (
+                              <View key={position} style={styles.slotCell}>
+                                <Text style={styles.slotSymbol}>{symbol}</Text>
+                              </View>
+                            ))}
+                          </Animated.View>
+                        </View>
+                      )
                     ))}
                     <View style={[styles.slotPayline, result?.won && styles.slotPaylineHit, nearMiss && styles.slotPaylineNear]} />
                   </View>
                 </LinearGradient>
+
+                {__DEV__ && (
+                  // ESSAI 3D (temporaire) : à retirer une fois la décision prise.
+                  <TouchableOpacity style={styles.spike3dToggle} onPress={() => setUse3D(v => !v)}>
+                    <Text style={styles.spike3dText}>{use3D ? 'Rouleaux : 3D' : 'Rouleaux : 2D'}</Text>
+                  </TouchableOpacity>
+                )}
 
                 {config?.slots && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.paytableScroll} contentContainerStyle={styles.paytable}>
@@ -1150,6 +1182,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B1218', alignItems: 'center',
   },
   slotCell: { height: REEL_CELL, alignItems: 'center', justifyContent: 'center' },
+  // ESSAI 3D (temporaire) — plus large que la fenêtre 2D : le tambour est un
+  // objet en volume, ses bords arrondis ont besoin de place pour se voir.
+  slotReel3D: { width: 94, height: REEL_CELL * 3 },
+  spike3dToggle: {
+    alignSelf: 'center', marginTop: 10, paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.cyan,
+  },
+  spike3dText: { color: colors.cyan, fontSize: 12, fontFamily: fonts.semibold },
   slotSymbol: { fontSize: 31 },
   slotPayline: {
     position: 'absolute', left: 8, right: 8, top: REEL_CELL + REEL_CELL / 2 - 1, height: 2,
