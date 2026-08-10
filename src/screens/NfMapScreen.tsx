@@ -2,12 +2,12 @@
  * 🗺️ Carte NF — les comptes liés à toi, là où ils ont accepté d'être vus.
  *
  * ── La disposition ──
- * Reprise des codes du genre, parce qu'ils sont devenus l'attente par défaut :
- * carte en plein écran sans barre de titre, commandes flottantes aux coins,
- * pastilles d'avatar en guise de marqueurs, et une feuille glissante en bas
- * qui liste les amis. Rien d'emprunté à une autre application — ni ses icônes,
- * ni ses illustrations, ni son nom : seulement l'agencement, qui est ce que la
- * main connaît déjà.
+ * La carte occupe tout l'écran ; tout le reste flotte au-dessus et ne lui
+ * prend jamais de place. Une barre de recherche en haut, une feuille en bas
+ * réduite à un aperçu tant qu'on ne l'ouvre pas. C'est l'agencement attendu
+ * d'une carte sociale : la carte EST le contenu, pas un encart coincé entre
+ * deux panneaux — c'était le défaut de la version précédente, dont la liste
+ * mangeait en permanence le bas de l'écran.
  *
  * ── Le parti pris ──
  * Une carte de gens est une base de données de déplacements. L'écran montre
@@ -15,15 +15,15 @@
  * fantôme : on voit ceux qui se montrent, et on n'apparaît nulle part.
  *
  * ── Pourquoi la liste d'amis compte autant que la carte ──
- * Une carte vide n'explique rien. La feuille du bas nomme les amis qui ne
- * partagent pas et permet de leur demander — c'est le SEUL chemin par lequel
- * quelqu'un apparaît ici. Aucune position n'est reconstituée depuis les
- * données de localisation collectées ailleurs dans l'app : elles existent pour
- * la fraude et les statistiques, et les afficher publierait la position de
- * gens qui ne l'ont jamais accepté.
+ * Une carte vide n'explique rien. La feuille nomme les amis qui ne partagent
+ * pas et permet de leur demander — c'est le SEUL chemin par lequel quelqu'un
+ * apparaît ici. Aucune position n'est reconstituée depuis les données de
+ * localisation collectées ailleurs dans l'app : elles existent pour la fraude
+ * et les statistiques, et les afficher publierait la position de gens qui ne
+ * l'ont jamais accepté.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -42,6 +42,7 @@ import { colors, fonts } from '../theme';
 import { Tappable, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
+import MapPin from '../components/map/MapPin';
 import NfMapCanvas, {
   type MapBounds,
   type MapCoordinate,
@@ -59,6 +60,13 @@ const FALLBACK_CENTER: MapCoordinate = { latitude: 48.8566, longitude: 2.3522 };
 const DEFAULT_ZOOM = 11;
 /** Zoom appliqué quand on saute sur quelqu'un depuis la liste. */
 const FOCUS_ZOOM = 14;
+
+/** Hauteur de la feuille repliée — juste de quoi lire le résumé. */
+const PEEK_HEIGHT = 112;
+/** Hauteur approximative de la feuille ouverte, pour décaler ce qui flotte. */
+const OPEN_HEIGHT = 330;
+
+type SheetMode = 'peek' | 'list' | 'settings';
 
 const MODES: Array<{ id: SharingMode; label: string; hint: string; icon: string }> = [
   {
@@ -81,25 +89,32 @@ const MODES: Array<{ id: SharingMode; label: string; hint: string; icon: string 
   },
 ];
 
+/** « il y a 3 min ». Une position de plusieurs heures ne dit plus grand-chose. */
+function freshness(iso: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutes < 2) return 'à l’instant';
+  if (minutes < 60) return `il y a ${minutes} min`;
+  return `il y a ${Math.round(minutes / 60)} h`;
+}
+
 export default function NfMapScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
   const [center, setCenter] = useState<MapCoordinate>(FALLBACK_CENTER);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [people, setPeople] = useState<NfMapPerson[]>([]);
   const [friends, setFriends] = useState<NfMapFriend[]>([]);
   const [settings, setSettings] = useState<NfMapSettings | null>(null);
+  const [myPosition, setMyPosition] = useState<MapCoordinate | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<NfMapPerson | null>(null);
   const [search, setSearch] = useState('');
-  /** La feuille du bas : repliée sur la liste, dépliée sur les réglages. */
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sheet, setSheet] = useState<SheetMode>('peek');
   const [inviting, setInviting] = useState<string | null>(null);
-
-  /** Bornes réellement affichées, telles que la carte les rapporte. */
-  const [bounds, setBounds] = useState<MapBounds | null>(null);
 
   const isGhost = !settings || settings.sharing_mode === 'ghost';
 
@@ -109,7 +124,7 @@ export default function NfMapScreen() {
       const loaded = await nfMapService.getSettings();
       setSettings(loaded);
       // Premier passage, aucun choix fait : on explique avant de montrer.
-      if (loaded && loaded.sharing_mode === 'ghost' && !loaded.shared_at) setSettingsOpen(true);
+      if (loaded && loaded.sharing_mode === 'ghost' && !loaded.shared_at) setSheet('settings');
     } catch {
       /* La carte reste lisible sans ses réglages. */
     }
@@ -124,8 +139,8 @@ export default function NfMapScreen() {
     }
   }, []);
 
-  const loadNearby = useCallback(async (bounds: MapBounds) => {
-    setPeople(await nfMapService.nearby(bounds));
+  const loadNearby = useCallback(async (window: MapBounds) => {
+    setPeople(await nfMapService.nearby(window));
   }, []);
 
   useEffect(() => {
@@ -133,10 +148,9 @@ export default function NfMapScreen() {
   }, [loadSettings, loadFriends]);
 
   /**
-   * Une requête par déplacement, et seulement après une pause.
-   *
-   * Sans ce délai, faire glisser la carte sur quelques écrans déclenchait
-   * autant d'appels que de relâchements, dont un seul comptait : le dernier.
+   * Une requête par déplacement, et seulement après une pause : sans ce délai,
+   * traverser la carte déclenchait autant d'appels que de relâchements, dont
+   * un seul comptait.
    */
   useEffect(() => {
     if (!bounds) return undefined;
@@ -167,6 +181,7 @@ export default function NfMapScreen() {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
       };
+      setMyPosition(here);
       setCenter(here);
       setZoom(FOCUS_ZOOM);
 
@@ -189,6 +204,7 @@ export default function NfMapScreen() {
         setSettings(updated);
 
         if (mode === 'ghost') {
+          setMyPosition(null);
           toast.success('Tu es invisible', { description: 'Ta position a été effacée.' });
           return;
         }
@@ -196,6 +212,7 @@ export default function NfMapScreen() {
         // Activer sans envoyer de position laisserait un réglage actif et une
         // carte vide : on enchaîne tout de suite.
         await locateMe({ silent: true });
+        setSheet('peek');
         toast.success(mode === 'city' ? 'Ta ville est partagée' : 'Ta position est partagée', {
           description: `Elle disparaît seule au bout de ${updated.policy?.ttl_hours ?? 8} h.`,
         });
@@ -219,40 +236,45 @@ export default function NfMapScreen() {
     }
   }, []);
 
-  const focusOn = useCallback((friend: NfMapFriend) => {
-    const onMap = people.find((person) => person.id === friend.id);
-    if (!onMap) return;
-    setCenter({ latitude: Number(onMap.latitude), longitude: Number(onMap.longitude) });
+  const focusOn = useCallback((person: NfMapPerson) => {
+    setCenter({ latitude: Number(person.latitude), longitude: Number(person.longitude) });
     setZoom(FOCUS_ZOOM);
-    setSelected(onMap);
-    setSettingsOpen(false);
-  }, [people]);
+    setSelected(person);
+    setSheet('peek');
+  }, []);
 
-  const markers: Array<MapMarker<NfMapPerson>> = useMemo(
-    () =>
-      people.map((person) => ({
-        id: person.id,
-        latitude: Number(person.latitude),
-        longitude: Number(person.longitude),
-        data: person,
-      })),
-    [people]
-  );
+  const markers: Array<MapMarker<NfMapPerson | null>> = useMemo(() => {
+    const list: Array<MapMarker<NfMapPerson | null>> = people.map((person) => ({
+      id: person.id,
+      latitude: Number(person.latitude),
+      longitude: Number(person.longitude),
+      data: person,
+    }));
+
+    // Se voir soi-même est le seul moyen de vérifier ce que les autres voient.
+    if (myPosition && !isGhost) {
+      list.push({
+        id: '__moi__',
+        latitude: myPosition.latitude,
+        longitude: myPosition.longitude,
+        data: null,
+      });
+    }
+    return list;
+  }, [people, myPosition, isGhost]);
 
   const visibleFriends = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const matching = needle
-      ? friends.filter(
-          (friend) =>
-            friend.username.toLowerCase().includes(needle) ||
-            (friend.full_name || '').toLowerCase().includes(needle)
-        )
-      : friends;
-    // Ceux qui partagent d'abord : c'est ce qu'on vient chercher.
-    return matching;
+    if (!needle) return friends;
+    return friends.filter(
+      (friend) =>
+        friend.username.toLowerCase().includes(needle) ||
+        (friend.full_name || '').toLowerCase().includes(needle)
+    );
   }, [friends, search]);
 
-  const sharingCount = friends.filter((friend) => friend.is_sharing).length;
+  const sharingFriends = useMemo(() => friends.filter((friend) => friend.is_sharing), [friends]);
+  const floatingBottom = (sheet === 'peek' ? PEEK_HEIGHT : OPEN_HEIGHT) + 16;
 
   if (loading) {
     return (
@@ -264,7 +286,6 @@ export default function NfMapScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* La carte occupe tout l'écran ; les commandes flottent au-dessus. */}
       <View style={StyleSheet.absoluteFill}>
         <NfMapCanvas
           center={center}
@@ -277,84 +298,232 @@ export default function NfMapScreen() {
           }}
           renderMarker={(marker) => {
             const person = marker.data;
-            const isSelected = selected?.id === person.id;
+            if (!person) return <MapPin username="moi" label="Toi" self />;
+
             return (
               <Tappable onPress={() => setSelected(person)} haptic="select">
-                <View
-                  style={[
-                    styles.pin,
-                    person.sharing_mode === 'city' && styles.pinApproximate,
-                    isSelected && styles.pinSelected,
-                  ]}
-                >
-                  <Avatar size={40} username={person.username} uri={person.avatar || undefined} />
-                </View>
-                <View style={styles.pinTail} />
+                <MapPin
+                  username={person.username}
+                  avatar={person.avatar}
+                  label={(person.full_name || person.username).split(' ')[0]}
+                  approximate={person.sharing_mode === 'city'}
+                  selected={selected?.id === person.id}
+                />
               </Tappable>
             );
           }}
         />
       </View>
 
-      {/* Commandes flottantes du haut */}
+      {/* ── Barre du haut : retour, recherche, partage ── */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <Tappable style={styles.round} onPress={() => navigation.goBack()} accessibilityLabel="Retour">
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </Tappable>
 
-        <View style={styles.statusPill}>
-          <Ionicons
-            name={isGhost ? 'eye-off' : 'radio'}
-            size={13}
-            color={isGhost ? colors.textMuted : colors.accent}
-          />
-          <Text style={styles.statusText}>
-            {isGhost ? 'Fantôme' : settings?.sharing_mode === 'city' ? 'Ville' : 'En direct'}
+        <Tappable
+          style={styles.searchPill}
+          onPress={() => setSheet('list')}
+          accessibilityLabel="Chercher un ami"
+        >
+          <Ionicons name="search" size={17} color={colors.textMuted} />
+          <Text style={styles.searchPlaceholder} numberOfLines={1}>
+            {sharingFriends.length > 0
+              ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
+              : 'Chercher un ami'}
           </Text>
-        </View>
+        </Tappable>
 
         <Tappable
-          style={styles.round}
-          onPress={() => setSettingsOpen((open) => !open)}
+          style={[styles.round, !isGhost && styles.roundLive]}
+          onPress={() => setSheet(sheet === 'settings' ? 'peek' : 'settings')}
           accessibilityLabel="Réglages de partage"
         >
-          <Ionicons name="options-outline" size={20} color={colors.textPrimary} />
+          <Ionicons
+            name={isGhost ? 'eye-off-outline' : 'radio'}
+            size={19}
+            color={isGhost ? colors.textPrimary : colors.accent}
+          />
         </Tappable>
       </View>
 
       <Tappable
-        style={[styles.locate, { bottom: insets.bottom + 260 }]}
+        style={[styles.locate, { bottom: floatingBottom }]}
         onPress={() => locateMe()}
         accessibilityLabel="Me localiser"
       >
         <Ionicons name="locate" size={20} color={colors.textPrimary} />
       </Tappable>
 
-      {/* Fiche de la personne touchée */}
+      {/* ── Fiche de la personne touchée ── */}
       {selected && (
-        <View style={[styles.card, { bottom: insets.bottom + 200 }]}>
+        <View style={[styles.card, { bottom: floatingBottom + 58 }]}>
           <Avatar size={44} username={selected.username} uri={selected.avatar || undefined} />
           <View style={styles.cardText}>
             <Text style={styles.cardName} numberOfLines={1}>
               {selected.full_name || selected.username}
             </Text>
             <Text style={styles.cardMeta} numberOfLines={1}>
-              @{selected.username}
+              {freshness(selected.shared_at)}
               {selected.place_label ? ` · ${selected.place_label}` : ''}
-              {selected.sharing_mode === 'city' ? ' · position approximative' : ''}
+              {selected.sharing_mode === 'city' ? ' · approximatif' : ''}
             </Text>
           </View>
+          <Tappable
+            style={styles.cardAction}
+            onPress={() =>
+              (navigation as any).navigate('UserProfile', {
+                userId: selected.id,
+                username: selected.username,
+              })
+            }
+            haptic="select"
+          >
+            <Text style={styles.cardActionText}>Profil</Text>
+          </Tappable>
           <Tappable onPress={() => setSelected(null)} style={styles.cardClose}>
             <Ionicons name="close" size={18} color={colors.textMuted} />
           </Tappable>
         </View>
       )}
 
-      {/* Feuille du bas : la liste, ou les réglages */}
-      <View style={[styles.sheet, settingsOpen && styles.sheetTall, { paddingBottom: insets.bottom }]}>
-        <View style={styles.handle} />
+      {/* ── Feuille du bas ── */}
+      <View
+        style={[
+          styles.sheet,
+          sheet === 'peek' ? { height: PEEK_HEIGHT + insets.bottom } : styles.sheetOpen,
+          { paddingBottom: insets.bottom },
+        ]}
+      >
+        <Tappable
+          style={styles.handleZone}
+          onPress={() => setSheet(sheet === 'peek' ? 'list' : 'peek')}
+          haptic="tap"
+        >
+          <View style={styles.handle} />
+        </Tappable>
 
-        {settingsOpen ? (
+        {sheet === 'peek' && (
+          <Tappable style={styles.peek} onPress={() => setSheet('list')} haptic="tap">
+            <View style={styles.peekAvatars}>
+              {sharingFriends.slice(0, 5).map((friend, index) => (
+                <View
+                  key={friend.id}
+                  style={[styles.peekAvatar, index > 0 && styles.peekAvatarStacked]}
+                >
+                  <Avatar size={30} username={friend.username} uri={friend.avatar || undefined} />
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.peekText}>
+              <Text style={styles.peekTitle} numberOfLines={1}>
+                {sharingFriends.length > 0
+                  ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
+                  : 'Personne sur la carte'}
+              </Text>
+              <Text style={styles.peekHint} numberOfLines={1}>
+                {isGhost ? 'Tu es en mode fantôme' : 'Ta position est partagée'}
+              </Text>
+            </View>
+
+            <Ionicons name="chevron-up" size={18} color={colors.textMuted} />
+          </Tappable>
+        )}
+
+        {sheet === 'list' && (
+          <>
+            <View style={styles.searchRow}>
+              <Ionicons name="search" size={16} color={colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Chercher un ami"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  tintColor={colors.accent}
+                  onRefresh={async () => {
+                    setRefreshing(true);
+                    await Promise.all([
+                      loadFriends(),
+                      bounds ? loadNearby(bounds) : Promise.resolve(),
+                    ]);
+                    setRefreshing(false);
+                  }}
+                />
+              }
+            >
+              {visibleFriends.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  {friends.length === 0
+                    ? 'Personne pour l’instant. Abonne-toi à des comptes, ou fais-toi suivre : ce sont eux qui peuvent apparaître ici.'
+                    : 'Aucun ami à ce nom.'}
+                </Text>
+              ) : (
+                visibleFriends.map((friend) => {
+                  const onMap = people.find((person) => person.id === friend.id);
+                  return (
+                    <View key={friend.id} style={styles.friendRow}>
+                      <View style={friend.is_sharing ? styles.friendAvatarLive : undefined}>
+                        <Avatar size={40} username={friend.username} uri={friend.avatar || undefined} />
+                      </View>
+
+                      <View style={styles.friendText}>
+                        <Text style={styles.friendName} numberOfLines={1}>
+                          {friend.full_name || friend.username}
+                        </Text>
+                        <Text style={styles.friendMeta} numberOfLines={1}>
+                          {friend.is_sharing
+                            ? onMap
+                              ? freshness(onMap.shared_at)
+                              : 'Sur la carte, hors de la vue'
+                            : 'Ne partage pas sa position'}
+                        </Text>
+                      </View>
+
+                      {friend.is_sharing ? (
+                        <Tappable
+                          style={[styles.friendAction, !onMap && styles.friendActionMuted]}
+                          onPress={() => onMap && focusOn(onMap)}
+                          disabled={!onMap}
+                          haptic="select"
+                        >
+                          <Text style={styles.friendActionText}>Voir</Text>
+                        </Tappable>
+                      ) : (
+                        <Tappable
+                          style={styles.friendAction}
+                          onPress={() => inviteFriend(friend)}
+                          disabled={inviting === friend.id}
+                          haptic="select"
+                        >
+                          {inviting === friend.id ? (
+                            <ActivityIndicator size="small" color={colors.accent} />
+                          ) : (
+                            <Text style={styles.friendActionText}>Inviter</Text>
+                          )}
+                        </Tappable>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </>
+        )}
+
+        {sheet === 'settings' && (
           <ScrollView contentContainerStyle={styles.sheetContent}>
             <HowItWorks
               id="nf-map-sharing"
@@ -394,6 +563,7 @@ export default function NfMapScreen() {
                 style={styles.disappear}
                 onPress={async () => {
                   await nfMapService.clearPosition();
+                  setMyPosition(null);
                   await loadSettings();
                   toast.success('Position effacée');
                 }}
@@ -403,92 +573,20 @@ export default function NfMapScreen() {
               </Tappable>
             )}
           </ScrollView>
-        ) : (
-          <>
-            <View style={styles.searchRow}>
-              <Ionicons name="search" size={16} color={colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                value={search}
-                onChangeText={setSearch}
-                placeholder={`${sharingCount} sur la carte · chercher un ami`}
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-
-            <ScrollView
-              contentContainerStyle={styles.listContent}
-              keyboardShouldPersistTaps="handled"
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  tintColor={colors.accent}
-                  onRefresh={async () => {
-                    setRefreshing(true);
-                    await Promise.all([loadFriends(), bounds ? loadNearby(bounds) : Promise.resolve()]);
-                    setRefreshing(false);
-                  }}
-                />
-              }
-            >
-              {visibleFriends.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  {friends.length === 0
-                    ? 'Personne pour l’instant. Abonne-toi à des comptes, ou fais-toi suivre : ce sont eux qui peuvent apparaître ici.'
-                    : 'Aucun ami à ce nom.'}
-                </Text>
-              ) : (
-                visibleFriends.map((friend) => (
-                  <View key={friend.id} style={styles.friendRow}>
-                    <View style={friend.is_sharing ? styles.friendAvatarLive : undefined}>
-                      <Avatar size={40} username={friend.username} uri={friend.avatar || undefined} />
-                    </View>
-
-                    <View style={styles.friendText}>
-                      <Text style={styles.friendName} numberOfLines={1}>
-                        {friend.full_name || friend.username}
-                      </Text>
-                      <Text style={styles.friendMeta} numberOfLines={1}>
-                        {friend.is_sharing
-                          ? 'Sur la carte'
-                          : friend.i_follow && friend.follows_me
-                            ? 'Ne partage pas sa position'
-                            : friend.i_follow
-                              ? 'Tu le suis · ne partage pas'
-                              : 'Te suit · ne partage pas'}
-                      </Text>
-                    </View>
-
-                    {friend.is_sharing ? (
-                      <Tappable style={styles.friendAction} onPress={() => focusOn(friend)} haptic="select">
-                        <Text style={styles.friendActionText}>Voir</Text>
-                      </Tappable>
-                    ) : (
-                      <Tappable
-                        style={styles.friendAction}
-                        onPress={() => inviteFriend(friend)}
-                        disabled={inviting === friend.id}
-                        haptic="select"
-                      >
-                        {inviting === friend.id ? (
-                          <ActivityIndicator size="small" color={colors.accent} />
-                        ) : (
-                          <Text style={styles.friendActionText}>Inviter</Text>
-                        )}
-                      </Tappable>
-                    )}
-                  </View>
-                ))
-              )}
-            </ScrollView>
-          </>
         )}
       </View>
     </View>
   );
 }
+
+/** Ombre commune aux éléments qui flottent au-dessus de la carte. */
+const floating = {
+  shadowColor: '#000',
+  shadowOpacity: 0.15,
+  shadowRadius: 6,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 4,
+};
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
@@ -501,57 +599,32 @@ const styles = StyleSheet.create({
     top: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    gap: 10,
+    paddingHorizontal: 12,
+    gap: 8,
   },
   round: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    ...floating,
   },
-  statusPill: {
+  roundLive: { borderWidth: 1.5, borderColor: colors.accentMuted },
+
+  searchPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+    gap: 8,
+    height: 42,
+    paddingHorizontal: 14,
+    borderRadius: 21,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    ...floating,
   },
-  statusText: { fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary },
-
-  // Épingle ancrée par le bas : centrée sur son milieu, elle désignerait un
-  // point trop au nord.
-  pin: {
-    borderRadius: 26,
-    borderWidth: 2,
-    borderColor: colors.accent,
-    backgroundColor: colors.surface,
-    padding: 2,
-  },
-  // Une position approximative se signale : la même épingle laisserait croire
-  // à une précision qui n'existe pas.
-  pinApproximate: { borderStyle: 'dashed', borderColor: colors.textMuted },
-  pinSelected: { borderColor: colors.accent, borderWidth: 3 },
-  pinTail: {
-    alignSelf: 'center',
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: colors.accent,
-  },
+  searchPlaceholder: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.textSecondary },
 
   locate: {
     position: 'absolute',
@@ -562,8 +635,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    ...floating,
   },
 
   card: {
@@ -572,48 +644,62 @@ const styles = StyleSheet.create({
     right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     padding: 12,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   cardText: { flex: 1, gap: 2 },
   cardName: { fontFamily: fonts.display, fontSize: 15, color: colors.textPrimary },
   cardMeta: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
-  cardClose: { padding: 6 },
+  cardAction: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.accentSoft,
+  },
+  cardActionText: { fontFamily: fonts.semibold, fontSize: 13, color: colors.accent },
+  cardClose: { padding: 4 },
 
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 190,
     backgroundColor: colors.bg,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderTopWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 12,
   },
-  sheetTall: { height: '68%' },
-  handle: {
-    alignSelf: 'center',
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    marginTop: 8,
-    marginBottom: 6,
-  },
-  sheetContent: { padding: 16, gap: 10, paddingBottom: 40 },
+  sheetOpen: { height: '72%' },
+  handleZone: { alignItems: 'center', paddingTop: 8, paddingBottom: 8 },
+  handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border },
+
+  peek: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18 },
+  peekAvatars: { flexDirection: 'row' },
+  peekAvatar: { borderRadius: 17, borderWidth: 2, borderColor: colors.bg },
+  // Empilement à la façon d'une pile de jetons : montre qu'il y a du monde
+  // sans aligner cinq avatars sur toute la largeur.
+  peekAvatarStacked: { marginLeft: -12 },
+  peekText: { flex: 1, gap: 2 },
+  peekTitle: { fontFamily: fonts.semibold, fontSize: 15, color: colors.textPrimary },
+  peekHint: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
 
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginHorizontal: 16,
-    marginBottom: 6,
+    marginBottom: 8,
     paddingHorizontal: 12,
     height: 38,
     borderRadius: 10,
@@ -621,7 +707,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontFamily: fonts.regular, fontSize: 13, color: colors.textPrimary },
 
-  listContent: { paddingHorizontal: 16, paddingBottom: 20, gap: 4 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   emptyText: {
     fontFamily: fonts.regular,
     fontSize: 12,
@@ -630,28 +716,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
-  friendRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  friendAvatarLive: {
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: colors.accent,
-    padding: 1,
-  },
+  friendRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 },
+  friendAvatarLive: { borderRadius: 24, borderWidth: 2, borderColor: colors.accent, padding: 1 },
   friendText: { flex: 1, gap: 2 },
   friendName: { fontFamily: fonts.semibold, fontSize: 14, color: colors.textPrimary },
   friendMeta: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
   friendAction: {
-    minWidth: 74,
+    minWidth: 76,
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.accentMuted,
   },
+  friendActionMuted: { opacity: 0.45 },
   friendActionText: { fontFamily: fonts.semibold, fontSize: 13, color: colors.accent },
 
+  sheetContent: { padding: 16, gap: 10, paddingBottom: 40 },
   mode: {
     flexDirection: 'row',
     alignItems: 'center',
