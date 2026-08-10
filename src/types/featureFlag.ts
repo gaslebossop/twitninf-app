@@ -50,12 +50,22 @@ export interface FlagCondition {
   value: any;
 }
 
-/** Un segment ciblé. Toutes ses conditions doivent passer (ET logique). */
+/**
+ * Un segment ciblé. Toutes ses conditions doivent passer (ET logique).
+ *
+ * Il porte SOIT un `percentage` figé — le segment est alors exclusif : lui à
+ * 30 %, tout le monde à 0 % — SOIT un `boost`, multiplicateur du palier
+ * global. Le boost donne de l'avance sans exclure : à 10 % global, un boost
+ * de 2 sert 20 % du segment et 10 % des autres, et tout le monde arrive
+ * ensemble à 100 %.
+ */
 export interface FlagRule {
   id: string;
   label?: string | null;
-  /** Palier propre au segment. 100 = tout le segment. */
-  percentage: number;
+  /** Palier propre au segment. 100 = tout le segment. Absent si `boost`. */
+  percentage?: number;
+  /** Multiplicateur du palier global. Absent si `percentage`. */
+  boost?: number;
   variant?: string | null;
   conditions: FlagCondition[];
 }

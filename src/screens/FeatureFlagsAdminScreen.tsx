@@ -41,7 +41,7 @@ import { confirmAsync } from '../components/ui/ConfirmSheet';
 import { promptAsync } from '../components/ui/PromptSheet';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { featureFlagService } from '../services/featureFlagService';
-import type { FeatureFlag, FlagCondition } from '../types/featureFlag';
+import type { FeatureFlag, FlagCondition, FlagRule } from '../types/featureFlag';
 
 /** Paliers proposés. Les petits d'abord : c'est là qu'on passe du temps. */
 const STEPS = [0, 1, 5, 10, 25, 50, 100];
@@ -107,6 +107,34 @@ const AUDIENCES: Array<{ id: string; label: string; hint?: string; conditions: F
   },
 ];
 
+/**
+ * « Qui passe en premier ». Un boost multiplie le palier pour un groupe : il
+ * lui donne de l'avance sans jamais exclure les autres, et tout le monde
+ * arrive à 100 % en même temps. C'est la différence avec une audience, qui,
+ * elle, réserve la fonctionnalité au groupe choisi.
+ */
+const BOOSTS: Array<{ id: string; label: string; hint?: string; boost: number; conditions: FlagCondition[] }> = [
+  {
+    id: 'premium2',
+    label: 'Les abonnés, deux fois plus vite',
+    hint: 'À 10 %, ils sont 20 % à l’avoir — les autres avancent quand même',
+    boost: 2,
+    conditions: [{ attribute: 'premium', operator: 'eq', value: true }],
+  },
+  {
+    id: 'premium3',
+    label: 'Les abonnés, trois fois plus vite',
+    boost: 3,
+    conditions: [{ attribute: 'premium', operator: 'eq', value: true }],
+  },
+  {
+    id: 'verified2',
+    label: 'Les comptes certifiés, deux fois plus vite',
+    boost: 2,
+    conditions: [{ attribute: 'verified', operator: 'eq', value: true }],
+  },
+];
+
 const REASONS: Record<string, string> = {
   archived: 'Drapeau archivé',
   kill_switch: 'Le drapeau est éteint',
@@ -128,11 +156,30 @@ function sameConditions(a: FlagCondition[], b: FlagCondition[]): boolean {
   return normalize(a) === normalize(b);
 }
 
+const isBoostRule = (rule: FlagRule): boolean =>
+  typeof rule.boost === 'number' && Number.isFinite(rule.boost) && rule.boost > 0;
+
+/** Segments à palier figé — les seuls qui définissent une audience exclusive. */
+const absoluteRules = (flag: FeatureFlag): FlagRule[] => flag.rules.filter((rule) => !isBoostRule(rule));
+
 /** Audience reconnue, ou `null` si le ciblage a été affiné hors de l'app. */
 function detectAudience(flag: FeatureFlag): string | null {
-  if (flag.rules.length === 0) return 'everyone';
-  if (flag.rules.length > 1) return null;
-  const found = AUDIENCES.find((audience) => sameConditions(audience.conditions, flag.rules[0].conditions));
+  // Un boost ne restreint personne : un drapeau qui n'a que des boosts
+  // s'adresse bien à tout le monde, les uns simplement plus tôt que les autres.
+  const rules = absoluteRules(flag);
+  if (rules.length === 0) return 'everyone';
+  if (rules.length > 1) return null;
+  const found = AUDIENCES.find((audience) => sameConditions(audience.conditions, rules[0].conditions));
+  return found ? found.id : null;
+}
+
+/** Boost reconnu, ou `null` si aucun (ou un réglage venu de l'API). */
+function detectBoost(flag: FeatureFlag): string | null {
+  const boosts = flag.rules.filter(isBoostRule);
+  if (boosts.length !== 1) return null;
+  const found = BOOSTS.find(
+    (item) => item.boost === boosts[0].boost && sameConditions(item.conditions, boosts[0].conditions)
+  );
   return found ? found.id : null;
 }
 
@@ -140,15 +187,22 @@ function detectAudience(flag: FeatureFlag): string | null {
 function isAdvanced(flag: FeatureFlag): boolean {
   return (
     detectAudience(flag) === null ||
+    (flag.rules.some(isBoostRule) && detectBoost(flag) === null) ||
     flag.variants.length > 0 ||
     flag.blocklist.length > 0 ||
     flag.bucket_by !== 'user'
   );
 }
 
-/** Palier effectif : celui de l'audience quand il y en a une. */
+/**
+ * Palier effectif : celui de l'audience quand il y en a une. Un boost, lui,
+ * est relatif au palier global — ce n'est donc jamais lui qu'on lit ni qu'on
+ * fait monter.
+ */
 function effectiveStep(flag: FeatureFlag): number {
-  return flag.rules.length > 0 ? flag.rules[0].percentage : flag.rollout_percentage;
+  const rules = absoluteRules(flag);
+  if (rules.length === 0) return flag.rollout_percentage;
+  return rules[0].percentage ?? 100;
 }
 
 /** Une montée est « en cours » tant que personne ne l'a arrêtée. */
@@ -202,12 +256,14 @@ function summarize(flag: FeatureFlag): string {
   const testers = flag.allowlist.length > 0 ? ` + ${flag.allowlist.length} testeurs` : '';
 
   const climbing = planRunning(flag) ? ' · monte seule' : '';
+  // Générique : le boost ne vise pas forcément les abonnés.
+  const boosted = flag.rules.some(isBoostRule) ? ' · avec priorité' : '';
 
   if (step === 0) {
     return `Testeurs seulement${flag.allowlist.length > 0 ? ` (${flag.allowlist.length})` : ''}${climbing}`;
   }
   if (step === 100 && audienceId === 'everyone') return `Tout le monde${testers}`;
-  return `${step} % — ${who}${testers}${climbing}`;
+  return `${step} % — ${who}${testers}${boosted}${climbing}`;
 }
 
 // ══════════════════════════ Liste ══════════════════════════
@@ -391,6 +447,7 @@ function FlagDetail({
   const [name, setName] = useState(flag?.name || '');
   const [enabled, setEnabled] = useState(flag?.enabled ?? false);
   const [audienceId, setAudienceId] = useState(flag ? detectAudience(flag) || 'everyone' : 'everyone');
+  const [boostId, setBoostId] = useState<string | null>(flag ? detectBoost(flag) : null);
   const [step, setStep] = useState(flag ? effectiveStep(flag) : 0);
   const [testers, setTesters] = useState((flag?.allowlist || []).join(', '));
   const [saving, setSaving] = useState(false);
@@ -465,11 +522,22 @@ function FlagDetail({
     // Un ciblage affiné hors de l'app n'est jamais réécrit par cet écran : on
     // n'envoie alors ni l'audience ni le palier de segment, seulement ce que
     // l'écran sait représenter.
+    // Le segment boosté passe AVANT le segment d'audience : le moteur retient
+    // le premier segment qui matche, donc placer le boost derrière le rendrait
+    // inatteignable pour quiconque appartient déjà à l'audience.
+    const boost = BOOSTS.find((item) => item.id === boostId);
+    const boostRule = boost
+      ? [{ id: 'boost', label: boost.label, boost: boost.boost, conditions: boost.conditions }]
+      : [];
+
     const targeting = advanced
       ? { rollout_percentage: step }
       : audience.id === 'everyone'
-      ? { rules: [], rollout_percentage: step }
+      ? { rules: boostRule, rollout_percentage: step }
       : {
+          // Un boost est relatif au palier GLOBAL : combiné à une audience
+          // exclusive, il se calculerait sur un palier resté à 0. L'écran ne
+          // propose donc le boost que sur « tout le monde ».
           rollout_percentage: 0,
           rules: [
             {
@@ -665,6 +733,39 @@ function FlagDetail({
               : `${step} % des comptes concernés, tirés de façon stable : monter ne l’enlève à personne.`}
           </Text>
         </View>
+
+        {!advanced && audience.id === 'everyone' && (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Qui passe en premier</Text>
+            {[{ id: null, label: 'Personne en particulier', hint: undefined }, ...BOOSTS].map((item) => {
+              const selected = item.id === boostId;
+              return (
+                <Tappable
+                  key={item.id || 'none'}
+                  style={[styles.option, selected && styles.optionSelected]}
+                  onPress={() => setBoostId(item.id)}
+                  haptic="select"
+                >
+                  <Ionicons
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={18}
+                    color={selected ? colors.accent : colors.textMuted}
+                  />
+                  <View style={styles.optionText}>
+                    <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]}>
+                      {item.label}
+                    </Text>
+                    {item.hint ? <Text style={styles.hint}>{item.hint}</Text> : null}
+                  </View>
+                </Tappable>
+              );
+            })}
+            <Text style={styles.hint}>
+              Ils prennent de l’avance, ils ne sont pas les seuls servis : les autres montent au même
+              rythme, en dessous, et tout le monde arrive à 100 % ensemble.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.block}>
           <View style={styles.switchRow}>
