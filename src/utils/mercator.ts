@@ -108,6 +108,62 @@ export function visibleTiles(
   return tiles.slice(0, 64);
 }
 
+export interface WorldTile {
+  x: number;
+  y: number;
+  z: number;
+  /** Coin haut-gauche en pixels du plan monde — ABSOLU, jamais relatif à la vue. */
+  worldLeft: number;
+  worldTop: number;
+}
+
+/**
+ * Tuiles couvrant une fenêtre centrée sur un point du plan monde, positionnées
+ * en coordonnées ABSOLUES.
+ *
+ * C'est la différence qui fait qu'une carte ne saute pas. Avec des positions
+ * relatives au centre courant, recalculer la liste des tuiles déplace celles
+ * qui étaient déjà à l'écran : chaque rafraîchissement produit un sursaut.
+ * En absolu, ajouter ou retirer des tuiles ne bouge rien — seule la
+ * transformation de la couche fait bouger la carte.
+ */
+export function tilesAroundWorldPoint(
+  centerWorld: WorldPoint,
+  zoom: number,
+  viewport: { width: number; height: number },
+  margin = 1
+): WorldTile[] {
+  const z = Math.round(zoom);
+  const count = Math.pow(2, z);
+
+  const originX = centerWorld.x - viewport.width / 2;
+  const originY = centerWorld.y - viewport.height / 2;
+
+  const firstX = Math.floor(originX / TILE_SIZE) - margin;
+  const lastX = Math.floor((originX + viewport.width) / TILE_SIZE) + margin;
+  const firstY = Math.floor(originY / TILE_SIZE) - margin;
+  const lastY = Math.floor((originY + viewport.height) / TILE_SIZE) + margin;
+
+  const tiles: WorldTile[] = [];
+  for (let ty = firstY; ty <= lastY; ty += 1) {
+    if (ty < 0 || ty >= count) continue;
+    for (let tx = firstX; tx <= lastX; tx += 1) {
+      tiles.push({
+        // L'index de colonne s'enroule (le monde est un cylindre), mais la
+        // POSITION reste celle de la copie affichée : sinon la tuile sauterait
+        // à l'autre bout de la carte en franchissant le 180e méridien.
+        x: ((tx % count) + count) % count,
+        y: ty,
+        z,
+        worldLeft: tx * TILE_SIZE,
+        worldTop: ty * TILE_SIZE,
+      });
+    }
+  }
+
+  return tiles.slice(0, 64);
+}
+
 /** Position à l'écran d'un point géographique, dans la même fenêtre. */
 export function screenPosition(
   point: { latitude: number; longitude: number },

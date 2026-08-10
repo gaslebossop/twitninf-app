@@ -129,8 +129,15 @@ export default function NfMapScreen() {
     Promise.all([loadSettings(), loadFriends()]).finally(() => setLoading(false));
   }, [loadSettings, loadFriends]);
 
+  /**
+   * Une requête par déplacement, et seulement après une pause.
+   *
+   * Sans ce délai, faire glisser la carte sur quelques écrans déclenchait
+   * autant d'appels que de relâchements, dont un seul comptait : le dernier.
+   */
   useEffect(() => {
-    loadNearby(center, zoom);
+    const timer = setTimeout(() => loadNearby(center, zoom), 280);
+    return () => clearTimeout(timer);
   }, [center, zoom, loadNearby]);
 
   /**
@@ -317,6 +324,11 @@ export default function NfMapScreen() {
           <Ionicons name="options-outline" size={20} color={colors.textPrimary} />
         </Tappable>
       </View>
+
+      {/* Mention obligatoire par la licence des fonds de carte. */}
+      <Text style={[styles.attribution, { bottom: insets.bottom + 196 }]}>
+        © OpenStreetMap · CARTO
+      </Text>
 
       <Tappable
         style={[styles.locate, { bottom: insets.bottom + 260 }]}
@@ -549,6 +561,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.accent,
   },
 
+  attribution: {
+    position: 'absolute',
+    left: 10,
+    fontFamily: fonts.regular,
+    fontSize: 9,
+    color: colors.textMuted,
+  },
   locate: {
     position: 'absolute',
     right: 16,

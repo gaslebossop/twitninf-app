@@ -134,3 +134,59 @@ test('zoomer resserre le rectangle demandé', () => {
   const tight = viewportBounds(PARIS, 14, VIEWPORT);
   assert.ok(tight.north - tight.south < wide.north - wide.south);
 });
+
+/**
+ * La propriété qui empêche la carte de sauter : les tuiles sont posées en
+ * coordonnées ABSOLUES. Recalculer la liste ne doit déplacer aucune de celles
+ * qui étaient déjà à l'écran — sinon chaque rafraîchissement produit un
+ * sursaut, d'autant plus visible que les tuiles chargent lentement.
+ */
+const { tilesAroundWorldPoint } = loadTypeScriptModule(require.resolve('../src/utils/mercator.ts'));
+
+test('une tuile garde la même position absolue quand la vue se déplace', () => {
+  const zoom = 12;
+  const start = latLonToWorld(PARIS.latitude, PARIS.longitude, zoom);
+  const moved = { x: start.x + 180, y: start.y - 120 };
+
+  const before = tilesAroundWorldPoint(start, zoom, VIEWPORT);
+  const after = tilesAroundWorldPoint(moved, zoom, VIEWPORT);
+
+  const commun = before.filter((tile) =>
+    after.some((other) => other.x === tile.x && other.y === tile.y)
+  );
+  assert.ok(commun.length > 0, 'les deux vues partagent des tuiles');
+
+  for (const tile of commun) {
+    const same = after.find((other) => other.x === tile.x && other.y === tile.y);
+    assert.equal(same.worldLeft, tile.worldLeft, 'position horizontale inchangée');
+    assert.equal(same.worldTop, tile.worldTop, 'position verticale inchangée');
+  }
+});
+
+test('la position absolue d’une tuile ne dépend que de son index', () => {
+  const zoom = 10;
+  const tiles = tilesAroundWorldPoint(latLonToWorld(TROMSO.latitude, TROMSO.longitude, zoom), zoom, VIEWPORT);
+  for (const tile of tiles) {
+    assert.equal(tile.worldTop, tile.y * TILE_SIZE);
+  }
+});
+
+test('franchir le 180e méridien ne renvoie pas une tuile à l’autre bout', () => {
+  const zoom = 4;
+  const tiles = tilesAroundWorldPoint(latLonToWorld(0, 179.5, zoom), zoom, VIEWPORT);
+  const lefts = tiles.map((tile) => tile.worldLeft).sort((a, b) => a - b);
+  // Les positions se suivent de 256 en 256, sans retour brutal à zéro.
+  for (let i = 1; i < lefts.length; i += 1) {
+    const gap = lefts[i] - lefts[i - 1];
+    assert.ok(gap === 0 || gap === TILE_SIZE, `écart inattendu entre tuiles : ${gap}`);
+  }
+});
+
+test('aucune tuile au-delà des pôles, même en absolu', () => {
+  const zoom = 3;
+  const tiles = tilesAroundWorldPoint(latLonToWorld(MAX_LATITUDE, 0, zoom), zoom, VIEWPORT);
+  const count = Math.pow(2, zoom);
+  for (const tile of tiles) {
+    assert.ok(tile.y >= 0 && tile.y < count);
+  }
+});
