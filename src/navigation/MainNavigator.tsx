@@ -58,6 +58,7 @@ import CasinoScreen from '../screens/CasinoScreen';
 import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
 import EventManagementScreen from '../screens/EventManagementScreen';
 import FunctionalEventManagementScreen from '../screens/FunctionalEventManagementScreen';
+import FeatureFlagsAdminScreen from '../screens/FeatureFlagsAdminScreen';
 import KosporBirthdayScreen from '../screens/KosporBirthdayScreen';
 import VerificationStyleScreen from '../screens/VerificationStyleScreen';
 import CreateTargetingAdScreen from '../screens/CreateTargetingAdScreen';
@@ -133,6 +134,7 @@ export type MainStackParamList = {
   TweetMonetization: undefined;
   EventManagement: undefined;
   FunctionalEventManagement: undefined;
+  FeatureFlagsAdmin: undefined;
   KosporBirthday: undefined;
   VerificationStyle: undefined;
   CreateTargetingAd: undefined;
@@ -498,8 +500,8 @@ function MainNavigatorInner() {
         }}
       />
       
-      <MainStack.Screen 
-        name="FunctionalEventManagement" 
+      <MainStack.Screen
+        name="FunctionalEventManagement"
         component={FunctionalEventManagementScreen}
         options={{
           presentation: 'card',
@@ -507,7 +509,17 @@ function MainNavigatorInner() {
           headerShown: false,
         }}
       />
-      
+
+      <MainStack.Screen
+        name="FeatureFlagsAdmin"
+        component={FeatureFlagsAdminScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
       <MainStack.Screen 
         name="KosporBirthday" 
         component={KosporBirthdayScreen}

@@ -202,6 +202,7 @@ export default function ModerationScreen() {
     if (isAdmin || isSuperAdmin) {
       list.push({ action: 'events', title: 'Evenements', subtitle: 'Themes Halloween, Noel, etc.', icon: 'calendar-outline', group: 'Traçabilite', tone: 'neutral', available: true });
       list.push({ action: 'functional-events', title: 'Evenements fonctionnels', subtitle: 'Double XP, messages illimites, etc.', icon: 'flash-outline', group: 'Traçabilite', tone: 'neutral', available: true });
+      list.push({ action: 'feature-flags', title: 'Fonctionnalites en test', subtitle: 'Ouvrir une nouveaute a un groupe, puis a tout le monde', icon: 'flag-outline', group: 'Traçabilite', tone: 'neutral', available: true });
     }
     if (!isClasseur) {
       list.push({ action: 'history', title: 'Historique', subtitle: 'Actions de moderation passees', icon: 'time-outline', group: 'Traçabilite', tone: 'neutral', available: true });
@@ -313,6 +314,12 @@ export default function ModerationScreen() {
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('FunctionalEventManagement');
         else toast.error('Permission refusee', {
           description: 'Vous devez etre administrateur pour gerer les evenements fonctionnels',
+        });
+        break;
+      case 'feature-flags':
+        if (isAdmin || isSuperAdmin) (navigation as any).navigate('FeatureFlagsAdmin');
+        else toast.error('Permission refusee', {
+          description: 'Vous devez etre administrateur pour gerer les drapeaux de fonctionnalites',
         });
         break;
       case 'similarity-algorithm':

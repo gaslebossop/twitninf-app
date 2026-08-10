@@ -36,6 +36,8 @@ import ReactionBurst, {
 import type { Tweet } from '../../types/api';
 import { toast } from '../ui/Toast';
 import feedback from '../../utils/feedback';
+import { useFlag } from '../../contexts/FeatureFlagContext';
+import { FLAGS } from '../../config/featureFlagKeys';
 
 /** Anneau « déjà vu » : gris neutre, comme dans la barre de stories. */
 const SEEN_STORY_RING = ['#3A3A3A', '#3A3A3A'] as const;
@@ -54,7 +56,7 @@ const C = {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface TweetRowAction {
-  type: 'like' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote';
+  type: 'like' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report';
   tweetId: string;
   payload?: any;
 }
@@ -111,6 +113,17 @@ function TweetRow({
 }: TweetRowProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState<boolean | undefined>(undefined);
+
+  /**
+   * ⏳ ESSAI EN COURS — signalement en un geste depuis le fil.
+   *
+   * Le drapeau se lit par un contexte, donc il traverse la mémoïsation de la
+   * ligne : un changement de palier rafraîchit le fil sans qu'on ait à
+   * remonter le drapeau en props depuis l'écran.
+   *
+   * À retirer avec le bouton plus bas quand l'essai sera tranché.
+   */
+  const showQuickReport = useFlag(FLAGS.QUICK_REPORT);
 
   // ── Valeurs d'animation : thread UI, jamais dans le state React ────────────
   const like = useReactionAnimation();
@@ -584,6 +597,21 @@ function TweetRow({
               >
                 <Ionicons name="share-outline" size={16} color={C.textMuted} />
               </TouchableOpacity>
+
+              {/* ⏳ ESSAI — signalement en un geste, sous drapeau `fil.test`.
+                  Masqué sur les publicités : le parcours de signalement vise un
+                  tweet, pas une campagne. À retirer avec le drapeau. */}
+              {showQuickReport && !isAd && (
+                <TouchableOpacity
+                  style={S.actionIconOnly}
+                  onPress={() => { blockRowPress(); onAction({ type: 'report', tweetId: tweet.id }); }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  accessibilityLabel="Signaler ce tweet"
+                >
+                  <Ionicons name="flag-outline" size={16} color={C.textMuted} />
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={S.actionIconOnly}

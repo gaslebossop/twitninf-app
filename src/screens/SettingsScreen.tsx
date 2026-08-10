@@ -442,6 +442,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           () => navigation.navigate('FunctionalEventManagement')
         )}
 
+        {/* Déploiement progressif des fonctionnalités (admin uniquement) */}
+        {(isAdmin || isSuperAdmin) && renderActionButton(
+          'Fonctionnalités en test',
+          'Ouvrir une nouveauté à un groupe, puis à tout le monde',
+          'flag-outline',
+          () => navigation.navigate('FeatureFlagsAdmin' as never)
+        )}
+
         {/* SECTION DÉVELOPPEUR */}
         {renderActionButton(
           'Portail Développeur API',

@@ -10,6 +10,7 @@ import { AuthProvider } from './src/contexts/AuthContext';
 import { EventProvider } from './src/contexts/EventContext';
 import { EventThemeProvider } from './src/components/EventThemeProvider';
 import { FunctionalEventProvider } from './src/contexts/FunctionalEventContext';
+import { FeatureFlagProvider } from './src/contexts/FeatureFlagContext';
 import { OfflineProvider } from './src/contexts/OfflineContext';
 import { ReadingLanguageProvider, useReadingLanguage } from './src/contexts/ReadingLanguageContext';
 import ReadingLanguageModal from './src/components/ReadingLanguageModal';
@@ -144,6 +145,10 @@ export default function App() {
       <PromptProvider>
       <RewardProvider>
       <AuthProvider>
+        {/* Sous AuthProvider (le ciblage dépend du compte) et au-dessus de
+            tout le reste : n'importe quel écran ou garde peut alors être posé
+            derrière un drapeau. */}
+        <FeatureFlagProvider>
         {/* Sous AuthProvider : le mode hors ligne dépend du palier du compte. */}
         <OfflineProvider>
           <ReadingLanguageProvider>
@@ -169,6 +174,7 @@ export default function App() {
           </StartupPopupProvider>
           </ReadingLanguageProvider>
         </OfflineProvider>
+        </FeatureFlagProvider>
       </AuthProvider>
       </RewardProvider>
       </PromptProvider>

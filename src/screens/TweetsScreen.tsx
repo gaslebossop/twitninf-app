@@ -788,7 +788,12 @@ export default function TweetsScreen() {
    * principal ne signalait rien du tout.
    */
   const handleReport = (tweetId: string) => {
-    const tweet = tweets.find((t) => t.id === tweetId);
+    // `tweetsRef` et non `tweets` : `handleRowAction` est un `useCallback`
+    // stable (c'est ce qui évite de re-rendre toutes les lignes du fil), donc
+    // il capture cette fonction une fois pour toutes. Lue depuis le state, la
+    // liste serait figée à son contenu du moment, et le sous-titre « @pseudo »
+    // manquerait sur tout tweet chargé depuis. Le ref, lui, est à jour.
+    const tweet = tweetsRef.current.find((t) => t.id === tweetId);
     setReportTarget({
       id: tweetId,
       label: tweet?.author?.username ? `@${tweet.author.username}` : undefined,
@@ -947,6 +952,13 @@ export default function TweetsScreen() {
 
       case 'options':
         handleOptionsMenu(tweetId);
+        break;
+
+      // ⏳ ESSAI — bouton de signalement direct sur la ligne (drapeau
+      // `fil.test`). Réutilise la feuille déjà montée par cet écran : rien de
+      // neuf à démonter le jour où le bouton disparaît.
+      case 'report':
+        handleReport(tweetId);
         break;
 
       case 'openQuote':
@@ -1145,6 +1157,77 @@ export default function TweetsScreen() {
 
   const keyExtractor = useCallback((item: Tweet) => String(item.id), []);
 
+  /**
+   * En-tête de liste, stabilisé.
+   *
+   * Il était écrit en JSX directement dans la prop : un nouvel élément à CHAQUE
+   * rendu de l'écran, donc `StoriesTray` — une rangée d'avatars et de dégradés —
+   * reconstruit à chaque like, chaque page chargée, chaque changement d'état
+   * sans rapport. Mémoïsé, React reconnaît le même élément et saute tout le
+   * sous-arbre.
+   *
+   * Les fonctions de rechargement ne sont pas mémoïsées en amont ; les mettre
+   * en dépendance annulerait tout l'intérêt. On passe donc par une ref, qui
+   * reste stable tout en voyant les valeurs à jour.
+   */
+  const retryRef = useRef<() => void>(() => {});
+  retryRef.current = () => {
+    trackCustomAction('retry_after_error', error || 'unknown_error', 'user_action', {
+      tab: activeTab,
+      algorithm: currentAlgorithm,
+    });
+    if (activeTab === 'forYou') fetchRecommendations(undefined, true);
+    else fetchTweets(true);
+  };
+
+  const storiesUser = useMemo(
+    () => (user
+      ? { id: String((user as any).id), username: user.username, avatar: (user as any)?.avatar }
+      : null),
+    [(user as any)?.id, user?.username, (user as any)?.avatar],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <>
+        <OfflineBanner
+          enabled={offlineEnabled}
+          online={online}
+          pendingCount={pendingTweets.length}
+          pendingActionCount={pendingActions.length}
+        />
+        <StoriesTray
+          currentUser={storiesUser}
+          refreshSignal={storiesRefresh}
+          backgroundColor={C.bg}
+          onOpenProfile={(author) => (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username })}
+          onSendMessage={async (author, message) => {
+            if (!message.trim()) {
+              (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
+              return;
+            }
+            try {
+              await apiService.post(`/api/messages/direct/${author.id}`, { content: message.trim() });
+            } catch {
+              // L'échec d'une réponse de story ne doit pas casser le fil.
+            }
+          }}
+        />
+
+        {error && (
+          <Animated.View entering={FadeIn.duration(180)} style={S.errorBanner}>
+            <Ionicons name="alert-circle-outline" size={18} color={C.red} />
+            <Text style={S.errorText}>{error}</Text>
+            <TouchableOpacity style={S.retryBtn} onPress={() => retryRef.current()}>
+              <Text style={S.retryBtnText}>Réessayer</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+      </>
+    ),
+    [offlineEnabled, online, pendingTweets.length, pendingActions.length, storiesUser, storiesRefresh, navigation, error],
+  );
+
   const onEndReached = useCallback(() => {
     if (!hasMore || loadingMore || loading || recommendationsLoading) return;
     if (activeTab === 'forYou') fetchRecommendations(undefined, false);
@@ -1275,50 +1358,7 @@ export default function TweetsScreen() {
         windowSize={7}
         removeClippedSubviews={Platform.OS === 'android'}
         keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={
-          <>
-            <OfflineBanner
-              enabled={offlineEnabled}
-              online={online}
-              pendingCount={pendingTweets.length}
-              pendingActionCount={pendingActions.length}
-            />
-            <StoriesTray
-              currentUser={user ? { id: String((user as any).id), username: user.username, avatar: (user as any)?.avatar } : null}
-              refreshSignal={storiesRefresh}
-              backgroundColor={C.bg}
-              onOpenProfile={(author) => (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username })}
-              onSendMessage={async (author, message) => {
-                if (!message.trim()) {
-                  (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
-                  return;
-                }
-                try {
-                  await apiService.post(`/api/messages/direct/${author.id}`, { content: message.trim() });
-                } catch {
-                  // L'échec d'une réponse de story ne doit pas casser le fil.
-                }
-              }}
-            />
-
-            {error && (
-              <Animated.View entering={FadeIn.duration(180)} style={S.errorBanner}>
-                <Ionicons name="alert-circle-outline" size={18} color={C.red} />
-                <Text style={S.errorText}>{error}</Text>
-                <TouchableOpacity
-                  style={S.retryBtn}
-                  onPress={() => {
-                    trackCustomAction('retry_after_error', error || 'unknown_error', 'user_action', { tab: activeTab, algorithm: currentAlgorithm });
-                    if (activeTab === 'forYou') fetchRecommendations(undefined, true);
-                    else fetchTweets(true);
-                  }}
-                >
-                  <Text style={S.retryBtnText}>Réessayer</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-          </>
-        }
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={
           isInitialLoading ? (
             // Ossature plutôt qu'un logo qui tourne : l'attente paraît
