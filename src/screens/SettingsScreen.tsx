@@ -11,7 +11,6 @@ import {
   Dimensions,
   StatusBar,
   useWindowDimensions,
-  SafeAreaView,
   Platform,
   Switch,
   Modal,
@@ -188,7 +187,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
   return (
     <ScreenBackground>
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       <View style={styles.gradient}>
@@ -746,7 +745,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         visible={showLanguagePicker}
         onClose={() => setShowLanguagePicker(false)}
       />
-    </SafeAreaView>
+    </View>
     </ScreenBackground>
   );
 };
