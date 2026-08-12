@@ -11,7 +11,6 @@ import {
   StyleSheet,
   Animated,
   Easing,
-  SafeAreaView,
   Platform,
   RefreshControl,
   ActivityIndicator,
@@ -24,7 +23,9 @@ import { apiService } from '../services';
 import { useAuth } from '../contexts/AuthContext';
 import { Tweet } from '../types/api';
 import Avatar from '../components/Avatar';
-import TweetCard from '../components/TweetCard';
+import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
+import ReportSheet from '../components/ReportSheet';
+import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import ModerationActions from '../components/ModerationActions';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import challengeProgressService from '../services/challengeProgressService';
@@ -304,10 +305,9 @@ export default function UserProfileScreen() {
   }, [tweets]);
 
   /**
-   * Identité stable des handlers passés à `TweetCard` : son comparateur
-   * (`components/TweetCard`) compare les callbacks par référence, donc une
-   * closure recréée à chaque rendu re-rendrait toutes les cartes montées.
-   * L'état courant est lu par référence.
+   * Identité stable de `handleRowAction` : `TweetRow` est mémoïsé sur ses
+   * props par référence, donc une closure recréée à chaque rendu re-rendrait
+   * toutes les lignes montées. L'état courant est lu par référence.
    */
   const likedTweetsRef = useRef(likedTweets);
   const retweetedTweetsRef = useRef(retweetedTweets);
@@ -366,10 +366,6 @@ export default function UserProfileScreen() {
     }
   }, []);
 
-  const handleReply = useCallback((tweetId: string) => {
-    (navigation as any).navigate('CreateTweet' as never, { replyTo: tweetId, isReply: true } as never);
-  }, [navigation]);
-
   const handleShare = useCallback((tweetId: string) => { }, []);
 
   const handleDeleteTweet = useCallback((tweetId: string) => {
@@ -381,6 +377,56 @@ export default function UserProfileScreen() {
     console.log('Bookmark:', tweetId);
     toast.success('Tweet ajouté aux favoris');
   }, []);
+
+  const [reportTarget, setReportTarget] = useState<{ id: string; label?: string } | null>(null);
+
+  const handleReport = useCallback((tweetId: string) => {
+    const tweet = tweets.find((t) => t.id === tweetId);
+    setReportTarget({
+      id: tweetId,
+      label: tweet?.author?.username ? `@${tweet.author.username}` : undefined,
+    });
+  }, [tweets]);
+
+  const handleSkip = useCallback((tweetId: string) => {
+    toast.info('Tweet ignoré', { description: 'Ce tweet n\'apparaîtra plus' });
+  }, []);
+
+  /** Même découpage propriétaire/visiteur que le fil principal (TweetsScreen). */
+  const handleOptionsMenu = useCallback((tweetId: string) => {
+    const tweet = tweets.find((t) => t.id === tweetId);
+    const isOwnTweet = !!(currentUser?.id && tweet?.author?.id === currentUser.id);
+
+    const entries: ActionSheetItem[] = isOwnTweet
+      ? [
+          { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
+          {
+            label: 'Supprimer',
+            icon: 'trash-outline',
+            onPress: () => handleDeleteTweet(tweetId),
+            destructive: true,
+          },
+        ]
+      : [
+          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: () => handleBookmark(tweetId) },
+          {
+            label: 'Ignorer ce tweet',
+            icon: 'eye-off-outline',
+            hint: 'Il n’apparaîtra plus dans ton fil',
+            onPress: () => handleSkip(tweetId),
+          },
+          { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
+          { label: 'Signaler', icon: 'flag-outline', onPress: () => handleReport(tweetId) },
+          {
+            label: 'Bloquer cet utilisateur',
+            icon: 'ban-outline',
+            onPress: () => tweet?.author?.id && handleBlock(tweet.author.id),
+            destructive: true,
+          },
+        ];
+
+    showActionSheet({ items: entries });
+  }, [tweets, currentUser?.id, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport]);
 
   /**
    * L'état d'interaction vit à côté des tweets : on le fusionne une fois par
@@ -400,28 +446,62 @@ export default function UserProfileScreen() {
 
   const tweetKeyExtractor = useCallback((tweet: Tweet) => tweet.id, []);
 
+  /** Contexte transmis aux lignes — pas de fil algorithmique ici, juste le profil. */
+  const rowContext = React.useMemo(() => ({ tab: 'profile', algorithm: 'none' }), []);
+
+  const handleRowAction = useCallback((action: TweetRowAction) => {
+    const { type, tweetId, payload } = action;
+    switch (type) {
+      case 'like':
+        handleLike(tweetId);
+        break;
+      case 'retweet':
+        handleRetweet(tweetId);
+        break;
+      case 'reply':
+        (navigation as any).navigate('TweetDetail', { tweetId, focusReply: true });
+        break;
+      case 'share':
+        handleShare(tweetId);
+        break;
+      case 'options':
+        handleOptionsMenu(tweetId);
+        break;
+      case 'report':
+        handleReport(tweetId);
+        break;
+      case 'openQuote':
+        (navigation as any).navigate('TweetDetail', { tweetId });
+        break;
+      case 'profile': {
+        const author = payload?.author;
+        if (!author?.id) return;
+        (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
+        break;
+      }
+      case 'open': {
+        (navigation as any).navigate('TweetDetail', {
+          tweetId,
+          isThread: !!(tweets.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
+        });
+        break;
+      }
+    }
+  }, [navigation, handleLike, handleRetweet, handleShare, handleOptionsMenu, handleReport, tweets]);
+
   const renderTweetItem = useCallback(
-    ({ item }: { item: Tweet }) => (
-      <TweetCard
+    ({ item, index }: { item: Tweet; index: number }) => (
+      <TweetRow
         tweet={item}
-        onLike={handleLike}
-        onRetweet={handleRetweet}
-        onReply={handleReply}
-        onShare={handleShare}
-        onDelete={handleDeleteTweet}
-        compact={false}
+        index={index}
+        isThreadParent={false}
+        isThreadChild={false}
+        onAction={handleRowAction}
+        contextData={rowContext}
       />
     ),
-    [handleLike, handleRetweet, handleReply, handleShare, handleDeleteTweet],
+    [handleRowAction, rowContext],
   );
-
-  const handleSkip = (tweetId: string) => {
-    // ⏭️ Skip
-    console.log('Skip:', tweetId);
-    toast.info('Tweet ignoré', {
-      description: 'Ce tweet n\'apparaîtra plus',
-    });
-  };
 
   const handleBlock = (userId: string) => {
     // 🚫 Block
@@ -524,17 +604,17 @@ export default function UserProfileScreen() {
   // ── LOADING STATE ──
   if (loading && !userProfile) {
     return (
-      <SafeAreaView style={S.container}>
+      <View style={S.container}>
         <StatusBar barStyle={statusBarStyle()} backgroundColor={PROFILE_BODY_BG} />
         <ScreenSkeleton variant="detail" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   // ── ERROR STATE ──
   if (error || !userProfile) {
     return (
-      <SafeAreaView style={S.container}>
+      <View style={S.container}>
         <StatusBar barStyle={statusBarStyle()} backgroundColor={PROFILE_BODY_BG} />
         <View style={S.errorContainer}>
           <Ionicons name="alert-circle" size={52} color={colors.red} />
@@ -544,7 +624,7 @@ export default function UserProfileScreen() {
             <Text style={S.retryButtonText}>Réessayer</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1040,6 +1120,14 @@ export default function UserProfileScreen() {
         onStoryLiked={reloadProfileStories}
         onStoryDeleted={reloadProfileStories}
       />
+
+      <ReportSheet
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetId={reportTarget?.id || ''}
+        targetType="tweet"
+        targetLabel={reportTarget?.label}
+      />
     </View>
   );
 }
@@ -1095,8 +1183,9 @@ const S = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle,
-    backgroundColor: 'transparent',
+    borderBottomColor: colors.border,
+    backgroundColor: colors.bg,
+    zIndex: 20,
   },
   backBtn: {
     width: 36,
