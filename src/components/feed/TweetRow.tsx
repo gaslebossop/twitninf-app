@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Avatar from '../Avatar';
 import ClickableMentions from '../ClickableMentions';
 import TweetImages from './TweetImages';
+import TweetVideo from './TweetVideo';
 import TweetLanguageSwitcher from '../TweetLanguageSwitcher';
 import TranslationReveal from '../TranslationReveal';
 import { useTweetAutoTranslation } from '../../contexts/ReadingLanguageContext';
@@ -90,6 +91,8 @@ function fmtDate(d: string): string {
 }
 
 const DOUBLE_TAP_MS = 280;
+
+const VIDEO_URL_RE = /\.(mp4|mov|m3u8|webm)(\?|$)/i;
 
 /**
  * Une ligne du fil.
@@ -163,15 +166,21 @@ function TweetRow({
    * n'en porte aucune, afficherait un retweet dépouillé de la photo pour
    * laquelle il a été fait.
    *
-   * Les vidéos passent par un écran dédié et ne doivent pas atterrir dans la
-   * grille : un `.mp4` y serait rendu comme une image, donc vide.
+   * Un tweet vidéo range `media_urls` comme `[url_vidéo, url_miniature]`
+   * (voir `POST /api/tweets/video` côté API) : on sépare les deux plutôt que
+   * de laisser passer la miniature dans la grille comme une photo ordinaire
+   * — elle perdrait son bouton play et tout moyen de lancer la lecture.
    */
-  const displayMediaUrls: string[] = React.useMemo(() => {
+  const { displayMediaUrls, videoUrl, videoThumbnailUrl } = React.useMemo(() => {
     const source = isRetweet && originalTweet ? originalTweet : tweet;
     const urls = Array.isArray((source as any)?.media_urls) ? (source as any).media_urls : [];
-    return urls.filter(
-      (url: unknown) => typeof url === 'string' && !/\.(mp4|mov|m3u8|webm)(\?|$)/i.test(url)
-    );
+    const strings = urls.filter((url: unknown): url is string => typeof url === 'string');
+    const video = strings.find((url) => VIDEO_URL_RE.test(url));
+    if (!video) {
+      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined };
+    }
+    const rest = strings.filter((url) => url !== video);
+    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0] };
   }, [isRetweet, originalTweet, tweet]);
 
   /**
@@ -488,6 +497,10 @@ function TweetRow({
               // `blockRowPress` : sans lui, l'appui sur une vignette ouvrirait
               // aussi le tweet derrière la visionneuse.
               <TweetImages urls={displayMediaUrls} onBeforeOpen={blockRowPress} />
+            )}
+
+            {!isContentLocked && videoUrl && (
+              <TweetVideo videoUrl={videoUrl} thumbnailUrl={videoThumbnailUrl} onBeforeOpen={blockRowPress} />
             )}
 
             {/* Sélecteur de langue — uniquement sur les tweets publiés avec l'option */}

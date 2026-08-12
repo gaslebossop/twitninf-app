@@ -22,6 +22,7 @@ import PremiumTweetHolo, { usePremiumAuthorTheme } from '../components/PremiumTw
 import { useAuth } from '../contexts/AuthContext';
 import ClickableMentions from '../components/ClickableMentions';
 import TweetImages from '../components/feed/TweetImages';
+import TweetVideo from '../components/feed/TweetVideo';
 import PaidContentLock from '../components/PaidContentLock';
 import LockedText from '../components/LockedText';
 import TweetLanguageSwitcher from '../components/TweetLanguageSwitcher';
@@ -996,16 +997,24 @@ export default function TweetDetailScreen() {
                 </TranslationReveal>
               )}
 
-              {/* Images jointes. Comme dans le fil, l'affichage ne teste jamais
-                  le drapeau `tweet.images` : il ne conditionne que la
-                  publication. Pas de `onPress` ici — on est déjà sur le tweet. */}
-              {!isContentLocked && (
-                <TweetImages
-                  urls={(Array.isArray(tweet.media_urls) ? tweet.media_urls : []).filter(
-                    (url) => typeof url === 'string' && !/\.(mp4|mov|m3u8|webm)(\?|$)/i.test(url)
-                  )}
-                />
-              )}
+              {/* Images/vidéo jointes. Comme dans le fil, l'affichage ne teste
+                  jamais le drapeau `tweet.images` : il ne conditionne que la
+                  publication. Pas de `onPress` ici — on est déjà sur le tweet.
+                  Un tweet vidéo range `media_urls` comme
+                  `[url_vidéo, url_miniature]` (voir `POST /api/tweets/video`
+                  côté API) — même séparation que dans `TweetRow`, sinon la
+                  miniature atterrit dans la grille comme une photo ordinaire,
+                  sans bouton play ni moyen de lancer la lecture. */}
+              {!isContentLocked && (() => {
+                const urls = (Array.isArray(tweet.media_urls) ? tweet.media_urls : [])
+                  .filter((url): url is string => typeof url === 'string');
+                const videoUrl = urls.find((url) => /\.(mp4|mov|m3u8|webm)(\?|$)/i.test(url));
+                if (videoUrl) {
+                  const thumbnailUrl = urls.find((url) => url !== videoUrl);
+                  return <TweetVideo videoUrl={videoUrl} thumbnailUrl={thumbnailUrl} />;
+                }
+                return <TweetImages urls={urls} />;
+              })()}
 
               {/* Sélecteur de langue — seulement si l'auteur a publié avec l'option */}
               {tweet.translation_enabled && (
