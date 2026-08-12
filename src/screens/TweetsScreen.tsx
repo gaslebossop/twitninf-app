@@ -1295,7 +1295,7 @@ export default function TweetsScreen() {
           {(['following', 'forYou'] as const).map((tab, index) => (
             <TouchableOpacity
               key={tab}
-              style={S.tabItem}
+              style={[S.tabItem, activeTab === tab && S.tabItemActive]}
               onPress={() => handleTabChange(tab)}
               onLayout={handleTabLayout(index)}
               activeOpacity={0.85}
@@ -1474,6 +1474,15 @@ const S = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     backgroundColor: 'transparent',
+  },
+  // Filet de sécurité : la pastille animée ci-dessous ne s'affiche que si les
+  // DEUX onglets ont fini leur mesure `onLayout` (voir `tabsReady`). Si cette
+  // mesure ne se déclenche pas, la pastille reste invisible et le libellé actif
+  // (blanc fixe, `tabLabelActive`) se retrouvait sur `transparent` — lisible en
+  // sombre par hasard, invisible sur le fond clair de la barre en thème clair.
+  // Ce fond plein sur l'onglet actif ne dépend d'aucune animation.
+  tabItemActive: {
+    backgroundColor: colors.accent,
   },
   // Pastille active : une seule vue qui glisse, au lieu d'un fond qui
   // apparaît/disparaît sur deux boutons distincts. Position et taille
