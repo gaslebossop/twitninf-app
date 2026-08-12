@@ -108,6 +108,12 @@ module.exports = ({ config }) => {
           enableProguardInReleaseBuilds: true,
           enableSeparateBuildPerCPUArchitecture: false,
           enableShrinkResources: true,
+          // slf4j regarde reflectivement une classe de binding de log qui
+          // n'est jamais presente sur Android (aucune lib ne l'embarque) —
+          // c'est un no-op normal a l'execution, mais R8 en mode strict
+          // refuse de compiler tant qu'une classe referencee est absente du
+          // classpath sans regle explicite pour l'ignorer.
+          extraProguardRules: "-dontwarn org.slf4j.**",
           // Permissions de notifications Android
           permissions: [
             "INTERNET",
