@@ -1,0 +1,89 @@
+name: Build Android APK
+
+# Build un APK Android sur un runner Linux GitHub-hoste — beaucoup plus
+# rapide qu'un build EAS cloud (pas de file d'attente partagee) et sans
+# dependance a un service tiers.
+#
+# `release` est signe avec le keystore de debug (voir android/app/build.gradle
+# — signingConfigs.release pointe encore sur signingConfigs.debug, aucun
+# vrai keystore de prod n'est configure), donc l'APK produit s'installe
+# directement sur un appareil sans etape de signature supplementaire,
+# contrairement a l'IPA iOS (voir ios-build.yml) qui doit passer par
+# Sideloadly.
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    # Runner standard par defaut. Si ce repo/org a des runners GitHub plus
+    # gros de provisionnes (Team/Enterprise), remplacer par leur label
+    # (ex. `ubuntu-latest-8-cores`) — sinon le job echoue faute de runner
+    # disponible sous ce nom.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Meme convention que ios-build.yml : les domaines de l'API/stream ne
+      # sont pas ecrits en dur (voir src/config/api.ts, src/services/liveService.ts)
+      # — le depot est public. `EXPO_PUBLIC_*` est inline par Metro pendant le
+      # bundling JS, qui a lieu pendant `gradlew assembleRelease` : ce .env
+      # doit donc exister avant.
+      - name: Configure les domaines (secrets du depot)
+        env:
+          API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+          STREAM_SERVER: ${{ secrets.EXPO_PUBLIC_STREAM_SERVER }}
+        run: |
+          set -euo pipefail
+          if [ -z "$API_URL" ] || [ -z "$STREAM_SERVER" ]; then
+            echo "::error::EXPO_PUBLIC_API_URL et/ou EXPO_PUBLIC_STREAM_SERVER absents des secrets du depot (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          {
+            echo "EXPO_PUBLIC_API_URL=$API_URL"
+            echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
+          } >> .env
+          {
+            echo "EXPO_PUBLIC_API_URL=$API_URL"
+            echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          # Met en cache ~/.gradle/caches et le wrapper entre les runs —
+          # c'est le plus gros gain de vitesse disponible sans runner plus
+          # gros (le premier build reste lent, les suivants beaucoup moins).
+          cache: gradle
+
+      # --legacy-peer-deps : meme ERESOLVE React 19 / RN 0.81 que sur iOS
+      # (voir ios-build.yml) sur @react-native-community/datetimepicker.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Prebuild Android
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build APK release
+        working-directory: android
+        run: ./gradlew assembleRelease --parallel --build-cache
+
+      - name: Localiser l'APK
+        working-directory: android
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$APK"
+          ls -lh "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
