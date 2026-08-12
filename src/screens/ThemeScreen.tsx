@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -115,7 +114,7 @@ const ThemeScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <ScreenBackground>
-      <SafeAreaView style={styles.safe}>
+      <View style={styles.safe}>
         <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
         <AppHeader navigation={navigation} title="Thème" />
 
@@ -190,7 +189,7 @@ const ThemeScreen: React.FC<Props> = ({ navigation }) => {
             sont construits une seule fois au lancement.
           </Text>
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </ScreenBackground>
   );
 };
