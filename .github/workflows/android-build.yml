@@ -70,9 +70,17 @@ jobs:
       - name: Prebuild Android
         run: npx expo prebuild --platform android --clean
 
+      # Lint (lintVitalAnalyzeRelease) desactive : sur le run precedent, 3
+      # taches de lint ont echoue vers un avertissement memoire JVM
+      # (Metaspace) puis Gradle est reste bloque 28 min sans plus rien logger
+      # avant d'etre tue par le timeout — sans doute plusieurs workers de
+      # lint en concurrence sous --parallel sur un runner a 2 coeurs. Cet
+      # APK est un artefact de test signe debug, pas un envoi Play Store :
+      # le lint n'apporte rien ici. --parallel retire pour la meme raison
+      # (contention memoire).
       - name: Build APK release
         working-directory: android
-        run: ./gradlew assembleRelease --parallel --build-cache
+        run: ./gradlew assembleRelease --build-cache -Pandroid.lint.checkReleaseBuilds=false
 
       - name: Localiser l'APK
         working-directory: android
