@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { colors, fonts, withAlpha } from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -8,16 +8,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
-  Dimensions,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { APP_VERSION, PATCH_NOTES } from '../config/version';
-import { LinearGradient } from 'expo-linear-gradient';
+import { APP_VERSION } from '../services/clientIdentity';
+import { PATCH_NOTES } from '../data/patchNotes';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
-
-const { width } = Dimensions.get('window');
 
 export default function PatchNotesModal() {
   // `wanted` : cette version n'a pas encore été vue. `visible` : c'est en plus
@@ -81,44 +78,44 @@ export default function PatchNotesModal() {
   const currentNote = PATCH_NOTES[0];
 
   return (
-    <Modal transparent visible={visible} animationType="none">
+    <Modal transparent visible={visible} animationType="none" statusBarTranslucent>
       <View style={S.overlay}>
-        <Animated.View 
+        <Animated.View
           style={[
-            S.container, 
-            { 
+            S.container,
+            {
               opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
+              transform: [{ translateY: slideAnim }],
+            },
           ]}
         >
           <View style={S.header}>
             <View style={S.iconBox}>
-              <Ionicons name="sparkles" size={24} color="#4F7CFF" />
+              <Ionicons name="sparkles" size={24} color={colors.accentBright} />
             </View>
             <View style={S.headerText}>
-              <Text style={S.version}>Version {APP_VERSION}</Text>
+              <Text style={S.version}>Nouveautés</Text>
               <Text style={S.title}>{currentNote.title}</Text>
             </View>
           </View>
 
           <ScrollView style={S.scroll} showsVerticalScrollIndicator={false}>
             <Text style={S.intro}>Quoi de neuf dans cette version ?</Text>
-            
-            {currentNote.changes.map((change, index) => (
-              <View key={index} style={S.changeRow}>
+
+            {currentNote.items.map((item, index) => (
+              <View key={index} style={S.itemRow}>
                 <View style={S.bullet} />
-                <Text style={S.changeText}>{change}</Text>
+                <Text style={S.itemText}>{item}</Text>
               </View>
             ))}
 
             <View style={S.footerSpace} />
           </ScrollView>
 
-          <TouchableOpacity 
-            style={S.button} 
+          <TouchableOpacity
+            style={S.button}
             onPress={handleClose}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <Text style={S.buttonText}>C'est parti !</Text>
           </TouchableOpacity>
@@ -131,25 +128,26 @@ export default function PatchNotesModal() {
 const S = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   container: {
     width: '100%',
+    maxWidth: 480,
     maxHeight: '80%',
-    backgroundColor: 'rgba(18,20,28,0.97)',
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#2f3336',
-    padding: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    padding: 22,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: colors.black,
         shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.5,
+        shadowOpacity: 0.4,
         shadowRadius: 20,
       },
       android: {
@@ -160,13 +158,15 @@ const S = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(29, 155, 240, 0.1)',
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: colors.accentMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: withAlpha(colors.accent, 0.45),
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -175,59 +175,62 @@ const S = StyleSheet.create({
     flex: 1,
   },
   version: {
-    color: '#4F7CFF',
-    fontSize: 13,
-    fontWeight: '800', fontFamily: fonts.bold,
+    color: colors.accentBright,
+    fontSize: 12,
+    fontFamily: fonts.bold,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   title: {
-    color: '#e7e9ea',
-    fontSize: 20,
-    fontWeight: '900', fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    fontSize: 22,
+    letterSpacing: -0.5,
+    fontFamily: fonts.display,
     marginTop: 2,
   },
   scroll: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   intro: {
-    color: '#71767b',
-    fontSize: 15,
-    marginBottom: 20,
-    fontWeight: '500', fontFamily: fonts.medium,
-  },
-  changeRow: {
-    flexDirection: 'row',
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
     marginBottom: 16,
-    paddingRight: 12,
+    fontFamily: fonts.regular,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    marginBottom: 14,
+    paddingRight: 8,
   },
   bullet: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
     marginTop: 8,
     marginRight: 12,
   },
-  changeText: {
-    color: '#e7e9ea',
-    fontSize: 15,
-    lineHeight: 22,
+  itemText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: fonts.regular,
     flex: 1,
   },
   footerSpace: {
-    height: 10,
+    height: 6,
   },
   button: {
-    backgroundColor: '#4F7CFF',
-    paddingVertical: 14,
-    borderRadius: 25,
+    backgroundColor: colors.accent,
+    paddingVertical: 15,
+    borderRadius: 16,
     alignItems: 'center',
     width: '100%',
   },
   buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800', fontFamily: fonts.bold,
+    color: colors.onAccent,
+    fontSize: 15,
+    fontFamily: fonts.bold,
   },
 });
