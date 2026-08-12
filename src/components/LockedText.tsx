@@ -90,10 +90,15 @@ export default function LockedText({
         </Text>
       </View>
 
+      {/* Pas de `experimentalBlurMethod` sur Android : le mode "dimezisBlurView"
+          passe par un flou RenderScript qui plante avec
+          `RSIllegalArgumentException: Radius out of range` sur certains
+          environnements (observé sur émulateur BlueStacks) — la doc expo-blur
+          le documente elle-même comme experimental. Le défaut `'none'`
+          retombe sur un simple voile semi-transparent, sans risque natif. */}
       <BlurView
         intensity={Platform.OS === 'ios' ? 86 : 96}
         tint={GLASS_TINT}
-        experimentalBlurMethod="dimezisBlurView"
         blurReductionFactor={2.4}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
