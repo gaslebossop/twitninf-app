@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React from 'react';
 import {
   View,
@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: colors.overlayStrong,
     shadowColor: '#4F7CFF',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -186,18 +186,18 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: colors.overlayMedium,
   },
   tabsSection: {
     marginBottom: 8,
   },
   tabsContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 14,
     padding: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: colors.overlaySoft,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,

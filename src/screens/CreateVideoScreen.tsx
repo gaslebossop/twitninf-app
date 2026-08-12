@@ -1,4 +1,4 @@
-import { colors, fonts, glow } from '../theme';
+import { colors, fonts, glow , statusBarStyle} from '../theme';
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -54,7 +54,7 @@ export default function CreateVideoScreen() {
   if (!videoUri) {
     return (
       <View style={styles.root}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle={statusBarStyle()} />
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg }]} />
 
         <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
@@ -93,7 +93,7 @@ export default function CreateVideoScreen() {
   // ════════════════════════════════════════════════════════════
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={statusBarStyle()} />
 
       {/* Full-screen video */}
       <Video
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     width: 48, height: 48, borderRadius: 24,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1, borderColor: colors.overlayStrong,
   },
   sideBtnLbl: { color: '#fff', fontSize: 11, fontWeight: '600' },
 

@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts, colors } from '../theme';
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -103,9 +103,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: colors.overlaySoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.overlayMedium,
   },
   previewLabel: { color: '#e7e9ea', fontWeight: '700', fontFamily: fonts.bold, fontSize: 14 },
   row: { gap: 10, paddingRight: 8, paddingBottom: 4 },
@@ -115,9 +115,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.overlayMedium,
   },
   chipSelected: {
     borderColor: 'rgba(56, 189, 248, 0.65)',

@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import { liveService } from '../services/liveService';
 import unreadService from '../services/unreadService';
-import { colors } from '../theme';
+import { colors, isDarkTheme, withAlpha } from '../theme';
 
 // Import des écrans
 import TweetsScreen from '../screens/TweetsScreen';
@@ -204,7 +204,7 @@ export default function BottomTabNavigator() {
           Platform.OS === 'ios' ? (
             <BlurView
               intensity={60}
-              tint="systemChromeMaterialDark"
+              tint={isDarkTheme() ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight'}
               style={styles.blurBackground}
             />
           ) : (
@@ -332,7 +332,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(11, 12, 15, 0.62)',
+    // Dérivé du fond du thème : cette valeur était figée en sombre, donc la
+    // barre restait noire en thème clair et ses icônes disparaissaient.
+    backgroundColor: withAlpha(colors.bg, 0.62),
     borderTopWidth: 0.5,
     borderTopColor: colors.border,
   },

@@ -16,7 +16,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Video from 'react-native-video';
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import { displayNameFonts } from '../theme/fonts';
 import {
   VIDEO_FILTERS,
@@ -537,7 +537,7 @@ export default function VideoEditorScreen() {
                 value={editing.text}
                 onChangeText={(text) => setEditing((current) => (current ? { ...current, text } : current))}
                 placeholder="Saisis ton texte"
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                placeholderTextColor={colors.textSecondary}
                 autoFocus
                 multiline
                 maxLength={120}
@@ -614,7 +614,7 @@ export default function VideoEditorScreen() {
                       <Ionicons
                         name={entry.preview ? 'color-filter' : 'image-outline'}
                         size={22}
-                        color={filterId === entry.id ? TIKTOK_RED : 'rgba(255,255,255,0.85)'}
+                        color={filterId === entry.id ? TIKTOK_RED : colors.textPrimary}
                       />
                     </View>
                     <Text style={[styles.filterLabel, filterId === entry.id && { color: TIKTOK_RED }]}>
@@ -666,11 +666,11 @@ const styles = StyleSheet.create({
   // Traits fins et translucides : ils guident sans masquer la scène.
   guideVertical: {
     position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1,
-    backgroundColor: 'rgba(255,255,255,0.85)', zIndex: 6,
+    backgroundColor: colors.textPrimary, zIndex: 6,
   },
   guideHorizontal: {
     position: 'absolute', left: 0, right: 0, top: '50%', height: 1,
-    backgroundColor: 'rgba(255,255,255,0.85)', zIndex: 6,
+    backgroundColor: colors.textPrimary, zIndex: 6,
   },
 
   overlayBox: { position: 'absolute', zIndex: 4 },
@@ -708,13 +708,13 @@ const styles = StyleSheet.create({
   sizeChip: {
     width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: colors.overlayStrong,
   },
   sizeChipActive: { backgroundColor: TIKTOK_RED },
   sizeChipText: { color: '#fff', fontSize: 13, fontFamily: fonts.bold },
 
   colorRow: { paddingHorizontal: 16, gap: 12, alignItems: 'center' },
-  colorDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)' },
+  colorDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: colors.textSecondary },
   colorDotActive: { borderColor: '#fff', borderWidth: 3, transform: [{ scale: 1.12 }] },
 
   filterSheet: {
@@ -729,18 +729,18 @@ const styles = StyleSheet.create({
   filterThumb: {
     width: 52, height: 52, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 2, borderColor: 'transparent',
   },
   filterThumbActive: { borderColor: TIKTOK_RED },
-  filterLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontFamily: fonts.bold },
+  filterLabel: { color: colors.textPrimary, fontSize: 11, fontFamily: fonts.bold },
 
   bottomRow: {
     position: 'absolute', left: 16, right: 16, bottom: 0, zIndex: 5,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   hintWrap: { flex: 1 },
-  hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  hint: { color: colors.textSecondary, fontSize: 12 },
   nextBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 22, paddingVertical: 12, borderRadius: 8,

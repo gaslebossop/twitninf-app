@@ -101,3 +101,22 @@ export function degreesPerPixel(longitudeDelta: number, screenWidth: number): nu
   if (!Number.isFinite(longitudeDelta) || screenWidth <= 0) return 0;
   return longitudeDelta / screenWidth;
 }
+
+/**
+ * La même largeur, mais ARRONDIE au palier de zoom.
+ *
+ * Le pas de grille calculé sur la largeur exacte de la fenêtre change d'un
+ * poil de virgule à chaque déplacement du doigt : les frontières de cases se
+ * décalent, la composition des groupes bouge, et l'affichage de la moitié des
+ * épingles est refait pour rien — alors que la carte montre exactement les
+ * mêmes gens au même endroit.
+ *
+ * En arrondissant au palier de zoom, un déplacement à zoom constant produit un
+ * pas RIGOUREUSEMENT identique : mêmes cases, mêmes groupes, rien à redessiner.
+ * Seul un zoom change quelque chose — et c'est un geste rare et délibéré.
+ */
+export function quantizedDegreesPerPixel(longitudeDelta: number, screenWidth: number): number {
+  if (!Number.isFinite(longitudeDelta) || longitudeDelta <= 0 || screenWidth <= 0) return 0;
+  const step = Math.round(Math.log2(360 / longitudeDelta));
+  return 360 / Math.pow(2, step) / screenWidth;
+}

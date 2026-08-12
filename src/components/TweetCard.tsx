@@ -353,7 +353,7 @@ function TweetCard({
             styles.background,
             hasActiveEvent && eventTheme
               ? { backgroundColor: eventTheme.colors.primary }
-              : { backgroundColor: 'rgba(255,255,255,0.09)' }
+              : { backgroundColor: colors.overlayMedium }
           ]}
         />
         
@@ -760,7 +760,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
     borderColor: colors.border,
   },

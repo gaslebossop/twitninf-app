@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -125,7 +125,7 @@ export default function BanAlertBanner({ onDismiss }: BanAlertBannerProps) {
             <TextInput
               style={styles.textInput}
               placeholder="Votre explication..."
-              placeholderTextColor="rgba(255,255,255,0.4)"
+              placeholderTextColor={colors.textMuted}
               multiline
               numberOfLines={6}
               value={reason}
@@ -204,8 +204,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayStrong,
+    backgroundColor: colors.overlayMedium,
   },
   unbanButtonText: {
     fontSize: 12,
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   textInput: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 8,
     padding: 12,
     color: '#fff',
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     minHeight: 120,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   policierNote: {
     fontSize: 12,

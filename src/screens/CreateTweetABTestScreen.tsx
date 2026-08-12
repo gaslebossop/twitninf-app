@@ -1,4 +1,4 @@
-import { colors, fonts, glow } from '../theme';
+import { colors, fonts, glow , statusBarStyle} from '../theme';
 import React, { useState } from 'react';
 import {
   View,
@@ -184,7 +184,7 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
       {/* Header */}
       <View style={styles.header}>

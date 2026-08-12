@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
   },
   title: {
     fontSize: 24,
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: colors.overlayMedium,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   },
   resultsList: {
     maxHeight: 200,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 10,
     padding: 15,
   },
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   userItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
     padding: 15,
     borderRadius: 10,
     marginBottom: 10,
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   tweetItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
     padding: 15,
     borderRadius: 10,
     marginBottom: 10,
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   notificationItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
     padding: 15,
     borderRadius: 10,
     marginBottom: 10,

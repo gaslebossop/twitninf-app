@@ -1,4 +1,4 @@
-import { fonts, colors, glow } from '../theme';
+import { fonts, colors, glow , statusBarStyle} from '../theme';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -110,7 +110,7 @@ export default function LivesScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle={statusBarStyle()} />
         <ScreenSkeleton variant="list" count={6} />
       </View>
     );
@@ -119,7 +119,7 @@ export default function LivesScreen() {
   if (lives.length === 0) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle={statusBarStyle()} />
 
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -145,7 +145,7 @@ export default function LivesScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={statusBarStyle()} />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   hostName: { color: colors.textPrimary, fontSize: 14, fontFamily: fonts.bold },
-  cardMeta: { color: 'rgba(255,255,255,0.65)', fontSize: 12 },
+  cardMeta: { color: colors.textSecondary, fontSize: 12 },
   joinBtn: {
     backgroundColor: colors.accent,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 7,

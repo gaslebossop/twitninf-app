@@ -26,7 +26,7 @@ import { ScreenBackground, BackButton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import Avatar from '../components/Avatar';
 import Sparkline from '../components/Sparkline';
-import { colors, radius, withAlpha } from '../theme';
+import { colors, radius, withAlpha , statusBarStyle} from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchSales, type SalesDashboard } from '../services/paidContentService';
 import { fetchQueue, fetchBestHours, type ScheduledPost } from '../services/scheduleService';
@@ -213,7 +213,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
 
   return (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
       <View style={[styles.headerShell, { paddingTop: headerTopInset }]}>
         <View style={[styles.header, { minHeight: HEADER_CONTENT_HEIGHT }]}>

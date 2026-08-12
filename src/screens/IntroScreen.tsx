@@ -11,7 +11,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import FuturisticCarousel from '../components/FuturisticCarousel';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import { ScreenBackground } from '../components/ui';
 
 const { width, height } = Dimensions.get('window');
@@ -51,8 +51,8 @@ export default function IntroScreen({ navigation }: any) {
 
   return (
     <ScreenBackground>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <SafeAreaView style={[styles.container, showCarousel && styles.containerCarousel]}>
+        <StatusBar barStyle={showCarousel ? 'light-content' : statusBarStyle()} backgroundColor="transparent" translucent />
 
         {showCarousel ? (
           <FuturisticCarousel onFinish={handleCarouselFinish} />
@@ -71,6 +71,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  /**
+   * Le carrousel a son propre fond sombre FIXE (`BG_GRADIENT` dans
+   * `FuturisticCarousel`), mais il ne couvre que l'intérieur du
+   * `SafeAreaView` — la bande au-dessus (encoche / barre de statut) restait
+   * `transparent` et laissait passer le fond thémé de `ScreenBackground`,
+   * blanc en clair : un bandeau blanc au-dessus d'un écran par ailleurs
+   * sombre. Ce fond n'est appliqué QUE pendant le carrousel : une fois
+   * basculé sur l'écran de connexion (thémé, adaptatif), il redevient
+   * transparent.
+   */
+  containerCarousel: {
+    backgroundColor: '#0B0C0F',
   },
   testButton: {
     position: 'absolute',

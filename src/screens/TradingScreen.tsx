@@ -1,4 +1,4 @@
-import { colors, fonts, glow } from '../theme';
+import { colors, fonts, glow , statusBarStyle} from '../theme';
 import { AppHeader, ScreenBackground, Skeleton, HowItWorks, CoinBalancePill } from '../components/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -196,13 +196,13 @@ const TradingScreenContent: React.FC = () => {
             style={[styles.viewToggle, currentView === 'chart' && styles.viewToggleActive]}
             onPress={() => setCurrentView('chart')}
           >
-            <Ionicons name="analytics" size={20} color={currentView === 'chart' ? '#fff' : 'rgba(255,255,255,0.6)'} />
+            <Ionicons name="analytics" size={20} color={currentView === 'chart' ? '#fff' : colors.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.viewToggle, currentView === 'stats' && styles.viewToggleActive]}
             onPress={() => setCurrentView('stats')}
           >
-            <Ionicons name="bar-chart" size={20} color={currentView === 'stats' ? '#fff' : 'rgba(255,255,255,0.6)'} />
+            <Ionicons name="bar-chart" size={20} color={currentView === 'stats' ? '#fff' : colors.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.refreshButton}
@@ -467,7 +467,7 @@ const TradingScreenContent: React.FC = () => {
     return (
       <ScreenBackground>
         <View style={styles.container}>
-          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
           <View style={styles.gradient}>
             {renderHeader()}
             <View style={styles.content}>
@@ -485,7 +485,7 @@ const TradingScreenContent: React.FC = () => {
   return (
     <ScreenBackground>
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       <View style={styles.gradient}>
         {renderHeader()}
@@ -525,7 +525,7 @@ class TradingErrorBoundary extends React.Component<React.PropsWithChildren, Trad
 
     return (
       <ScreenBackground>
-        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
         <AppHeader title="Trading" subtitle="Cours, statistiques et actions TWC" />
         <View style={styles.errorState} accessibilityRole="alert">
           <View style={styles.errorIcon}>
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
     padding: 8,
     marginRight: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
   },
   viewToggleActive: {
     backgroundColor: '#4F7CFF',
@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   priceHeader: {
     flexDirection: 'row',
@@ -714,7 +714,7 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   statValue: {
@@ -726,7 +726,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 4,
   },
@@ -741,7 +741,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F7CFF',
   },
   timeframeText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600', fontFamily: fonts.semibold,
   },
@@ -755,7 +755,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   chartHeader: {
     flexDirection: 'row',
@@ -780,13 +780,13 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
   },
   chart: {
     borderRadius: 16,
   },
   noDataText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     textAlign: 'center',
     padding: 40,
     fontSize: 16,
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   statIcon: {
     width: 40,

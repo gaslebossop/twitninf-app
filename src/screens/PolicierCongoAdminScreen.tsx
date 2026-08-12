@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -372,8 +372,8 @@ export default function PolicierCongoAdminScreen() {
                     style={[
                       styles.bigContextItem,
                       {
-                        backgroundColor: recent ? 'rgba(67,233,123,0.12)' : 'rgba(255,255,255,0.04)',
-                        borderColor: recent ? 'rgba(67,233,123,0.35)' : 'rgba(255,255,255,0.08)',
+                        backgroundColor: recent ? 'rgba(67,233,123,0.12)' : colors.overlaySoft,
+                        borderColor: recent ? 'rgba(67,233,123,0.35)' : colors.overlayMedium,
                       },
                     ]}
                   >
@@ -414,7 +414,7 @@ export default function PolicierCongoAdminScreen() {
                     <Text style={styles.orderDate}>{toTimeAgo(a?.timestamp || a?.created_at || a?.added_at)}</Text>
                   </View>
                   {a?.description ? (
-                    <Text style={[styles.orderText, { marginTop: 6, color: 'rgba(255,255,255,0.78)' }]}>
+                    <Text style={[styles.orderText, { marginTop: 6, color: colors.textPrimary }]}>
                       {String(a.description).slice(0, 140)}
                     </Text>
                   ) : null}
@@ -538,7 +538,7 @@ export default function PolicierCongoAdminScreen() {
             <TextInput
               style={styles.input}
               placeholder={instructionType === 'immediate' ? "Ordre immédiat (ex: Fais un tweet sur...)" : "Règle de personnalité (ex: Sois plus agressif...)"}
-              placeholderTextColor="rgba(255,255,255,0.4)"
+              placeholderTextColor={colors.textMuted}
               value={instructionText}
               onChangeText={setInstructionText}
               multiline
@@ -598,14 +598,14 @@ const styles = StyleSheet.create({
     paddingBottom: 15,
   },
   headerTitle: { fontSize: 20, fontWeight: 'bold', fontFamily: fonts.bold, color: 'white' },
-  backButton: { padding: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12 },
+  backButton: { padding: 8, backgroundColor: colors.overlayMedium, borderRadius: 12 },
   scrollContent: { padding: 20, paddingBottom: 100 },
   card: {
     borderRadius: 24,
     padding: 20,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
     overflow: 'hidden',
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
@@ -624,12 +624,12 @@ const styles = StyleSheet.create({
     height: 100,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   typeSelector: {
     flexDirection: 'row',
     marginBottom: 15,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 4,
   },
@@ -641,7 +641,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-  typeBtnActive: { backgroundColor: 'rgba(255,255,255,0.15)' },
+  typeBtnActive: { backgroundColor: colors.overlayStrong },
   typeText: { fontSize: 14, color: COLORS.textSecondary, marginLeft: 6 },
   typeTextActive: { color: 'white', fontWeight: 'bold' },
   sendBtn: { borderRadius: 16, overflow: 'hidden', elevation: 4 },
@@ -657,7 +657,7 @@ const styles = StyleSheet.create({
   instructionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     padding: 15,
     borderRadius: 16,
     marginBottom: 10,
@@ -666,13 +666,13 @@ const styles = StyleSheet.create({
   orderItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.overlaySoft,
     padding: 15,
     borderRadius: 16,
     marginBottom: 10,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 15 },
-  orderText: { color: 'rgba(255,255,255,0.9)', fontSize: 14 },
+  orderText: { color: colors.textPrimary, fontSize: 14 },
   orderDate: { color: COLORS.textMuted, fontSize: 12, marginTop: 4 },
 
   mutedText: { color: COLORS.textSecondary, fontSize: 13, marginTop: 6 },
@@ -686,12 +686,12 @@ const styles = StyleSheet.create({
   bigContextTop: { flexDirection: 'row', alignItems: 'center' },
   bigContextId: { flex: 1, color: 'white', fontSize: 13, fontWeight: '600', fontFamily: fonts.semibold, marginRight: 8 },
   bigContextAgo: { color: COLORS.textMuted, fontSize: 12 },
-  bigContextLine: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 8 },
+  bigContextLine: { color: colors.textPrimary, fontSize: 13, marginTop: 8 },
 
   // V2 Memory Styles
   v2Tabs: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 4,
     marginBottom: 15,
@@ -726,7 +726,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold', fontFamily: fonts.bold,
   },
   v2NodeItem: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 12,
     padding: 12,
     marginBottom: 10,
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   v2NodeText: {
-    color: 'rgba(255,255,255,0.8)',
+    color: colors.textPrimary,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   v2KnowledgeItem: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 12,
     padding: 12,
     marginBottom: 10,
@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   resetButton: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,

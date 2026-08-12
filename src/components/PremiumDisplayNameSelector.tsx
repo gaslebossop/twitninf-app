@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.35)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.overlayMedium,
     marginBottom: 14,
     overflow: 'visible',
   },
@@ -145,9 +145,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.overlayMedium,
   },
   chipOn: { borderColor: 'rgba(56, 189, 248, 0.65)', backgroundColor: 'rgba(56, 189, 248, 0.1)' },
   chipDim: { opacity: 0.45 },

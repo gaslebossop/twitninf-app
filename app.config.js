@@ -8,6 +8,11 @@ module.exports = ({ config }) => {
     privacy: "public",
     orientation: "portrait",
     runtimeVersion: "1.0.0",
+    // Retour de la connexion G (voir services/gAuthLogin.ts). N'existe que
+    // dans un build natif — Expo Go possède déjà son propre schéma exp:// et
+    // ignore celui-ci, d'où le calcul dynamique via `Linking.createURL()`
+    // plutôt qu'un twitninf:// codé en dur côté client.
+    scheme: "twitninf",
     updates: {
       url: "https://u.expo.dev/5370e501-b1a8-4999-bc98-83194b608a8e"
     },
@@ -73,6 +78,7 @@ module.exports = ({ config }) => {
   baseConfig.plugins = [
     "./plugins/withPodfileSwift5",
     "expo-secure-store",
+    "expo-web-browser",
     [
       "expo-location",
       {
@@ -120,6 +126,22 @@ module.exports = ({ config }) => {
         }
       }
     ],
+    // ⚠️ PAS de plugin "react-native-maps" ici.
+    //
+    // La bibliothèque est volontairement maintenue à 1.20.1, la version que
+    // contient Expo Go SDK 54 : Expo Go embarque des modules natifs figés, et
+    // toute autre version fait échouer l'app au démarrage sur
+    // « 'RNMapsAirModule' could not be found ». Or le plugin de configuration
+    // n'existe qu'à partir de 1.22.0 — l'ajouter ferait échouer Expo au
+    // chargement de ce fichier.
+    //
+    // Conséquence pour Android : la clé Google Maps ne peut pas passer par un
+    // plugin. Elle doit être écrite à la main dans
+    // `android/app/src/main/AndroidManifest.xml` :
+    //   <meta-data android:name="com.google.android.geo.API_KEY"
+    //              android:value="..." />
+    // Sans elle, la carte se rend en rectangle gris uni sur Android, sans la
+    // moindre erreur JS. Aucun impact sur iOS : Apple Maps ne demande rien.
     "react-native-video",
     // Config plugin de la lib de live : injecte les podspecs HaishinKit
     // vendorisés dans le Podfile généré. Nos chaînes NSCameraUsageDescription

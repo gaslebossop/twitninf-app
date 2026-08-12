@@ -1,4 +1,4 @@
-import { colors, fonts, glow, withAlpha } from '../theme';
+import { colors, fonts, glow, withAlpha , statusBarStyle} from '../theme';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -721,7 +721,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <StatusBar
-        barStyle="light-content"
+        barStyle={statusBarStyle()}
         backgroundColor={hasActiveEvent && eventTheme ? eventTheme.colors.primary : colors.bg}
       />
 

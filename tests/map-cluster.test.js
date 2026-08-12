@@ -24,7 +24,7 @@ function loadTypeScriptModule(path) {
   return loaded.exports;
 }
 
-const { clusterize, degreesPerPixel } = loadTypeScriptModule(
+const { clusterize, degreesPerPixel, quantizedDegreesPerPixel } = loadTypeScriptModule(
   require.resolve('../src/utils/mapCluster.ts')
 );
 
@@ -120,4 +120,59 @@ test('une échelle inconnue laisse chacun seul plutôt que d’agréger au hasar
 
 test('aucun point, aucun groupe', () => {
   assert.deepEqual(clusterize([], degreesPerPixel(1, SCREEN)), []);
+});
+
+/**
+ * Cinquante fenêtres du MÊME zoom, dont la largeur mesurée dérive de ±1 %.
+ *
+ * Cette dérive n'est pas une hypothèse : en projection Mercator, la largeur en
+ * degrés d'une fenêtre dépend de la latitude, donc glisser du nord au sud à
+ * zoom constant la fait varier au moins autant.
+ */
+function compositionsPendantUnDeplacement(fn) {
+  const crowd = parisCrowd();
+  const vues = new Set();
+  for (let i = 0; i < 50; i += 1) {
+    const largeur = 0.6 * (1 + (i / 50 - 0.5) * 0.02);
+    vues.add(
+      clusterize(crowd, fn(largeur, SCREEN))
+        .map((cluster) => cluster.id)
+        .sort()
+        .join('|')
+    );
+  }
+  return vues.size;
+}
+
+test('à zoom constant, un déplacement ne recompose aucun groupe', () => {
+  assert.equal(
+    compositionsPendantUnDeplacement(quantizedDegreesPerPixel),
+    1,
+    'un groupe qui se recompose fait changer d’apparence des épingles immobiles'
+  );
+});
+
+test('sans l’arrondi, le même déplacement recompose des groupes', () => {
+  // Le test précédent ne vaut que si l'échelle brute, elle, échoue vraiment :
+  // sinon il passerait aussi bien sans le correctif.
+  assert.ok(
+    compositionsPendantUnDeplacement(degreesPerPixel) > 1,
+    'sans cette différence, le test ci-dessus ne prouverait rien'
+  );
+});
+
+test('un vrai changement de zoom, lui, regroupe autrement', () => {
+  const crowd = parisCrowd();
+  const large = clusterize(crowd, quantizedDegreesPerPixel(1.2, SCREEN));
+  const serre = clusterize(crowd, quantizedDegreesPerPixel(0.004, SCREEN));
+
+  assert.ok(large.length < serre.length, 'l’arrondi ne doit pas figer le regroupement');
+  assert.equal(serre.length, crowd.length);
+});
+
+test('une largeur inutilisable ne fabrique pas d’échelle', () => {
+  assert.equal(quantizedDegreesPerPixel(0, SCREEN), 0);
+  assert.equal(quantizedDegreesPerPixel(-1, SCREEN), 0);
+  assert.equal(quantizedDegreesPerPixel(NaN, SCREEN), 0);
+  assert.equal(quantizedDegreesPerPixel(1, 0), 0);
 });

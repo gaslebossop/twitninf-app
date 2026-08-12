@@ -1,4 +1,6 @@
-import { fonts } from '../theme';
+// `colors` est aussi le nom de la prop de LinearGradient dans ce fichier :
+// importer la palette sous un alias évite que la prop la masque.
+import { fonts, colors as palette } from '../theme';
 import React from 'react';
 import {
   TouchableOpacity,
@@ -90,7 +92,7 @@ export default function FloatingActionButton({
       
       {/* Effet de brillance */}
       <LinearGradient
-        colors={['rgba(255, 255, 255, 0.3)', 'transparent'] as any}
+        colors={[palette.textMuted, 'transparent'] as any}
         style={[styles.shine, { borderRadius }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -122,7 +124,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: palette.overlayStrong,
     position: 'relative',
   },
   innerBlur: {
@@ -131,7 +133,7 @@ const styles = StyleSheet.create({
     left: 2,
     right: 2,
     bottom: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: palette.overlayMedium,
   },
   content: {
     alignItems: 'center',

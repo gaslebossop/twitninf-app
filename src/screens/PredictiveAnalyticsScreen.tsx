@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import {
   fetchCreatorProfile,
   predictTweet,
@@ -183,7 +183,7 @@ export default function PredictiveAnalyticsScreen({ navigation }: Props) {
   if (!isPro) {
     return (
       <ScreenBackground>
-        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
         {header}
         <View style={styles.lockedWrap}>
           <View style={styles.lockedIcon}>
@@ -209,7 +209,7 @@ export default function PredictiveAnalyticsScreen({ navigation }: Props) {
 
   return (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
       {header}
 
       <View style={styles.tabBar}>

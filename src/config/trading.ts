@@ -1,3 +1,4 @@
+import { colors } from '../theme';
 /**
  * Configuration pour l'interface de trading TwitCoins
  */
@@ -19,8 +20,8 @@ export const CHART_CONFIG = {
     purple: '#8B5CF6',
     text: {
       primary: '#ffffff',
-      secondary: 'rgba(255,255,255,0.6)',
-      muted: 'rgba(255,255,255,0.4)'
+      secondary: colors.textSecondary,
+      muted: colors.textMuted
     }
   },
   

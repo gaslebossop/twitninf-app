@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React from 'react';
 import {
   View,
@@ -195,7 +195,7 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
                 y1={i * (chartHeight / 4)}
                 x2={chartWidth}
                 y2={i * (chartHeight / 4)}
-                stroke="rgba(255,255,255,0.08)"
+                stroke={colors.overlayMedium}
                 strokeWidth="1"
                 strokeDasharray="4,4"
               />
@@ -209,7 +209,7 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ data, timeframe, currency }) 
                 y1="0"
                 x2={i * (chartWidth / 5)}
                 y2={chartHeight}
-                stroke="rgba(255,255,255,0.09)"
+                stroke={colors.overlayMedium}
                 strokeWidth="1"
                 strokeDasharray="4,4"
               />
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 16,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 8,
     padding: 4,
   },
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F7CFF',
   },
   typeText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600', fontFamily: fonts.semibold,
   },
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.overlayMedium,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   noDataText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 16,
   },
   labelsContainer: {
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   labelText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 12,
   },
   statsContainer: {
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statLabel: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 12,
     marginBottom: 4,
   },
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   loadingText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 16,
     textAlign: 'center',
   },

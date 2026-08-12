@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fonts, colors as C } from '../theme';
+import { fonts, colors as C, colors } from '../theme';
 import { ScreenBackground, ScreenSkeleton } from '../components/ui';
 import {
   View,
@@ -499,12 +499,12 @@ const styles = StyleSheet.create({
   },
   eurValue: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)'
+    color: colors.textPrimary
   },
   actionsContainer: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 20,
@@ -540,9 +540,9 @@ const styles = StyleSheet.create({
     color: C.textSecondary
   },
   statsContainer: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 20,
@@ -567,9 +567,9 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   transactionsContainer: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 20,
@@ -594,13 +594,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)'
+    borderBottomColor: colors.overlayMedium
   },
   transactionIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlaySoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12

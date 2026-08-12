@@ -1,4 +1,4 @@
-import { colors as themeColors, fonts, glow } from '../theme';
+import { colors as themeColors, fonts, glow , statusBarStyle} from '../theme';
 /**
  * Écran de gestion des événements fonctionnels pour les administrateurs
  */
@@ -235,7 +235,7 @@ export default function FunctionalEventManagementScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={COLORS.bgPrimary} />
       
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top }]}>

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
@@ -365,7 +365,7 @@ export default function MessagesScreen({ navigation }: any) {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         {/* ── Header Instagram : identité à gauche, actions à droite ── */}
         <View style={styles.header}>

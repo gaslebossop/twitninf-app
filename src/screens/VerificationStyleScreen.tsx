@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 /**
@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   styleCard: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -214,7 +214,7 @@ export default function VerificationStyleScreen() {
     return (
       <ScreenBackground>
         <View style={styles.container}>
-          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
           <ScreenSkeleton variant="list" />
         </View>
       </ScreenBackground>
@@ -224,7 +224,7 @@ export default function VerificationStyleScreen() {
   return (
     <ScreenBackground>
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       {/* En-tête */}
       <View style={[styles.header, { paddingTop: headerTopInset }]}>

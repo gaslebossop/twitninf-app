@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton, EmptyState } from '../components/ui';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
@@ -108,7 +108,7 @@ export default function FollowRequestsScreen({ navigation }: any) {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         <View style={styles.header}>
           <BackButton navigation={navigation} />

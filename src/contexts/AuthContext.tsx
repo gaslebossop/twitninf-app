@@ -48,6 +48,9 @@ interface User {
   follow_onboarding_completed_at?: string | null;
   needs_follow_onboarding?: boolean;
   follow_onboarding_minimum?: number;
+  // Compte associé à G (voir services/gAuthLogin.ts) — jamais l'identifiant
+  // g-auth lui-même, juste ce booléen dérivé.
+  g_auth_linked?: boolean;
 }
 
 /**
@@ -90,6 +93,8 @@ interface AuthContextType {
   hasAdminAccess: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
   register: (username: string, fullName: string, password: string) => Promise<{ success: boolean; message: string }>;
+  /** Termine une connexion G : jetons déjà émis par le serveur (voir services/gAuthLogin.ts), reste à ouvrir la session locale. */
+  completeGAuthLogin: (token: string, refreshToken: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
   checkAuthStatus: () => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
@@ -438,6 +443,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const completeGAuthLogin = async (token: string, refreshToken: string) => {
+    try {
+      // Mémoriser les jetons du compte courant avant de basculer — même
+      // logique qu'addAccountByCredentials. Sans ça, un compte déjà
+      // connecté qui se sert de « se connecter avec un autre compte G »
+      // (AccountManagerScreen) voit sa session écrasée sans jamais avoir
+      // été sauvegardée dans le keystore, donc irrécupérable.
+      const previousId = user?.id;
+      if (previousId) {
+        const [access, refresh] = await Promise.all([
+          apiService.getSessionAccessTokenValue(),
+          apiService.getSessionRefreshToken(),
+        ]);
+        if (access) await tokenStore.setAccountTokens(previousId, access, refresh);
+      }
+
+      await apiService.setSessionAccessToken(token, refreshToken);
+      const userData = await apiService.getCurrentUser();
+      if (!userData) {
+        return { success: false, message: 'Connexion G incomplète.' };
+      }
+
+      setUser(userData);
+      setIsAuthenticated(true);
+      await upsertAccount(toAccountMeta(userData), { token, refreshToken });
+
+      await sendNotificationToken();
+
+      return { success: true, message: 'Connexion réussie' };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error?.message || 'Une erreur est survenue lors de la connexion.',
+      };
+    }
+  };
+
   const logout = async () => {
     const currentId = user?.id;
     try {
@@ -591,6 +633,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       hasAdminAccess,
       login,
       register,
+      completeGAuthLogin,
       logout,
       checkAuthStatus,
       refreshCurrentUser: checkAuthStatus,

@@ -30,6 +30,17 @@
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+      <!-- Retour de la connexion G — voir app.config.js (scheme) et
+           services/gAuthLogin.ts. android/ est commité et maintenu à la main
+           dans ce projet (voir la clé Google Maps un peu plus haut) : un
+           `expo prebuild` ne repasse pas dessus, ce bloc doit donc être posé
+           ici explicitement plutôt que déduit du `scheme` d'app.config.js. -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="twitninf"/>
+      </intent-filter>
     </activity>
   </application>
 </manifest>

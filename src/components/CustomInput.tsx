@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.5,
     borderRadius: borderRadius.lg,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     paddingHorizontal: spacing.lg,
   },
   inputContainerFocused: {

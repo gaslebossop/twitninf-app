@@ -40,7 +40,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { io } from 'socket.io-client';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
 import unreadService from '../services/unreadService';
@@ -1393,7 +1393,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         {/* ── Header ── */}
         <View style={styles.header}>
@@ -1771,7 +1771,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#17151C',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: colors.overlayStrong,
   },
   storyReplyMedia: {
     ...StyleSheet.absoluteFillObject,
@@ -1823,7 +1823,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  voicePlayBtnMine: { backgroundColor: 'rgba(255,255,255,0.9)' },
+  voicePlayBtnMine: { backgroundColor: colors.textPrimary },
   voicePlayBtnOther: { backgroundColor: '#3B5DF6' },
   voicePlayBtnTouch: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   voiceWaveform: {
@@ -1834,7 +1834,7 @@ const styles = StyleSheet.create({
     height: 24,
   },
   voiceBar: { width: 2.5, borderRadius: 1.5 },
-  voiceBarMine: { backgroundColor: 'rgba(255,255,255,0.4)' },
+  voiceBarMine: { backgroundColor: colors.textMuted },
   voiceBarActiveMine: { backgroundColor: '#fff' },
   voiceBarOther: { backgroundColor: colors.borderStrong },
   voiceBarActiveOther: { backgroundColor: '#3B5DF6' },

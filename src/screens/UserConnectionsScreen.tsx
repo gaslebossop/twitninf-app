@@ -18,7 +18,7 @@ import PremiumDisplayName from '../components/PremiumDisplayName';
 import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
 import apiService from '../services/api';
 import { User } from '../types/api';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 
 type ConnectionTab = 'followers' | 'following';
 
@@ -99,7 +99,7 @@ export default function UserConnectionsScreen({ navigation, route }: any) {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         <View style={styles.header}>
           <BackButton navigation={navigation} />

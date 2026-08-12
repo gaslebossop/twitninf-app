@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import ReviewTutorial, { markTutorialSeen, tutorialSeen } from '../components/ReviewTutorial';
 import {
   communityReviewService,
@@ -275,7 +275,7 @@ const CommunityReviewScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       <AppHeader
         navigation={navigation}

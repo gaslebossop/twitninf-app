@@ -14,7 +14,7 @@ import {
   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Line, Text as SvgText } from 'react-native-svg';
 import { useAuth } from '../contexts/AuthContext';
 import {
   wp,
@@ -27,6 +27,7 @@ import {
 import { colors, withAlpha, fonts, gradients, glow } from '../theme';
 import { ScreenBackground, GlassCard } from '../components/ui';
 import { toast } from '../components/ui/Toast';
+import { signInWithGAuth } from '../services/gAuthLogin';
 
 const { width } = Dimensions.get('window');
 
@@ -36,7 +37,7 @@ const ArrowLeftIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
     <Path
       d="M11 4L6 9L11 14"
-      stroke="rgba(255,255,255,0.8)"
+      stroke={colors.textPrimary}
       strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -46,10 +47,10 @@ const ArrowLeftIcon = () => (
 
 const UserIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
-    <Circle cx={9} cy={6} r={3.5} stroke="rgba(255,255,255,0.4)" strokeWidth={1.3} />
+    <Circle cx={9} cy={6} r={3.5} stroke={colors.textMuted} strokeWidth={1.3} />
     <Path
       d="M2 16c0-3.3 3.1-6 7-6s7 2.7 7 6"
-      stroke="rgba(255,255,255,0.4)"
+      stroke={colors.textMuted}
       strokeWidth={1.3}
       strokeLinecap="round"
     />
@@ -58,22 +59,22 @@ const UserIcon = () => (
 
 const NameIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
-    <Rect x={2} y={3} width={14} height={3} rx={1.5} fill="rgba(255,255,255,0.4)" />
-    <Rect x={2} y={8} width={10} height={2.5} rx={1.25} fill="rgba(255,255,255,0.25)" />
-    <Rect x={2} y={12.5} width={7} height={2.5} rx={1.25} fill="rgba(255,255,255,0.15)" />
+    <Rect x={2} y={3} width={14} height={3} rx={1.5} fill={colors.textMuted} />
+    <Rect x={2} y={8} width={10} height={2.5} rx={1.25} fill={colors.overlayStrong} />
+    <Rect x={2} y={12.5} width={7} height={2.5} rx={1.25} fill={colors.overlayStrong} />
   </Svg>
 );
 
 const LockIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
-    <Rect x={3} y={8} width={12} height={9} rx={2.5} stroke="rgba(255,255,255,0.4)" strokeWidth={1.3} />
+    <Rect x={3} y={8} width={12} height={9} rx={2.5} stroke={colors.textMuted} strokeWidth={1.3} />
     <Path
       d="M6 8V5.5a3 3 0 016 0V8"
-      stroke="rgba(255,255,255,0.4)"
+      stroke={colors.textMuted}
       strokeWidth={1.3}
       strokeLinecap="round"
     />
-    <Circle cx={9} cy={12.5} r={1.2} fill="rgba(255,255,255,0.4)" />
+    <Circle cx={9} cy={12.5} r={1.2} fill={colors.textMuted} />
   </Svg>
 );
 
@@ -100,14 +101,14 @@ const EyeIcon = ({ open }: { open: boolean }) => (
   <Svg width={20} height={20} viewBox="0 0 18 18" fill="none">
     <Path
       d="M1.5 9C1.5 9 4 3.5 9 3.5S16.5 9 16.5 9 14 14.5 9 14.5 1.5 9 1.5 9z"
-      stroke="rgba(255,255,255,0.4)"
+      stroke={colors.textMuted}
       strokeWidth={1.3}
     />
-    <Circle cx={9} cy={9} r={2.2} stroke="rgba(255,255,255,0.4)" strokeWidth={1.3} />
+    <Circle cx={9} cy={9} r={2.2} stroke={colors.textMuted} strokeWidth={1.3} />
     {!open && (
       <Line
         x1={3} y1={3} x2={15} y2={15}
-        stroke="rgba(255,255,255,0.4)"
+        stroke={colors.textMuted}
         strokeWidth={1.3}
         strokeLinecap="round"
       />
@@ -119,6 +120,15 @@ const AlertIcon = () => (
   <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
     <Circle cx={8} cy={8} r={7} stroke="#F09595" strokeWidth={1.3} />
     <Path d="M8 5v4M8 11v.5" stroke="#F09595" strokeWidth={1.4} strokeLinecap="round" />
+  </Svg>
+);
+
+const GIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 24 24">
+    <Circle cx={12} cy={12} r={11} fill={colors.accent} />
+    <SvgText x={12} y={16.5} fontSize={13} fontWeight="700" fill="#ffffff" textAnchor="middle">
+      G
+    </SvgText>
   </Svg>
 );
 
@@ -170,7 +180,7 @@ const FormField: React.FC<FieldProps> = ({
       <TextInput
         style={[fieldStyles.input, showToggle && { flex: 1 }]}
         placeholder={placeholder}
-        placeholderTextColor="rgba(255,255,255,0.2)"
+        placeholderTextColor={colors.overlayStrong}
         value={value}
         onChangeText={onChange}
         onFocus={onFocus}
@@ -203,9 +213,9 @@ const fieldStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     borderRadius: borderRadius?.md ?? 14,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 14 : 10,
@@ -231,7 +241,7 @@ interface RegisterScreenProps {
 }
 
 const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
-  const { register } = useAuth();
+  const { register, completeGAuthLogin } = useAuth();
 
   const [formData, setFormData] = useState({
     username: '',
@@ -240,6 +250,7 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     confirmPassword: '',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isGAuthLoading, setIsGAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
@@ -312,6 +323,39 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       shakeError();
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGAuthSignIn = async () => {
+    if (isGAuthLoading) return;
+    setError(null);
+    setIsGAuthLoading(true);
+    try {
+      const result = await signInWithGAuth();
+      if (result.type === 'cancel') return;
+      if (result.type === 'error') {
+        setError(result.message);
+        shakeError();
+        return;
+      }
+
+      const session = await completeGAuthLogin(result.token, result.refreshToken);
+      if (!session.success) {
+        setError(session.message);
+        shakeError();
+        return;
+      }
+
+      // Même raisonnement que handleRegister : isAuthenticated bascule tout
+      // seul le navigateur racine sur MainApp, rien à faire ici.
+      toast.success(result.isNewAccount ? 'Bienvenue !' : 'Content de te revoir !', {
+        description: result.isNewAccount ? 'Ton compte a été créé avec G.' : 'Connecté avec G.',
+      });
+    } catch {
+      setError('La connexion à G a échoué.');
+      shakeError();
+    } finally {
+      setIsGAuthLoading(false);
     }
   };
 
@@ -503,6 +547,31 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
          </GlassCard>
         </Animated.View>
 
+        {/* G */}
+        <Animated.View style={[styles.gAuthSection, { opacity: fadeAnim }]}>
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>ou</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.gAuthBtn, isGAuthLoading && { opacity: 0.65 }]}
+            activeOpacity={0.85}
+            onPress={handleGAuthSignIn}
+            disabled={isGAuthLoading}
+          >
+            {isGAuthLoading ? (
+              <ActivityIndicator color={colors.textPrimary} size="small" />
+            ) : (
+              <>
+                <GIcon />
+                <Text style={styles.gAuthBtnLabel}>Continuer avec G</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+
         {/* Footer */}
         <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
           <Text style={styles.footerHint}>Tu as déjà un compte ? </Text>
@@ -554,9 +623,9 @@ const styles = StyleSheet.create({
     width: wp ? wp(40) : 40,
     height: wp ? wp(40) : 40,
     borderRadius: wp ? wp(20) : 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlaySoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 32,
@@ -661,6 +730,42 @@ const styles = StyleSheet.create({
   cguLink: {
     color: colors.accent,
     fontWeight: '600', fontFamily: fonts.semibold,
+  },
+
+  // G
+  gAuthSection: {
+    marginBottom: 20,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  gAuthBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: borderRadius?.md ?? 12,
+    backgroundColor: colors.overlayMedium,
+    borderWidth: 1,
+    borderColor: colors.overlayMedium,
+  },
+  gAuthBtnLabel: {
+    fontSize: fontSize?.sm ?? 13,
+    color: colors.textPrimary,
+    fontWeight: '500', fontFamily: fonts.medium,
   },
 
   // Footer

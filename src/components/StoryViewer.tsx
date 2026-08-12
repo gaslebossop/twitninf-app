@@ -32,7 +32,7 @@ import Reanimated, {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode } from 'expo-av';
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import VerifiedBadge from './VerifiedBadge';
 import { toast } from './ui/Toast';
@@ -336,7 +336,7 @@ export default function StoryViewer({
       statusBarTranslucent
       transparent={false}
     >
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="#000" />
       <KeyboardAvoidingView
         style={styles.keyboardRoot}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -492,7 +492,7 @@ export default function StoryViewer({
                     setReplySent(false);
                   }}
                   placeholder={`Répondre à ${author?.username || 'cette story'}...`}
-                  placeholderTextColor="rgba(255,255,255,0.75)"
+                  placeholderTextColor={colors.textPrimary}
                   onFocus={() => {
                     setPaused(true);
                     setReplySent(false);
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   keyboardRoot: { flex: 1, backgroundColor: '#000' },
   root: { flex: 1, backgroundColor: '#000' },
   emptyBackdrop: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  emptyHint: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontFamily: fonts.regular },
+  emptyHint: { color: colors.textSecondary, fontSize: 13, fontFamily: fonts.regular },
   mediaWrap: { position: 'absolute', top: 0, left: 0, backgroundColor: '#000' },
   mediaLoader: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
 
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 2.5,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.32)',
+    backgroundColor: colors.textMuted,
     overflow: 'hidden',
   },
   progressFill: { height: '100%', width: '0%', backgroundColor: '#fff', borderRadius: 2 },
@@ -597,7 +597,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     maxWidth: '55%',
   },
-  headerAge: { color: 'rgba(255,255,255,0.72)', fontSize: 13 },
+  headerAge: { color: colors.textPrimary, fontSize: 13 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerBtn: { padding: 2 },
 
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 23,
     borderWidth: 1.2,
-    borderColor: 'rgba(255,255,255,0.7)',
+    borderColor: colors.textSecondary,
     paddingHorizontal: 18,
     color: '#fff',
     fontSize: 14,

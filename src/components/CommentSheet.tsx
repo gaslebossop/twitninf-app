@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
@@ -161,7 +161,7 @@ const ReplyRow = ({
       </View>
       <TouchableOpacity onPress={handleLike} style={replyStyles.likeBtn}>
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-          <Ionicons name="heart" size={15} color={reply.liked ? '#fe2c55' : 'rgba(255,255,255,0.5)'} />
+          <Ionicons name="heart" size={15} color={reply.liked ? '#fe2c55' : colors.textSecondary} />
         </Animated.View>
         <Text style={replyStyles.likeCount}>{formatLikes(reply.likes)}</Text>
       </TouchableOpacity>
@@ -174,13 +174,13 @@ const replyStyles = StyleSheet.create({
   content: { flex: 1, marginLeft: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
   username: { color: '#fff', fontSize: 12.5, fontWeight: '700' },
-  time: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
-  text: { color: 'rgba(255,255,255,0.88)', fontSize: 13.5, lineHeight: 19 },
+  time: { color: colors.textMuted, fontSize: 11 },
+  text: { color: colors.textPrimary, fontSize: 13.5, lineHeight: 19 },
   replyMention: { color: '#4F7CFF', fontWeight: '600' },
   replyBtn: { marginTop: 6 },
-  replyBtnText: { color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: '600' },
+  replyBtnText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
   likeBtn: { alignItems: 'center', gap: 3, paddingLeft: 8, paddingTop: 2 },
-  likeCount: { color: 'rgba(255,255,255,0.45)', fontSize: 11 },
+  likeCount: { color: colors.textSecondary, fontSize: 11 },
 });
 
 // ─── Comment Row ───────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ const CommentRow = ({
     <View style={commentStyles.wrapper}>
       {comment.pinned && (
         <View style={commentStyles.pinRow}>
-          <Ionicons name="pin" size={11} color="rgba(255,255,255,0.4)" />
+          <Ionicons name="pin" size={11} color={colors.textMuted} />
           <Text style={commentStyles.pinText}>Épinglé par l'auteur</Text>
         </View>
       )}
@@ -233,7 +233,7 @@ const CommentRow = ({
         </View>
         <TouchableOpacity onPress={handleLike} style={commentStyles.likeBtn}>
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-            <Ionicons name="heart" size={18} color={comment.liked ? '#fe2c55' : 'rgba(255,255,255,0.5)'} />
+            <Ionicons name="heart" size={18} color={comment.liked ? '#fe2c55' : colors.textSecondary} />
           </Animated.View>
           <Text style={commentStyles.likeCount}>{formatLikes(comment.likes)}</Text>
         </TouchableOpacity>
@@ -272,19 +272,19 @@ const CommentRow = ({
 const commentStyles = StyleSheet.create({
   wrapper: { paddingHorizontal: 16, marginBottom: 12, marginTop: 10 },
   pinRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6, marginLeft: 46 },
-  pinText: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
+  pinText: { color: colors.textMuted, fontSize: 11 },
   row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   content: { flex: 1, marginLeft: 12 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   username: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  time: { color: 'rgba(255,255,255,0.4)', fontSize: 12 },
-  text: { color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20 },
+  time: { color: colors.textMuted, fontSize: 12 },
+  text: { color: colors.textPrimary, fontSize: 14, lineHeight: 20 },
   replyBtn: { marginTop: 8 },
-  replyBtnText: { color: 'rgba(255,255,255,0.45)', fontSize: 12.5, fontWeight: '600' },
+  replyBtnText: { color: colors.textSecondary, fontSize: 12.5, fontWeight: '600' },
   likeBtn: { alignItems: 'center', gap: 4, paddingLeft: 10, paddingTop: 2 },
-  likeCount: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
+  likeCount: { color: colors.textSecondary, fontSize: 12 },
   repliesToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 48, marginBottom: 12 },
-  repliesLine: { width: 24, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
+  repliesLine: { width: 24, height: 1, backgroundColor: colors.overlayStrong },
   repliesToggleText: { color: '#4F7CFF', fontSize: 13, fontWeight: '600' },
 });
 
@@ -661,7 +661,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
             {currentCount.toLocaleString('fr-FR')} commentaires
           </Text>
           <TouchableOpacity onPress={handleClose} style={sheetStyles.closeBtn}>
-            <Ionicons name="close" size={20} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="close" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -695,7 +695,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
                 ItemSeparatorComponent={() => <View style={sheetStyles.separator} />}
                 ListEmptyComponent={() => (
                   <View style={{ padding: 40, alignItems: 'center' }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>
+                    <Text style={{ color: colors.textMuted, fontSize: 13 }}>
                       Soyez le premier à commenter !
                     </Text>
                   </View>
@@ -711,7 +711,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
                     Réponse à <Text style={{ color: '#4F7CFF', fontWeight: '700' }}>@{replyingTo}</Text>
                   </Text>
                   <TouchableOpacity onPress={clearReply} style={{ marginLeft: 'auto' }}>
-                    <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.4)" />
+                    <Ionicons name="close-circle" size={16} color={colors.textMuted} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -723,7 +723,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
                     ref={inputRef}
                     style={sheetStyles.input}
                     placeholder={replyingTo ? `Répondre à @${replyingTo}...` : 'Ajouter un commentaire...'}
-                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    placeholderTextColor={colors.textMuted}
                     value={inputText}
                     onChangeText={setInputText}
                     multiline
@@ -775,7 +775,7 @@ const sheetStyles = StyleSheet.create({
   handleBar: {
     width: 36,
     height: 5,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.overlayStrong,
     borderRadius: 2.5,
   },
   header: {
@@ -785,7 +785,7 @@ const sheetStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: colors.overlayMedium,
   },
   headerTitle: {
     color: '#fff',
@@ -802,7 +802,7 @@ const sheetStyles = StyleSheet.create({
   },
   inputWrapper: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderTopColor: colors.overlayMedium,
     backgroundColor: '#111',
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -818,7 +818,7 @@ const sheetStyles = StyleSheet.create({
     marginBottom: 8,
   },
   replyIndicatorText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 12.5,
   },
   inputRow: {
@@ -828,7 +828,7 @@ const sheetStyles = StyleSheet.create({
   },
   inputContainer: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 22,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 10 : 6,

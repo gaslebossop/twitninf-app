@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton } from '../components/ui';
 /**
  * Écran de gestion des événements pour les administrateurs
@@ -469,7 +469,7 @@ export default function EventManagementScreen() {
   return (
     <ScreenBackground>
     <View style={[styles.container, eventStyles.container]}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       {/* Bannière d'événement actif */}
       <EventBanner />

@@ -1,4 +1,4 @@
-﻿import { fonts } from '../theme';
+﻿import { fonts , colors, statusBarStyle} from '../theme';
 import React, { useState } from 'react';
 import {
   View,
@@ -133,7 +133,7 @@ export default function VideoCaptionScreen() {
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={{ flex: 1 }}>
-          <StatusBar barStyle="light-content" />
+          <StatusBar barStyle={statusBarStyle()} />
 
           {/* Video preview en haut */}
           <Video
@@ -191,7 +191,7 @@ export default function VideoCaptionScreen() {
             <TextInput
               style={styles.descInput}
               placeholder="Ajoute une description, des #hashtags..."
-              placeholderTextColor="rgba(255,255,255,0.35)"
+              placeholderTextColor={colors.textMuted}
               value={description}
               onChangeText={setDescription}
               maxLength={200}
@@ -255,10 +255,10 @@ const styles = StyleSheet.create({
 
   descInput: {
     color: 'white', fontSize: 15,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 14, padding: 14, minHeight: 80, maxHeight: 120,
     textAlignVertical: 'top',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: colors.overlayMedium,
     marginBottom: 12,
   },
 
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   loadingLabel: { color: 'white', fontSize: 15, fontWeight: '600', fontFamily: fonts.semibold, textAlign: 'center' },
   progressTrack: {
     width: '100%', height: 6,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlayStrong,
     borderRadius: 3, overflow: 'hidden',
   },
   progressFill: { height: '100%', borderRadius: 3 },

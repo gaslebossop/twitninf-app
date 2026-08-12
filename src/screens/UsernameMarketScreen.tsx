@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenBackground, BackButton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
-import { colors, radius } from '../theme';
+import { colors, radius , statusBarStyle} from '../theme';
 import { CoinBalancePill, EmptyState, HowItWorks, ScreenSkeleton } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from '../components/ui/Toast';
@@ -219,7 +219,7 @@ export default function UsernameMarketScreen({ navigation }: Props) {
 
   return (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
       <View style={[styles.headerShell, { paddingTop: headerTopInset }]}>
         <View style={[styles.header, { minHeight: HEADER_CONTENT_HEIGHT }]}>

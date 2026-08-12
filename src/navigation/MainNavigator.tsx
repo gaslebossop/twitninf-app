@@ -31,6 +31,7 @@ import CreateTweetABTestScreen from '../screens/CreateTweetABTestScreen';
 import TweetDetailScreen from '../screens/TweetDetailScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import AccountManagerScreen from '../screens/AccountManagerScreen';
+import ThemeScreen from '../screens/ThemeScreen';
 import AddAccountScreen from '../screens/AddAccountScreen';
 import ModerationScreen from '../screens/ModerationScreen';
 import UserManagementScreen from '../screens/UserManagementScreen';
@@ -116,6 +117,7 @@ export type MainStackParamList = {
   TweetDetail: { tweetId: string };
   EditProfile: undefined;
   AccountManager: undefined;
+  Theme: undefined;
   AddAccount: undefined;
   Moderation: undefined;
   UserManagement: undefined;
@@ -332,6 +334,15 @@ function MainNavigatorInner() {
         options={{
           presentation: 'card',
           animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+      <MainStack.Screen
+        name="Theme"
+        component={ThemeScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_right',
           headerShown: false,
         }}
       />

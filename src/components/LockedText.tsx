@@ -101,8 +101,8 @@ export default function LockedText({
 
       <LinearGradient
         colors={[
-          'rgba(255,255,255,0.075)',
-          'rgba(255,255,255,0.012)',
+          colors.overlayMedium,
+          colors.overlaySoft,
           'rgba(0,0,0,0.20)',
         ]}
         locations={[0, 0.42, 1]}
@@ -121,7 +121,7 @@ export default function LockedText({
       <View style={styles.center} pointerEvents="none">
         <View style={[styles.lockHalo, compact && styles.lockHaloCompact]}>
           <LinearGradient
-            colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.055)']}
+            colors={[colors.overlayStrong, colors.overlaySoft]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.lockGlass}
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#111114',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.13)',
+    borderColor: colors.overlayStrong,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.28,
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
     padding: 1,
     marginBottom: 14,
     borderRadius: 34,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: colors.overlayStrong,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.36,
@@ -209,10 +209,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 99,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.24)',
+    borderColor: colors.overlayStrong,
   },
   label: {
-    color: 'rgba(255,255,255,0.72)',
+    color: colors.textPrimary,
     fontSize: 10,
     lineHeight: 13,
     fontWeight: '800',
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: colors.overlayStrong,
   },
   bottomShade: {
     position: 'absolute',

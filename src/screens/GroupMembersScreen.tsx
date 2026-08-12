@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import { ScreenBackground, BackButton } from '../components/ui';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
   sheetLabel: { color: '#e7e9ea', fontSize: 14, fontWeight: '700' },
   sheetSublabel: { color: '#536471', fontSize: 12, marginTop: 2 },
   sheetCancel: {
-    marginTop: 10, backgroundColor: 'rgba(255,255,255,0.09)', borderRadius: 14,
+    marginTop: 10, backgroundColor: colors.overlayMedium, borderRadius: 14,
     alignItems: 'center', paddingVertical: 14,
   },
   sheetCancelTxt: { color: '#e7e9ea', fontWeight: '700', fontFamily: fonts.bold, fontSize: 15 },

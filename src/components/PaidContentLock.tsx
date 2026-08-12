@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: colors.textMuted,
   },
   buttonCompact: {
     minHeight: 46,
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     left: 14,
     right: 14,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.52)',
+    backgroundColor: colors.textSecondary,
   },
   buttonText: {
     color: colors.white,

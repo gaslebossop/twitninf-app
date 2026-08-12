@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState } from 'react';
 import {
   View,
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,

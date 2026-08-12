@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -35,8 +35,8 @@ const COLORS = {
   textPrimary: '#ffffff',
   textSecondary: '#cbd5e0',
   textMuted: '#9BA1AC',
-  glassBorder: 'rgba(255, 255, 255, 0.1)',
-  glassBackground: 'rgba(255, 255, 255, 0.05)',
+  glassBorder: colors.overlayMedium,
+  glassBackground: colors.overlaySoft,
 };
 
 const SPACING = {
@@ -251,7 +251,7 @@ export default function UnbanTicketsManager({ onClose }: UnbanTicketsManagerProp
             <TextInput
               style={styles.notesInput}
               placeholder="Notes de modération..."
-              placeholderTextColor="rgba(255,255,255,0.4)"
+              placeholderTextColor={colors.textMuted}
               multiline
               value={adminNotes}
               onChangeText={setAdminNotes}
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   filtersContainer: { paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
   filterRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 4,
   },
@@ -336,12 +336,12 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
   emptyText: { color: COLORS.textMuted, marginTop: 12, fontSize: 16 },
   ticketCard: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   ticketHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   username: { color: COLORS.primary, fontWeight: 'bold', fontFamily: fonts.bold, fontSize: 16 },
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: colors.overlayMedium,
   },
   adminNotesTitle: { color: '#fff', fontSize: 13, fontWeight: '600', fontFamily: fonts.semibold, marginBottom: 4 },
   adminNotes: { color: COLORS.textMuted, fontSize: 13, fontStyle: 'italic', marginBottom: 4 },
@@ -398,23 +398,23 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 20,
     padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   modalTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', fontFamily: fonts.bold, marginBottom: 8 },
   modalSubtitle: { color: COLORS.textMuted, fontSize: 14, marginBottom: 16 },
   notesInput: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 12,
     color: '#fff',
     minHeight: 100,
     textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
     marginBottom: 20,
   },
   modalActions: { flexDirection: 'row', gap: 12 },

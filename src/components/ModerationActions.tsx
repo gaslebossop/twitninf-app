@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState } from 'react';
 import {
   View,
@@ -35,12 +35,14 @@ const COLORS = {
   bgSecondary: '#15171C',
   bgTertiary: '#1B1E25',
   bgQuaternary: '#0B0C0F',
-  
-  // Texte - Hiérarchie claire
-  textPrimary: '#ffffff',
-  textSecondary: '#cbd5e0',
-  textMuted: '#9BA1AC',
-  
+
+  // Texte - thémé (le fond de ce panneau est un voile translucide qui suit
+  // déjà le thème via whiteAlpha0X ; un blanc figé ici devenait illisible
+  // sur le voile clair en mode light).
+  textPrimary: colors.textPrimary,
+  textSecondary: colors.textSecondary,
+  textMuted: colors.textMuted,
+
   // États et interactions
   success: '#4F7CFF',
   error: '#ff4757',
@@ -50,9 +52,9 @@ const COLORS = {
   primaryAlpha10: 'rgba(79, 124, 255, 0.1)',
   primaryAlpha20: 'rgba(79, 124, 255, 0.14)',
   primaryAlpha30: 'rgba(79, 124, 255, 0.25)',
-  whiteAlpha05: 'rgba(255, 255, 255, 0.05)',
-  whiteAlpha10: 'rgba(255, 255, 255, 0.1)',
-  whiteAlpha20: 'rgba(255, 255, 255, 0.2)',
+  whiteAlpha05: colors.overlaySoft,
+  whiteAlpha10: colors.overlayMedium,
+  whiteAlpha20: colors.overlayStrong,
 };
 
 // Typographie hiérarchisée
@@ -372,7 +374,7 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
                 colors={[COLORS.primary, COLORS.accent]}
                 style={styles.headerIconGradient}
               >
-                <Ionicons name="settings" size={20} color={COLORS.textPrimary} />
+                <Ionicons name="settings" size={20} color={colors.onAccent} />
               </LinearGradient>
             </View>
             
@@ -419,10 +421,10 @@ const ModerationActions: React.FC<ModerationActionsProps> = ({
                         colors={action.gradient}
                         style={styles.actionIconGradient}
                       >
-                        <Ionicons 
-                          name={action.icon as keyof typeof Ionicons.glyphMap} 
-                          size={24} 
-                          color={COLORS.textPrimary} 
+                        <Ionicons
+                          name={action.icon as keyof typeof Ionicons.glyphMap}
+                          size={24}
+                          color={colors.onAccent}
                         />
                       </LinearGradient>
                     </View>

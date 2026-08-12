@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton } from '../components/ui';
 import React, { useState, useEffect } from 'react';
 import {
@@ -270,7 +270,7 @@ export default function UserManagementScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={COLORS.bgPrimary} />
         <LinearGradient
           colors={[COLORS.bgPrimary, COLORS.bgSecondary, COLORS.bgTertiary]}
           style={styles.gradient}
@@ -287,7 +287,7 @@ export default function UserManagementScreen() {
   return (
     <ScreenBackground>
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       <View style={styles.gradient}>
         {/* Header avec effet de blur */}
@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -646,7 +646,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
   },
   headerStatsText: {
     color: '#ffffff',
@@ -819,7 +819,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     gap: SPACING.sm,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: colors.overlayStrong,
     position: 'relative',
   },
   actionButtonText: {

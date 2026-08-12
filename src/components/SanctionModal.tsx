@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -30,8 +30,8 @@ const COLORS = {
   success: '#43e97b',
   error: '#ff4757',
   warning: '#ffa502',
-  glassBorder: 'rgba(255, 255, 255, 0.1)',
-  glassBackground: 'rgba(255, 255, 255, 0.05)',
+  glassBorder: colors.overlayMedium,
+  glassBackground: colors.overlaySoft,
 };
 
 const SPACING = {

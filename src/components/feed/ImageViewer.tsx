@@ -44,7 +44,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-import { colors, fonts } from '../../theme';
+import { colors, fonts , statusBarStyle} from '../../theme';
 import { Tappable } from '../ui';
 
 const MAX_SCALE = 4;
@@ -220,7 +220,7 @@ export default function ImageViewer({ urls, initialIndex = 0, visible, onClose }
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={statusBarStyle()} />
       <View style={styles.root}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
 

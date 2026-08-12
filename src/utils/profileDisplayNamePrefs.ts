@@ -143,7 +143,11 @@ export function displayNameTextStyles(
     case 'chrome':
       return { ...base, color: '#ffffff' };
     default:
-      return { ...base, color: '#e7e9ea' };
+      // Pas de couleur ici : le rendu par défaut (voir PremiumDisplayName,
+      // cas `ev === 'none'`) doit hériter la couleur thémée de `baseStyle`
+      // (`colors.textPrimary`). Un hex figé ici passait en dernier dans le
+      // tableau de styles et écrasait le thème — quasi invisible en clair.
+      return { ...base };
   }
 }
 

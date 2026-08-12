@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState } from 'react';
 import {
   View,
@@ -371,7 +371,7 @@ export default function PremiumEffectSelector({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 15,
     padding: 20,
     marginVertical: 15,
@@ -397,14 +397,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   effectCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 15,
     padding: 15,
     marginHorizontal: 5,
     width: 140,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: colors.overlayMedium,
     position: 'relative',
   },
   selectedCard: {
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     maxWidth: 300,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: colors.overlayStrong,
   },
   previewTitle: {
     fontSize: 18,

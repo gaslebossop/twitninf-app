@@ -1,4 +1,4 @@
-import { colors, fonts, glow, withAlpha, duration as D, easing as E } from '../theme';
+import { colors, fonts, glow, withAlpha, duration as D, easing as E , statusBarStyle} from '../theme';
 import { BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -525,7 +525,7 @@ export default function UserProfileScreen() {
   if (loading && !userProfile) {
     return (
       <SafeAreaView style={S.container}>
-        <StatusBar barStyle="light-content" backgroundColor={PROFILE_BODY_BG} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={PROFILE_BODY_BG} />
         <ScreenSkeleton variant="detail" />
       </SafeAreaView>
     );
@@ -535,7 +535,7 @@ export default function UserProfileScreen() {
   if (error || !userProfile) {
     return (
       <SafeAreaView style={S.container}>
-        <StatusBar barStyle="light-content" backgroundColor={PROFILE_BODY_BG} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={PROFILE_BODY_BG} />
         <View style={S.errorContainer}>
           <Ionicons name="alert-circle" size={52} color={colors.red} />
           <Text style={S.errorTitle}>Erreur</Text>
@@ -563,7 +563,7 @@ export default function UserProfileScreen() {
 
   return (
     <View style={S.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       {/* ── STICKY HEADER ── */}
       <View style={[S.stickyHeader, { paddingTop: headerTopInset }]}>
@@ -1414,7 +1414,7 @@ const S = StyleSheet.create({
   tabsBar: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.10)',
+    borderBottomColor: colors.overlayMedium,
     backgroundColor: 'transparent',
   },
   tabItem: {

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, fonts, withAlpha } from '../theme';
+import { colors, fonts, withAlpha , statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../contexts/AuthContext';
@@ -139,7 +139,7 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         <View style={styles.header}>
           <BackButton navigation={navigation} />

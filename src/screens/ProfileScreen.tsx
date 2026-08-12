@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { fonts, colors, withAlpha } from '../theme';
+import { fonts, colors, withAlpha , statusBarStyle} from '../theme';
 import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import {
   View,
@@ -480,7 +480,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     return (
       <ScreenBackground>
         <SafeAreaView style={S.safeArea}>
-          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
           <ScreenSkeleton variant="detail" />
         </SafeAreaView>
       </ScreenBackground>
@@ -502,7 +502,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   return (
     <ScreenBackground>
     <View style={S.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
       <EventBanner />
 
       {/*
@@ -568,7 +568,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 onPress={() => navigation.navigate('Settings', { returnTo: 'ProfileScreen' })}
                 activeOpacity={0.8}
               >
-                <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
+                {/* Sur le liseré sombre fixe de la bannière (`bannerSettings`,
+                    `rgba(15,20,25,0.65)` quel que soit le thème) — une icône
+                    thémée y passait au quasi-noir en clair, invisible sur ce
+                    fond qui, lui, ne change jamais. */}
+                <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -994,6 +998,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           ))}
         </View>
 
+        {/* ── LOGOUT ──
+            Dans l'en-tête, pas dans le pied de liste : avec beaucoup de
+            tweets, un bouton posé après toute la liste demandait de tout
+            faire défiler pour se déconnecter. */}
+        <TouchableOpacity style={S.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+          <Ionicons name="log-out-outline" size={16} color={colors.red} />
+          <Text style={S.logoutText}>Se déconnecter</Text>
+        </TouchableOpacity>
+
           </>
         }
         ListEmptyComponent={
@@ -1052,12 +1065,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
-
-        {/* ── LOGOUT ── */}
-        <TouchableOpacity style={S.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
-          <Ionicons name="log-out-outline" size={16} color={colors.red} />
-          <Text style={S.logoutText}>Se déconnecter</Text>
-        </TouchableOpacity>
 
           </>
         }
@@ -1212,7 +1219,7 @@ const S = StyleSheet.create({
     height: 34,
     borderRadius: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -1222,7 +1229,7 @@ const S = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.overlayMedium,
     backgroundColor: 'transparent',
   },
   editProfileText: {
@@ -1359,7 +1366,7 @@ const S = StyleSheet.create({
   tabsBar: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.10)',
+    borderBottomColor: colors.overlayMedium,
     marginTop: 0,
     backgroundColor: 'transparent',
   },
@@ -1408,7 +1415,7 @@ const S = StyleSheet.create({
     backgroundColor: 'rgba(12,14,20,0.45)',
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     overflow: 'hidden',
   },
   accountItem: {
@@ -1441,7 +1448,7 @@ const S = StyleSheet.create({
     backgroundColor: 'rgba(16,18,25,0.98)',
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.overlayMedium,
     padding: 22,
   },
   addAccountTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', fontFamily: fonts.bold, marginBottom: 6 },
@@ -1449,7 +1456,7 @@ const S = StyleSheet.create({
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 13 : 10,
@@ -1457,7 +1464,7 @@ const S = StyleSheet.create({
     fontSize: 15,
   },
   addAccountActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 18, gap: 10 },
-  cancelBtn: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.12)' },
+  cancelBtn: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 7, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.overlayMedium },
   cancelText: { color: colors.textMuted, fontWeight: '500', fontFamily: fonts.medium, fontSize: 14 },
   confirmBtn: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 7, backgroundColor: colors.accent },
   confirmText: { color: '#fff', fontWeight: '600', fontFamily: fonts.semibold, fontSize: 14 },
@@ -1591,7 +1598,7 @@ const S = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.22)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: colors.overlaySoft,
     paddingVertical: 6,
     paddingHorizontal: 4,
     marginBottom: 4,
@@ -1643,7 +1650,7 @@ const S = StyleSheet.create({
     flex: 1,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     paddingVertical: 14,
     paddingHorizontal: 10,
     backgroundColor: 'rgba(0,0,0,0.28)',
@@ -1665,7 +1672,7 @@ const S = StyleSheet.create({
     paddingHorizontal: 12,
     marginTop: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.overlayMedium,
   },
   pricingSep: {
     width: StyleSheet.hairlineWidth,

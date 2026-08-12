@@ -19,7 +19,14 @@ import {
 import { colors as _colors } from './colors';
 
 export { colors, withAlpha, towardWhite, gradients, default as palette } from './colors';
-export type { ColorToken } from './colors';
+export {
+  applyThemePalette,
+  isDarkTheme,
+  statusBarStyle,
+  themePreviews,
+  themeState,
+} from './colors';
+export type { ColorToken, ThemeName } from './colors';
 export { typography, fontWeight, fontFamily } from './typography';
 export type { TypographyToken } from './typography';
 export { fonts, fontAssets } from './fonts';

@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenBackground, BackButton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
-import { colors, radius } from '../theme';
+import { colors, radius , statusBarStyle} from '../theme';
 import { toast } from '../components/ui/Toast';
 import {
   BLOCK_LABELS,
@@ -114,7 +114,7 @@ export default function EditTweetScreen({ navigation, route }: Props) {
 
   return (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
       <View style={[styles.headerShell, { paddingTop: headerTopInset }]}>
         <View style={[styles.header, { minHeight: HEADER_CONTENT_HEIGHT }]}>

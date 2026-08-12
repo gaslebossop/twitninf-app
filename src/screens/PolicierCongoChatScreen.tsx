@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
@@ -260,7 +260,7 @@ export default function PolicierCongoChatScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0C0F" />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="#0B0C0F" />
 
       {/* Header Instagram-like */}
       <View style={styles.header}>
@@ -450,13 +450,13 @@ const styles = StyleSheet.create({
   bubbleTextUser: { color: '#fff' },
   bubbleTextBot: { color: '#e7e9ea' },
   bubbleTime: { fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  bubbleTimeUser: { color: 'rgba(255,255,255,0.65)' },
+  bubbleTimeUser: { color: colors.textSecondary },
   bubbleTimeBot: { color: '#71767b' },
 
   // Typing
   typingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 },
   typingBubble: {
-    backgroundColor: 'rgba(255,255,255,0.09)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: colors.overlayMedium, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
   },
   typingDots: { color: '#71767b', fontSize: 18, letterSpacing: 4 },
 

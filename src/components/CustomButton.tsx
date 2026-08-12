@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   // Variantes
   primary: {},
   secondary: {
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
     borderColor: colors.borderStrong,
   },

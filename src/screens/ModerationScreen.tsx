@@ -1,4 +1,4 @@
-import { colors, fonts, radius } from '../theme';
+import { colors, fonts, radius , statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -47,7 +47,7 @@ const TONE_SOFT: Record<Tone, string> = {
   gold: 'rgba(255,210,77,0.10)',
   cyan: colors.cyanSoft,
   danger: colors.redMuted,
-  neutral: 'rgba(255,255,255,0.05)',
+  neutral: colors.overlaySoft,
 };
 
 interface StatisticsData {
@@ -379,7 +379,7 @@ export default function ModerationScreen() {
   return (
     <ScreenBackground>
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <BackButton navigation={navigation} />

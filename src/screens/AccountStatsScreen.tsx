@@ -4,7 +4,7 @@ import { StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { AppHeader, ScreenBackground } from '../components/ui';
 import UserStatsTab from '../components/UserStatsTab';
 import { useAuth } from '../contexts/AuthContext';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 
 interface AccountStatsScreenProps {
   navigation: any;
@@ -18,7 +18,7 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
   return (
     <ScreenBackground>
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
         <AppHeader
           navigation={navigation}

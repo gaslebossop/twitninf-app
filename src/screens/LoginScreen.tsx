@@ -14,9 +14,10 @@ import {
   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle, Line, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { signInWithGAuth } from '../services/gAuthLogin';
 import {
   wp,
   hp,
@@ -34,10 +35,10 @@ const { width } = Dimensions.get('window');
 // ── Icônes SVG ─────────────────────────────────────────────────────
 const UserIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
-    <Circle cx={9} cy={6} r={3.5} stroke="rgba(255,255,255,0.4)" strokeWidth={1.3} />
+    <Circle cx={9} cy={6} r={3.5} stroke={colors.textMuted} strokeWidth={1.3} />
     <Path
       d="M2 16c0-3.3 3.1-6 7-6s7 2.7 7 6"
-      stroke="rgba(255,255,255,0.4)"
+      stroke={colors.textMuted}
       strokeWidth={1.3}
       strokeLinecap="round"
     />
@@ -46,14 +47,14 @@ const UserIcon = () => (
 
 const LockIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
-    <Rect x={3} y={8} width={12} height={9} rx={2.5} stroke="rgba(255,255,255,0.4)" strokeWidth={1.3} />
+    <Rect x={3} y={8} width={12} height={9} rx={2.5} stroke={colors.textMuted} strokeWidth={1.3} />
     <Path
       d="M6 8V5.5a3 3 0 016 0V8"
-      stroke="rgba(255,255,255,0.4)"
+      stroke={colors.textMuted}
       strokeWidth={1.3}
       strokeLinecap="round"
     />
-    <Circle cx={9} cy={12.5} r={1.2} fill="rgba(255,255,255,0.4)" />
+    <Circle cx={9} cy={12.5} r={1.2} fill={colors.textMuted} />
   </Svg>
 );
 
@@ -61,17 +62,17 @@ const EyeIcon = ({ open }: { open: boolean }) => (
   <Svg width={20} height={20} viewBox="0 0 18 18" fill="none">
     <Path
       d="M1.5 9C1.5 9 4 3.5 9 3.5S16.5 9 16.5 9 14 14.5 9 14.5 1.5 9 1.5 9z"
-      stroke="rgba(255,255,255,0.45)"
+      stroke={colors.textSecondary}
       strokeWidth={1.3}
     />
-    <Circle cx={9} cy={9} r={2.2} stroke="rgba(255,255,255,0.45)" strokeWidth={1.3} />
+    <Circle cx={9} cy={9} r={2.2} stroke={colors.textSecondary} strokeWidth={1.3} />
     {!open && (
       <Line
         x1={3}
         y1={3}
         x2={15}
         y2={15}
-        stroke="rgba(255,255,255,0.45)"
+        stroke={colors.textSecondary}
         strokeWidth={1.3}
         strokeLinecap="round"
       />
@@ -83,7 +84,7 @@ const ArrowLeftIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
     <Path
       d="M11 4L6 9L11 14"
-      stroke="rgba(255,255,255,0.8)"
+      stroke={colors.textPrimary}
       strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -98,12 +99,12 @@ const AlertIcon = () => (
   </Svg>
 );
 
-const GoogleIcon = () => (
-  <Svg width={18} height={18} viewBox="0 0 48 48">
-    <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-    <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-    <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-    <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+const GIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 24 24">
+    <Circle cx={12} cy={12} r={11} fill={colors.accent} />
+    <SvgText x={12} y={16.5} fontSize={13} fontWeight="700" fill="#ffffff" textAnchor="middle">
+      G
+    </SvgText>
   </Svg>
 );
 
@@ -119,11 +120,12 @@ const AppleIcon = () => (
 // ── Composant principal ────────────────────────────────────────────
 const LoginScreen: React.FC = () => {
   const navigation: any = useNavigation();
-  const { login, isAuthenticated } = useAuth();
+  const { login, completeGAuthLogin, isAuthenticated } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGAuthLoading, setIsGAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +177,44 @@ const LoginScreen: React.FC = () => {
       shakeError();
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const goToMainApp = () => {
+    try {
+      if (navigation?.canGoBack?.()) {
+        navigation.goBack();
+      } else {
+        navigation?.navigate?.('Profile');
+      }
+    } catch (_) { }
+  };
+
+  const handleGAuthSignIn = async () => {
+    if (isGAuthLoading) return;
+    setError(null);
+    setIsGAuthLoading(true);
+    try {
+      const result = await signInWithGAuth();
+      if (result.type === 'cancel') return;
+      if (result.type === 'error') {
+        setError(result.message);
+        shakeError();
+        return;
+      }
+
+      const session = await completeGAuthLogin(result.token, result.refreshToken);
+      if (!session.success) {
+        setError(session.message);
+        shakeError();
+        return;
+      }
+      goToMainApp();
+    } catch {
+      setError('La connexion à G a échoué.');
+      shakeError();
+    } finally {
+      setIsGAuthLoading(false);
     }
   };
 
@@ -239,7 +279,7 @@ const LoginScreen: React.FC = () => {
               <TextInput
                 style={styles.input}
                 placeholder="Votre nom d'utilisateur"
-                placeholderTextColor="rgba(255,255,255,0.2)"
+                placeholderTextColor={colors.overlayStrong}
                 value={username}
                 onChangeText={setUsername}
                 onFocus={() => setFocusedField('username')}
@@ -264,7 +304,7 @@ const LoginScreen: React.FC = () => {
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Votre mot de passe"
-                placeholderTextColor="rgba(255,255,255,0.2)"
+                placeholderTextColor={colors.overlayStrong}
                 value={password}
                 onChangeText={setPassword}
                 onFocus={() => setFocusedField('password')}
@@ -336,9 +376,20 @@ const LoginScreen: React.FC = () => {
 
           {/* Boutons sociaux */}
           <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn} activeOpacity={0.7}>
-              <GoogleIcon />
-              <Text style={styles.socialBtnLabel}>Google</Text>
+            <TouchableOpacity
+              style={[styles.socialBtn, isGAuthLoading && { opacity: 0.65 }]}
+              activeOpacity={0.7}
+              onPress={handleGAuthSignIn}
+              disabled={isGAuthLoading}
+            >
+              {isGAuthLoading ? (
+                <ActivityIndicator color={colors.textPrimary} size="small" />
+              ) : (
+                <>
+                  <GIcon />
+                  <Text style={styles.socialBtnLabel}>G</Text>
+                </>
+              )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialBtn} activeOpacity={0.7}>
               <AppleIcon />
@@ -405,9 +456,9 @@ const styles = StyleSheet.create({
     width: wp ? wp(40) : 40,
     height: wp ? wp(40) : 40,
     borderRadius: wp ? wp(20) : 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlaySoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 36,
@@ -450,9 +501,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
     borderRadius: borderRadius?.md ?? 14,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 14 : 10,
@@ -555,9 +606,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 13,
     borderRadius: borderRadius?.md ?? 12,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.overlayMedium,
   },
   socialBtnIcon: {
     fontSize: 15,

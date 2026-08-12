@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,10 +9,42 @@ import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
 import { BackButton } from '../components/ui';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { toast } from '../components/ui/Toast';
+import { signInWithGAuth } from '../services/gAuthLogin';
+import { resetToRoot } from '../navigation/NavigationService';
 
 export default function AccountManagerScreen() {
   const navigation = useNavigation();
-  const { user, accounts, switchAccount, clearAllAccountsAndLogout } = useAuth() as any;
+  const { user, accounts, switchAccount, clearAllAccountsAndLogout, completeGAuthLogin } = useAuth() as any;
+  const [gAuthAddLoading, setGAuthAddLoading] = React.useState(false);
+
+  const handleAddGAuthAccount = async () => {
+    if (gAuthAddLoading) return;
+    setGAuthAddLoading(true);
+    try {
+      // signInWithGAuth demande toujours le choix de compte — cet écran
+      // profite juste du même chemin que le bouton de connexion normal.
+      const result = await signInWithGAuth();
+      if (result.type === 'cancel') return;
+      if (result.type === 'error') {
+        toast.error(result.message);
+        return;
+      }
+
+      const session = await completeGAuthLogin(result.token, result.refreshToken);
+      if (!session.success) {
+        toast.error(session.message);
+        return;
+      }
+
+      toast.success(result.isNewAccount ? 'Compte créé et ajouté !' : 'Compte ajouté !');
+      resetToRoot();
+    } catch {
+      toast.error("L'ajout du compte G a échoué.");
+    } finally {
+      setGAuthAddLoading(false);
+    }
+  };
 
   const handleClearAllAccounts = () => {
     confirmAsync({
@@ -78,6 +110,16 @@ export default function AccountManagerScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={[styles.addButton, gAuthAddLoading && { opacity: 0.65 }]}
+          onPress={handleAddGAuthAccount}
+          activeOpacity={0.85}
+          disabled={gAuthAddLoading}
+        >
+          <Ionicons name="link-outline" size={18} color="#4F7CFF" />
+          <Text style={styles.addButtonText}>Se connecter avec un autre compte G</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.clearAllButton}
           onPress={handleClearAllAccounts}
           activeOpacity={0.85}
@@ -107,7 +149,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderWidth: 1,
     borderColor: '#2f3336',
     marginBottom: 10,
@@ -126,7 +168,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#2f3336',
-    backgroundColor: 'rgba(255,255,255,0.09)'
+    backgroundColor: colors.overlayMedium
   },
   addButtonText: { color: '#4F7CFF', fontWeight: '700', fontFamily: fonts.bold, marginLeft: 8 },
   clearAllButton: {

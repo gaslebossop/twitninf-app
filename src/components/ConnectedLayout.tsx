@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import UnifiedBottomNavbar from './UnifiedBottomNavbar';
+import { statusBarStyle } from '../theme';
 
 interface ConnectedLayoutProps {
   children: React.ReactNode;
@@ -59,7 +60,7 @@ export default function ConnectedLayout({
 
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={backgroundColor} />
       
       {/* Contenu principal */}
       <View style={styles.content}>

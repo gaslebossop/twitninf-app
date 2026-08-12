@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
   },
   amountSubtextSelected: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: colors.textPrimary,
   },
   rateContainer: {
     backgroundColor: 'white',

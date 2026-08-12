@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -745,7 +745,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0, right: 0,
     height: 3,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.overlayStrong,
     flexDirection: 'row',
     zIndex: 4,
   },
@@ -785,17 +785,17 @@ const styles = StyleSheet.create({
     color: '#fff', fontSize: 120, fontFamily: fonts.bold,
     textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8,
   },
-  countdownHint: { color: 'rgba(255,255,255,0.85)', fontSize: 14, marginTop: 6 },
+  countdownHint: { color: colors.textPrimary, fontSize: 14, marginTop: 6 },
 
   bottomArea: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 3, gap: 14 },
 
   durationTabs: { flexDirection: 'row', justifyContent: 'center', gap: 26 },
   durationTab: { alignItems: 'center', gap: 5, paddingHorizontal: 6 },
-  durationLabel: { color: 'rgba(255,255,255,0.65)', fontSize: 14, fontFamily: fonts.bold },
+  durationLabel: { color: colors.textSecondary, fontSize: 14, fontFamily: fonts.bold },
   durationLabelActive: { color: '#fff' },
   durationDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#fff' },
 
-  tierHint: { textAlign: 'center', color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  tierHint: { textAlign: 'center', color: colors.textSecondary, fontSize: 12 },
 
   shutterRow: {
     flexDirection: 'row',
@@ -810,7 +810,7 @@ const styles = StyleSheet.create({
   galleryFallback: {
     width: 42, height: 42, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: colors.overlayStrong,
   },
 
   // Obturateur TikTok : gros disque rouge, anneau blanc fin détaché.
@@ -819,7 +819,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: 48,
     borderWidth: 5,
-    borderColor: 'rgba(255,255,255,0.9)',
+    borderColor: colors.textPrimary,
   },
   shutterRingActive: { borderColor: TIKTOK_RED },
   shutterCore: { width: 76, height: 76, borderRadius: 38, backgroundColor: TIKTOK_RED },
@@ -828,10 +828,10 @@ const styles = StyleSheet.create({
 
   validateBtn: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
 
-  closeBtn: { padding: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignSelf: 'flex-start' },
+  closeBtn: { padding: 8, borderRadius: 20, backgroundColor: colors.overlayMedium, alignSelf: 'flex-start' },
   fallbackContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30, gap: 16 },
   fallbackTitle: { fontSize: 22, fontFamily: fonts.bold, color: '#fff', textAlign: 'center' },
-  fallbackDesc: { fontSize: 15, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 22 },
+  fallbackDesc: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
   fallbackBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginTop: 8, paddingHorizontal: 20, paddingVertical: 12,

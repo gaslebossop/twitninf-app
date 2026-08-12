@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, AppRefreshControl } from '../components/ui';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import { withoutOrphanReplies } from '../utils/feed';
@@ -1239,7 +1239,7 @@ export default function TweetsScreen() {
   return (
     <ScreenBackground>
     <SafeAreaView style={S.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       {/* ── Event banners ── */}
       <EventBanner />

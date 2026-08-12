@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React from 'react';
 import {
   View,
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   topBorder: {
     height: 0.5,
     width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: colors.overlayMedium,
   },
   content: {
     flex: 1,

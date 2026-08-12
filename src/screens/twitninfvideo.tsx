@@ -1,4 +1,4 @@
-import { fonts, colors } from '../theme';
+import { fonts, colors , statusBarStyle} from '../theme';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -512,7 +512,7 @@ const TwitNinfVideo: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={statusBarStyle()} />
 
       {videos.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -584,12 +584,12 @@ const styles = StyleSheet.create({
   actionText: { color: 'white', fontSize: 12.5, fontWeight: '700', fontFamily: fonts.bold, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   discContainer: { marginTop: 8 },
   disc: { width: 46, height: 46, borderRadius: 23, borderWidth: 8, borderColor: '#222', alignItems: 'center', justifyContent: 'center' },
-  discCenter: { width: 14, height: 14, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.8)' },
+  discCenter: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.textPrimary },
   infoContainer: { position: 'absolute', left: 14, right: 80, gap: 8 },
   usernameText: { color: 'white', fontSize: 16, fontWeight: '800', fontFamily: fonts.bold, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  descText: { color: 'rgba(255,255,255,0.95)', fontSize: 14, lineHeight: 20, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  descText: { color: colors.textPrimary, fontSize: 14, lineHeight: 20, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   audioContainer: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  audioText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, flex: 1 },
+  audioText: { color: colors.textPrimary, fontSize: 13, flex: 1 },
 });
 
 export default TwitNinfVideo;

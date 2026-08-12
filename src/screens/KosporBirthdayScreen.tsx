@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 /**
  * Écran spécial pour l'événement Kospor Birthday
  * Interface Premium avec animations et design moderne
@@ -57,13 +57,13 @@ const COLORS = {
   warning: '#f59e0b',
   
   // Glass morphism
-  glassBorder: 'rgba(255, 255, 255, 0.2)',
-  glassBackground: 'rgba(255, 255, 255, 0.08)',
-  glassBackgroundStrong: 'rgba(255, 255, 255, 0.12)',
+  glassBorder: colors.overlayStrong,
+  glassBackground: colors.overlayMedium,
+  glassBackgroundStrong: colors.overlayMedium,
   
   // Ombres et effets
   shadowDark: 'rgba(0, 0, 0, 0.4)',
-  shadowLight: 'rgba(255, 255, 255, 0.1)',
+  shadowLight: colors.overlayMedium,
 };
 
 // Composant de particules animées pour l'arrière-plan
@@ -397,7 +397,7 @@ export default function KosporBirthdayScreen() {
   if (!isEventActive) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={COLORS.bgPrimary} />
         <LinearGradient colors={[COLORS.bgPrimary, COLORS.bgSecondary]} style={styles.inactiveGradient}>
           <BlurView intensity={20} tint="dark" style={styles.inactiveBlur}>
             <Ionicons name="lock-closed-outline" size={64} color={COLORS.primary} />
@@ -413,7 +413,7 @@ export default function KosporBirthdayScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
       
       {/* Background avec gradient premium */}
       <LinearGradient

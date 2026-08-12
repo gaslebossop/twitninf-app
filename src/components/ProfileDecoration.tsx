@@ -557,11 +557,22 @@ const NAME_GLOW_HALO_RATIOS: ReadonlyArray<{ ratio: number; min: number; max: nu
 
 const DEFAULT_NAME_FONT_SIZE = 21;
 
+/**
+ * Plafond du rayon le plus large, en px. `textShadowRadius` n'est pas rogné
+ * par le conteneur (`nameWrap` n'a pas d'`overflow: hidden` — un halo doit
+ * pouvoir déborder un peu du texte) : sans plafond, un nom en taille
+ * « Géant » (×2, voir `NAME_SIZE_SCALE`) posé sur un gros libellé d'écran
+ * repoussait le rayon largement au-delà de 40 px, et iOS restitue un rayon
+ * aussi large comme un nuage diffus qui déborde sur toute la largeur de
+ * l'écran plutôt qu'un tube net autour des lettres.
+ */
+const NAME_GLOW_MAX_RADIUS = 22;
+
 function nameGlowHaloFor(style?: StyleProp<TextStyle>) {
   const flat = StyleSheet.flatten(style) as TextStyle | undefined;
   const fontSize = typeof flat?.fontSize === 'number' ? flat.fontSize : DEFAULT_NAME_FONT_SIZE;
   return NAME_GLOW_HALO_RATIOS.map((layer) => ({
-    radius: layer.ratio * fontSize,
+    radius: Math.min(layer.ratio * fontSize, NAME_GLOW_MAX_RADIUS * layer.ratio / NAME_GLOW_HALO_RATIOS[0].ratio),
     min: layer.min,
     max: layer.max,
   }));

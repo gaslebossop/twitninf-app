@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.overlayStrong,
     borderBottomLeftRadius: 15,
     borderBottomRightRadius: 15,
   },
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.overlayStrong,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -235,14 +235,14 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: colors.textPrimary,
     fontWeight: '500', fontFamily: fonts.medium,
   },
   dismissButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.overlayStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },

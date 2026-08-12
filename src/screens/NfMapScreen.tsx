@@ -23,9 +23,12 @@
  * l'ont jamais accepté.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -40,14 +43,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
 import { colors, fonts } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
 import { Tappable, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
 import MapPin from '../components/map/MapPin';
 import MapCluster from '../components/map/MapCluster';
-import { clusterize, degreesPerPixel, type Cluster } from '../utils/mapCluster';
+import { clusterize, quantizedDegreesPerPixel } from '../utils/mapCluster';
 import NfMapCanvas, {
   type MapBounds,
+  type MapCamera,
   type MapCoordinate,
   type MapMarker,
 } from '../components/map/NfMapCanvas';
@@ -66,8 +71,11 @@ const FOCUS_ZOOM = 14;
 
 /** Hauteur de la feuille repliée — juste de quoi lire le résumé. */
 const PEEK_HEIGHT = 112;
-/** Hauteur approximative de la feuille ouverte, pour décaler ce qui flotte. */
-const OPEN_HEIGHT = 330;
+/** Hauteur réelle de la feuille, constante : c'est la translation qui bouge. */
+const SHEET_HEIGHT = Math.round(Dimensions.get('window').height * 0.72);
+/** Ouverture un peu plus lente que la fermeture : on suit ce qui se révèle. */
+const OPEN_MS = 260;
+const CLOSE_MS = 200;
 
 type SheetMode = 'peek' | 'list' | 'settings';
 
@@ -100,20 +108,44 @@ function freshness(iso: string): string {
   return `il y a ${Math.round(minutes / 60)} h`;
 }
 
-/** Un compte, tel qu'il entre dans le regroupement. */
-interface ClusterPerson {
-  id: string;
-  latitude: number;
-  longitude: number;
-  person: NfMapPerson;
-}
+/**
+ * Ce qu'un marqueur MONTRE à un instant donné.
+ *
+ * Le rôle change avec le zoom ; l'identité du marqueur, elle, ne change
+ * jamais — c'est toute la raison d'être de ce type. Voir le commentaire de
+ * `markers` plus bas.
+ */
+type MarkerRole =
+  | { kind: 'self' }
+  | { kind: 'solo'; person: NfMapPerson }
+  | { kind: 'head'; person: NfMapPerson; faces: NfMapPerson[] }
+  | { kind: 'member' };
 
 export default function NfMapScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
-  const [center, setCenter] = useState<MapCoordinate>(FALLBACK_CENTER);
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  /**
+   * Cible de caméra — uniquement les sauts VOULUS.
+   *
+   * Le déplacement au doigt n'écrit rien ici. Avant, chaque déplacement
+   * réécrivait `center` et `zoom` dans l'état de l'écran : toute la page se
+   * reconstruisait pendant qu'on faisait glisser la carte, et la carte
+   * recevait en retour sa propre position en `props`. C'est de là que venaient
+   * les à-coups et le sentiment que la carte se battait contre le doigt.
+   */
+  const [camera, setCamera] = useState<MapCamera>({
+    center: FALLBACK_CENTER,
+    zoom: DEFAULT_ZOOM,
+    nonce: 0,
+  });
+  const jumpTo = useCallback((center: MapCoordinate, zoom: number) => {
+    setCamera((current) => ({ center, zoom, nonce: current.nonce + 1 }));
+  }, []);
+
+  /** Zoom réellement affiché. Une `ref` : le lire ne doit rien redessiner. */
+  const liveZoom = useRef(DEFAULT_ZOOM);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [people, setPeople] = useState<NfMapPerson[]>([]);
   const [friends, setFriends] = useState<NfMapFriend[]>([]);
@@ -150,8 +182,44 @@ export default function NfMapScreen() {
     }
   }, []);
 
+  /**
+   * Les personnes connues s'ACCUMULENT ; elles ne sont jamais retirées.
+   *
+   * Le serveur ne répond que pour le rectangle affiché : remplacer la liste à
+   * chaque réponse fait disparaître tous ceux qu'on vient de laisser derrière
+   * soi. Or faire disparaître quelqu'un, c'est démonter son marqueur — et
+   * démonter un marqueur est précisément ce qui fait tomber l'app sur la
+   * version de `react-native-maps` figée par Expo Go. Se déplacer revenait
+   * donc à provoquer la panne à chaque pause du doigt.
+   *
+   * On fusionne : un compte déjà connu voit sa position mise à jour SUR PLACE
+   * (une simple prop du marqueur, aucun démontage), un compte nouveau s'ajoute.
+   * L'ensemble est naturellement borné — seuls les comptes liés à toi peuvent
+   * apparaître — et repart à zéro en quittant l'écran.
+   */
   const loadNearby = useCallback(async (window: MapBounds) => {
-    setPeople(await nfMapService.nearby(window));
+    const fresh = await nfMapService.nearby(window);
+    if (fresh.length === 0) return;
+
+    setPeople((current) => {
+      const byId = new Map(current.map((person) => [person.id, person]));
+      let changed = false;
+
+      for (const person of fresh) {
+        const known = byId.get(person.id);
+        const moved =
+          !known ||
+          known.shared_at !== person.shared_at ||
+          String(known.latitude) !== String(person.latitude) ||
+          String(known.longitude) !== String(person.longitude);
+        if (moved) {
+          byId.set(person.id, person);
+          changed = true;
+        }
+      }
+
+      return changed ? Array.from(byId.values()) : current;
+    });
   }, []);
 
   useEffect(() => {
@@ -193,8 +261,7 @@ export default function NfMapScreen() {
         longitude: position.coords.longitude,
       };
       setMyPosition(here);
-      setCenter(here);
-      setZoom(FOCUS_ZOOM);
+      jumpTo(here, FOCUS_ZOOM);
 
       if (settings && settings.sharing_mode !== 'ghost') {
         try {
@@ -205,8 +272,26 @@ export default function NfMapScreen() {
         }
       }
     },
-    [settings, loadSettings]
+    [settings, loadSettings, jumpTo]
   );
+
+  /**
+   * On se localise à l'arrivée, sans rien demander.
+   *
+   * Sinon la carte s'ouvre sur Paris — la valeur de repli — et on n'y est pas.
+   * Le premier réflexe est alors de dézoomer pour se chercher, et comme la
+   * fenêtre interrogée est celle de Paris, il n'y a personne à afficher non
+   * plus : l'écran paraît vide ET perdu. Se centrer sur soi ne partage rien,
+   * c'est un cadrage local.
+   */
+  const located = useRef(false);
+  useEffect(() => {
+    if (loading || located.current) return;
+    located.current = true;
+    locateMe({ silent: true }).catch(() => {
+      /* Permission refusée ou GPS muet : le repli fait son travail. */
+    });
+  }, [loading, locateMe]);
 
   const changeMode = useCallback(
     async (mode: SharingMode) => {
@@ -247,37 +332,83 @@ export default function NfMapScreen() {
     }
   }, []);
 
+  const focusOn = useCallback(
+    (person: NfMapPerson) => {
+      jumpTo(
+        { latitude: Number(person.latitude), longitude: Number(person.longitude) },
+        FOCUS_ZOOM
+      );
+      setSelected(person);
+      setSheet('peek');
+    },
+    [jumpTo]
+  );
+
   /**
-   * Ouvre un groupe en zoomant dessus. Deux niveaux d'un coup : un seul ne
-   * suffit souvent pas à séparer des gens d'un même quartier, et on aurait à
-   * retoucher plusieurs fois le même tas.
+   * Appui sur un marqueur. Traité ICI et pas dans le marqueur lui-même : un
+   * marqueur est une image, pas une vue vivante — voir l'en-tête de
+   * `NfMapCanvas`. C'est ce qui rendait les épingles insensibles au doigt.
    */
-  const zoomOnCluster = useCallback((cluster: Cluster<ClusterPerson>) => {
-    setCenter({ latitude: cluster.latitude, longitude: cluster.longitude });
-    setZoom((current) => Math.min(current + 2, 17));
-    setSelected(null);
-  }, []);
+  const onMarkerPress = useCallback(
+    (marker: MapMarker<MarkerRole>) => {
+      const role = marker.data;
+      if (role.kind === 'self') return;
 
-  const focusOn = useCallback((person: NfMapPerson) => {
-    setCenter({ latitude: Number(person.latitude), longitude: Number(person.longitude) });
-    setZoom(FOCUS_ZOOM);
-    setSelected(person);
-    setSheet('peek');
-  }, []);
+      // Un groupe s'ouvre en zoomant dessus. Deux paliers d'un coup : un seul
+      // ne suffit souvent pas à séparer des gens d'un même quartier, et on
+      // aurait à retoucher plusieurs fois le même tas.
+      //
+      // Les membres réagissent comme la tête : ils sont réduits à un point
+      // sous elle, mais restent tactiles sur quelques pixels. Un appui un peu
+      // bas tomberait sinon dans le vide alors qu'on visait le groupe.
+      if (role.kind === 'head' || role.kind === 'member') {
+        jumpTo(
+          { latitude: marker.latitude, longitude: marker.longitude },
+          Math.min(liveZoom.current + 2, 17)
+        );
+        setSelected(null);
+        return;
+      }
+
+      setSelected(role.person);
+      setSheet('peek');
+    },
+    [jumpTo]
+  );
 
   /**
-   * Marqueurs REGROUPÉS.
+   * Pas de la grille, figé par palier de zoom. Isolé dans son propre `useMemo`
+   * pour que le regroupement ne dépende PAS des bornes brutes : à zoom
+   * constant, traverser toute la carte laisse cette valeur inchangée, donc
+   * rien n'est recalculé.
+   */
+  const clusterScale = useMemo(
+    () =>
+      bounds
+        ? quantizedDegreesPerPixel(bounds.east - bounds.west, Dimensions.get('window').width)
+        : 0,
+    [bounds]
+  );
+
+  /**
+   * UN marqueur par personne, pour toute la session — et son identifiant est
+   * celui de la personne, JAMAIS celui d'un groupe.
    *
-   * Sans regroupement, vingt personnes d'une même agglomération donnent vingt
-   * épingles empilées — illisible, et vingt vues natives redessinées à chaque
-   * image. C'est ce qui faisait ramer puis tomber la carte au dézoom, puisque
-   * dézoomer rapproche tout le monde sans réduire le nombre de vues.
+   * ── Le regroupement sans démontage ──
+   * Regrouper naïvement fabrique des marqueurs dont l'identité dépend du zoom :
+   * trois personnes forment un marqueur au loin, trois marqueurs de près. Tout
+   * zoom démonte alors des marqueurs — et démonter un marqueur fait tomber
+   * l'app sur la version de `react-native-maps` que fige Expo Go, côté natif,
+   * sans une ligne de log.
+   *
+   * D'où ce détour : la liste des marqueurs ne bouge jamais, c'est leur RÔLE
+   * qui change. Une personne est tour à tour épingle isolée, tête de groupe
+   * (elle porte alors les visages de tout le groupe), ou membre — auquel cas
+   * elle glisse au centre du groupe et se réduit à un point, invisible
+   * derrière la tête. Rien n'est monté ni démonté : seules des coordonnées et
+   * des enfants changent, c'est-à-dire des props.
    */
-  const markers: Array<MapMarker<Cluster<ClusterPerson> | null>> = useMemo(() => {
-    const scale = bounds
-      ? degreesPerPixel(bounds.east - bounds.west, Dimensions.get('window').width)
-      : 0;
-
+  const markers: Array<MapMarker<MarkerRole>> = useMemo(() => {
     const clusters = clusterize(
       people.map((person) => ({
         id: person.id,
@@ -285,27 +416,71 @@ export default function NfMapScreen() {
         longitude: Number(person.longitude),
         person,
       })),
-      scale
+      clusterScale
     );
 
-    const list: Array<MapMarker<Cluster<ClusterPerson> | null>> = clusters.map((cluster) => ({
-      id: cluster.id,
-      latitude: cluster.latitude,
-      longitude: cluster.longitude,
-      data: cluster,
-    }));
+    const list: Array<MapMarker<MarkerRole>> = [];
+
+    for (const cluster of clusters) {
+      if (cluster.items.length === 1) {
+        const { person } = cluster.items[0];
+        list.push({
+          id: person.id,
+          latitude: cluster.latitude,
+          longitude: cluster.longitude,
+          contentKey: `solo${selected?.id === person.id ? ':sel' : ''}`,
+          zIndex: 2,
+          data: { kind: 'solo', person },
+        });
+        continue;
+      }
+
+      // Tête choisie par identifiant, pas par ordre d'arrivée : le même groupe
+      // doit désigner la même tête à chaque calcul, sinon deux marqueurs
+      // échangent leur apparence pour rien.
+      const members = [...cluster.items].sort((a, b) => a.id.localeCompare(b.id));
+      const [head, ...rest] = members;
+      const faces = members.map(({ person }) => person);
+
+      list.push({
+        id: head.person.id,
+        latitude: cluster.latitude,
+        longitude: cluster.longitude,
+        contentKey: `head:${faces.length}:${faces.slice(0, 3).map((p) => p.id).join(',')}`,
+        zIndex: 3,
+        data: { kind: 'head', person: head.person, faces },
+      });
+
+      for (const member of rest) {
+        list.push({
+          id: member.person.id,
+          // Rassemblés sur la tête : c'est ce qui fait disparaître le tas.
+          latitude: cluster.latitude,
+          longitude: cluster.longitude,
+          contentKey: 'member',
+          zIndex: 1,
+          data: { kind: 'member' },
+        });
+      }
+    }
 
     // Se voir soi-même est le seul moyen de vérifier ce que les autres voient.
-    if (myPosition && !isGhost) {
+    // Y COMPRIS en mode fantôme : cette épingle est locale, elle ne publie
+    // rien. La cacher tant qu'on ne partage pas — donc par défaut, donc à la
+    // toute première ouverture — donnait une carte où on ne se trouve pas.
+    // L'épingle dit alors explicitement que personne d'autre ne la voit.
+    if (myPosition) {
       list.push({
         id: '__moi__',
         latitude: myPosition.latitude,
         longitude: myPosition.longitude,
-        data: null,
+        contentKey: `self:${isGhost ? 'ghost' : 'live'}`,
+        zIndex: 4,
+        data: { kind: 'self' },
       });
     }
     return list;
-  }, [people, myPosition, isGhost, bounds]);
+  }, [people, myPosition, isGhost, clusterScale, selected]);
 
   const visibleFriends = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -318,7 +493,45 @@ export default function NfMapScreen() {
   }, [friends, search]);
 
   const sharingFriends = useMemo(() => friends.filter((friend) => friend.is_sharing), [friends]);
-  const floatingBottom = (sheet === 'peek' ? PEEK_HEIGHT : OPEN_HEIGHT) + 16;
+
+  /**
+   * Feuille dépliée : elle couvre les trois quarts bas de l'écran.
+   *
+   * Ce qui flotte au-dessus de la carte est alors DÉMONTÉ, pas décalé. La
+   * version précédente le décalait de `OPEN_HEIGHT` (330 px), une constante
+   * qui n'a jamais correspondu aux 72 % réels de la feuille : le bouton « me
+   * localiser » et surtout la fiche de la personne touchée se retrouvaient
+   * dessous, visibles nulle part et impossibles à fermer. C'est le « on ne
+   * peut pas fermer les popups ».
+   */
+  const isSheetOpen = sheet !== 'peek';
+  const floatingBottom = PEEK_HEIGHT + insets.bottom + 16;
+
+  /**
+   * Glissement de la feuille, piloté en natif.
+   *
+   * `0` = dépliée. Repliée, on la descend juste assez pour ne laisser dépasser
+   * que l'en-tête : le corps sort de l'écran au lieu d'être démonté, donc rien
+   * ne se recompose pendant l'animation.
+   */
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: isSheetOpen ? 1 : 0,
+      duration: isSheetOpen ? OPEN_MS : CLOSE_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [isSheetOpen, progress]);
+
+  const slide = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [SHEET_HEIGHT - PEEK_HEIGHT - insets.bottom, 0],
+  });
+  const chevronTurn = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
 
   if (loading) {
     return (
@@ -332,44 +545,61 @@ export default function NfMapScreen() {
     <View style={styles.screen}>
       <View style={StyleSheet.absoluteFill}>
         <NfMapCanvas
-          center={center}
-          zoom={zoom}
+          camera={camera}
           markers={markers}
-          onRegionChange={(nextCenter, nextZoom, nextBounds) => {
-            setCenter(nextCenter);
-            setZoom(nextZoom);
+          onMarkerPress={onMarkerPress}
+          // Toucher le fond referme ce qui est ouvert : c'est le geste qu'on
+          // essaie d'abord, avant de chercher une croix.
+          onPressMap={() => {
+            setSelected(null);
+            if (sheet !== 'peek') setSheet('peek');
+          }}
+          onRegionChange={(_nextCenter, nextZoom, nextBounds) => {
+            liveZoom.current = nextZoom;
             setBounds(nextBounds);
           }}
           renderMarker={(marker) => {
-            const cluster = marker.data;
-            if (!cluster) return <MapPin username="moi" label="Toi" self />;
+            const role = marker.data;
 
-            // Plusieurs personnes au même endroit : un seul marqueur, qui
-            // s'ouvre en zoomant. Les afficher toutes ne montrerait qu'un tas.
-            if (cluster.items.length > 1) {
-              const first = cluster.items[0].person;
+            if (role.kind === 'self') {
               return (
-                <Tappable onPress={() => zoomOnCluster(cluster)} haptic="select">
-                  <MapCluster
-                    count={cluster.items.length}
-                    username={first.username}
-                    avatar={first.avatar}
-                  />
-                </Tappable>
+                <MapPin
+                  username={user?.username || 'moi'}
+                  avatar={user?.avatar}
+                  label={isGhost ? 'Toi · invisible' : 'Toi'}
+                  self
+                  hidden={isGhost}
+                />
               );
             }
 
-            const person = cluster.items[0].person;
-            return (
-              <Tappable onPress={() => setSelected(person)} haptic="select">
-                <MapPin
-                  username={person.username}
-                  avatar={person.avatar}
-                  label={person.username}
-                  approximate={person.sharing_mode === 'city'}
-                  selected={selected?.id === person.id}
+            // Membre d'un groupe : posé au centre du groupe, sous la tête qui
+            // le recouvre. Un point plutôt que rien du tout — un marqueur sans
+            // contenu retombe sur l'épingle rouge par défaut de la carte.
+            if (role.kind === 'member') return <MapPin username="" collapsed />;
+
+            if (role.kind === 'head') {
+              return (
+                <MapCluster
+                  count={role.faces.length}
+                  faces={role.faces.map((person) => ({
+                    id: person.id,
+                    username: person.username,
+                    avatar: person.avatar,
+                  }))}
                 />
-              </Tappable>
+              );
+            }
+
+            const { person } = role;
+            return (
+              <MapPin
+                username={person.username}
+                avatar={person.avatar}
+                label={person.username}
+                approximate={person.sharing_mode === 'city'}
+                selected={selected?.id === person.id}
+              />
             );
           }}
         />
@@ -412,16 +642,29 @@ export default function NfMapScreen() {
         </Tappable>
       </View>
 
-      <Tappable
-        style={[styles.locate, { bottom: floatingBottom }]}
-        onPress={() => locateMe()}
-        accessibilityLabel="Me localiser"
-      >
-        <Ionicons name="locate" size={20} color={colors.textPrimary} />
-      </Tappable>
+      {!isSheetOpen && (
+        <Tappable
+          style={[styles.locate, { bottom: floatingBottom }]}
+          onPress={() => locateMe()}
+          accessibilityLabel="Me localiser"
+        >
+          <Ionicons name="locate" size={20} color={colors.textPrimary} />
+        </Tappable>
+      )}
+
+      {/* ── Voile : referme la feuille dépliée en touchant la carte ──
+          Une feuille qui occupe les trois quarts de l'écran sans rien derrière
+          qui la referme se lit comme un cul-de-sac. */}
+      {isSheetOpen && (
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => setSheet('peek')}
+          accessibilityLabel="Refermer"
+        />
+      )}
 
       {/* ── Fiche de la personne touchée ── */}
-      {selected && (
+      {selected && !isSheetOpen && (
         <View style={[styles.card, { bottom: floatingBottom + 58 }]}>
           <Avatar size={44} username={selected.username} uri={selected.avatar || undefined} />
           <View style={styles.cardText}>
@@ -452,25 +695,36 @@ export default function NfMapScreen() {
         </View>
       )}
 
-      {/* ── Feuille du bas ── */}
-      <View
-        style={[
-          styles.sheet,
-          sheet === 'peek' ? { height: PEEK_HEIGHT + insets.bottom } : styles.sheetOpen,
-          { paddingBottom: insets.bottom },
-        ]}
+      {/* ── Feuille du bas ──
+          Hauteur FIXE, translation animée. Changer la hauteur d'une vue ne
+          peut pas passer par le pilote natif : la feuille sautait d'un état à
+          l'autre en une image, ce qui se lit comme un défaut d'affichage
+          plutôt que comme une ouverture. En glissant une feuille de taille
+          constante, l'animation tourne côté natif et ne dépend plus du fil JS.
+          C'est le même patron que `ConfirmSheet`. */}
+      <Animated.View
+        style={[styles.sheet, { height: SHEET_HEIGHT, transform: [{ translateY: slide }] }]}
       >
         <Tappable
           style={styles.handleZone}
           onPress={() => setSheet(sheet === 'peek' ? 'list' : 'peek')}
           haptic="tap"
+          scaleTo={1}
         >
           <View style={styles.handle} />
         </Tappable>
 
-        {sheet === 'peek' && (
-          <Tappable style={styles.peekTouch} onPress={() => setSheet('list')} haptic="tap">
-            <View style={styles.peek}>
+        {/* En-tête permanent : le résumé reste lisible dépliée ou repliée, et
+            c'est le même objet qui se transforme au lieu de deux panneaux qui
+            se remplacent. Le chevron devient la croix — la sortie est là où on
+            vient de cliquer pour entrer. */}
+        <Tappable
+          style={styles.peekTouch}
+          onPress={() => setSheet(isSheetOpen ? 'peek' : 'list')}
+          haptic="tap"
+          scaleTo={1}
+        >
+          <View style={styles.peek}>
             <View style={styles.peekAvatars}>
               {sharingFriends.slice(0, 5).map((friend, index) => (
                 <View
@@ -484,20 +738,26 @@ export default function NfMapScreen() {
 
             <View style={styles.peekText}>
               <Text style={styles.peekTitle} numberOfLines={1}>
-                {sharingFriends.length > 0
-                  ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
-                  : 'Personne sur la carte'}
+                {sheet === 'settings'
+                  ? 'Ce que tu partages'
+                  : sharingFriends.length > 0
+                    ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
+                    : 'Personne sur la carte'}
               </Text>
               <Text style={styles.peekHint} numberOfLines={1}>
                 {isGhost ? 'Tu es en mode fantôme' : 'Ta position est partagée'}
               </Text>
             </View>
 
-            <Ionicons name="chevron-up" size={18} color={colors.textMuted} />
-            </View>
-          </Tappable>
-        )}
+            <Animated.View style={{ transform: [{ rotate: chevronTurn }] }}>
+              <Ionicons name="chevron-up" size={20} color={colors.textMuted} />
+            </Animated.View>
+          </View>
+        </Tappable>
 
+        {/* Corps : ce qui n'est révélé qu'en dépliant. Hors de l'écran tant
+            que la feuille est repliée, donc jamais à cacher à la main. */}
+        <View style={[styles.sheetBody, { paddingBottom: insets.bottom }]}>
         {sheet === 'list' && (
           <>
             <View style={styles.searchRow}>
@@ -645,7 +905,8 @@ export default function NfMapScreen() {
             )}
           </ScrollView>
         )}
-      </View>
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -751,9 +1012,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     elevation: 12,
   },
-  sheetOpen: { height: '72%' },
+  sheetBody: { flex: 1 },
   handleZone: { alignItems: 'center', paddingTop: 8, paddingBottom: 8 },
   handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border },
+
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+
 
   peekTouch: { paddingHorizontal: 18 },
   peek: { flexDirection: 'row', alignItems: 'center', gap: 12 },

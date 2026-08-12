@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -63,7 +63,7 @@ const MonetizationScreen: React.FC<MonetizationScreenProps> = ({ navigation }) =
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0C0F" />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="#0B0C0F" />
       
       {/* Header */}
       <View style={styles.header}>
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: colors.overlayMedium,
   },
   backButton: {
     width: 40,
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     backgroundColor: 'transparent',
     borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: colors.overlayMedium,
   },
   paymentButton: {
     borderRadius: 28,

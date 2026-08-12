@@ -25,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { LinearGradient } from 'expo-linear-gradient';
+import { colors, statusBarStyle } from '../theme';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -111,7 +112,7 @@ function ChatRow({ item }: { item: ChatMessage }) {
   // Instagram écrit tous les pseudos du chat en blanc légèrement voilé. Une
   // couleur tirée du pseudo faisait « chat de jeu vidéo » et rendait certains
   // noms illisibles sur une scène claire.
-  const nameColor = 'rgba(255,255,255,0.9)';
+  const nameColor = colors.textPrimary;
 
   return (
     <Animated.View
@@ -143,7 +144,7 @@ function ViewerBadge({ count }: { count: number }) {
 
   return (
     <View style={styles.viewerBadge}>
-      <Ionicons name="eye" size={11} color="rgba(255,255,255,0.9)" />
+      <Ionicons name="eye" size={11} color={colors.textPrimary} />
       <Text style={styles.viewerBadgeText}>{fmt(count)}</Text>
     </View>
   );
@@ -310,7 +311,7 @@ export default function LiveViewerScreen() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={styles.root}>
-        <StatusBar hidden={isLandscape} barStyle="light-content" translucent backgroundColor="transparent" />
+        <StatusBar hidden={isLandscape} barStyle={statusBarStyle()} translucent backgroundColor="transparent" />
 
         {/* VIDEO */}
         <View style={StyleSheet.absoluteFill}>
@@ -424,7 +425,7 @@ export default function LiveViewerScreen() {
               <TextInput
                 style={styles.inputField}
                 placeholder="Commenter..."
-                placeholderTextColor="rgba(255,255,255,0.65)"
+                placeholderTextColor={colors.textSecondary}
                 value={inputText}
                 onChangeText={setInputText}
                 onSubmitEditing={sendMessage}
@@ -476,12 +477,12 @@ const styles = StyleSheet.create({
   avatarRing: { position: 'absolute', width: '100%', height: '100%', borderRadius: 21, padding: 2 },
   hostMeta: { gap: 1 },
   hostName: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  hostSub: { color: 'rgba(255,255,255,0.65)', fontSize: 10 },
+  hostSub: { color: colors.textSecondary, fontSize: 10 },
   badgeGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   livePill: { backgroundColor: '#FF0050', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 3 },
   liveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#fff' },
   liveLabel: { color: '#fff', fontSize: 9, fontWeight: '900' },
-  viewerBadge: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewerBadge: { backgroundColor: colors.overlayMedium, borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewerBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   bottomArea: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12 },
   bottomAreaLandscape: { maxHeight: 100 },
@@ -502,16 +503,16 @@ const styles = StyleSheet.create({
     color: '#fff', fontSize: 14, lineHeight: 19,
     textShadowColor: 'rgba(0,0,0,0.75)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
-  emptyHint: { color: 'rgba(255,255,255,0.4)', fontSize: 12, fontStyle: 'italic' },
+  emptyHint: { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' },
   heartsCol: { position: 'absolute', right: 0, bottom: 0, width: 40, height: 260 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  heartBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  heartBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.overlayStrong, justifyContent: 'center', alignItems: 'center' },
   heartBtnEmoji: { fontSize: 24 },
-  inputPill: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 23, paddingHorizontal: 16, height: 48, gap: 8 },
-  inputPillFocused: { backgroundColor: 'rgba(255,255,255,0.32)' },
+  inputPill: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.overlayStrong, borderRadius: 23, paddingHorizontal: 16, height: 48, gap: 8 },
+  inputPillFocused: { backgroundColor: colors.textMuted },
   inputField: { flex: 1, color: '#fff', fontSize: 14, height: 48 },
   sendPill: { backgroundColor: '#FF0050', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6 },
   sendLabel: { color: '#fff', fontSize: 12, fontWeight: '700' },
   loadingLayer: { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
-  retryText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 12 },
+  retryText: { color: colors.textSecondary, fontSize: 13, marginTop: 12 },
 });

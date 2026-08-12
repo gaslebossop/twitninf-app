@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -309,7 +309,7 @@ export default function KosporBirthdayPopup({ visible, onClose, onNavigateToKosp
           {/* Fond glassmorphism */}
           <View style={styles.glassBackground}>
             <LinearGradient
-              colors={['rgba(255,255,255,0.15)', 'rgba(255,255,255,0.09)']}
+              colors={[colors.overlayStrong, colors.overlayMedium]}
               style={styles.glassGradient}
             />
           </View>
@@ -322,7 +322,7 @@ export default function KosporBirthdayPopup({ visible, onClose, onNavigateToKosp
           >
             {/* Header avec effet de lumière */}
             <LinearGradient
-              colors={['rgba(255,255,255,0.3)', 'transparent']}
+              colors={[colors.textMuted, 'transparent']}
               style={styles.headerGlow}
             />
             
@@ -333,7 +333,7 @@ export default function KosporBirthdayPopup({ visible, onClose, onNavigateToKosp
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.1)']}
+                colors={[colors.overlayStrong, colors.overlayMedium]}
                 style={styles.closeButtonGradient}
               >
                 <Ionicons name="close" size={20} color="#fff" />
@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: colors.textMuted,
   },
   content: {
     paddingTop: 40,
@@ -628,12 +628,12 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   messageContainer: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: colors.overlayStrong,
     borderRadius: 16,
     padding: 16,
     marginBottom: 25,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: colors.overlayStrong,
   },
   message: {
     fontSize: 15,
@@ -659,12 +659,12 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: colors.overlayStrong,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: colors.textMuted,
   },
   rewardText: {
     fontSize: 12,
@@ -705,7 +705,7 @@ const styles = StyleSheet.create({
     left: -100,
     width: 100,
     height: '100%',
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: colors.textMuted,
     transform: [{ skewX: '-20deg' }],
   },
   wishButtonText: {
@@ -719,7 +719,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   laterButtonText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: colors.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     fontWeight: '500', fontFamily: fonts.medium,

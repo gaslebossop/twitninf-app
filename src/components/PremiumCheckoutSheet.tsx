@@ -631,7 +631,7 @@ export default function PremiumCheckoutSheet({
                     ]}
                   >
                     <LinearGradient
-                      colors={['transparent', 'rgba(255,255,255,0.55)', 'transparent']}
+                      colors={['transparent', colors.textSecondary, 'transparent']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={StyleSheet.absoluteFill}

@@ -21,7 +21,7 @@ import ExchangeModal from '../components/ExchangeModal';
 import { WalletTransaction } from '../services/walletService';
 import { useAuth } from '../contexts/AuthContext';
 import { AppHeader, ScreenBackground, Button, IconButton, Skeleton, AppRefreshControl } from '../components/ui';
-import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../theme';
+import { colors, fonts, radius, withAlpha, duration as D, easing as E , statusBarStyle} from '../theme';
 
 interface TransactionHistoryItem {
   id: string;
@@ -682,7 +682,7 @@ const WalletDetailScreen: React.FC = () => {
 
   const renderLoading = () => (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
       {renderHeader()}
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -702,7 +702,7 @@ const WalletDetailScreen: React.FC = () => {
 
   const renderWalletError = () => (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
       {renderHeader()}
       <View style={styles.fullState}>
         <Ionicons name="cloud-offline-outline" size={44} color={colors.textMuted} />
@@ -725,7 +725,7 @@ const WalletDetailScreen: React.FC = () => {
 
   return (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
       {renderHeader()}
 
       <ScrollView

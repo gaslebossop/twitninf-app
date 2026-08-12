@@ -621,6 +621,17 @@ class ApiService {
     }
   }
 
+  /**
+   * Jeton court qui transporte « ce compte veut s'associer à G » à travers la
+   * navigation vers le navigateur système — voir services/gAuthLogin.ts.
+   */
+  async getGAuthLinkToken(): Promise<ApiResponse<{ linkToken: string }>> {
+    return this.makeRequest('/api/auth/g-auth/link-token', {
+      method: 'POST',
+      requiresAuth: true,
+    });
+  }
+
   async logout(): Promise<void> {
     // Transmettre le refresh token permet au serveur de révoquer CETTE session
     // uniquement : les autres comptes du multi-compte restent connectés.

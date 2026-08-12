@@ -13,6 +13,7 @@ import {
   Platform,
   Vibration,
   useWindowDimensions,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +34,24 @@ const SLOT_SYMBOL_POOL = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'];
 const CHIP_VALUES = [1, 5, 20, 100];
 const BRASS_RIM: [string, string, string, string] = ['#4A3510', '#FFD673', '#C9962B', '#7A5A17'];
 const BRASS_FACE: [string, string, string] = ['#FFF4CE', '#FFD673', '#C9962B'];
+
+/**
+ * La « table » de jeu (roue / pièce / machine à sous) est délibérément
+ * FIGÉE en sombre, dans les deux thèmes. Ses éléments (jetons brass, cases
+ * de roue en tons profonds, fenêtre de rouleaux) sont pensés comme un vrai
+ * plateau de casino : en clair, un fond thémé clair y déposait la roue sombre
+ * comme un trou noir isolé sur du blanc. Seul le chrome autour (en-tête,
+ * console de mise) suit le thème de l'app.
+ */
+const STAGE = {
+  bg: '#141414',
+  chipBg: 'rgba(255,255,255,0.08)',
+  chipBorder: 'rgba(255,255,255,0.14)',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A8A8A8',
+  textMuted: '#6B6B6B',
+  gold: '#FFD24D',
+};
 
 const WHEEL_SPIN_MS = 4200;
 const COIN_FLIP_MS = 1250;
@@ -152,7 +171,7 @@ function Wheel({ size, segments, jackpotLabel, rotate }: {
               <SvgText
                 x={pos.x}
                 y={pos.y}
-                fill={isLose ? 'rgba(255,255,255,0.34)' : isJackpot ? '#2A1C03' : 'rgba(255,255,255,0.92)'}
+                fill={isLose ? STAGE.textMuted : isJackpot ? '#2A1C03' : STAGE.textPrimary}
                 fontSize={isLose ? labelSize * 0.85 : isJackpot ? labelSize * 1.12 : labelSize}
                 fontWeight={isJackpot ? '900' : '800'}
                 textAnchor="middle"
@@ -184,7 +203,7 @@ const CONFETTI = Array.from({ length: 18 }, (_, i) => {
     dx: Math.cos(angle) * (70 + Math.random() * 90),
     dy: Math.sin(angle) * (70 + Math.random() * 90) - 40,
     size: 6 + Math.random() * 7,
-    tint: [colors.gold, '#FFF4CE', colors.accent, colors.cyan][i % 4],
+    tint: [STAGE.gold, '#FFF4CE', colors.accent, colors.cyan][i % 4],
     spin: `${Math.round(180 + Math.random() * 540)}deg`,
   };
 });
@@ -702,9 +721,9 @@ export default function CasinoScreen() {
               <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
             </TouchableOpacity>
           ) : (
-            <LinearGradient colors={BRASS_FACE} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.titleMark}>
-              <Text style={styles.titleMarkText}>NF</Text>
-            </LinearGradient>
+            <View style={styles.titleMark}>
+              <Image source={require('../../assets/icon.png')} style={styles.titleMarkIcon} resizeMode="contain" />
+            </View>
           )}
           <View style={styles.headerTitleWrap}>
             <View style={styles.headerTitleRow}>
@@ -855,7 +874,7 @@ export default function CasinoScreen() {
                 {config?.coinflip && (
                   <View style={styles.oddsRow}>
                     <View style={styles.oddsPill}><View style={[styles.oddsDot, { backgroundColor: colors.success }]} /><Text style={styles.oddsText}>{config.coinflip.winChance}%</Text></View>
-                    <View style={styles.oddsPill}><View style={[styles.oddsDot, { backgroundColor: colors.textMuted }]} /><Text style={styles.oddsText}>{config.coinflip.pushChance}% tranche</Text></View>
+                    <View style={styles.oddsPill}><View style={[styles.oddsDot, { backgroundColor: STAGE.textMuted }]} /><Text style={styles.oddsText}>{config.coinflip.pushChance}% tranche</Text></View>
                     <View style={styles.oddsPill}><View style={[styles.oddsDot, { backgroundColor: colors.red }]} /><Text style={styles.oddsText}>{config.coinflip.loseChance}%</Text></View>
                   </View>
                 )}
@@ -1061,8 +1080,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 10,
   },
   backButton: { padding: 4, marginLeft: -4 },
-  titleMark: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  titleMarkText: { fontFamily: fonts.displayHeavy, fontSize: 12, color: '#3A2708' },
+  titleMark: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  titleMarkIcon: { width: 26, height: 26 },
   headerTitleWrap: { flex: 1 },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   headerTitle: { fontSize: 16, fontFamily: fonts.heading, color: colors.textPrimary },
@@ -1085,7 +1104,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     paddingVertical: 10, paddingHorizontal: 6,
   },
-  gameTabActive: { backgroundColor: colors.gold, borderColor: colors.gold },
+  gameTabActive: { backgroundColor: STAGE.gold, borderColor: STAGE.gold },
   gameTabTitle: { color: colors.textSecondary, fontFamily: fonts.bold, fontSize: 12 },
   gameTabTitleActive: { color: '#2C1D04' },
 
@@ -1098,7 +1117,7 @@ const styles = StyleSheet.create({
   stripDotWin: { backgroundColor: colors.successMuted, borderColor: 'rgba(34,197,94,0.45)' },
   stripDotLose: { backgroundColor: colors.surface, borderColor: colors.border },
   stripDotPush: { backgroundColor: colors.surfaceAlt, borderColor: colors.borderStrong },
-  stripDotText: { color: colors.textMuted, fontFamily: fonts.bold, fontSize: 10 },
+  stripDotText: { color: colors.textSecondary, fontFamily: fonts.bold, fontSize: 10 },
   stripDotTextWin: { color: colors.success },
 
   stageScroll: { flex: 1 },
@@ -1107,21 +1126,21 @@ const styles = StyleSheet.create({
 
   stage: {
     borderRadius: radius.xl,
-    backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: 'rgba(255,210,77,0.18)',
+    backgroundColor: STAGE.bg, borderWidth: 1, borderColor: 'rgba(255,210,77,0.18)',
     paddingVertical: 18, paddingHorizontal: 14, alignItems: 'center', gap: 12,
   },
-  stageWin: { borderColor: colors.gold },
+  stageWin: { borderColor: STAGE.gold },
   stageNear: { borderColor: 'rgba(255,210,77,0.5)' },
 
   modeRow: { flexDirection: 'row', gap: 7 },
   modeChip: {
     alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.3)', borderWidth: 1, borderColor: colors.border, gap: 2,
+    backgroundColor: STAGE.chipBg, borderWidth: 1, borderColor: STAGE.chipBorder, gap: 2,
   },
-  modeChipActive: { backgroundColor: colors.gold, borderColor: colors.gold },
-  modeChipText: { color: colors.textSecondary, fontFamily: fonts.bold, fontSize: 11.5 },
+  modeChipActive: { backgroundColor: STAGE.gold, borderColor: STAGE.gold },
+  modeChipText: { color: STAGE.textSecondary, fontFamily: fonts.bold, fontSize: 11.5 },
   modeChipTextActive: { color: '#2C1D04' },
-  modeChipJackpot: { color: colors.textMuted, fontSize: 9, fontFamily: fonts.bold },
+  modeChipJackpot: { color: STAGE.textMuted, fontSize: 9, fontFamily: fonts.bold },
   modeChipJackpotActive: { color: 'rgba(44,29,4,0.7)' },
 
   wheelRig: { alignItems: 'center', justifyContent: 'center', paddingTop: 6 },
@@ -1142,9 +1161,9 @@ const styles = StyleSheet.create({
   caption: { color: colors.textSecondary, fontSize: 12.5, textAlign: 'center', fontFamily: fonts.bold },
 
   coinChoiceRow: { flexDirection: 'row', gap: 8 },
-  choiceButton: { paddingHorizontal: 22, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.3)', borderWidth: 1, borderColor: colors.border },
-  choiceButtonActive: { backgroundColor: colors.gold, borderColor: colors.gold },
-  choiceText: { color: colors.textSecondary, fontFamily: fonts.bold, fontSize: 13 },
+  choiceButton: { paddingHorizontal: 22, paddingVertical: 8, borderRadius: 999, backgroundColor: STAGE.chipBg, borderWidth: 1, borderColor: STAGE.chipBorder },
+  choiceButtonActive: { backgroundColor: STAGE.gold, borderColor: STAGE.gold },
+  choiceText: { color: STAGE.textSecondary, fontFamily: fonts.bold, fontSize: 13 },
   choiceTextActive: { color: '#1a1303' },
 
   coinStage: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center' },
@@ -1169,9 +1188,9 @@ const styles = StyleSheet.create({
   },
 
   oddsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
-  oddsPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.3)' },
+  oddsPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: STAGE.chipBg },
   oddsDot: { width: 6, height: 6, borderRadius: 3 },
-  oddsText: { color: colors.textSecondary, fontSize: 10.5 },
+  oddsText: { color: STAGE.textSecondary, fontSize: 10.5 },
 
   slotCabinet: { borderRadius: 18, padding: 10 },
   slotWindow: {
@@ -1187,31 +1206,31 @@ const styles = StyleSheet.create({
   slotReel3D: { width: 94, height: REEL_CELL * 3 },
   spike3dToggle: {
     alignSelf: 'center', marginTop: 10, paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.cyan,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: '#25F4EE',
   },
-  spike3dText: { color: colors.cyan, fontSize: 12, fontFamily: fonts.semibold },
+  spike3dText: { color: '#25F4EE', fontSize: 12, fontFamily: fonts.semibold },
   slotSymbol: { fontSize: 31 },
   slotPayline: {
     position: 'absolute', left: 8, right: 8, top: REEL_CELL + REEL_CELL / 2 - 1, height: 2,
     backgroundColor: 'rgba(254,44,85,0.7)', borderRadius: 2,
   },
-  slotPaylineHit: { backgroundColor: colors.gold, height: 3 },
+  slotPaylineHit: { backgroundColor: STAGE.gold, height: 3 },
   slotPaylineNear: { backgroundColor: 'rgba(255,210,77,0.55)', height: 3 },
 
   paytableScroll: { alignSelf: 'stretch', flexGrow: 0 },
   paytable: { flexDirection: 'row', gap: 6, paddingHorizontal: 2 },
   paytableChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: STAGE.chipBg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
   },
-  paytableText: { color: colors.textSecondary, fontSize: 11.5 },
-  paytableMult: { color: colors.gold, fontFamily: fonts.bold, fontSize: 11.5 },
+  paytableText: { color: STAGE.textSecondary, fontSize: 11.5 },
+  paytableMult: { color: STAGE.gold, fontFamily: fonts.bold, fontSize: 11.5 },
 
   celebrateLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   confettiLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   confettiPiece: { position: 'absolute', borderRadius: 2 },
   celebrateText: {
-    color: colors.gold, fontFamily: fonts.displayHeavy, fontSize: 32,
+    color: STAGE.gold, fontFamily: fonts.displayHeavy, fontSize: 32,
     textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 10, textShadowOffset: { width: 0, height: 2 },
   },
 
@@ -1241,9 +1260,11 @@ const styles = StyleSheet.create({
   chip: { width: 42, height: 42, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   chipRing: {
     position: 'absolute', top: 3, left: 3, right: 3, bottom: 3, borderRadius: 999,
-    borderWidth: 3, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.5)', opacity: 0.55,
+    borderWidth: 3, borderStyle: 'dashed', borderColor: colors.textSecondary, opacity: 0.55,
   },
-  chipCore: { width: '58%', height: '58%', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', alignItems: 'center', justifyContent: 'center' },
+  // Fixe (pas thémé) : en clair `colors.textPrimary` passe au noir, ce qui
+  // rendait le disque et le texte du jeton noir sur noir — invisible.
+  chipCore: { width: '58%', height: '58%', borderRadius: 999, backgroundColor: '#F3F0E6', alignItems: 'center', justifyContent: 'center' },
   chipText: { color: '#17171A', fontFamily: fonts.bold, fontSize: 11.5 },
 
   quickButton: {
@@ -1253,9 +1274,9 @@ const styles = StyleSheet.create({
   quickButtonText: { color: colors.textSecondary, fontFamily: fonts.bold, fontSize: 12 },
 
   playButton: {
-    borderRadius: 14, backgroundColor: colors.gold,
+    borderRadius: 14, backgroundColor: STAGE.gold,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15,
-    ...glow(colors.gold, 14),
+    ...glow(STAGE.gold, 14),
   },
   playButtonOff: { backgroundColor: colors.surfaceElevated, shadowOpacity: 0, elevation: 0 },
   playButtonText: { color: '#1a1303', fontFamily: fonts.bold, fontSize: 15 },
@@ -1277,7 +1298,7 @@ const styles = StyleSheet.create({
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetTitle: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 16, marginBottom: 12 },
   sheetPrimary: {
-    marginTop: 14, borderRadius: 14, backgroundColor: colors.gold,
+    marginTop: 14, borderRadius: 14, backgroundColor: STAGE.gold,
     alignItems: 'center', justifyContent: 'center', paddingVertical: 15,
   },
   sheetPrimaryText: { color: '#1a1303', fontFamily: fonts.bold, fontSize: 15 },

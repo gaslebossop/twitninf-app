@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -262,7 +262,7 @@ const MarketStatsPanel: React.FC<MarketStatsPanelProps> = ({
           <Ionicons 
             name={category.icon as any} 
             size={16} 
-            color={selectedCategory === category.key ? '#fff' : 'rgba(255,255,255,0.6)'} 
+            color={selectedCategory === category.key ? '#fff' : colors.textSecondary} 
           />
           <Text style={[
             styles.categoryText,
@@ -355,7 +355,7 @@ const MarketStatsPanel: React.FC<MarketStatsPanelProps> = ({
               <Ionicons 
                 name={refreshing ? "hourglass" : "refresh"} 
                 size={20} 
-                color="rgba(255,255,255,0.6)" 
+                color={colors.textSecondary} 
               />
             </TouchableOpacity>
           </View>
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   summaryHeader: {
     flexDirection: 'row',
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
   },
   healthLabel: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   healthRow: {
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
   },
   keyMetricLabel: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   keyMetricValue: {
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   categorySelector: {
     flexDirection: 'row',
     marginBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 4,
   },
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F7CFF',
   },
   categoryText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600', fontFamily: fonts.semibold,
     marginLeft: 6,
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
     minHeight: 120,
   },
   statCardHeader: {
@@ -562,7 +562,7 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   statValue: {
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.4)',
+    color: colors.textMuted,
   },
 });
 

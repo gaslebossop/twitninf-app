@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -201,25 +201,25 @@ export default function PremiumProfileCard({
         >
           <View style={styles.upgradeHeader}>
             <Ionicons name="diamond-outline" size={28} color="#ff6b6b" />
-            <Text style={styles.upgradeTitle}>Passer à Premium</Text>
+            <Text style={[styles.upgradeTitle, { color: colors.textPrimary }]}>Passer à Premium</Text>
           </View>
           
-          <Text style={styles.upgradeDescription}>
+          <Text style={[styles.upgradeDescription, { color: colors.textSecondary }]}>
             Bannière personnalisable, contour animé autour de la photo, et bien plus encore.
           </Text>
 
           <View style={styles.upgradeFeatures}>
             <View style={styles.upgradeFeature}>
-              <Ionicons name="checkmark-circle" size={16} color="#00ff80" />
-              <Text style={styles.upgradeFeatureText}>Bannière + contour animé premium</Text>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+              <Text style={[styles.upgradeFeatureText, { color: colors.textPrimary }]}>Bannière + contour animé premium</Text>
             </View>
             <View style={styles.upgradeFeature}>
-              <Ionicons name="checkmark-circle" size={16} color="#00ff80" />
-              <Text style={styles.upgradeFeatureText}>Algorithmes TikTok-Level</Text>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+              <Text style={[styles.upgradeFeatureText, { color: colors.textPrimary }]}>Algorithmes TikTok-Level</Text>
             </View>
             <View style={styles.upgradeFeature}>
-              <Ionicons name="checkmark-circle" size={16} color="#00ff80" />
-              <Text style={styles.upgradeFeatureText}>Badge premium animé</Text>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+              <Text style={[styles.upgradeFeatureText, { color: colors.textPrimary }]}>Badge premium animé</Text>
             </View>
           </View>
 
@@ -244,7 +244,7 @@ export default function PremiumProfileCard({
             ]}
           >
             <LinearGradient
-              colors={['transparent', 'rgba(255, 255, 255, 0.2)', 'transparent']}
+              colors={['transparent', colors.overlayStrong, 'transparent']}
               style={{ width: 100, height: '100%' }}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}

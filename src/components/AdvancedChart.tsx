@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -284,7 +284,7 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({ data, timeframe, currency
           <Ionicons 
             name={item.icon as any} 
             size={16} 
-            color={chartType === item.type ? '#fff' : 'rgba(255,255,255,0.6)'} 
+            color={chartType === item.type ? '#fff' : colors.textSecondary} 
           />
           <Text style={[
             styles.chartTypeText,
@@ -370,7 +370,7 @@ const AdvancedChart: React.FC<AdvancedChartProps> = ({ data, timeframe, currency
             <Ionicons 
               name={showIndicators ? "chevron-up" : "chevron-down"} 
               size={20} 
-              color="rgba(255,255,255,0.6)" 
+              color={colors.textSecondary} 
             />
           </TouchableOpacity>
         </View>
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 16,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 12,
     padding: 4,
   },
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F7CFF',
   },
   chartTypeText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600', fontFamily: fonts.semibold,
     marginLeft: 4,
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
     marginBottom: 16,
   },
   chartHeader: {
@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
   },
   chartSubtitle: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   chart: {
@@ -558,7 +558,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   noDataText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
     fontSize: 16,
   },
   indicatorsContainer: {
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   indicatorHeader: {
     flexDirection: 'row',
@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   },
   indicatorDescription: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
   },
   sentimentContainer: {
     marginBottom: 16,
@@ -631,7 +631,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   sentimentTitle: {
     fontSize: 16,
@@ -676,7 +676,7 @@ const styles = StyleSheet.create({
   },
   signalLabel: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: colors.textSecondary,
   },
 });
 

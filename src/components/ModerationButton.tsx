@@ -5,6 +5,7 @@ import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { colors } from '../theme';
 
 // Palette de couleurs futuriste du README
 const COLORS = {
@@ -13,17 +14,9 @@ const COLORS = {
   secondary: '#3D63D9',    // Bleu océan secondaire
   accent: '#3354C4',       // Bleu profond accent
   
-  // Arrière-plans - Gradients sombres
-  bgPrimary: '#0B0C0F',    // Noir profond
-  bgSecondary: '#15171C',  // Bleu très sombre
-  bgTertiary: '#1B1E25',   // Bleu sombre
-  bgQuaternary: '#0B0C0F', // Bleu noir
-  
   // Texte - Hiérarchie claire
-  textPrimary: '#ffffff',   // Blanc pur
-  textSecondary: '#cbd5e0', // Blanc cassé
   textMuted: '#9BA1AC',     // Gris bleuté
-  
+
   // États et interactions
   success: '#4F7CFF',       // Bleu électrique
   error: '#ff4757',         // Rouge vif
@@ -149,9 +142,9 @@ const ModerationButton: React.FC<ModerationButtonProps> = ({ style }) => {
               {/* Arrière-plan avec gradient subtil */}
               <LinearGradient
                 colors={[
-                  `${COLORS.bgSecondary}95`,
-                  `${COLORS.bgTertiary}85`,
-                  `${COLORS.bgQuaternary}90`
+                  `${colors.surfaceElevated}F0`,
+                  `${colors.surfaceAlt}E0`,
+                  `${colors.surfaceElevated}F0`,
                 ]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -168,9 +161,9 @@ const ModerationButton: React.FC<ModerationButtonProps> = ({ style }) => {
                     {/* Effet de brillance sur l'icône */}
                     <View style={[styles.iconGlow, { backgroundColor: getPrimaryColor() }]} />
                   </View>
-                  
+
                   {/* Texte avec typographie futuriste */}
-                  <Text style={[styles.text, { color: COLORS.textPrimary }]}>
+                  <Text style={[styles.text, { color: colors.textPrimary }]}>
                     {getRoleLabel()}
                   </Text>
                   
@@ -204,7 +197,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: colors.overlaySoft,
   },
   gradientBorder: {
     padding: 1, // Épaisseur de la bordure gradient

@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Platform, ActivityIndicator } from 'react-native';
 // `expo-image` : cache disque et décodage hors du thread JS. `transition={0}`
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.65)',
+    backgroundColor: colors.textSecondary,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 48,
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   changePhotoBtnDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.5)',
+    backgroundColor: colors.textSecondary,
   },
   changePhotoText: {
     color: '#000000',

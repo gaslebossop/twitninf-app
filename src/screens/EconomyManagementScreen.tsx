@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -392,7 +392,7 @@ export default function EconomyManagementScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f7931e" />}
       renderItem={({ item, index }) => (
         <LinearGradient 
-          colors={['rgba(255,255,255,0.03)', 'rgba(255,255,255,0.01)']} 
+          colors={[colors.overlaySoft, colors.overlaySoft]} 
           style={styles.holderItem}
         >
           <View style={styles.rankContainer}>
@@ -597,7 +597,7 @@ export default function EconomyManagementScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={statusBarStyle()} />
       <LinearGradient colors={['#0a0b14', '#121422']} style={StyleSheet.absoluteFill} />
       
       {/* Dynamic Header */}
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -794,7 +794,7 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.overlaySoft,
     marginHorizontal: 20,
     marginTop: 10,
     borderRadius: 16,
@@ -830,7 +830,7 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   cardIcon: {
     position: 'absolute',
@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     borderRadius: 2,
     marginTop: 15,
     marginBottom: 5,
@@ -880,7 +880,7 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   statValue: {
     fontSize: 18,
@@ -891,7 +891,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -923,12 +923,12 @@ const styles = StyleSheet.create({
   },
   transactionItem: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: colors.overlaySoft,
     marginHorizontal: 20,
     marginBottom: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
     overflow: 'hidden',
   },
   txIndicator: {
@@ -996,7 +996,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.02)',
+    borderColor: colors.overlaySoft,
   },
   rankContainer: {
     width: 40,
@@ -1044,11 +1044,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold', fontFamily: fonts.bold,
   },
   managementCard: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: colors.overlaySoft,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   cardTitle: {
     color: '#fff',
@@ -1192,7 +1192,7 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   modalContent: {
     padding: 24,
@@ -1256,7 +1256,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   fluxStatItem: {
     flex: 1,
@@ -1265,7 +1265,7 @@ const styles = StyleSheet.create({
   fluxStatDivider: {
     width: 1,
     height: '60%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
     alignSelf: 'center',
   },
   fluxStatLabel: {
@@ -1294,7 +1294,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#0a0b14',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   filterChipActive: {
     backgroundColor: '#f7931e',
@@ -1313,7 +1313,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: colors.overlaySoft,
   },
   txGradient: {
     padding: 16,
@@ -1381,7 +1381,7 @@ const styles = StyleSheet.create({
   txStatusBadgeNew: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.overlaySoft,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -1413,7 +1413,7 @@ const styles = StyleSheet.create({
     padding: 24,
     maxHeight: '90%',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.overlayMedium,
   },
   detailsHeader: {
     alignItems: 'center',
@@ -1474,7 +1474,7 @@ const styles = StyleSheet.create({
   },
   detailsDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: colors.overlayMedium,
     marginVertical: 16,
   },
   detailSection: {
@@ -1489,11 +1489,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   actorCard: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: colors.overlaySoft,
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: colors.overlayMedium,
   },
   actorInfo: {
     marginLeft: 0,

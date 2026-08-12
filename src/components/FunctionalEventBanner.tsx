@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 /**
  * Bannière pour afficher les événements fonctionnels actifs
  */
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.overlayStrong,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   },
   message: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: colors.textPrimary,
     lineHeight: 16,
   },
   indicatorContainer: {
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: colors.textMuted,
     marginHorizontal: 2,
   },
   activeIndicator: {

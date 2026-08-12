@@ -13,13 +13,31 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { colors } from '../theme';
 
 const { width, height } = Dimensions.get('window');
 
+/**
+ * L'onboarding a son propre fond sombre FIXE (`BG_GRADIENT` ci-dessous),
+ * volontairement le même quel que soit le thème choisi — c'est le premier
+ * écran vu, souvent avant même que l'utilisateur n'ait choisi un thème.
+ * Les tokens `colors.*` suivent eux le thème : en clair ils passent au
+ * foncé et devenaient illisibles sur ce fond qui, lui, ne change jamais.
+ * D'où cette palette fixe, alignée sur les valeurs du thème sombre.
+ */
+const ONBOARD = {
+  textPrimary: '#FFFFFF',
+  textSecondary: '#A8A8A8',
+  textMuted: '#6B6B6B',
+  overlaySoft: 'rgba(255,255,255,0.06)',
+  overlayMedium: 'rgba(255,255,255,0.09)',
+  overlayStrong: 'rgba(255,255,255,0.16)',
+  accent: '#FE2C55',
+  accentHover: '#E0234A',
+};
+
 // Accent unique « Encre » — pas d'arc-en-ciel par slide.
-const ACCENT = colors.accent;
-const ACCENT_DEEP = colors.accentHover;
+const ACCENT = ONBOARD.accent;
+const ACCENT_DEEP = ONBOARD.accentHover;
 const BG_GRADIENT = ['#0B0C0F', '#101218', '#0B0C0F'] as const;
 
 interface CarouselItem {
@@ -468,14 +486,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.028)',
+    backgroundColor: ONBOARD.overlaySoft,
   },
   gridLineV: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.028)',
+    backgroundColor: ONBOARD.overlaySoft,
   },
 
   /* Corner brackets */
@@ -525,7 +543,7 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: ONBOARD.overlayMedium,
     zIndex: 10,
   },
   skipBlur: {
@@ -535,7 +553,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   skipText: {
-    color: 'rgba(255,255,255,0.45)',
+    color: ONBOARD.textSecondary,
     fontSize: 13,
     fontWeight: '500', fontFamily: fonts.medium,
     letterSpacing: 0.4,
@@ -614,7 +632,7 @@ const styles = StyleSheet.create({
   mainTitle: {
     fontSize: 44,
     fontWeight: '800', fontFamily: fonts.bold,
-    color: colors.textPrimary,
+    color: ONBOARD.textPrimary,
     letterSpacing: -1.4,
     lineHeight: 50,
     marginBottom: 8,
@@ -628,7 +646,11 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.42)',
+    // `textMuted` (conçu pour de petits libellés discrets) tombe sous 4,5:1
+    // sur le fond sombre fixe du carrousel — trop bas pour un sous-titre de
+    // cette taille, qui se lisait mal. `textSecondary` reste en retrait du
+    // titre blanc tout en restant net.
+    color: ONBOARD.textSecondary,
     lineHeight: 26,
     letterSpacing: 0.1,
     fontWeight: '400', fontFamily: fonts.regular,
@@ -652,7 +674,7 @@ const styles = StyleSheet.create({
   dotInactive: {
     width: 6,
     height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: ONBOARD.overlayStrong,
   },
 
   /* Nav row */
@@ -672,7 +694,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: ONBOARD.overlayMedium,
     width: 52,
     height: 52,
   },
@@ -682,7 +704,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrow: {
-    color: 'rgba(255,255,255,0.7)',
+    color: ONBOARD.textSecondary,
     fontSize: 20,
     fontWeight: '300',
   },
@@ -723,7 +745,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   primaryButtonArrow: {
-    color: 'rgba(255,255,255,0.75)',
+    color: ONBOARD.textPrimary,
     fontSize: 16,
     fontWeight: '400', fontFamily: fonts.regular,
   },

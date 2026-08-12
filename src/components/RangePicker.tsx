@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
     gap: 4,
     padding: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: colors.overlaySoft,
     borderWidth: 1,
     borderColor: colors.border,
     alignSelf: 'flex-start',

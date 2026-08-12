@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fonts, colors } from '../theme';
+import { fonts, colors , statusBarStyle} from '../theme';
 import { AppHeader, ScreenBackground } from '../components/ui';
 import {
   View,
@@ -45,6 +45,7 @@ import { ConsentSheet } from '../components/ConsentGate';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
+import { linkGAuthAccount } from '../services/gAuthLogin';
 import { useFlag } from '../contexts/FeatureFlagContext';
 import { FLAGS } from '../config/featureFlagKeys';
 
@@ -85,6 +86,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
   // États pour les paramètres
   const [privacyLoading, setPrivacyLoading] = useState(false);
+  const [gAuthLinkLoading, setGAuthLinkLoading] = useState(false);
 
   // Calculs responsive
   const isSmallScreen = screenHeight < 700;
@@ -105,6 +107,41 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       toast.error('Impossible de mettre à jour la confidentialité du compte.');
     } finally {
       setPrivacyLoading(false);
+    }
+  };
+
+  const handleLinkGAuth = async () => {
+    if (gAuthLinkLoading) return;
+    setGAuthLinkLoading(true);
+    try {
+      const result = await linkGAuthAccount();
+
+      if (result.type === 'cancel') return;
+
+      if (result.type === 'linked') {
+        toast.success('Compte associé !', {
+          description:
+            result.bonus > 0
+              ? `+${result.bonus} NF ont été ajoutés à ton portefeuille.`
+              : 'Ton compte G est maintenant associé.',
+        });
+        await refreshCurrentUser?.();
+        return;
+      }
+      if (result.type === 'already_linked') {
+        toast.info('Ton compte est déjà associé à G.');
+        await refreshCurrentUser?.();
+        return;
+      }
+      if (result.type === 'taken') {
+        toast.error('Ce compte G est déjà associé à un autre compte twitninf.');
+        return;
+      }
+      toast.error(result.message);
+    } catch {
+      toast.error("L'association à G a échoué.");
+    } finally {
+      setGAuthLinkLoading(false);
     }
   };
 
@@ -152,7 +189,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   return (
     <ScreenBackground>
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       <View style={styles.gradient}>
         {/* Header */}
@@ -183,6 +220,31 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               expiresAt={user?.subscription_expires_at}
               onUpgrade={() => setShowPremiumPopup(true)}
             />
+          </Animated.View>
+
+          {/* Section Compte */}
+          <Animated.View
+            style={[
+              styles.section,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Ionicons name="link-outline" size={24} color={colors.accent} />
+              <Text style={styles.sectionTitle}>Compte</Text>
+            </View>
+
+            {renderActionButton(
+              'Associer mon compte à G',
+              user?.g_auth_linked
+                ? 'Ton compte est associé à G.'
+                : 'Connecte ton compte à G et reçois 5 NF offerts.',
+              user?.g_auth_linked ? 'checkmark-circle' : 'link-outline',
+              handleLinkGAuth
+            )}
           </Animated.View>
 
           {/* Section Confidentialité */}
@@ -232,6 +294,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               <Ionicons name="apps" size={24} color={colors.cyan} />
               <Text style={styles.sectionTitle}>Navigation</Text>
             </View>
+
+            {renderActionButton(
+              'Thème',
+              'Sombre ou clair, avec un aperçu des deux',
+              'contrast-outline',
+              () => navigation.navigate('Theme')
+            )}
 
             {renderActionButton(
               'Langue de lecture',

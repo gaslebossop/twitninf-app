@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
-import { colors, fonts } from '../theme';
+import { colors, fonts , statusBarStyle} from '../theme';
 import { toast } from '../components/ui/Toast';
 import {
   CATEGORY_LABELS,
@@ -143,7 +143,7 @@ export default function SupportScreen({ navigation }: Props) {
 
   return (
     <ScreenBackground>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
       <View style={[styles.headerShell, { paddingTop: headerTopInset }]}>
         <View style={[styles.header, { minHeight: HEADER_CONTENT_HEIGHT }]}>

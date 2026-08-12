@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts , colors} from '../theme';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -32,8 +32,8 @@ const COLORS = {
   textPrimary: '#ffffff',
   textSecondary: '#cbd5e0',
   textMuted: '#9BA1AC',
-  glassBorder: 'rgba(255, 255, 255, 0.1)',
-  glassBackground: 'rgba(255, 255, 255, 0.05)',
+  glassBorder: colors.overlayMedium,
+  glassBackground: colors.overlaySoft,
 };
 
 const SPACING = {
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   filterBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.overlayStrong,
     borderRadius: 10,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,

@@ -316,7 +316,7 @@ function VerifiedBadge({
           ]}
         >
           <LinearGradient
-            colors={['rgba(255, 255, 255, 0.3)', 'transparent', 'rgba(255, 105, 180, 0.2)', 'transparent']}
+            colors={[colors.textMuted, 'transparent', 'rgba(255, 105, 180, 0.2)', 'transparent']}
             style={styles.reflectionGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -402,7 +402,7 @@ function VerifiedBadge({
               ]}
             >
               <LinearGradient
-                colors={['transparent', 'rgba(255, 255, 255, 0.8)', 'transparent']}
+                colors={['transparent', colors.textPrimary, 'transparent']}
                 style={styles.shimmerGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -579,7 +579,7 @@ function VerifiedBadge({
           ]}
         >
           <LinearGradient
-            colors={['transparent', 'rgba(255, 255, 255, 0.9)', 'transparent']}
+            colors={['transparent', colors.textPrimary, 'transparent']}
             style={styles.shimmerGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -794,7 +794,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 4,
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backgroundColor: colors.textPrimary,
     borderRadius: 2,
     ...Platform.select({
       ios: {

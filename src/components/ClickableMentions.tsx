@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { colors, fonts } from '../theme';
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -199,16 +199,19 @@ export default function ClickableMentions({ text, mentions = [], style, numberOf
 
 const styles = StyleSheet.create({
   text: {
-    color: '#ffffff',
+    // Était '#ffffff' en dur : tout tweet contenant un @ ou un # passe par ce
+    // composant, donc son texte entier devenait invisible en thème clair.
+    color: colors.textPrimary,
     fontSize: 16,
     lineHeight: 22,
   },
   mention: {
-    color: '#4F7CFF',
+    // Était '#4F7CFF' — l'indigo de l'ancienne DA « Encre », abandonnée.
+    color: colors.cyan,
     fontWeight: '600', fontFamily: fonts.semibold,
   },
   hashtag: {
-    color: '#4F7CFF',
+    color: colors.cyan,
     fontWeight: '600', fontFamily: fonts.semibold,
   },
 });

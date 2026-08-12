@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.overlayMedium,
     alignSelf: 'flex-start',
   },
   fallbackContainer: {
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
   chatAuthor: {
     fontSize: 13,
     fontFamily: fonts.bold,
-    color: 'rgba(255,255,255,0.9)',
+    color: colors.textPrimary,
     marginBottom: 1,
     textShadowColor: 'rgba(0,0,0,0.75)',
     textShadowOffset: { width: 0, height: 1 },
@@ -666,7 +666,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 21,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: colors.overlayStrong,
     color: colors.textPrimary,
     fontSize: 14,
     backgroundColor: 'rgba(0,0,0,0.35)',
@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     overflow: 'hidden',
     borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: colors.overlayStrong,
     marginBottom: 12,
   },
   streamBtnActive: {

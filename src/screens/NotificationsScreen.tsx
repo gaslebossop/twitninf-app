@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { fonts, colors } from '../theme';
+import { fonts, colors , statusBarStyle} from '../theme';
 import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import {
   View,
@@ -448,7 +448,7 @@ export default function NotificationsScreen() {
     return (
       <ScreenBackground>
         <View style={styles.container}>
-          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
           <ScreenSkeleton variant="notification" count={7} />
         </View>
       </ScreenBackground>
@@ -458,7 +458,7 @@ export default function NotificationsScreen() {
   return (
     <ScreenBackground>
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       {/* ── Top bar ── */}
       <View style={[styles.topBar, { paddingTop: headerTopInset }]}>

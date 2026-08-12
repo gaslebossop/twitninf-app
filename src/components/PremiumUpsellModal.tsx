@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.overlaySoft,
   },
 
   scroll: { padding: 24, paddingBottom: 28 },
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.09)',
+    borderTopColor: colors.overlayMedium,
   },
   balanceLabel: { flex: 1, color: colors.textSecondary, fontSize: 13 },
   balanceValue: { fontSize: 15, fontFamily: fonts.bold },
