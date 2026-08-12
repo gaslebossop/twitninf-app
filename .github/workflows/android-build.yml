@@ -70,17 +70,29 @@ jobs:
       - name: Prebuild Android
         run: npx expo prebuild --platform android --clean
 
-      # Lint (lintVitalAnalyzeRelease) desactive : sur le run precedent, 3
-      # taches de lint ont echoue vers un avertissement memoire JVM
-      # (Metaspace) puis Gradle est reste bloque 28 min sans plus rien logger
-      # avant d'etre tue par le timeout — sans doute plusieurs workers de
-      # lint en concurrence sous --parallel sur un runner a 2 coeurs. Cet
-      # APK est un artefact de test signe debug, pas un envoi Play Store :
-      # le lint n'apporte rien ici. --parallel retire pour la meme raison
-      # (contention memoire).
+      # Lint (lintVitalAnalyzeRelease) desactive : sur un run precedent, des
+      # taches de lint ont plante vers un avertissement memoire JVM
+      # (Metaspace) puis Gradle est reste bloque de longues minutes sans plus
+      # rien logger. Cet APK est un artefact de test signe debug, pas un
+      # envoi Play Store : le lint n'apporte rien ici.
+      #
+      # --no-parallel : android/gradle.properties fixe `org.gradle.parallel=
+      # true` en dur (pour les builds locaux, plus rapides sur une machine de
+      # dev) — sans l'annuler ici, retirer juste `--parallel` de la ligne de
+      # commande ne changeait rien. Avec des dizaines de modules (un par lib
+      # Expo) compilant en parallele, chacun dans son propre JVM a 2 Go de
+      # heap, ca depasse largement les 7 Go du runner standard — d'ou les
+      # `OutOfMemoryError: Metaspace` en rafale. --no-daemon evite en plus de
+      # garder un daemon en memoire pour rien (le runner est jete apres).
+      # -Dorg.gradle.jvmargs override la valeur de gradle.properties (2g/512m)
+      # juste pour ce run CI, sans toucher au fichier partage avec les builds
+      # locaux : un seul JVM a la fois peut se permettre plus de marge.
       - name: Build APK release
         working-directory: android
-        run: ./gradlew assembleRelease --build-cache -Pandroid.lint.checkReleaseBuilds=false
+        run: |
+          ./gradlew assembleRelease --build-cache --no-parallel --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
+            -Pandroid.lint.checkReleaseBuilds=false
 
       - name: Localiser l'APK
         working-directory: android
