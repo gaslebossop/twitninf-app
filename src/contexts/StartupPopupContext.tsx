@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
@@ -78,10 +79,46 @@ export function StartupPopupProvider({ children }: { children: ReactNode }) {
     setPending((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev));
   }, []);
 
-  const current = useMemo(
+  const rawCurrent = useMemo(
     () => PRIORITY.find((id) => pending.includes(id)) ?? null,
     [pending],
   );
+
+  /**
+   * `current` retenu un instant a `null` lors d'une PASSATION entre deux
+   * popups (ex. langue -> consentement, quand le consentement obtient son
+   * creneau avant que la langue n'ait relache le sien).
+   *
+   * Chaque popup est un `<Modal>` natif independant, et elles ne se
+   * demontent pas toutes de la meme facon : `ReadingLanguageModal` disparait
+   * entierement de l'arbre (`if (!visible) return null`), `ConsentSheet` lui
+   * reste monte et bascule juste sa prop `visible`. Sans ce palier, la meme
+   * passe de rendu peut fermer la Dialog Android de l'une et en ouvrir une
+   * autre au meme instant — deux fenetres natives qui se chevauchent, ce que
+   * Android ne supporte pas proprement (au mieux l'ecran fige, au pire ca
+   * plante). Le palier ne s'applique qu'aux VRAIES passations (une valeur
+   * non nulle vers une autre) ; l'ouverture initiale et la fermeture finale
+   * restent instantanees.
+   */
+  const [current, setCurrent] = useState<StartupPopupId | null>(null);
+  const prevNonNullRef = useRef<StartupPopupId | null>(null);
+
+  useEffect(() => {
+    if (rawCurrent === prevNonNullRef.current) {
+      setCurrent(rawCurrent);
+      return;
+    }
+    if (prevNonNullRef.current !== null && rawCurrent !== null) {
+      setCurrent(null);
+      const timer = setTimeout(() => {
+        prevNonNullRef.current = rawCurrent;
+        setCurrent(rawCurrent);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+    prevNonNullRef.current = rawCurrent;
+    setCurrent(rawCurrent);
+  }, [rawCurrent]);
 
   const value = useMemo(() => ({ request, release, current }), [request, release, current]);
 
