@@ -26,7 +26,7 @@ export type GAuthLoginResult =
   | { type: 'cancel' };
 
 export type GAuthLinkResult =
-  | { type: 'linked'; bonus: number }
+  | { type: 'linked'; bonus: number; trialDays: number }
   | { type: 'already_linked' }
   | { type: 'taken' }
   | { type: 'error'; message: string }
@@ -99,8 +99,9 @@ export async function linkGAuthAccount(): Promise<GAuthLinkResult> {
 
   const status = params.get('status');
   const bonus = Number(params.get('bonus') || '0');
+  const trialDays = Number(params.get('trialDays') || '0');
 
-  if (status === 'linked') return { type: 'linked', bonus };
+  if (status === 'linked') return { type: 'linked', bonus, trialDays };
   if (status === 'already_linked') return { type: 'already_linked' };
   if (status === 'taken' || status === 'account_already_linked_elsewhere') return { type: 'taken' };
   return { type: 'error', message: "L'association à G a échoué." };

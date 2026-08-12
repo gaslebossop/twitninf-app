@@ -24,6 +24,7 @@ import { apiService } from '../services';
 import { liveService } from '../services/liveService';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import PremiumProfileCard from '../components/PremiumProfileCard';
+import GAuthLinkRewardCard from '../components/GAuthLinkRewardCard';
 import PremiumPurchaseModal from '../components/PremiumPurchaseModal';
 import VerificationButton from '../../components/VerificationButton';
 import VerificationRequestForm from '../../components/VerificationRequestForm';
@@ -118,11 +119,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       if (result.type === 'cancel') return;
 
       if (result.type === 'linked') {
+        const rewardParts: string[] = [];
+        if (result.bonus > 0) rewardParts.push(`+${result.bonus} NF`);
+        if (result.trialDays > 0) rewardParts.push(`${result.trialDays} jours de Pro offerts`);
         toast.success('Compte associé !', {
-          description:
-            result.bonus > 0
-              ? `+${result.bonus} NF ont été ajoutés à ton portefeuille.`
-              : 'Ton compte G est maintenant associé.',
+          description: rewardParts.length > 0
+            ? `${rewardParts.join(' et ')} ont été ajoutés à ton compte.`
+            : 'Ton compte G est maintenant associé.',
         });
         await refreshCurrentUser?.();
         return;
@@ -219,6 +222,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               expiresAt={user?.subscription_expires_at}
               onUpgrade={() => setShowPremiumPopup(true)}
             />
+            <GAuthLinkRewardCard />
           </Animated.View>
 
           {/* Section Compte */}
@@ -240,7 +244,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'Associer mon compte à G',
               user?.g_auth_linked
                 ? 'Ton compte est associé à G.'
-                : 'Connecte ton compte à G et reçois 5 NF offerts.',
+                : 'Connecte ton compte à G et reçois 5 NF + 3 jours de Pro offerts.',
               user?.g_auth_linked ? 'checkmark-circle' : 'link-outline',
               handleLinkGAuth
             )}

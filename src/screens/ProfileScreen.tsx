@@ -29,6 +29,7 @@ import TweetCard from '../components/TweetCard';
 import VerifiedBadge from '../components/VerifiedBadge';
 import ModerationButton from '../components/ModerationButton';
 import PremiumBadge from '../components/PremiumBadge';
+import GAuthLinkRewardCard from '../components/GAuthLinkRewardCard';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import PremiumCheckoutSheet from '../components/PremiumCheckoutSheet';
 import { useProfileScreenTracking } from '../hooks/useBehaviorTracking';
@@ -1065,6 +1066,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
+
+        <View style={{ marginHorizontal: 16 }}>
+          <GAuthLinkRewardCard />
+        </View>
 
           </>
         }
