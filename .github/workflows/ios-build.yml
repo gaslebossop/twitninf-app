@@ -10,7 +10,10 @@ name: Build iOS Unsigned
 # requis) : le RE-signer ensuite avec Sideloadly ou AltStore (Apple ID
 # gratuit) pour l'installer sur un appareil. Voir l'etape « Package IPA »
 # pour pourquoi l'ad-hoc n'est pas optionnel.
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   build:
@@ -188,3 +191,31 @@ jobs:
           name: ios-ipa
           path: ios/*.ipa
           if-no-files-found: error
+
+      # Met a jour la source AltStore privee (gist secret) avec le nouvel
+      # IPA a chaque push sur main : la famille recoit la notification de
+      # maj sans qu'on ait besoin de republier a la main. buildVersion est
+      # ce qu'AltStore compare pour detecter une nouvelle version — il DOIT
+      # augmenter a chaque fois, "version" reste un simple libelle humain.
+      - name: Mettre a jour le gist AltStore
+        env:
+          GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
+          IPA=$(ls ios/*.ipa | head -1)
+
+          git clone "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo
+          cp "$IPA" gist-repo/TwitNinf.ipa
+          python3 .github/scripts/update_gist.py gist-repo "$IPA"
+
+          cd gist-repo
+          git config user.name "twitninf-ci"
+          git config user.email "ci@gasleboss.local"
+          git add TwitNinf.ipa apps.json
+          if git diff --cached --quiet; then
+            echo "Rien a pousser sur le gist."
+          else
+            git commit -q -m "Mise a jour automatique (${GITHUB_SHA:0:7})"
+            git push -q
+          fi
