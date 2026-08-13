@@ -6,8 +6,10 @@ name: Build iOS Unsigned
 # react-native-nitro-rtmp-publisher, le plancher SDK iOS 26 de HaishinKit
 # 2.2.5 (voir le commentaire sur `runs-on` plus bas).
 #
-# L'artefact produit est un .app non signe : le signer ensuite avec
-# Sideloadly (Apple ID gratuit) pour l'installer sur un appareil.
+# L'artefact produit est un .ipa signe en ad-hoc (aucun certificat Apple
+# requis) : le RE-signer ensuite avec Sideloadly ou AltStore (Apple ID
+# gratuit) pour l'installer sur un appareil. Voir l'etape « Package IPA »
+# pour pourquoi l'ad-hoc n'est pas optionnel.
 on: [workflow_dispatch]
 
 jobs:
@@ -130,7 +132,54 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -r "$APP" Payload/
-          zip -r "$NAME.ipa" Payload
+
+          # Certains frameworks sortent de l'archive avec leur binaire en 0644
+          # (constate sur React.framework et ReactNativeDependencies.framework,
+          # alors que hermes.framework est bien en 0755) : le binaire Mach-O
+          # d'un framework DOIT etre executable, sinon le bundle est invalide
+          # et les outils de sideload rejettent l'IPA avec « Invalid file »
+          # — alors meme que l'archive est par ailleurs parfaitement saine,
+          # ce qui rend le symptome tres trompeur.
+          find Payload -type f -exec sh -c '
+            for f do
+              magic=$(od -An -N4 -tx1 "$f" | tr -d " \n")
+              case "$magic" in
+                cffaedfe|cefaedfe|feedfacf|feedface|cafebabe) chmod +x "$f" ;;
+              esac
+            done
+          ' sh {} +
+
+          # Signature ad-hoc (identite « - ») : ne demande AUCUN certificat ni
+          # profil Apple, mais produit le squelette _CodeSignature/CodeResources
+          # dans l'app et dans chaque framework.
+          #
+          # C'est indispensable : les outils de sideload (Sideloadly, AltStore)
+          # RE-signent une app, ils ne la signent pas depuis zero. Un bundle
+          # totalement depourvu de _CodeSignature est rejete a l'installation
+          # avec « Invalid file » — diagnostic trompeur, car l'archive est par
+          # ailleurs valide (zip sain, Info.plist complet, Mach-O arm64/iOS).
+          # Constate en comparant avec un build local signe qui, lui, passait.
+          #
+          # De l'interieur vers l'exterieur : signer l'app en dernier, sinon sa
+          # signature ne couvrirait pas les frameworks re-signes apres elle.
+          for fw in Payload/*.app/Frameworks/*.framework; do
+            [ -d "$fw" ] || continue
+            codesign --force --sign - --timestamp=none "$fw"
+          done
+          codesign --force --sign - --timestamp=none Payload/*.app
+          codesign --verify --verbose Payload/*.app
+
+          # -y : stocke les liens symboliques tels quels au lieu de les suivre
+          # (les frameworks iOS sont plats aujourd'hui, mais un lien duplique
+          # casserait la signature au moment du resign).
+          zip -y -r "$NAME.ipa" Payload
+
+          # Garde-fou : sans cette structure, l'IPA est inutilisable pour du
+          # sideload — autant que le build echoue ici plutot qu'a l'install.
+          if ! unzip -l "$NAME.ipa" | grep -q "_CodeSignature/CodeResources"; then
+            echo "::error::IPA sans _CodeSignature — la signature ad-hoc a echoue."
+            exit 1
+          fi
           unzip -l "$NAME.ipa" | tail -3
           ls -lh "$NAME.ipa"
 
