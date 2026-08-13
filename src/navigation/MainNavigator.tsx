@@ -32,6 +32,7 @@ import TweetDetailScreen from '../screens/TweetDetailScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import AccountManagerScreen from '../screens/AccountManagerScreen';
 import ThemeScreen from '../screens/ThemeScreen';
+import PrivacyDataScreen from '../screens/PrivacyDataScreen';
 import AddAccountScreen from '../screens/AddAccountScreen';
 import ModerationScreen from '../screens/ModerationScreen';
 import UserManagementScreen from '../screens/UserManagementScreen';
@@ -55,8 +56,11 @@ import TradingScreen from '../screens/TradingScreen';
 import WalletDetailScreen from '../screens/WalletDetailScreen';
 import CommunityCurrenciesScreen from '../screens/CommunityCurrenciesScreen';
 import CurrencyDetailScreen from '../screens/CurrencyDetailScreen';
+import CreateCurrencyScreen from '../screens/CreateCurrencyScreen';
 import CasinoScreen from '../screens/CasinoScreen';
 import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
+import MonetizationProgramScreen from '../screens/MonetizationProgramScreen';
+import MonetizationProgramAdminScreen from '../screens/MonetizationProgramAdminScreen';
 import EventManagementScreen from '../screens/EventManagementScreen';
 import FunctionalEventManagementScreen from '../screens/FunctionalEventManagementScreen';
 import FeatureFlagsAdminScreen from '../screens/FeatureFlagsAdminScreen';
@@ -64,7 +68,10 @@ import NfMapScreen from '../screens/NfMapScreen';
 import KosporBirthdayScreen from '../screens/KosporBirthdayScreen';
 import VerificationStyleScreen from '../screens/VerificationStyleScreen';
 import CreateTargetingAdScreen from '../screens/CreateTargetingAdScreen';
-import PolicierCongoAdminScreen from '../screens/PolicierCongoAdminScreen';
+import ReportsScreen from '../screens/ReportsScreen';
+import ReportInvestigationScreen from '../screens/ReportInvestigationScreen';
+import ModerationHistoryScreen from '../screens/ModerationHistoryScreen';
+import UnbanTicketsScreen from '../screens/UnbanTicketsScreen';
 import CreateCampaignScreen from '../screens/CreateCampaignScreen';
 import CreateAdvertisementScreen from '../screens/CreateAdvertisementScreen';
 import EconomyManagementScreen from '../screens/EconomyManagementScreen';
@@ -81,10 +88,10 @@ import GoLiveScreen from '../screens/GoLiveScreen';
 import KosporBirthdayPopup from '../components/KosporBirthdayPopup';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
+import { StartupFlowBackdrop } from '../components/StartupStepPage';
 import { NavbarPrefsProvider, useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
 import DeveloperPortalScreen from '../screens/DeveloperPortalScreen';
-import PolicierCongoChatScreen from '../screens/PolicierCongoChatScreen';
 import NewConversationScreen from '../screens/NewConversationScreen';
 import ProfileCustomizationScreen from '../screens/ProfileCustomizationScreen';
 import ConversationThreadScreen from '../screens/ConversationThreadScreen';
@@ -118,6 +125,7 @@ export type MainStackParamList = {
   EditProfile: undefined;
   AccountManager: undefined;
   Theme: undefined;
+  PrivacyData: undefined;
   AddAccount: undefined;
   Moderation: undefined;
   UserManagement: undefined;
@@ -133,8 +141,11 @@ export type MainStackParamList = {
   WalletDetail: undefined;
   CommunityCurrencies: undefined;
   CurrencyDetail: { currencyId: string };
+  CreateCurrency: undefined;
   Casino: undefined;
   TweetMonetization: undefined;
+  MonetizationProgram: undefined;
+  MonetizationProgramAdmin: undefined;
   EventManagement: undefined;
   FunctionalEventManagement: undefined;
   FeatureFlagsAdmin: undefined;
@@ -146,7 +157,10 @@ export type MainStackParamList = {
   CreateAdvertisement: undefined;
   EconomyManagement: undefined;
   SimilarityAlgorithm: undefined;
-  PolicierCongoAdmin: undefined;
+  Reports: undefined;
+  ReportInvestigation: { reportId: string };
+  ModerationHistory: undefined;
+  UnbanTickets: undefined;
   Video: undefined;
   Messages: undefined;
   CreateVideo: undefined;
@@ -169,7 +183,6 @@ export type MainStackParamList = {
   GoLive: undefined;
   DeveloperPortal: undefined;
   ProfileCustomization: undefined;
-  PolicierCongoChat: undefined;
   NewConversation: {
     initialTab?: 'dm' | 'group' | 'invites';
   } | undefined;
@@ -234,11 +247,12 @@ function MainNavigatorInner() {
   // Afficher la popup au lancement si l'événement est actif
   useEffect(() => {
     if (!isLoading && isEventActive && !hasShownPopup) {
-      // Délai pour laisser l'app se charger complètement
+      // Délai pour laisser l'app se charger. L'ordre d'affichage vient de la
+      // file (REGISTRATION_WINDOW_MS), pas de ce délai.
       const timer = setTimeout(() => {
         setShowBirthdayPopup(true);
         setHasShownPopup(true);
-      }, 2000);
+      }, 250);
 
       return () => clearTimeout(timer);
     }
@@ -253,7 +267,7 @@ function MainNavigatorInner() {
       const timer = setTimeout(() => {
         setShowNavbarOnboarding(true);
         setHasShownNavbarOnboarding(true);
-      }, 2500);
+      }, 250);
 
       return () => clearTimeout(timer);
     }
@@ -340,6 +354,15 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="Theme"
         component={ThemeScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_right',
+          headerShown: false,
+        }}
+      />
+      <MainStack.Screen
+        name="PrivacyData"
+        component={PrivacyDataScreen}
         options={{
           presentation: 'card',
           animation: 'slide_from_right',
@@ -484,6 +507,16 @@ function MainNavigatorInner() {
       />
 
       <MainStack.Screen
+        name="CreateCurrency"
+        component={CreateCurrencyScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
         name="Casino"
         component={CasinoScreen}
         options={{
@@ -493,8 +526,8 @@ function MainNavigatorInner() {
         }}
       />
       
-      <MainStack.Screen 
-        name="TweetMonetization" 
+      <MainStack.Screen
+        name="TweetMonetization"
         component={TweetMonetizationScreen}
         options={{
           presentation: 'card',
@@ -502,7 +535,27 @@ function MainNavigatorInner() {
           headerShown: false,
         }}
       />
-      
+
+      <MainStack.Screen
+        name="MonetizationProgram"
+        component={MonetizationProgramScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="MonetizationProgramAdmin"
+        component={MonetizationProgramAdminScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
       <MainStack.Screen 
         name="EventManagement" 
         component={EventManagementScreen}
@@ -613,9 +666,39 @@ function MainNavigatorInner() {
         }}
       />
 
-      <MainStack.Screen 
-        name="PolicierCongoAdmin" 
-        component={PolicierCongoAdminScreen}
+      <MainStack.Screen
+        name="Reports"
+        component={ReportsScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="ReportInvestigation"
+        component={ReportInvestigationScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="ModerationHistory"
+        component={ModerationHistoryScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="UnbanTickets"
+        component={UnbanTicketsScreen}
         options={{
           presentation: 'card',
           animation: 'slide_from_bottom',
@@ -721,16 +804,6 @@ function MainNavigatorInner() {
         }}
       />
       
-      <MainStack.Screen 
-        name="PolicierCongoChat" 
-        component={PolicierCongoChatScreen}
-        options={{
-          presentation: 'card',
-          animation: 'slide_from_bottom',
-          headerShown: false,
-        }}
-      />
-
       <MainStack.Screen
         name="ProfileCustomization"
         component={ProfileCustomizationScreen}
@@ -847,7 +920,13 @@ function MainNavigatorInner() {
       />
 
     </MainStack.Navigator>
-    
+
+    {/* Masque l'application pendant tout le parcours de démarrage.
+        Placé ICI, entre le navigateur et les deux étapes ci-dessous : il
+        recouvre le fil, mais les étapes rendues après lui restent visibles.
+        Sans ce fond, le fil réapparaissait un instant à chaque « Continuer ». */}
+    <StartupFlowBackdrop />
+
     {/* Popup d'anniversaire de Kospor */}
     <KosporBirthdayPopup
       visible={birthdayVisible}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fonts } from '../theme';
-import { ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { fonts, radius } from '../theme';
+import { ScreenBackground, ScreenSkeleton, EmptyState } from '../components/ui';
+import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import {
   View,
   Text,
@@ -9,9 +10,8 @@ import {
   ScrollView,
   StyleSheet,
   Animated,
-  useWindowDimensions,
-  SafeAreaView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme';
@@ -38,12 +38,8 @@ export default function SearchScreen() {
   const navigation = useNavigation();
   const route = useRoute<SearchRouteProp>();
   const { user, accounts } = useAuth();
-  const { height: windowHeight } = useWindowDimensions();
   const { styles: eventStyles, theme: currentTheme } = useEventStyles();
-  const isSmallScreen = windowHeight < 700;
-  const isMediumScreen = windowHeight >= 700 && windowHeight < 800;
-
-  const headerPaddingTop = Platform.OS === 'ios' ? (isSmallScreen ? 10 : 15) : (isSmallScreen ? 30 : isMediumScreen ? 35 : 40);
+  const { top: headerTopInset } = useHeaderMetrics();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ users: User[]; tweets: Tweet[] }>({ users: [], tweets: [] });
@@ -62,6 +58,8 @@ export default function SearchScreen() {
   // États pour les interactions avec les tweets
   const [likedTweets, setLikedTweets] = useState<{ [key: string]: boolean }>({});
   const [retweetedTweets, setRetweetedTweets] = useState<{ [key: string]: boolean }>({});
+  const [followingUsers, setFollowingUsers] = useState<{ [key: string]: boolean }>({});
+  const [followLoading, setFollowLoading] = useState<{ [key: string]: boolean }>({});
 
   // Récupérer le token depuis AsyncStorage (système standard)
   const [currentToken, setCurrentToken] = useState<string | null>(null);
@@ -468,6 +466,26 @@ export default function SearchScreen() {
     }
   };
 
+  const handleFollowToggle = async (targetUser: User) => {
+    if (!targetUser.id || followLoading[targetUser.id]) return;
+    const isFollowing = followingUsers[targetUser.id] || false;
+    setFollowLoading((prev) => ({ ...prev, [targetUser.id]: true }));
+    try {
+      const res = isFollowing
+        ? await apiService.unfollowUser(targetUser.id)
+        : await apiService.followUser(targetUser.id);
+      if (res.success) {
+        setFollowingUsers((prev) => ({ ...prev, [targetUser.id]: !isFollowing }));
+      } else {
+        toast.error(isFollowing ? 'Impossible de se désabonner' : 'Impossible de suivre');
+      }
+    } catch {
+      toast.error('Une erreur est survenue');
+    } finally {
+      setFollowLoading((prev) => ({ ...prev, [targetUser.id]: false }));
+    }
+  };
+
   /**
    * Handlers d'identité stable : le comparateur de `TweetCard` compare les
    * callbacks par référence. L'état des interactions est donc lu par
@@ -803,8 +821,18 @@ export default function SearchScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.followButton}>
-          <Text style={styles.followButtonText}>Suivre</Text>
+        <TouchableOpacity
+          style={[styles.followButton, followingUsers[user.id] && styles.followingButton]}
+          onPress={() => handleFollowToggle(user)}
+          disabled={followLoading[user.id]}
+        >
+          {followLoading[user.id] ? (
+            <ActivityIndicator size="small" color={followingUsers[user.id] ? colors.textSecondary : colors.onAccent} />
+          ) : (
+            <Text style={[styles.followButtonText, followingUsers[user.id] && styles.followingButtonText]}>
+              {followingUsers[user.id] ? 'Suivi' : 'Suivre'}
+            </Text>
+          )}
         </TouchableOpacity>
       </TouchableOpacity>
     </Animated.View>
@@ -851,7 +879,7 @@ export default function SearchScreen() {
 
   return (
     <ScreenBackground>
-    <SafeAreaView style={[styles.container, eventStyles.container]}>
+    <View style={[styles.container, eventStyles.container]}>
       <View style={styles.gradient}>
         {/* ── Event banners ── */}
         <EventBanner />
@@ -859,20 +887,17 @@ export default function SearchScreen() {
         {/* ── Bannière de ban/suspension ── */}
         <BanAlertBanner />
         
-        {/* En-tête */}
-        <Animated.View 
-          style={[
-            styles.header,
-            eventStyles.header,
-            {
-              paddingTop: headerPaddingTop,
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }]
-            }
-          ]}
-        >
-          <Text style={[styles.title, eventStyles.headerText]}>Recherche</Text>
-        </Animated.View>
+        <View style={[styles.topBar, eventStyles.header, { paddingTop: headerTopInset }]}>
+          <TouchableOpacity
+            onPress={() => (navigation as any).navigate('Profil')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.topBarSide}
+          >
+            <Avatar size={34} username={user?.username || 'U'} uri={(user as any)?.avatar} />
+          </TouchableOpacity>
+          <Text style={[styles.topBarTitle, eventStyles.headerText]}>Recherche</Text>
+          <View style={styles.topBarSide} />
+        </View>
 
       {/* Barre de recherche */}
       <Animated.View 
@@ -1016,13 +1041,7 @@ export default function SearchScreen() {
 
             {/* Aucun résultat */}
             {(searchResults?.users?.length || 0) === 0 && (searchResults?.tweets?.length || 0) === 0 && (
-              <View style={styles.noResultsContainer}>
-                <Ionicons name="search-outline" size={64} color={colors.textMuted} />
-                <Text style={styles.noResultsTitle}>Aucun résultat</Text>
-                <Text style={styles.noResultsSubtitle}>
-                  Essayez de rechercher quelque chose d'autre.
-                </Text>
-              </View>
+              <EmptyState icon="search-outline" title="Aucun résultat" message="Essaie de rechercher quelque chose d'autre." style={{ marginTop: 40 }} />
             )}
           </>
         )}
@@ -1041,7 +1060,6 @@ export default function SearchScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={styles.trendingContent}>
-                    <Text style={styles.trendingCategory}>Tendance dans Technologie</Text>
                     <Text style={styles.trendingHashtag}>#{hashtag.tag.replace(/^#+/, '')}</Text>
                     <Text style={styles.trendingCount}>{formatNumber(hashtag.count)} Tweets</Text>
                   </View>
@@ -1051,9 +1069,7 @@ export default function SearchScreen() {
                 </TouchableOpacity>
               ))
             ) : (
-              <View style={styles.noTrendingContainer}>
-                <Text style={styles.noTrendingText}>Aucune tendance disponible</Text>
-              </View>
+              <EmptyState icon="trending-up-outline" title="Aucune tendance" message="Reviens plus tard pour voir ce qui buzz." />
             )}
           </View>
         )}
@@ -1064,8 +1080,8 @@ export default function SearchScreen() {
         )}
       </ScrollView>
       </View>
-      
-    </SafeAreaView>
+
+    </View>
     </ScreenBackground>
   );
 }
@@ -1078,15 +1094,18 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
-  title: {
-    fontSize: 28,
-    fontFamily: fonts.displayHeavy,
+  topBarSide: { width: 34 },
+  topBarTitle: {
+    fontSize: 16,
+    fontFamily: fonts.heading,
     color: colors.textPrimary,
-    letterSpacing: -0.8,
   },
   searchBarContainer: {
     paddingHorizontal: 20,
@@ -1119,22 +1138,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   filterButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    marginRight: 10,
-    borderRadius: 10,
+    marginRight: 8,
+    borderRadius: radius.round,
     backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   filterButtonActive: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentMuted,
   },
   filterButtonText: {
     color: colors.textSecondary,
-    fontSize: 14,
-    fontFamily: fonts.bold,
+    fontSize: 13.5,
+    fontFamily: fonts.medium,
   },
   filterButtonTextActive: {
-    color: colors.onAccent,
+    color: colors.accent,
+    fontFamily: fonts.semibold,
   },
   scrollView: {
     flex: 1,
@@ -1267,12 +1290,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     paddingHorizontal: 18,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: radius.md,
+    minWidth: 78,
+    alignItems: 'center',
+  },
+  followingButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
   },
   followButtonText: {
     color: colors.onAccent,
     fontSize: 13,
     fontFamily: fonts.bold,
+  },
+  followingButtonText: {
+    color: colors.textPrimary,
   },
   tweetItem: {
     marginBottom: 12,

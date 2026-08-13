@@ -1,13 +1,13 @@
-import { fonts , colors} from '../theme';
+import { fonts , colors, statusBarStyle} from '../theme';
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Platform, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/Avatar';
-import { BackButton } from '../components/ui';
+import { ScreenBackground, AppHeader } from '../components/ui';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
 import { toast } from '../components/ui/Toast';
 import { signInWithGAuth } from '../services/gAuthLogin';
@@ -61,12 +61,9 @@ export default function AccountManagerScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <BackButton navigation={navigation} />
-        <Text style={styles.headerTitle}>Comptes</Text>
-        <View style={styles.headerBtn} />
-      </View>
+    <ScreenBackground>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
+      <AppHeader navigation={navigation} title="Comptes" />
 
       <ScrollView contentContainerStyle={styles.content}>
         {accounts.map((acc: any) => {
@@ -128,21 +125,12 @@ export default function AccountManagerScreen() {
           <Text style={styles.clearAllButtonText}>Nettoyer tous les comptes</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'transparent' },
   gradient: { ...StyleSheet.absoluteFillObject as any },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  headerBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { color: '#ffffff', fontSize: 18, fontWeight: '700', fontFamily: fonts.bold, flex: 1, textAlign: 'center' },
   content: { padding: 16 },
   accountRow: {
     flexDirection: 'row',

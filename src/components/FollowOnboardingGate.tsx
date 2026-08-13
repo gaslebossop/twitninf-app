@@ -2,23 +2,22 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
+import StartupStepPage, { stepStyles } from './StartupStepPage';
 import apiService from '../services/api';
 import { OnboardingSuggestion } from '../types/api';
 import { colors, fonts, withAlpha } from '../theme';
 
-// Juste apres le consentement, qui ouvre la file a 600 ms.
-const STARTUP_SETTLE_MS = 800;
+// Simple attente du profil : l'ordre vient de la file, pas de ce delai
+// (voir REGISTRATION_WINDOW_MS dans StartupPopupContext).
+const STARTUP_SETTLE_MS = 250;
 
 /**
  * Choix des premiers abonnements, a la creation du compte.
@@ -30,7 +29,6 @@ const STARTUP_SETTLE_MS = 800;
  * volontairement plus lourd tant que le compte n'a pas d'historique reel.
  */
 export default function FollowOnboardingGate() {
-  const insets = useSafeAreaInsets();
   const { user, isAuthenticated, refreshCurrentUser } = useAuth();
   const [ready, setReady] = useState(false);
   const [suggestions, setSuggestions] = useState<OnboardingSuggestion[]>([]);
@@ -121,84 +119,62 @@ export default function FollowOnboardingGate() {
   if (!user) return null;
 
   return (
-    <Modal
+    <StartupStepPage
       visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      // Non refermable : l'etape conditionne la qualite du premier fil.
-      onRequestClose={() => {}}
+      icon="people-outline"
+      title="Choisis qui tu veux suivre"
+      subtitle={
+        impossible
+          ? 'Voici les comptes les plus actifs de TwitNinf. Ils composeront ton premier fil.'
+          : `Suis au moins ${minimum} comptes parmi les plus actifs. C'est ce qui remplit ton fil au départ — tu pourras te désabonner quand tu veux.`
+      }
+      footer={
+        suggestions.length > 0 ? (
+          <>
+            {error ? <Text style={stepStyles.error}>{error}</Text> : null}
+            <Pressable
+              style={[stepStyles.primaryButton, !enough && !impossible && stepStyles.primaryButtonDisabled]}
+              onPress={submit}
+              disabled={saving || (!enough && !impossible)}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.onAccent} />
+              ) : (
+                <Text style={stepStyles.primaryText}>
+                  {impossible
+                    ? 'Suivre ces comptes'
+                    : enough
+                      ? `Suivre ${selected.length} compte${selected.length > 1 ? 's' : ''}`
+                      : `Encore ${remaining} compte${remaining > 1 ? 's' : ''}`}
+                </Text>
+              )}
+            </Pressable>
+          </>
+        ) : null
+      }
     >
-      <View
-        style={[styles.backdrop, {
-          paddingTop: Math.max(insets.top, 16),
-          paddingBottom: Math.max(insets.bottom, 16),
-        }]}
-      >
-        <View style={styles.card}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="people-outline" size={26} color={colors.accentBright} />
-          </View>
-
-          <Text style={styles.title}>Choisis qui tu veux suivre</Text>
-          <Text style={styles.subtitle}>
-            {impossible
-              ? 'Voici les comptes les plus actifs de TwitNinf. Ils composeront ton premier fil.'
-              : `Suis au moins ${minimum} comptes parmi les plus actifs. C'est ce qui remplit ton fil au départ — tu pourras te désabonner quand tu veux.`}
-          </Text>
-
-          {loading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={colors.accentBright} />
-            </View>
-          ) : suggestions.length === 0 ? (
-            <>
-              <Text style={styles.error}>{error || 'Aucune suggestion disponible.'}</Text>
-              <Pressable style={styles.primaryButton} onPress={load}>
-                <Text style={styles.primaryText}>Réessayer</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-              >
-                {sorted.map((account) => (
-                  <SuggestionRow
-                    key={account.id}
-                    account={account}
-                    selected={selected.includes(account.id)}
-                    onToggle={() => toggle(account.id)}
-                  />
-                ))}
-              </ScrollView>
-
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-
-              <Pressable
-                style={[styles.primaryButton, !enough && !impossible && styles.primaryButtonDisabled]}
-                onPress={submit}
-                disabled={saving || (!enough && !impossible)}
-              >
-                {saving ? (
-                  <ActivityIndicator color={colors.bg} />
-                ) : (
-                  <Text style={styles.primaryText}>
-                    {impossible
-                      ? 'Suivre ces comptes'
-                      : enough
-                        ? `Suivre ${selected.length} compte${selected.length > 1 ? 's' : ''}`
-                        : `Encore ${remaining} compte${remaining > 1 ? 's' : ''}`}
-                  </Text>
-                )}
-              </Pressable>
-            </>
-          )}
+      {loading ? (
+        <View style={stepStyles.loading}>
+          <ActivityIndicator color={colors.accent} />
         </View>
-      </View>
-    </Modal>
+      ) : suggestions.length === 0 ? (
+        <>
+          <Text style={stepStyles.error}>{error || 'Aucune suggestion disponible.'}</Text>
+          <Pressable style={[stepStyles.primaryButton, { marginTop: 16 }]} onPress={load}>
+            <Text style={stepStyles.primaryText}>Réessayer</Text>
+          </Pressable>
+        </>
+      ) : (
+        sorted.map((account) => (
+          <SuggestionRow
+            key={account.id}
+            account={account}
+            selected={selected.includes(account.id)}
+            onToggle={() => toggle(account.id)}
+          />
+        ))
+      )}
+    </StartupStepPage>
   );
 }
 
@@ -252,14 +228,6 @@ function SuggestionRow({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'center', paddingHorizontal: 20, backgroundColor: 'rgba(1,0,8,0.9)' },
-  card: { width: '100%', maxWidth: 480, maxHeight: '92%', alignSelf: 'center', padding: 22, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, backgroundColor: colors.surfaceElevated },
-  iconCircle: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.accentMuted, borderWidth: StyleSheet.hairlineWidth, borderColor: withAlpha(colors.accent, 0.45) },
-  title: { marginTop: 18, color: colors.textPrimary, fontSize: 24, letterSpacing: -0.5, fontFamily: fonts.display },
-  subtitle: { marginTop: 8, color: colors.textSecondary, fontSize: 14, lineHeight: 21, fontFamily: fonts.regular },
-  loading: { paddingVertical: 46, alignItems: 'center' },
-  scroll: { marginTop: 18 },
-  scrollContent: { paddingBottom: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 11, marginBottom: 8, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, backgroundColor: colors.surface },
   rowSelected: { borderColor: withAlpha(colors.accent, 0.5), backgroundColor: colors.accentMuted },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface },
@@ -274,8 +242,4 @@ const styles = StyleSheet.create({
   followPillSelected: { borderColor: colors.textPrimary, backgroundColor: colors.textPrimary },
   followPillText: { color: colors.textPrimary, fontSize: 12, fontFamily: fonts.semibold },
   followPillTextSelected: { color: colors.bg },
-  error: { marginTop: 12, color: colors.red, fontSize: 12, lineHeight: 18, fontFamily: fonts.semibold },
-  primaryButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 16, backgroundColor: colors.textPrimary },
-  primaryButtonDisabled: { opacity: 0.4 },
-  primaryText: { color: colors.bg, fontSize: 14, fontFamily: fonts.bold },
 });

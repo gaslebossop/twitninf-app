@@ -63,6 +63,33 @@ export interface UpdateReportData {
 }
 
 /**
+ * Dossier d'enquête complet — même endpoint que l'app Windows
+ * (`GET /reports/:id/context`), trimmé côté mobile aux champs affichés.
+ */
+export interface ReportContext {
+  report: Report & { category_label?: string };
+  reporter: {
+    id?: string; username?: string; full_name?: string; avatar?: string; verified?: boolean;
+    weight_at_report?: number; weight_now?: number;
+    stats?: { total: number; upheld: number; dismissed: number };
+  };
+  target: {
+    type: ReportTargetType;
+    tweet?: { id: string; content: string; created_at: string; moderation_status?: string } | null;
+    user?: {
+      id: string; username: string; full_name?: string; avatar?: string; verified?: boolean;
+      is_suspended?: boolean; suspended_until?: string | null; suspension_reason?: string | null;
+      ban_count?: number; created_at?: string;
+    } | null;
+  };
+  history?: {
+    reports: { on_account?: number; on_content?: number; still_open?: number; upheld?: number; dismissed?: number };
+  } | null;
+  siblings: { id: string; status: string }[];
+  aggregate: { distinctReporters: number; reportCount: number };
+}
+
+/**
  * Repli local de la taxonomie.
  *
  * La source de vérité est le serveur (`GET /report-categories`) pour que
@@ -212,6 +239,17 @@ class ReportService {
       return status === 200 && data?.success ? data.data : null;
     } catch (error) {
       console.error('❌ Erreur lors de la récupération des signalements:', error);
+      return null;
+    }
+  }
+
+  /** Dossier d'enquête : contenu visé, historique du compte, fiabilité du signaleur. */
+  async getReportContext(reportId: string): Promise<ReportContext | null> {
+    try {
+      const { status, data } = await this.makeRequest(`/reports/${reportId}/context`);
+      return status === 200 && data?.success ? data.data : null;
+    } catch (error) {
+      console.error('❌ Erreur lors de la récupération du dossier:', error);
       return null;
     }
   }

@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Dimensions,
 } from 'react-native';
+// La version de react-native (core) ne pose aucun inset sur Android — seule
+// celle de react-native-safe-area-context protège le haut de l'écran partout.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -63,7 +65,7 @@ const MonetizationScreen: React.FC<MonetizationScreenProps> = ({ navigation }) =
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle={statusBarStyle()} backgroundColor="#0B0C0F" />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
       
       {/* Header */}
       <View style={styles.header}>

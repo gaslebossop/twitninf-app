@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     backgroundColor: 'transparent',
     borderBottomWidth: 1,
-    borderBottomColor: '#23262D',
+    borderBottomColor: colors.border,
   },
   backButton: {
     width: 40,
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '700', fontFamily: fonts.bold,
-    color: '#ffffff',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginHorizontal: 16,
   },
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600', fontFamily: fonts.semibold,
-    color: '#ffffff',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   styleCard: {
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#23262D',
+    borderColor: colors.border,
   },
   styleHeader: {
     flexDirection: 'row',
@@ -91,12 +91,12 @@ const styles = StyleSheet.create({
   styleName: {
     fontSize: 16,
     fontWeight: '600', fontFamily: fonts.semibold,
-    color: '#ffffff',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   styleDescription: {
     fontSize: 14,
-    color: '#9BA1AC',
+    color: colors.textSecondary,
     lineHeight: 20,
   },
   styleButton: {
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#9BA1AC',
+    color: colors.textSecondary,
     marginTop: 12,
   },
   lockOverlay: {

@@ -16,12 +16,15 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import TweetMonetizationService from '../services/tweetMonetizationService';
+import MonetizationProgramService, { MonetizationProgramEligibility } from '../services/monetizationProgramService';
 import NewEconomyService from '../services/newEconomyService';
-import { colors, fonts, withAlpha, radius } from '../theme';
+import CurrencyService from '../services/currencyService';
+import { colors, fonts, withAlpha, radius, statusBarStyle } from '../theme';
 import { AppHeader, ScreenBackground, GlassCard, GlassButton, SectionLabel, Skeleton, celebrateReward } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 
@@ -295,6 +298,7 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
   const [previewData, setPreviewData] = useState<PreviewEarnings | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [programEligibility, setProgramEligibility] = useState<MonetizationProgramEligibility | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -375,12 +379,22 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
         const tweetsData = await TweetMonetizationService.getUserEligibleTweets(user.id);
         setEligibleTweets(tweetsData.tweets || []);
 
+        try {
+          setProgramEligibility(await MonetizationProgramService.getStatus());
+        } catch {
+          setProgramEligibility(null);
+        }
+
         const statsData = await TweetMonetizationService.getMonetizationStats();
 
         // Le cours affiché doit rester identique à celui de NewEconomyScreen/WalletDetail —
         // même monnaie, même source, pour ne jamais montrer deux prix différents.
         try {
-          const currencyId = '077ae58c-7ba5-4da0-bb67-5829a83a2ea1';
+          // L'ID était codé en dur sur l'ancien identifiant de TwitCoins, qui
+          // n'existe plus en base (la monnaie a été recréée) — 500 systématique.
+          // `CurrencyService` résout le bon ID par symbole (NF), avec l'ancien
+          // comme secours seulement si cet appel échoue à son tour.
+          const currencyId = await CurrencyService.getTwitCoinsCurrencyId();
           const walletData = await NewEconomyService.getUserWallet(currencyId);
           setStats({ ...statsData, currency: { ...statsData.currency, currentPrice: walletData.currency.currentPrice } });
         } catch {
@@ -451,6 +465,7 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
   if (loading) {
     return (
       <ScreenBackground>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
         <AppHeader navigation={navigation} title="Monétisation" subtitle="Gagne des TWC avec tes tweets" />
         <View style={styles.content}>
           <Skeleton width="100%" height={148} rounded={16} style={{ marginBottom: 20 }} />
@@ -477,6 +492,7 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
 
   return (
     <ScreenBackground>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
       <AppHeader
         navigation={navigation}
         title="Monétisation"
@@ -489,6 +505,28 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
             icon="lock-closed-outline"
             title="Connexion requise"
             subtitle="Connecte-toi pour suivre l'éligibilité de tes tweets et collecter tes gains en TWC."
+          />
+        </View>
+      ) : programEligibility && programEligibility.programStatus !== 'approved' ? (
+        <View style={[styles.content, contentMaxWidth]}>
+          <EmptyState
+            icon={programEligibility.programStatus === 'pending' ? 'time-outline' : 'trophy-outline'}
+            title={
+              programEligibility.programStatus === 'pending'
+                ? 'Candidature en cours de revue'
+                : 'Rejoins le programme de monétisation'
+            }
+            subtitle={
+              programEligibility.programStatus === 'pending'
+                ? 'On vérifie ton compte manuellement — reviens un peu plus tard.'
+                : 'Avant de toucher des TWC sur tes tweets, ton compte doit être accepté dans le programme de monétisation.'
+            }
+            actionLabel={programEligibility.programStatus === 'pending' ? undefined : 'Voir les conditions'}
+            onAction={
+              programEligibility.programStatus === 'pending'
+                ? undefined
+                : () => navigation?.navigate?.('MonetizationProgram')
+            }
           />
         </View>
       ) : (

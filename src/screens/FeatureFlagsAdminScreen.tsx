@@ -22,8 +22,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
+  KeyboardAvoidingView,
+  Platform,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Switch,
   Text,
@@ -34,7 +37,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts } from '../theme';
+import { colors, fonts, statusBarStyle } from '../theme';
 import { Header, Tappable, EmptyState, ErrorState, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
@@ -353,6 +356,7 @@ export default function FeatureFlagsAdminScreen() {
 
   return (
     <View style={styles.screen}>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
       <Header
         title="Fonctionnalités"
         onBack={() => navigation.goBack()}
@@ -631,6 +635,7 @@ function FlagDetail({
         }
       />
 
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 120 }]}
         keyboardShouldPersistTaps="handled"
@@ -855,6 +860,7 @@ function FlagDetail({
           </View>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -863,6 +869,7 @@ function FlagDetail({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   list: { padding: 16, gap: 10 },
 

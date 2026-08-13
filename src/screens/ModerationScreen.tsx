@@ -1,5 +1,5 @@
 import { colors, fonts, radius , statusBarStyle} from '../theme';
-import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
+import { AppHeader, ScreenBackground, ScreenSkeleton } from '../components/ui';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -10,9 +10,6 @@ import {
   Dimensions,
   RefreshControl,
   StatusBar,
-  Animated,
-  Modal,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -20,9 +17,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { useAuth } from '../contexts/AuthContext';
 import { moderationService } from '../services/moderationService';
-import ReportsManager from '../components/ReportsManager';
-import ModerationHistory from '../components/ModerationHistory';
-import UnbanTicketsManager from '../components/UnbanTicketsManager';
 import { toast } from '../components/ui/Toast';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -138,11 +132,6 @@ export default function ModerationScreen() {
   const { user } = useAuth();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [animationValue] = useState(new Animated.Value(1));
-
-  const [showReportsManager, setShowReportsManager] = useState(false);
-  const [showModerationHistory, setShowModerationHistory] = useState(false);
-  const [showUnbanTicketsManager, setShowUnbanTicketsManager] = useState(false);
 
   const [stats, setStats] = useState<StatisticsData>({
     totalUsers: 0,
@@ -191,9 +180,7 @@ export default function ModerationScreen() {
 
     if (canManageEconomy) {
       list.push({ action: 'economy', title: 'Economie', subtitle: 'Surveillance NF, rich list et transferts', icon: 'cash-outline', group: 'Finance & risque', tone: 'gold', available: true });
-    }
-    if (isAdmin || isSuperAdmin) {
-      list.push({ action: 'policiercongo', title: 'PolicierCongo', subtitle: 'Donner des ordres et gerer l\'IA', icon: 'hardware-chip-outline', group: 'Finance & risque', tone: 'gold', available: true });
+      list.push({ action: 'monetization-program', title: 'Programme de monétisation', subtitle: 'Valider les candidatures créateurs', icon: 'trophy-outline', group: 'Finance & risque', tone: 'gold', available: true });
     }
 
     if (canViewAnalytics && !isClasseur) {
@@ -257,10 +244,10 @@ export default function ModerationScreen() {
           description: 'Vous n\'avez pas la permission de gerer l\'economie',
         });
         break;
-      case 'policiercongo':
-        if (isAdmin || isSuperAdmin) (navigation as any).navigate('PolicierCongoAdmin');
+      case 'monetization-program':
+        if (canManageEconomy) (navigation as any).navigate('MonetizationProgramAdmin');
         else toast.error('Permission refusee', {
-          description: 'Reserve aux administrateurs',
+          description: 'Vous n\'avez pas la permission de gerer l\'economie',
         });
         break;
       case 'tweets':
@@ -270,7 +257,7 @@ export default function ModerationScreen() {
         });
         break;
       case 'reports':
-        if (canViewReports && !isClasseur) setShowReportsManager(true);
+        if (canViewReports && !isClasseur) (navigation as any).navigate('Reports');
         else if (isClasseur) toast.info('Acces limite', {
           description: 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu',
         });
@@ -329,13 +316,13 @@ export default function ModerationScreen() {
         });
         break;
       case 'unban-tickets':
-        if (isAdmin || isSuperAdmin) setShowUnbanTicketsManager(true);
+        if (isAdmin || isSuperAdmin) (navigation as any).navigate('UnbanTickets');
         else toast.error('Permission refusee', {
           description: 'Reserve aux administrateurs',
         });
         break;
       case 'history':
-        if (!isClasseur) setShowModerationHistory(true);
+        if (!isClasseur) (navigation as any).navigate('ModerationHistory');
         else toast.info('Acces limite', {
           description: 'En tant que classeur de tweets, vous n\'avez acces qu\'a la moderation de contenu',
         });
@@ -381,20 +368,17 @@ export default function ModerationScreen() {
       <View style={styles.container}>
         <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
-        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-          <BackButton navigation={navigation} />
-          <View style={styles.headerIcon}>
-            <Ionicons name="shield-checkmark" size={20} color={colors.accent} />
-          </View>
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>{isSuperAdmin ? 'Administration' : 'Panneau admin'}</Text>
-            <Text style={styles.headerSubtitle}>Console de gestion de la plateforme</Text>
-          </View>
-          <View style={[styles.roleBadge, { backgroundColor: TONE_SOFT[roleTone] }]}>
-            <Ionicons name={roleIcon} size={12} color={TONE_COLOR[roleTone]} />
-            <Text style={[styles.roleBadgeText, { color: TONE_COLOR[roleTone] }]}>{roleLabel}</Text>
-          </View>
-        </View>
+        <AppHeader
+          navigation={navigation}
+          title={isSuperAdmin ? 'Administration' : 'Panneau admin'}
+          subtitle="Console de gestion de la plateforme"
+          right={(
+            <View style={[styles.roleBadge, { backgroundColor: TONE_SOFT[roleTone] }]}>
+              <Ionicons name={roleIcon} size={12} color={TONE_COLOR[roleTone]} />
+              <Text style={[styles.roleBadgeText, { color: TONE_COLOR[roleTone] }]}>{roleLabel}</Text>
+            </View>
+          )}
+        />
 
         <ScrollView
           style={styles.content}
@@ -472,22 +456,6 @@ export default function ModerationScreen() {
           <View style={{ height: insets.bottom + 32 }} />
         </ScrollView>
       </View>
-
-      <Modal visible={showReportsManager} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowReportsManager(false)}>
-        <ReportsManager onClose={() => setShowReportsManager(false)} />
-      </Modal>
-
-      {showModerationHistory && (
-        <Modal visible={showModerationHistory} animationType="slide" onRequestClose={() => setShowModerationHistory(false)}>
-          <ModerationHistory onClose={() => setShowModerationHistory(false)} />
-        </Modal>
-      )}
-
-      {showUnbanTicketsManager && (
-        <Modal visible={showUnbanTicketsManager} animationType="slide" onRequestClose={() => setShowUnbanTicketsManager(false)}>
-          <UnbanTicketsManager onClose={() => setShowUnbanTicketsManager(false)} />
-        </Modal>
-      )}
     </ScreenBackground>
   );
 }
@@ -497,18 +465,6 @@ const styles = StyleSheet.create({
   centerFill: { justifyContent: 'center', alignItems: 'center', gap: 10 },
   loadingText: { color: colors.textSecondary, fontSize: 13 },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingBottom: 12,
-  },
-  backButton: { padding: 6, marginLeft: -6 },
-  headerIcon: {
-    width: 30, height: 30, borderRadius: 9, backgroundColor: colors.accentSoft,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerTitleWrap: { flex: 1 },
-  headerTitle: { color: colors.textPrimary, fontFamily: fonts.bold, fontSize: 16 },
-  headerSubtitle: { color: colors.textMuted, fontSize: 10.5, marginTop: 1 },
   roleBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 999 },
   roleBadgeText: { fontFamily: fonts.bold, fontSize: 9.5, letterSpacing: 0.4 },
 

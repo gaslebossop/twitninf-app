@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -273,7 +275,7 @@ export default function ProfileStories({
 
       {/* Sélecteur d'archive : créer une une ou en enrichir une existante. */}
       <Modal visible={pickerVisible} animationType="slide" transparent onRequestClose={() => setPickerVisible(false)}>
-        <View style={styles.sheetBackdrop}>
+        <KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setPickerVisible(false)} />
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
@@ -344,12 +346,12 @@ export default function ProfileStories({
               <Text style={styles.sheetCancelText}>Annuler</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Renommage */}
       <Modal visible={!!renameTarget} animationType="fade" transparent onRequestClose={() => setRenameTarget(null)}>
-        <View style={styles.dialogBackdrop}>
+        <KeyboardAvoidingView style={styles.dialogBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setRenameTarget(null)} />
           <View style={styles.dialog}>
             <Text style={styles.sheetTitle}>Renommer</Text>
@@ -373,7 +375,7 @@ export default function ProfileStories({
               <Text style={styles.sheetCancelText}>Annuler</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

@@ -9,8 +9,11 @@ import {
   TouchableOpacity,
   Alert,
   FlatList,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import apiService from '../services/api';
@@ -46,6 +49,7 @@ interface AdBalance {
 
 export default function CreateAdvertisementScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [balance, setBalance] = useState<AdBalance | null>(null);
@@ -258,13 +262,14 @@ export default function CreateAdvertisementScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <BackButton navigation={navigation} />
         <Text style={styles.headerTitle}>Nouvelle Publicité</Text>
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView style={styles.keyboardArea} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* Solde TWC */}
       {balance && (
         <View style={styles.balanceCard}>
@@ -527,6 +532,7 @@ export default function CreateAdvertisementScreen() {
         </View>
       )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -535,6 +541,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f7f9fa',
+  },
+  keyboardArea: {
+    flex: 1,
   },
   scrollContent: {
     flex: 1,

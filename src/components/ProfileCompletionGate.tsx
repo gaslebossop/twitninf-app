@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -12,17 +11,18 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
+import StartupStepPage, { stepStyles } from './StartupStepPage';
 import apiService from '../services/api';
 import { colors, fonts, withAlpha } from '../theme';
 
 type Step = 'demographics' | 'location';
 type StoredPermission = 'granted' | 'denied' | 'restricted' | 'unavailable';
 
-// Les popups existantes s'enregistrent au plus tard apres 2,5 s.
-const STARTUP_SETTLE_MS = 3300;
+// Simple attente du profil : l'ordre vient de la file, pas de ce delai
+// (voir REGISTRATION_WINDOW_MS dans StartupPopupContext).
+const STARTUP_SETTLE_MS = 250;
 const makeCaptureKey = (userId: string) =>
   `${userId}:${Date.now()}:${Math.random().toString(36).slice(2, 12)}`;
 
@@ -33,7 +33,6 @@ const validBirthday = (day: number, month: number) => {
 };
 
 export default function ProfileCompletionGate() {
-  const insets = useSafeAreaInsets();
   const { user, isAuthenticated, refreshCurrentUser } = useAuth();
   const [ready, setReady] = useState(false);
   const [step, setStep] = useState<Step>('demographics');
@@ -201,96 +200,79 @@ export default function ProfileCompletionGate() {
 
   if (!user) return null;
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={step === 'location' ? declineLocation : () => {}}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={[styles.backdrop, {
-          paddingTop: Math.max(insets.top, 16),
-          paddingBottom: Math.max(insets.bottom, 16),
-        }]}
-      >
-        <View style={styles.card}>
-          <View style={styles.iconCircle}>
-            <Ionicons
-              name={step === 'demographics' ? 'calendar-outline' : 'location-outline'}
-              size={27}
-              color={colors.accentBright}
-            />
-          </View>
+  const isDemographics = step === 'demographics';
 
-          {step === 'demographics' ? (
-            <>
-              <Text style={styles.title}>Complète ton profil</Text>
-              <Text style={styles.subtitle}>
-                Ton âge aide à produire des statistiques d'audience par tranches. Le jour et le mois servent à ton anniversaire. Ces informations restent privées.
-              </Text>
-              <View style={styles.fields}>
-                <View style={styles.fieldWide}>
-                  <Text style={styles.label}>Âge</Text>
-                  <TextInput value={age} onChangeText={(v) => setAge(v.replace(/\D/g, '').slice(0, 3))} keyboardType="number-pad" placeholder="18" placeholderTextColor={colors.textMuted} style={styles.input} maxLength={3} />
-                </View>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Jour</Text>
-                  <TextInput value={day} onChangeText={(v) => setDay(v.replace(/\D/g, '').slice(0, 2))} keyboardType="number-pad" placeholder="24" placeholderTextColor={colors.textMuted} style={styles.input} maxLength={2} />
-                </View>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Mois</Text>
-                  <TextInput value={month} onChangeText={(v) => setMonth(v.replace(/\D/g, '').slice(0, 2))} keyboardType="number-pad" placeholder="08" placeholderTextColor={colors.textMuted} style={styles.input} maxLength={2} />
-                </View>
-              </View>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Pressable style={styles.primaryButton} onPress={saveDemographics} disabled={saving}>
-                {saving ? <ActivityIndicator color={colors.bg} /> : <Text style={styles.primaryText}>Valider et continuer</Text>}
-              </Pressable>
-            </>
+  return (
+    <StartupStepPage
+      visible={visible}
+      icon={isDemographics ? 'calendar-outline' : 'location-outline'}
+      title={isDemographics ? 'Complète ton profil' : 'Localisation des connexions'}
+      subtitle={
+        isDemographics
+          ? "Ton âge aide à produire des statistiques d'audience par tranches. Le jour et le mois servent à ton anniversaire. Ces informations restent privées."
+          : 'Avec ton accord, TwitNinf enregistre une position approximative une fois à chaque connexion pour produire des statistiques géographiques agrégées et sécuriser les sessions. Aucun suivi en arrière-plan.'
+      }
+      footer={
+        <>
+          {error ? <Text style={stepStyles.error}>{error}</Text> : null}
+          {isDemographics ? (
+            <Pressable style={stepStyles.primaryButton} onPress={saveDemographics} disabled={saving}>
+              {saving ? (
+                <ActivityIndicator color={colors.onAccent} />
+              ) : (
+                <Text style={stepStyles.primaryText}>Valider et continuer</Text>
+              )}
+            </Pressable>
           ) : (
             <>
-              <Text style={styles.title}>Localisation des connexions</Text>
-              <Text style={styles.subtitle}>
-                Avec ton accord, TwitNinf enregistre une position approximative une fois à chaque connexion pour produire des statistiques géographiques agrégées et sécuriser les sessions. Aucun suivi en arrière-plan.
-              </Text>
-              <View style={styles.privacyRow}>
-                <Ionicons name="shield-checkmark-outline" size={18} color={colors.success} />
-                <Text style={styles.privacyText}>Les créateurs ne voient que des groupes d'au moins 5 personnes, jamais tes coordonnées.</Text>
-              </View>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Pressable style={styles.primaryButton} onPress={allowLocation} disabled={saving}>
-                {saving ? <ActivityIndicator color={colors.bg} /> : <Text style={styles.primaryText}>Autoriser la localisation</Text>}
+              <Pressable style={stepStyles.primaryButton} onPress={allowLocation} disabled={saving}>
+                {saving ? (
+                  <ActivityIndicator color={colors.onAccent} />
+                ) : (
+                  <Text style={stepStyles.primaryText}>Autoriser la localisation</Text>
+                )}
               </Pressable>
-              <Pressable style={styles.secondaryButton} onPress={declineLocation} disabled={saving}>
-                <Text style={styles.secondaryText}>Pas maintenant</Text>
+              <Pressable style={stepStyles.secondaryButton} onPress={declineLocation} disabled={saving}>
+                <Text style={stepStyles.secondaryText}>Pas maintenant</Text>
               </Pressable>
             </>
           )}
-        </View>
+        </>
+      }
+    >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {isDemographics ? (
+          <View style={styles.fields}>
+            <View style={styles.fieldWide}>
+              <Text style={styles.label}>Âge</Text>
+              <TextInput value={age} onChangeText={(v) => setAge(v.replace(/\D/g, '').slice(0, 3))} keyboardType="number-pad" placeholder="18" placeholderTextColor={colors.textMuted} style={styles.input} maxLength={3} />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>Jour</Text>
+              <TextInput value={day} onChangeText={(v) => setDay(v.replace(/\D/g, '').slice(0, 2))} keyboardType="number-pad" placeholder="24" placeholderTextColor={colors.textMuted} style={styles.input} maxLength={2} />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>Mois</Text>
+              <TextInput value={month} onChangeText={(v) => setMonth(v.replace(/\D/g, '').slice(0, 2))} keyboardType="number-pad" placeholder="08" placeholderTextColor={colors.textMuted} style={styles.input} maxLength={2} />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.privacyRow}>
+            <Ionicons name="shield-checkmark-outline" size={18} color={colors.success} />
+            <Text style={styles.privacyText}>Les créateurs ne voient que des groupes d'au moins 5 personnes, jamais tes coordonnées.</Text>
+          </View>
+        )}
       </KeyboardAvoidingView>
-    </Modal>
+    </StartupStepPage>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'center', paddingHorizontal: 20, backgroundColor: 'rgba(1,0,8,0.86)' },
-  card: { width: '100%', maxWidth: 480, alignSelf: 'center', padding: 22, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong, backgroundColor: colors.surfaceElevated },
-  iconCircle: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.accentMuted, borderWidth: StyleSheet.hairlineWidth, borderColor: withAlpha(colors.accent, 0.45) },
-  title: { marginTop: 18, color: colors.textPrimary, fontSize: 24, letterSpacing: -0.5, fontFamily: fonts.display },
-  subtitle: { marginTop: 8, color: colors.textSecondary, fontSize: 14, lineHeight: 21, fontFamily: fonts.regular },
-  fields: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  fields: { flexDirection: 'row', gap: 10, marginTop: 4 },
   fieldWide: { flex: 1.15 },
   field: { flex: 1 },
   label: { marginBottom: 7, color: colors.textSecondary, fontSize: 12, fontFamily: fonts.semibold },
   input: { minHeight: 52, paddingHorizontal: 15, borderRadius: 14, borderWidth: 1, borderColor: colors.borderStrong, color: colors.textPrimary, backgroundColor: colors.surface, fontSize: 17, fontFamily: fonts.bold },
-  privacyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 18, padding: 13, borderRadius: 14, backgroundColor: withAlpha(colors.success, 0.09) },
+  privacyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 4, padding: 13, borderRadius: 14, backgroundColor: withAlpha(colors.success, 0.09) },
   privacyText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 18, fontFamily: fonts.medium },
-  error: { marginTop: 12, color: colors.red, fontSize: 12, lineHeight: 18, fontFamily: fonts.semibold },
-  primaryButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: 16, backgroundColor: colors.textPrimary },
-  primaryText: { color: colors.bg, fontSize: 14, fontFamily: fonts.bold },
-  secondaryButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  secondaryText: { color: colors.textSecondary, fontSize: 13, fontFamily: fonts.semibold },
 });

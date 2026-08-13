@@ -5,7 +5,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   TextInput,
   ScrollView,
@@ -15,6 +14,9 @@ import {
   Platform,
   Dimensions,
 } from 'react-native';
+// La version de react-native (core) ne pose aucun inset sur Android — seule
+// celle de react-native-safe-area-context protège le haut de l'écran partout.
+import { SafeAreaView } from 'react-native-safe-area-context';
 // `expo-image` plutôt que `Image` de React Native : cache disque et décodage
 // hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
 // reste identique.

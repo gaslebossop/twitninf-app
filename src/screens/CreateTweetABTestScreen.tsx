@@ -8,10 +8,13 @@ import {
   StyleSheet,
   Alert,
   StatusBar,
-  SafeAreaView,
   Platform,
   ScrollView,
 } from 'react-native';
+// La version de react-native (ci-dessus, retirée) ne pose aucun inset sur
+// Android — seule celle de react-native-safe-area-context protège le haut
+// de l'écran sur les deux plateformes.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';

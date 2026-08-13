@@ -2225,6 +2225,26 @@ class ApiService {
     }
   }
 
+  /**
+   * Le tweet le plus liké d'hier, calculé une fois par nuit côté serveur.
+   * `data: null` est la réponse normale d'un jour sans gagnant — le bandeau
+   * Spotlight doit alors rester masqué, pas afficher une erreur.
+   */
+  async getSpotlight(): Promise<ApiResponse<{ tweet: Tweet; like_count: number; spotlight_date: string } | null>> {
+    try {
+      const response = await this.makeRequest('/api/spotlight/today', { requiresAuth: true });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la récupération du Spotlight';
+      console.error('❌ Erreur Spotlight:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
    // Nouvelle méthode pour récupérer les tweets recommandés avec pagination complète
   async getRecommendedTweets(options: {
     limit?: number;

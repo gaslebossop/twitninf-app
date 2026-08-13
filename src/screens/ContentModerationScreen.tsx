@@ -1,946 +1,289 @@
-import { fonts , colors, statusBarStyle} from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Animated,
-  Dimensions,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppHeader, ScreenBackground, GlassCard, GlassButton, EmptyState, confirmAsync, promptAsync } from '../components/ui';
+import { toast } from '../components/ui/Toast';
+import { colors, fonts, radius, statusBarStyle } from '../theme';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
-import { useAuth } from '../contexts/AuthContext';
 import { moderationService, Tweet } from '../services/moderationService';
 import VerifiedBadge from '../components/VerifiedBadge';
-import { toast } from '../components/ui/Toast';
-import { confirmAsync } from '../components/ui/ConfirmSheet';
-import { promptAsync } from '../components/ui/PromptSheet';
 
-const { width: screenWidth } = Dimensions.get('window');
-
-const COLORS = {
-  primary: '#4F7CFF',
-  secondary: '#3D63D9',
-  accent: '#3354C4',
-  bgPrimary: '#0B0C0F',
-  bgSecondary: '#15171C',
-  bgTertiary: '#1B1E25',
-  textPrimary: '#F2F4F7',
-  textSecondary: '#cbd5e0',
-  textMuted: '#9BA1AC',
-  success: '#2BC48A',
-  error: '#F4365B',
-  warning: '#E0A458',
-  glassBorder: '#23262D',
-  glassBackground: '#15171C',
+type Tone = 'accent' | 'gold' | 'cyan' | 'danger' | 'neutral';
+const TONE_COLOR: Record<Tone, string> = {
+  accent: colors.accent, gold: colors.gold, cyan: colors.cyan, danger: colors.red, neutral: colors.textMuted,
 };
-
-const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 40,
+const TONE_SOFT: Record<Tone, string> = {
+  accent: colors.accentSoft, gold: 'rgba(255,210,77,0.10)', cyan: colors.cyanSoft, danger: colors.redMuted, neutral: colors.overlaySoft,
 };
+const SEVERITY_TONE: Record<string, Tone> = { critical: 'danger', high: 'gold', medium: 'gold', low: 'accent' };
+const SEVERITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = { critical: 'warning', high: 'alert-circle', medium: 'information-circle', low: 'checkmark-circle' };
+const SEVERITY_LABEL: Record<string, string> = { critical: 'Critique', high: 'Haute', medium: 'Moyenne', low: 'Faible' };
+const STATUS_TONE: Record<string, Tone> = { approved: 'accent', rejected: 'gold', pending: 'cyan', not_eligible: 'gold' };
+const STATUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = { approved: 'checkmark-circle', rejected: 'close-circle', pending: 'time-outline', not_eligible: 'remove-circle-outline' };
+const STATUS_LABEL: Record<string, string> = { approved: 'Approuvé', rejected: 'Rejeté', pending: 'En attente', not_eligible: 'Non éligible' };
+
+type FilterKey = 'all' | 'pending' | 'approved' | 'rejected' | 'not_eligible' | 'high' | 'critical';
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'all', label: 'Tous' },
+  { key: 'pending', label: 'En attente' },
+  { key: 'approved', label: 'Approuvés' },
+  { key: 'rejected', label: 'Rejetés' },
+  { key: 'not_eligible', label: 'Non éligibles' },
+  { key: 'high', label: 'Priorité haute' },
+  { key: 'critical', label: 'Critique' },
+];
+
+function matchesFilter(t: Tweet, filter: FilterKey): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'high') return t.severity === 'high' || t.severity === 'critical';
+  if (filter === 'critical') return t.severity === 'critical';
+  return t.moderation_status === filter;
+}
+
+function formatDate(dateString: string) {
+  const diffH = Math.floor((Date.now() - new Date(dateString).getTime()) / 3_600_000);
+  if (diffH < 1) return 'À l\'instant';
+  if (diffH < 24) return `Il y a ${diffH}h`;
+  return new Date(dateString).toLocaleDateString('fr-FR');
+}
 
 export default function ContentModerationScreen() {
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
-  const { isModerator, canDeleteTweets, isClasseur, canModerateContent } = useAdminPermissions();
-  const { user } = useAuth();
-  
-  const [selectedTweet, setSelectedTweet] = useState<Tweet | null>(null);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'not_eligible' | 'high' | 'critical'>('all');
-  const [animationValue] = useState(new Animated.Value(1));
+  const { canDeleteTweets, isClasseur, canModerateContent } = useAdminPermissions();
+
   const [tweets, setTweets] = useState<Tweet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterKey>('all');
 
-  useEffect(() => {
-    loadTweets();
-  }, []);
-
-  const loadTweets = async () => {
+  const load = useCallback(async () => {
     try {
-      console.log('🔄 Début du chargement des tweets...');
-      setLoading(true);
-      const tweetsData = await moderationService.getTweets();
-      console.log('🐦 Tweets data reçu:', tweetsData);
-      console.log('🐦 Tweets data type:', typeof tweetsData);
-      console.log('🐦 Tweets data length:', tweetsData?.length);
-      console.log('🐦 Tweets data is array:', Array.isArray(tweetsData));
-      setTweets(tweetsData || []);
-      console.log('✅ Tweets chargés avec succès');
-    } catch (error) {
-      console.error('❌ Erreur lors du chargement des tweets:', error);
+      const data = await moderationService.getTweets();
+      setTweets(data || []);
+    } catch {
       toast.error('Impossible de charger les tweets');
       setTweets([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const filteredTweets = tweets?.filter(tweet => {
-    if (filter === 'all') return true;
-    if (filter === 'pending') return tweet.moderation_status === 'pending';
-    if (filter === 'approved') return tweet.moderation_status === 'approved';
-    if (filter === 'rejected') return tweet.moderation_status === 'rejected';
-    if (filter === 'not_eligible') return tweet.moderation_status === 'not_eligible';
-    if (filter === 'high') return tweet.severity === 'high' || tweet.severity === 'critical';
-    if (filter === 'critical') return tweet.severity === 'critical';
-    return true;
-  }) || [];
+  useEffect(() => { load(); }, [load]);
 
-  const handleModerationAction = async (tweet: Tweet, action: 'approve' | 'reject' | 'delete' | 'not_eligible') => {
-    const actionTexts = {
-      approve: 'approuver',
-      reject: 'exclure des recommandations',
-      delete: 'bannir l\'utilisateur',
-      not_eligible: 'marquer comme non éligible'
-    };
+  const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
 
-    const actionDescriptions = {
-      approve: 'Le tweet sera approuvé et visible normalement',
-      reject: 'Le tweet sera exclu des recommandations mais restera visible',
-      delete: 'L\'utilisateur sera banni pour ce contenu inapproprié',
-      not_eligible: 'Le tweet sera marqué comme non éligible aux recommandations mais restera visible sur le profil'
-    };
+  const filtered = tweets.filter((t) => matchesFilter(t, filter));
 
-    // Pour les actions destructives, demander un motif
-    if (action === 'delete') {
-      // `Alert.prompt` est iOS-only : sur Android l'appel ne faisait rien, donc
-      // bannir était impossible depuis un téléphone Android. Voir PromptSheet.
-      promptAsync({
-        title: 'Motif du bannissement',
-        message: 'Il sera visible dans l’historique de modération.',
-        placeholder: 'Contenu inapproprié',
-        defaultValue: 'Contenu inapproprié',
-        confirmLabel: 'Bannir',
-        icon: 'ban-outline',
-        destructive: true,
-        multiline: true,
-        maxLength: 300,
-      }).then((motif) => {
-        if (motif) executeAction(tweet, action, motif);
-      });
-    } else {
-      confirmAsync({
-        title: `${actionTexts[action].charAt(0).toUpperCase() + actionTexts[action].slice(1)}`,
-        message: actionDescriptions[action],
-        confirmLabel: 'Confirmer',
-      }).then((ok) => {
-        if (ok) (async () => {
-              await executeAction(tweet, action, 'Action de modération');
-            })();
-      });
-    }
-  };
-
-  const executeAction = async (tweet: Tweet, action: 'approve' | 'reject' | 'delete' | 'not_eligible', motif: string) => {
+  const run = async (tweet: Tweet, label: string, action: () => Promise<boolean>) => {
+    setBusyId(tweet.id);
     try {
-      let success = false;
-      
-      switch (action) {
-        case 'approve':
-          success = await moderationService.approveTweet(tweet.id);
-          break;
-        case 'reject':
-          success = await moderationService.rejectTweet(tweet.id, motif);
-          break;
-        case 'delete':
-          // Bannir l'utilisateur au lieu de supprimer le tweet
-          success = await moderationService.banUser(tweet.author.id, motif);
-          break;
-        case 'not_eligible':
-          success = await moderationService.markTweetNotEligible(tweet.id, motif);
-          break;
-      }
-
-      if (success) {
-        const actionTexts = {
-          approve: 'approuvé',
-          reject: 'exclu des recommandations',
-          delete: 'utilisateur banni',
-          not_eligible: 'marqué comme non éligible'
-        };
-        toast.success(`Tweet ${actionTexts[action]} avec succès.`);
-        loadTweets(); // Recharger les données
+      const ok = await action();
+      if (ok) {
+        toast.success(label);
+        load();
       } else {
-        toast.error(`Impossible d'effectuer cette action`);
+        toast.error('Action impossible');
       }
-    } catch (error) {
-      console.error('❌ Erreur lors de l\'action sur le tweet:', error);
+    } catch {
       toast.error('Une erreur est survenue');
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return COLORS.error;
-      case 'high': return COLORS.warning;
-      case 'medium': return '#ffc107';
-      case 'low': return COLORS.success;
-      default: return COLORS.textMuted;
-    }
+  const approve = (tweet: Tweet) => {
+    confirmAsync({
+      title: 'Approuver',
+      message: 'Le tweet sera approuvé et visible normalement.',
+      confirmLabel: 'Confirmer',
+    }).then((ok) => { if (ok) run(tweet, 'Tweet approuvé', () => moderationService.approveTweet(tweet.id)); });
   };
 
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'warning';
-      case 'high': return 'alert-circle';
-      case 'medium': return 'information-circle';
-      case 'low': return 'checkmark-circle';
-      default: return 'help-circle';
-    }
+  const reject = (tweet: Tweet) => {
+    confirmAsync({
+      title: 'Exclure des recommandations',
+      message: 'Le tweet sera exclu des recommandations mais restera visible.',
+      confirmLabel: 'Confirmer',
+    }).then((ok) => { if (ok) run(tweet, 'Tweet exclu des recommandations', () => moderationService.rejectTweet(tweet.id, 'Action de modération')); });
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'approved': return COLORS.success;
-      case 'rejected': return COLORS.warning;
-      case 'pending': return COLORS.primary;
-      case 'not_eligible': return '#ff9800'; // Orange pour non éligible
-      default: return COLORS.textMuted;
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved': return 'checkmark-circle';
-      case 'rejected': return 'close-circle';
-      case 'pending': return 'time';
-      case 'not_eligible': return 'remove-circle';
-      default: return 'help-circle';
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'approved': return 'APPROUVÉ';
-      case 'rejected': return 'REJETÉ';
-      case 'pending': return 'EN ATTENTE';
-      case 'not_eligible': return 'NON ÉLIGIBLE';
-      default: return 'INCONNU';
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return 'À l\'instant';
-    if (diffInHours < 24) return `Il y a ${diffInHours}h`;
-    return date.toLocaleDateString('fr-FR');
+  const ban = async (tweet: Tweet) => {
+    // `Alert.prompt` est iOS-only : sur Android l'appel ne faisait rien, donc
+    // bannir était impossible depuis un téléphone Android. Voir PromptSheet.
+    const motif = await promptAsync({
+      title: 'Motif du bannissement',
+      message: 'Il sera visible dans l\'historique de modération.',
+      placeholder: 'Contenu inapproprié',
+      defaultValue: 'Contenu inapproprié',
+      confirmLabel: 'Bannir',
+      icon: 'ban-outline',
+      destructive: true,
+      multiline: true,
+      maxLength: 300,
+    });
+    if (!motif) return;
+    run(tweet, 'Utilisateur banni', () => moderationService.banUser(tweet.author.id, motif));
   };
 
   if (!canDeleteTweets && !canModerateContent) {
     return (
-      <View style={styles.container}>
-        <View style={[styles.accessDeniedGradient, { backgroundColor: COLORS.bgPrimary }]}>
-          <View style={styles.accessDeniedContent}>
-            <Ionicons name="shield-outline" size={80} color={COLORS.error} />
-            <Text style={styles.accessDeniedTitle}>Accès Restreint</Text>
-            <Text style={styles.accessDeniedText}>
-              Vous n'avez pas les permissions nécessaires pour accéder à cette section.
-            </Text>
-                         <TouchableOpacity
-               style={styles.backBtn}
-               onPress={() => navigation.goBack()}
-               activeOpacity={0.8}
-             >
-               <View style={styles.backBtnInner}>
-                 <Text style={styles.backButtonText}>Retour</Text>
-               </View>
-             </TouchableOpacity>
-          </View>
+      <ScreenBackground>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+        <AppHeader navigation={navigation} title="Modération de contenu" />
+        <View style={styles.deniedBox}>
+          <Ionicons name="shield-outline" size={56} color={colors.red} />
+          <Text style={styles.deniedTitle}>Accès restreint</Text>
+          <Text style={styles.deniedText}>Tu n'as pas les permissions nécessaires pour accéder à cette section.</Text>
         </View>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle={statusBarStyle()} backgroundColor={COLORS.bgPrimary} />
-        <View style={styles.gradient}>
-          <View style={styles.loadingContainer}>
-            <Ionicons name="refresh" size={48} color={COLORS.primary} />
-            <Text style={styles.loadingText}>Chargement des tweets...</Text>
-          </View>
-        </View>
-      </View>
+      </ScreenBackground>
     );
   }
 
   return (
     <ScreenBackground>
-    <View style={styles.container}>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
-
-      <View style={styles.gradient}>
-                 {/* Header avec effet de blur */}
-         <Animated.View 
-           style={[
-             styles.header,
-             {
-               opacity: animationValue,
-               transform: [{ translateY: animationValue.interpolate({
-                 inputRange: [0, 1],
-                 outputRange: [20, 0],
-               })}],
-               paddingTop: insets.top + SPACING.md,
-             }
-           ]}
-         >
-           <View style={styles.headerContent}>
-             <BackButton navigation={navigation} />
-             <Text style={styles.headerTitle}>
-               {isClasseur ? 'Classification de Contenu' : 'Modération de Contenu'}
-             </Text>
-             <View style={styles.headerRight}>
-               <View style={styles.headerStats}>
-                 <Text style={styles.headerStatsText}>
-                   {tweets?.filter(t => t.moderation_status === 'pending').length || 0} en attente
-                 </Text>
-               </View>
-             </View>
-           </View>
-         </Animated.View>
-
-        {/* Note informative pour les classeurs */}
-        {isClasseur && (
-          <Animated.View 
-            style={[
-              styles.classeurInfoContainer,
-              {
-                opacity: animationValue,
-                transform: [{ translateY: animationValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [20, 0],
-                })}],
-              }
-            ]}
-          >
-            <BlurView intensity={20} style={styles.classeurInfoBlur}>
-              <View style={styles.classeurInfoContent}>
-                <Ionicons name="information-circle" size={20} color={COLORS.primary} />
-                <Text style={styles.classeurInfoText}>
-                  En tant que classeur de tweets, vous pouvez approuver ou exclure des recommandations, mais pas bannir d'utilisateurs.
-                </Text>
-              </View>
-            </BlurView>
-          </Animated.View>
+      <AppHeader
+        navigation={navigation}
+        title={isClasseur ? 'Classification de contenu' : 'Modération de contenu'}
+        right={(
+          <View style={styles.headerCount}>
+            <Text style={styles.headerCountText}>{tweets.filter((t) => t.moderation_status === 'pending').length} en attente</Text>
+          </View>
         )}
+      />
 
-        {/* Filtres */}
-        <Animated.View 
-          style={[
-            styles.filtersContainer,
-            {
-              opacity: animationValue,
-              transform: [{ translateY: animationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [30, 0],
-              })}],
-            }
-          ]}
-        >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                                     {[
-                 { key: 'all', label: 'Tous', count: tweets?.length || 0 },
-                 { key: 'pending', label: 'En attente', count: tweets?.filter(t => t.moderation_status === 'pending').length || 0 },
-                 { key: 'approved', label: 'Approuvés', count: tweets?.filter(t => t.moderation_status === 'approved').length || 0 },
-                 { key: 'rejected', label: 'Rejetés', count: tweets?.filter(t => t.moderation_status === 'rejected').length || 0 },
-                 { key: 'not_eligible', label: 'Non éligibles', count: tweets?.filter(t => t.moderation_status === 'not_eligible').length || 0 },
-                 { key: 'high', label: 'Priorité haute', count: tweets?.filter(t => t.severity === 'high' || t.severity === 'critical').length || 0 },
-                 { key: 'critical', label: 'Critique', count: tweets?.filter(t => t.severity === 'critical').length || 0 },
-               ].map((filterOption) => (
-              <TouchableOpacity
-                key={filterOption.key}
-                style={[
-                  styles.filterButton,
-                  filter === filterOption.key && styles.activeFilterButton
-                ]}
-                onPress={() => setFilter(filterOption.key as any)}
-                activeOpacity={0.8}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  filter === filterOption.key && styles.activeFilterButtonText
-                ]}>
-                  {filterOption.label} ({filterOption.count})
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </Animated.View>
+      {isClasseur && (
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle-outline" size={18} color={colors.accent} />
+          <Text style={styles.infoText}>En tant que classeur de tweets, tu peux approuver ou exclure des recommandations, mais pas bannir d'utilisateurs.</Text>
+        </View>
+      )}
 
-        {/* Liste des tweets */}
-        <ScrollView 
-          style={styles.content}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterRowContent}>
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          const count = tweets.filter((t) => matchesFilter(t, f.key)).length;
+          return (
+            <TouchableOpacity key={f.key} style={[styles.filterChip, active && styles.filterChipActive]} onPress={() => setFilter(f.key)} activeOpacity={0.8}>
+              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{f.label} ({count})</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {loading ? (
+        <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /></View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         >
-          {filteredTweets.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="checkmark-circle" size={64} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateTitle}>Aucun tweet</Text>
-              <Text style={styles.emptyStateText}>
-                {filter === 'all' ? 'Aucun tweet trouvé' : 'Aucun tweet dans cette catégorie'}
-              </Text>
-            </View>
+          {filtered.length === 0 ? (
+            <EmptyState icon="checkmark-circle-outline" title="Aucun tweet" message={filter === 'all' ? 'Aucun tweet trouvé.' : 'Aucun tweet dans cette catégorie.'} />
           ) : (
-            filteredTweets.map((tweet, index) => (
-              <Animated.View
-                key={tweet.id}
-                style={[
-                  styles.tweetCard,
-                  {
-                    opacity: animationValue,
-                    transform: [{ translateY: animationValue.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [50 + (index * 20), 0],
-                    })}],
-                  }
-                ]}
-              >
-                <BlurView intensity={30} style={styles.tweetCardBlur}>
-                  {/* En-tête du tweet */}
-                  <View style={styles.tweetHeader}>
-                    <View style={styles.authorInfo}>
-                      <View style={styles.authorAvatar}>
-                        <LinearGradient
-                          colors={[`${getSeverityColor(tweet.severity)}40`, `${getSeverityColor(tweet.severity)}20`]}
-                          style={styles.avatarGradient}
-                        >
-                          <Ionicons 
-                            name={getSeverityIcon(tweet.severity) as any} 
-                            size={20} 
-                            color={getSeverityColor(tweet.severity)} 
-                          />
-                        </LinearGradient>
+            filtered.map((tweet) => {
+              const sevTone = SEVERITY_TONE[tweet.severity] || 'neutral';
+              const statTone = STATUS_TONE[tweet.moderation_status] || 'neutral';
+              const busy = busyId === tweet.id;
+              return (
+                <GlassCard key={tweet.id} style={[styles.card, { borderColor: `${TONE_COLOR[sevTone]}33` }]}>
+                  <View style={styles.cardTopRow}>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.authorName} numberOfLines={1}>{tweet.author.full_name || tweet.author.username}</Text>
+                        {tweet.author.verified && <VerifiedBadge verificationStyle={(tweet.author as any).verification_style || 'default'} size={13} />}
                       </View>
-                      
-                      <View style={styles.authorDetails}>
-                                                 <View style={styles.authorNameRow}>
-                           <Text style={styles.authorName}>{tweet.author.full_name || tweet.author.username}</Text>
-                           {tweet.author.verified && (
-                             <View style={{ marginLeft: 6 }}>
-                               <VerifiedBadge 
-                                 verificationStyle={(tweet.author as any).verification_style || 'default'}
-                                 size={14} 
-                                 animated={true}
-                               />
-                             </View>
-                           )}
-                         </View>
-                         <Text style={styles.authorHandle}>@{tweet.author.username}</Text>
-                         <Text style={styles.tweetDate}>{formatDate(tweet.created_at)}</Text>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.badgesContainer}>
-                      {/* Badge de gravité */}
-                      <View style={styles.severityBadge}>
-                        <LinearGradient
-                          colors={[`${getSeverityColor(tweet.severity)}20`, `${getSeverityColor(tweet.severity)}10`]}
-                          style={styles.severityGradient}
-                        >
-                          <Ionicons 
-                            name={getSeverityIcon(tweet.severity) as any} 
-                            size={12} 
-                            color={getSeverityColor(tweet.severity)} 
-                          />
-                          <Text style={[styles.severityText, { color: getSeverityColor(tweet.severity) }]}>
-                            {tweet.severity === 'critical' ? 'CRITIQUE' : 
-                             tweet.severity === 'high' ? 'HAUTE' : 
-                             tweet.severity === 'medium' ? 'MOYENNE' : 'FAIBLE'}
-                          </Text>
-                        </LinearGradient>
-                      </View>
-
-                                             {/* Badge de statut de modération */}
-                       <View style={styles.statusBadge}>
-                         <LinearGradient
-                           colors={[`${getStatusColor(tweet.moderation_status)}20`, `${getStatusColor(tweet.moderation_status)}10`]}
-                           style={styles.statusGradient}
-                         >
-                           <Ionicons 
-                             name={getStatusIcon(tweet.moderation_status) as any} 
-                             size={12} 
-                             color={getStatusColor(tweet.moderation_status)} 
-                           />
-                           <Text style={[styles.statusText, { color: getStatusColor(tweet.moderation_status) }]}>
-                             {getStatusLabel(tweet.moderation_status)}
-                           </Text>
-                         </LinearGradient>
-                       </View>
+                      <Text style={styles.authorHandle}>@{tweet.author.username} · {formatDate(tweet.created_at)}</Text>
                     </View>
                   </View>
 
-                  {/* Contenu du tweet */}
-                  <View style={styles.tweetContent}>
-                    <Text style={styles.tweetText}>{tweet.content}</Text>
-                  </View>
-
-                  {/* Statistiques du tweet */}
-                  <View style={styles.tweetStats}>
-                    <View style={styles.statItem}>
-                      <Ionicons name="heart" size={14} color={COLORS.textMuted} />
-                      <Text style={styles.statText}>{tweet.likes}</Text>
+                  <View style={styles.badgesRow}>
+                    <View style={[styles.badge, { backgroundColor: TONE_SOFT[sevTone] }]}>
+                      <Ionicons name={SEVERITY_ICON[tweet.severity] || 'help-circle'} size={11} color={TONE_COLOR[sevTone]} />
+                      <Text style={[styles.badgeText, { color: TONE_COLOR[sevTone] }]}>{SEVERITY_LABEL[tweet.severity] || tweet.severity}</Text>
                     </View>
-                    <View style={styles.statItem}>
-                      <Ionicons name="repeat" size={14} color={COLORS.textMuted} />
-                      <Text style={styles.statText}>{tweet.retweets}</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Ionicons name="chatbubble" size={14} color={COLORS.textMuted} />
-                      <Text style={styles.statText}>{tweet.replies}</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Ionicons name="flag" size={14} color={COLORS.error} />
-                      <Text style={[styles.statText, { color: COLORS.error }]}>{tweet.reports}</Text>
+                    <View style={[styles.badge, { backgroundColor: TONE_SOFT[statTone] }]}>
+                      <Ionicons name={STATUS_ICON[tweet.moderation_status] || 'help-circle-outline'} size={11} color={TONE_COLOR[statTone]} />
+                      <Text style={[styles.badgeText, { color: TONE_COLOR[statTone] }]}>{STATUS_LABEL[tweet.moderation_status] || tweet.moderation_status}</Text>
                     </View>
                   </View>
 
-                  {/* Flags */}
-                  {tweet.flags && tweet.flags.length > 0 && (
-                    <View style={styles.flagsContainer}>
-                      <Text style={styles.flagsTitle}>Raisons de signalement :</Text>
-                      <View style={styles.flagsList}>
-                        {tweet.flags.map((flag, flagIndex) => (
-                          <View key={flagIndex} style={styles.flagItem}>
-                            <Text style={styles.flagText}>{flag}</Text>
-                          </View>
-                        ))}
-                      </View>
+                  <Text style={styles.tweetText}>{tweet.content}</Text>
+
+                  <View style={styles.statsRow}>
+                    <View style={styles.statItem}><Ionicons name="heart-outline" size={13} color={colors.textMuted} /><Text style={styles.statText}>{tweet.likes}</Text></View>
+                    <View style={styles.statItem}><Ionicons name="repeat-outline" size={13} color={colors.textMuted} /><Text style={styles.statText}>{tweet.retweets}</Text></View>
+                    <View style={styles.statItem}><Ionicons name="chatbubble-outline" size={13} color={colors.textMuted} /><Text style={styles.statText}>{tweet.replies}</Text></View>
+                    {tweet.reports > 0 && (
+                      <View style={styles.statItem}><Ionicons name="flag-outline" size={13} color={colors.red} /><Text style={[styles.statText, { color: colors.red }]}>{tweet.reports}</Text></View>
+                    )}
+                  </View>
+
+                  {tweet.flags?.length > 0 && (
+                    <View style={styles.flagsRow}>
+                      {tweet.flags.map((flag, i) => (
+                        <View key={i} style={styles.flagChip}><Text style={styles.flagText}>{flag}</Text></View>
+                      ))}
                     </View>
                   )}
 
-                  {/* Actions de modération */}
-                  <View style={styles.moderationActions}>
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.approveButton]}
-                      onPress={() => handleModerationAction(tweet, 'approve')}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={['rgba(67, 233, 123, 0.2)', 'rgba(67, 233, 123, 0.1)']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
-                        <Text style={[styles.actionButtonText, { color: COLORS.success }]}>
-                          Approuver
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.rejectButton]}
-                      onPress={() => handleModerationAction(tweet, 'reject')}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={['rgba(255, 165, 2, 0.2)', 'rgba(255, 165, 2, 0.1)']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="close-circle" size={16} color={COLORS.warning} />
-                        <Text style={[styles.actionButtonText, { color: COLORS.warning }]}>
-                          Exclure
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-
-                 
-
-                    {/* Bouton Bannir - seulement pour les modérateurs, pas les classeurs */}
+                  <View style={styles.actionsRow}>
+                    <GlassButton label="Approuver" icon="checkmark-outline" variant="secondary" style={{ flex: 1 }} loading={busy} disabled={busy} onPress={() => approve(tweet)} />
+                    <GlassButton label="Exclure" icon="close-outline" variant="secondary" style={{ flex: 1 }} loading={busy} disabled={busy} onPress={() => reject(tweet)} />
                     {!isClasseur && (
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.deleteButton]}
-                        onPress={() => handleModerationAction(tweet, 'delete')}
-                        activeOpacity={0.8}
-                      >
-                        <LinearGradient
-                          colors={['rgba(255, 71, 87, 0.2)', 'rgba(255, 71, 87, 0.1)']}
-                          style={styles.actionButtonGradient}
-                        >
-                          <Ionicons name="ban" size={16} color={COLORS.error} />
-                          <Text style={[styles.actionButtonText, { color: COLORS.error }]}>
-                            Bannir
-                          </Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
+                      <GlassButton label="Bannir" icon="ban-outline" variant="secondary" style={{ flex: 1 }} loading={busy} disabled={busy} onPress={() => ban(tweet)} />
                     )}
                   </View>
-                </BlurView>
-              </Animated.View>
-            ))
+                </GlassCard>
+              );
+            })
           )}
-          
-          <View style={{ height: insets.bottom + SPACING.xxl }} />
+          <View style={{ height: 40 }} />
         </ScrollView>
-      </View>
-    </View>
+      )}
     </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
+  headerCount: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.round, backgroundColor: colors.overlaySoft },
+  headerCountText: { fontSize: 11.5, fontFamily: fonts.semibold, color: colors.textSecondary },
+  infoBox: {
+    flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 8, padding: 12,
+    borderRadius: radius.md, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentMuted,
   },
-  gradient: {
-    flex: 1,
-  },
-  header: {
-    position: 'relative',
-    zIndex: 100,
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    paddingTop: 16,
-  },
-  backBtn: {
-    marginRight: 16,
-  },
-  backBtnInner: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.overlayMedium,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700', fontFamily: fonts.bold,
-    flex: 1,
-  },
-  headerRight: {
-    width: 80,
-    alignItems: 'center',
-  },
-  headerStats: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: colors.overlayMedium,
-  },
-  headerStatsText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '500', fontFamily: fonts.medium,
-  },
-  filtersContainer: {
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-  },
-  filterButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 24,
-    marginRight: SPACING.sm,
-    backgroundColor: COLORS.glassBackground,
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  activeFilterButton: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    fontWeight: '500', fontFamily: fonts.medium,
-  },
-  activeFilterButtonText: {
-    color: COLORS.bgPrimary,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: SPACING.lg,
-  },
-  tweetCard: {
-    marginBottom: SPACING.lg,
-    borderRadius: 24,
-    overflow: 'hidden',
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
-  tweetCardBlur: {
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-    backgroundColor: COLORS.glassBackground,
-    padding: SPACING.lg,
-  },
-  tweetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.md,
-  },
-  authorInfo: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  authorAvatar: {
-    marginRight: SPACING.md,
-  },
-  avatarGradient: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-  },
-  authorDetails: {
-    flex: 1,
-  },
-  authorNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  authorName: {
-    fontSize: 16,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    color: COLORS.textPrimary,
-    marginRight: SPACING.xs,
-  },
-  authorHandle: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    marginBottom: SPACING.xs,
-  },
-  tweetDate: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-  badgesContainer: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    alignSelf: 'flex-start',
-  },
-  severityBadge: {
-    alignSelf: 'flex-start',
-  },
-  severityGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: 12,
-    gap: SPACING.xs,
-  },
-  severityText: {
-    fontSize: 10,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    textTransform: 'uppercase',
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-  },
-  statusGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: 12,
-    gap: SPACING.xs,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    textTransform: 'uppercase',
-  },
-  tweetContent: {
-    marginBottom: SPACING.md,
-  },
-  tweetText: {
-    fontSize: 16,
-    color: COLORS.textPrimary,
-    lineHeight: 24,
-  },
-  tweetStats: {
-    flexDirection: 'row',
-    marginBottom: SPACING.md,
-    gap: SPACING.lg,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  statText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-  },
-  flagsContainer: {
-    marginBottom: SPACING.md,
-  },
-  flagsTitle: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginBottom: SPACING.xs,
-  },
-  flagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs,
-  },
-  flagItem: {
-    backgroundColor: 'rgba(255, 71, 87, 0.1)',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.2)',
-  },
-  flagText: {
-    fontSize: 10,
-    color: COLORS.error,
-    fontWeight: '500', fontFamily: fonts.medium,
-  },
-  moderationActions: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.md,
-    gap: SPACING.sm,
-    borderWidth: 1,
-    borderColor: colors.overlayStrong,
-    position: 'relative',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  approveButton: {},
-  rejectButton: {},
-  deleteButton: {},
-  notEligibleButton: {},
-  accessDenied: {
-    flex: 1,
-  },
-  accessDeniedGradient: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  accessDeniedContent: {
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xxl,
-    maxWidth: 320,
-  },
-  accessDeniedTitle: {
-    fontSize: 28,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    color: COLORS.textPrimary,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.md,
-    textAlign: 'center',
-  },
-  accessDeniedText: {
-    fontSize: 16,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: SPACING.xxl,
-  },
-  backButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: SPACING.xxl,
-  },
-  loadingText: {
-    marginTop: SPACING.md,
-    color: COLORS.textMuted,
-    fontSize: 16,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: SPACING.xxl,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    color: COLORS.textPrimary,
-    marginTop: SPACING.md,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    marginTop: SPACING.sm,
-    textAlign: 'center',
-  },
-  classeurInfoContainer: {
-    marginHorizontal: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  classeurInfoBlur: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(79, 124, 255, 0.3)',
-  },
-  classeurInfoContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.md,
-  },
-  classeurInfoText: {
-    flex: 1,
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginLeft: SPACING.sm,
-  },
+  infoText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
+  filterRow: { maxHeight: 44, flexGrow: 0, marginBottom: 6 },
+  filterRowContent: { paddingHorizontal: 16, gap: 8 },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.round, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  filterChipActive: { backgroundColor: colors.accentSoft, borderColor: colors.accentMuted },
+  filterChipText: { fontSize: 12.5, fontFamily: fonts.medium, color: colors.textSecondary },
+  filterChipTextActive: { color: colors.accent, fontFamily: fonts.semibold },
+  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 },
+  card: { padding: 14, marginBottom: 12, borderWidth: 1 },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  authorName: { fontSize: 14.5, fontFamily: fonts.semibold, color: colors.textPrimary, flexShrink: 1 },
+  authorHandle: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  badgesRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.round },
+  badgeText: { fontSize: 10, fontFamily: fonts.semibold, textTransform: 'uppercase', letterSpacing: 0.2 },
+  tweetText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, marginBottom: 10 },
+  statsRow: { flexDirection: 'row', gap: 16, marginBottom: 10 },
+  statItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statText: { fontSize: 12.5, color: colors.textMuted },
+  flagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  flagChip: { backgroundColor: colors.redMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm },
+  flagText: { fontSize: 10.5, color: colors.red, fontFamily: fonts.medium },
+  actionsRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  deniedBox: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 8 },
+  deniedTitle: { fontSize: 20, fontFamily: fonts.bold, color: colors.textPrimary, marginTop: 8 },
+  deniedText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
 });

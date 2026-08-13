@@ -1,878 +1,286 @@
-import { fonts , colors, statusBarStyle} from '../theme';
-import { ScreenBackground, BackButton } from '../components/ui';
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StatusBar,
-  Platform,
-  Animated,
-  Dimensions,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, StatusBar, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAdminPermissions } from '../hooks/useAdminPermissions';
-import { useAuth } from '../contexts/AuthContext';
-import { moderationService, User } from '../services/moderationService';
-import SanctionModal, { SanctionData } from '../components/SanctionModal';
-import VerifiedBadge from '../components/VerifiedBadge';
+import { AppHeader, ScreenBackground, EmptyState, GlassCard, confirmAsync, promptAsync, showActionSheet } from '../components/ui';
 import { toast } from '../components/ui/Toast';
-import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { colors, fonts, radius, statusBarStyle } from '../theme';
+import { useAdminPermissions } from '../hooks/useAdminPermissions';
+import { moderationService, User } from '../services/moderationService';
+import Avatar from '../components/Avatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 
-const { width: screenWidth } = Dimensions.get('window');
-
-const COLORS = {
-  primary: '#4F7CFF',
-  secondary: '#3D63D9',
-  accent: '#3354C4',
-  bgPrimary: '#0B0C0F',
-  bgSecondary: '#15171C',
-  bgTertiary: '#1B1E25',
-  textPrimary: '#F2F4F7',
-  textSecondary: '#cbd5e0',
-  textMuted: '#9BA1AC',
-  success: '#2BC48A',
-  error: '#F4365B',
-  warning: '#E0A458',
-  glassBorder: '#23262D',
-  glassBackground: '#15171C',
+type Tone = 'accent' | 'gold' | 'cyan' | 'danger' | 'neutral';
+const TONE_COLOR: Record<Tone, string> = {
+  accent: colors.accent, gold: colors.gold, cyan: colors.cyan, danger: colors.red, neutral: colors.textMuted,
 };
-
-const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 40,
+const TONE_SOFT: Record<Tone, string> = {
+  accent: colors.accentSoft, gold: 'rgba(255,210,77,0.10)', cyan: colors.cyanSoft, danger: colors.redMuted, neutral: colors.overlaySoft,
 };
+const STATUS_TONE: Record<string, Tone> = { active: 'accent', suspended: 'gold', banned: 'danger' };
+const STATUS_LABEL: Record<string, string> = { active: 'Actif', suspended: 'Suspendu', banned: 'Banni' };
+const STATUS_ICON: Record<string, keyof typeof Ionicons.glyphMap> = { active: 'checkmark-circle', suspended: 'pause-circle', banned: 'ban' };
+
+const FILTERS = [
+  { key: 'all', label: 'Tous' },
+  { key: 'active', label: 'Actifs' },
+  { key: 'suspended', label: 'Suspendus' },
+  { key: 'banned', label: 'Bannis' },
+] as const;
+
+const DURATIONS: { label: string; hours: number }[] = [
+  { label: '24 heures', hours: 24 },
+  { label: '7 jours', hours: 7 * 24 },
+  { label: '30 jours', hours: 30 * 24 },
+];
 
 export default function UserManagementScreen() {
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
-  const { isModerator, canBanUsers, canSuspendUsers, canVerifyUsers } = useAdminPermissions();
-  const { user } = useAuth();
-  
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'suspended' | 'banned'>('all');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [animationValue] = useState(new Animated.Value(1));
+  const { canBanUsers, canSuspendUsers, canVerifyUsers } = useAdminPermissions();
+
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sanctionModalVisible, setSanctionModalVisible] = useState(false);
-  const [selectedSanctionType, setSelectedSanctionType] = useState<'ban' | 'suspend'>('suspend');
+  const [refreshing, setRefreshing] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<typeof FILTERS[number]['key']>('all');
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  const loadUsers = async () => {
+  const load = useCallback(async () => {
     try {
-      console.log('🔄 Début du chargement des utilisateurs...');
-      setLoading(true);
-      const usersData = await moderationService.getUsers();
-      console.log('👥 Users data reçu:', usersData);
-      console.log('👥 Users data type:', typeof usersData);
-      console.log('👥 Users data length:', usersData?.length);
-      console.log('👥 Users data is array:', Array.isArray(usersData));
-      
-      // Traiter les données pour s'assurer que le statut est correct
-      const processedUsers = (usersData || []).map((user: any) => {
-        console.log('👤 User raw data:', user);
-        
-        // L'API retourne maintenant le statut correctement formaté
-        // Mais on s'assure que tous les champs requis existent
-        return {
-          ...user,
-          fullName: user.fullName || user.full_name || user.username,
-          username: user.username,
-          verified: user.verified || false,
-          followers: user.followers || 0,
-          tweets: user.tweets || 0,
-          reports: user.reports || 0,
-          status: user.status || 'active'
-        } as User;
-      });
-      
-      console.log('👥 Users traités:', processedUsers);
-      setUsers(processedUsers);
-      console.log('✅ Utilisateurs chargés avec succès');
-    } catch (error) {
-      console.error('❌ Erreur lors du chargement des utilisateurs:', error);
+      const data = await moderationService.getUsers();
+      setUsers(data || []);
+    } catch {
       toast.error('Impossible de charger les utilisateurs');
       setUsers([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const filteredUsers = users?.filter(user => {
-    const matchesSearch = user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.fullName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filter === 'all' || user.status === filter;
+  useEffect(() => { load(); }, [load]);
+
+  const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
+
+  const filtered = users.filter((u) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch = !q || u.username?.toLowerCase().includes(q) || u.fullName?.toLowerCase().includes(q);
+    const matchesFilter = filter === 'all' || u.status === filter;
     return matchesSearch && matchesFilter;
-  }) || [];
+  });
 
-  const handleUserAction = async (user: User, action: 'ban' | 'suspend' | 'verify' | 'unverify' | 'unban' | 'unsuspend') => {
-    const actionTexts = {
-      ban: 'bannir',
-      suspend: 'suspendre',
-      verify: 'vérifier',
-      unverify: 'révoquer la vérification',
-      unban: 'débannir',
-      unsuspend: 'réactiver'
-    };
-
-    // Pour les actions destructives, utiliser le modal professionnel
-    if (action === 'ban' || action === 'suspend') {
-      setSelectedUser(user);
-      setSelectedSanctionType(action);
-      setSanctionModalVisible(true);
-    } else {
-      confirmAsync({
-        title: `${actionTexts[action].charAt(0).toUpperCase() + actionTexts[action].slice(1)} l'utilisateur`,
-        message: `Êtes-vous sûr de vouloir ${actionTexts[action]} @${user.username} ?`,
-        confirmLabel: 'Confirmer',
-      }).then((ok) => {
-        if (ok) (async () => {
-              await executeUserAction(user, action, 'Action de modération');
-            })();
-      });
-    }
-  };
-
-  const handleSanctionConfirm = async (sanctionData: SanctionData) => {
-    if (!selectedUser) return;
-
+  const run = async (user: User, label: string, action: () => Promise<boolean>) => {
+    setBusyId(user.id);
     try {
-      let success = false;
-      
-      if (sanctionData.type === 'ban') {
-        success = await moderationService.banUser(selectedUser.id, sanctionData.reason, undefined, sanctionData.permanent);
-      } else if (sanctionData.type === 'suspend') {
-        success = await moderationService.suspendUser(selectedUser.id, sanctionData.reason, sanctionData.duration);
-      }
-
-      if (success) {
-        const actionTexts = {
-          ban: 'banni',
-          suspend: 'suspendu'
-        };
-        toast.success(`Utilisateur ${actionTexts[sanctionData.type]} avec succès.`);
-        loadUsers(); // Recharger les données
+      const ok = await action();
+      if (ok) {
+        toast.success(`@${user.username} : ${label}`);
+        load();
       } else {
-        toast.error(`Impossible d'effectuer cette action`);
+        toast.error('Action impossible');
       }
-    } catch (error) {
-      console.error('❌ Erreur lors de l\'action sur l\'utilisateur:', error);
+    } catch {
       toast.error('Une erreur est survenue');
     } finally {
-      setSanctionModalVisible(false);
-      setSelectedUser(null);
+      setBusyId(null);
     }
   };
 
-  const executeUserAction = async (user: User, action: 'ban' | 'suspend' | 'verify' | 'unverify' | 'unban' | 'unsuspend', motif: string) => {
-    try {
-      let success = false;
-      
-      switch (action) {
-        case 'ban':
-          success = await moderationService.banUser(user.id, motif);
-          break;
-        case 'suspend':
-          success = await moderationService.suspendUser(user.id, motif, 168); // 7 jours
-          break;
-        case 'verify':
-          success = await moderationService.verifyUser(user.id);
-          break;
-        case 'unverify':
-          success = await moderationService.unverifyUser(user.id);
-          break;
-        case 'unban':
-          success = await moderationService.unbanUser(user.id);
-          break;
-        case 'unsuspend':
-          success = await moderationService.unsuspendUser(user.id);
-          break;
-      }
-
-      if (success) {
-        const actionTexts = {
-          ban: 'banni',
-          suspend: 'suspendu',
-          verify: 'vérifié',
-          unverify: 'vérification révoquée',
-          unban: 'débanni',
-          unsuspend: 'réactivé'
-        };
-        toast.success(`Utilisateur ${actionTexts[action]} avec succès.`);
-        loadUsers(); // Recharger les données
-      } else {
-        toast.error(`Impossible d'effectuer cette action`);
-      }
-    } catch (error) {
-      console.error('❌ Erreur lors de l\'action sur l\'utilisateur:', error);
-      toast.error('Une erreur est survenue');
-    }
+  const suspendWithDuration = async (user: User, hours: number, label: string) => {
+    const reason = await promptAsync({
+      title: `Suspendre @${user.username}`,
+      message: `Suspension de ${label}`,
+      placeholder: 'Raison de la suspension',
+    });
+    if (reason === null) return;
+    run(user, 'suspendu', () => moderationService.suspendUser(user.id, reason, hours));
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return COLORS.success;
-      case 'suspended': return COLORS.warning;
-      case 'banned': return COLORS.error;
-      default: return COLORS.textMuted;
-    }
+  const suspend = (user: User) => {
+    showActionSheet({
+      title: 'Durée de la suspension',
+      items: DURATIONS.map((d) => ({
+        label: d.label,
+        icon: 'time-outline' as const,
+        onPress: () => suspendWithDuration(user, d.hours, d.label),
+      })),
+    });
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active': return 'checkmark-circle';
-      case 'suspended': return 'pause-circle';
-      case 'banned': return 'ban';
-      default: return 'help-circle';
+  const ban = async (user: User) => {
+    const ok = await confirmAsync({
+      title: `Bannir @${user.username}`,
+      message: 'Bannissement permanent — le compte perd tout accès.',
+      confirmLabel: 'Bannir',
+      destructive: true,
+    });
+    if (!ok) return;
+    const reason = await promptAsync({
+      title: `Bannir @${user.username}`,
+      message: 'Raison du bannissement',
+      placeholder: 'Ex : harcèlement répété',
+    });
+    if (reason === null) return;
+    run(user, 'banni', () => moderationService.banUser(user.id, reason, undefined, true));
+  };
+
+  const openMore = (user: User) => {
+    const items = [];
+    if (user.status === 'suspended' && canSuspendUsers) {
+      items.push({ label: 'Réactiver', icon: 'play-circle-outline' as const, onPress: () => run(user, 'réactivé', () => moderationService.unsuspendUser(user.id)) });
     }
+    if (user.status === 'banned' && canBanUsers) {
+      items.push({ label: 'Débannir', icon: 'refresh-outline' as const, onPress: () => run(user, 'débanni', () => moderationService.unbanUser(user.id)) });
+    }
+    if (user.status === 'active' && canSuspendUsers) {
+      items.push({ label: 'Suspendre', icon: 'pause-circle-outline' as const, onPress: () => suspend(user) });
+    }
+    if (user.status === 'active' && canBanUsers) {
+      items.push({ label: 'Bannir', icon: 'ban-outline' as const, destructive: true, onPress: () => ban(user) });
+    }
+    if (canVerifyUsers) {
+      items.push(user.verified
+        ? { label: 'Révoquer la vérification', icon: 'close-circle-outline' as const, destructive: true, onPress: () => run(user, 'vérification révoquée', () => moderationService.unverifyUser(user.id)) }
+        : { label: 'Vérifier', icon: 'checkmark-circle-outline' as const, onPress: () => run(user, 'vérifié', () => moderationService.verifyUser(user.id)) });
+    }
+
+    showActionSheet({ title: `@${user.username}`, items });
   };
 
   if (!canBanUsers && !canSuspendUsers) {
     return (
-      <View style={styles.accessDenied}>
-        <LinearGradient colors={[COLORS.bgPrimary, COLORS.bgSecondary]} style={styles.accessDeniedGradient}>
-          <View style={styles.accessDeniedContent}>
-            <Ionicons name="shield-outline" size={80} color={COLORS.error} />
-            <Text style={styles.accessDeniedTitle}>Accès Restreint</Text>
-            <Text style={styles.accessDeniedText}>
-              Vous n'avez pas les permissions nécessaires pour accéder à cette section.
-            </Text>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => navigation.goBack()}
-              activeOpacity={0.8}
-            >
-              <View style={styles.backBtnInner}>
-                <Text style={styles.backButtonText}>Retour</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle={statusBarStyle()} backgroundColor={COLORS.bgPrimary} />
-        <LinearGradient
-          colors={[COLORS.bgPrimary, COLORS.bgSecondary, COLORS.bgTertiary]}
-          style={styles.gradient}
-        >
-          <View style={styles.loadingContainer}>
-            <Ionicons name="refresh" size={48} color={COLORS.primary} />
-            <Text style={styles.loadingText}>Chargement des utilisateurs...</Text>
-          </View>
-        </LinearGradient>
-      </View>
+      <ScreenBackground>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+        <AppHeader navigation={navigation} title="Gestion utilisateurs" />
+        <View style={styles.deniedBox}>
+          <Ionicons name="shield-outline" size={56} color={colors.red} />
+          <Text style={styles.deniedTitle}>Accès restreint</Text>
+          <Text style={styles.deniedText}>Tu n'as pas les permissions nécessaires pour accéder à cette section.</Text>
+        </View>
+      </ScreenBackground>
     );
   }
 
   return (
     <ScreenBackground>
-    <View style={styles.container}>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
-
-      <View style={styles.gradient}>
-        {/* Header avec effet de blur */}
-        <Animated.View 
-          style={[
-            styles.header,
-            {
-              opacity: animationValue,
-              transform: [{ translateY: animationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [20, 0],
-              })}],
-              paddingTop: insets.top + SPACING.md,
-            }
-          ]}
-        >
-          <View style={styles.headerContent}>
-            <BackButton navigation={navigation} />
-            <Text style={styles.headerTitle}>Gestion Utilisateurs</Text>
-            <View style={styles.headerRight}>
-              <View style={styles.headerStats}>
-                <Text style={styles.headerStatsText}>
-                  {users?.length || 0} utilisateurs
-                </Text>
-              </View>
-            </View>
+      <AppHeader
+        navigation={navigation}
+        title="Gestion utilisateurs"
+        right={(
+          <View style={styles.headerCount}>
+            <Text style={styles.headerCountText}>{users.length}</Text>
           </View>
-        </Animated.View>
+        )}
+      />
 
-        {/* Barre de recherche */}
-        <Animated.View 
-          style={[
-            styles.searchContainer,
-            {
-              opacity: animationValue,
-              transform: [{ translateY: animationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [30, 0],
-              })}],
-            }
-          ]}
-        >
-          <BlurView intensity={30} style={styles.searchBlur}>
-            <View style={styles.searchInputContainer}>
-              <Ionicons name="search" size={20} color={COLORS.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Rechercher un utilisateur..."
-                placeholderTextColor={COLORS.textMuted}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
-          </BlurView>
-        </Animated.View>
-
-        {/* Filtres */}
-        <Animated.View 
-          style={[
-            styles.filtersContainer,
-            {
-              opacity: animationValue,
-              transform: [{ translateY: animationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [40, 0],
-              })}],
-            }
-          ]}
-        >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                         {[
-               { key: 'all', label: 'Tous', count: users?.length || 0 },
-               { key: 'active', label: 'Actifs', count: users?.filter(u => u.status === 'active').length || 0 },
-               { key: 'suspended', label: 'Suspendus', count: users?.filter(u => u.status === 'suspended').length || 0 },
-               { key: 'banned', label: 'Bannis', count: users?.filter(u => u.status === 'banned').length || 0 },
-             ].map((filterOption) => (
-              <TouchableOpacity
-                key={filterOption.key}
-                style={[
-                  styles.filterButton,
-                  filter === filterOption.key && styles.activeFilterButton
-                ]}
-                onPress={() => setFilter(filterOption.key as any)}
-                activeOpacity={0.8}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  filter === filterOption.key && styles.activeFilterButtonText
-                ]}>
-                  {filterOption.label} ({filterOption.count})
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </Animated.View>
-
-        {/* Liste des utilisateurs */}
-        <ScrollView 
-          style={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          {filteredUsers.map((user, index) => (
-            <Animated.View
-              key={user.id}
-              style={[
-                styles.userCard,
-                {
-                  opacity: animationValue,
-                  transform: [{ translateY: animationValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [50 + (index * 20), 0],
-                  })}],
-                }
-              ]}
-            >
-              <BlurView intensity={30} style={styles.userCardBlur}>
-                <View style={styles.userCardHeader}>
-                  <View style={styles.userInfo}>
-                    <View style={styles.userAvatar}>
-                      <LinearGradient
-                        colors={[`${getStatusColor(user.status)}40`, `${getStatusColor(user.status)}20`]}
-                        style={styles.avatarGradient}
-                      >
-                        <Ionicons 
-                          name={getStatusIcon(user.status) as any} 
-                          size={24} 
-                          color={getStatusColor(user.status)} 
-                        />
-                      </LinearGradient>
-                    </View>
-                    
-                    <View style={styles.userDetails}>
-                      <View style={styles.userNameRow}>
-                        <Text style={styles.userName}>{user.fullName || user.username}</Text>
-                        {user.verified && (
-                          <View style={{ marginLeft: 6 }}>
-                            <VerifiedBadge 
-                              verificationStyle={(user as any).verification_style || 'default'}
-                              size={16} 
-                              animated={true}
-                            />
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.userHandle}>@{user.username}</Text>
-                      <View style={styles.userStats}>
-                        <Text style={styles.userStat}>{user.followers} abonnés</Text>
-                        <Text style={styles.userStat}>•</Text>
-                        <Text style={styles.userStat}>{user.tweets} tweets</Text>
-                        {user.reports > 0 && (
-                          <>
-                            <Text style={styles.userStat}>•</Text>
-                            <Text style={[styles.userStat, { color: COLORS.error }]}>
-                              {user.reports} signalements
-                            </Text>
-                          </>
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                  
-                  <View style={styles.statusBadge}>
-                    <LinearGradient
-                      colors={[`${getStatusColor(user.status)}20`, `${getStatusColor(user.status)}10`]}
-                      style={styles.statusGradient}
-                    >
-                      <Ionicons 
-                        name={getStatusIcon(user.status) as any} 
-                        size={12} 
-                        color={getStatusColor(user.status)} 
-                      />
-                      <Text style={[styles.statusText, { color: getStatusColor(user.status) }]}>
-                        {user.status === 'active' ? 'Actif' : 
-                         user.status === 'suspended' ? 'Suspendu' : 'Banni'}
-                      </Text>
-                    </LinearGradient>
-                  </View>
-                </View>
-                
-                <View style={styles.userCardActions}>
-                  {user.status === 'active' ? (
-                    <>
-                      {canSuspendUsers && (
-                        <TouchableOpacity
-                          style={[styles.actionButton, styles.suspendButton]}
-                          onPress={() => handleUserAction(user, 'suspend')}
-                          activeOpacity={0.8}
-                        >
-                          <LinearGradient
-                            colors={['rgba(255, 165, 2, 0.2)', 'rgba(255, 165, 2, 0.1)']}
-                            style={styles.actionButtonGradient}
-                          >
-                            <Ionicons name="pause" size={16} color={COLORS.warning} />
-                            <Text style={[styles.actionButtonText, { color: COLORS.warning }]}>
-                              Suspendre
-                            </Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      )}
-                      
-                      {canBanUsers && (
-                        <TouchableOpacity
-                          style={[styles.actionButton, styles.banButton]}
-                          onPress={() => handleUserAction(user, 'ban')}
-                          activeOpacity={0.8}
-                        >
-                          <LinearGradient
-                            colors={['rgba(255, 71, 87, 0.2)', 'rgba(255, 71, 87, 0.1)']}
-                            style={styles.actionButtonGradient}
-                          >
-                            <Ionicons name="ban" size={16} color={COLORS.error} />
-                            <Text style={[styles.actionButtonText, { color: COLORS.error }]}>
-                              Bannir
-                            </Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  ) : user.status === 'suspended' ? (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.reactivateButton]}
-                      onPress={() => handleUserAction(user, 'unsuspend')}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={['rgba(67, 233, 123, 0.2)', 'rgba(67, 233, 123, 0.1)']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="refresh" size={16} color={COLORS.success} />
-                        <Text style={[styles.actionButtonText, { color: COLORS.success }]}>
-                          Réactiver
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  ) : user.status === 'banned' ? (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.reactivateButton]}
-                      onPress={() => handleUserAction(user, 'unban')}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={['rgba(67, 233, 123, 0.2)', 'rgba(67, 233, 123, 0.1)']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="refresh" size={16} color={COLORS.success} />
-                        <Text style={[styles.actionButtonText, { color: COLORS.success }]}>
-                          Débannir
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  ) : null}
-                  
-                  {!user.verified && canVerifyUsers && (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.verifyButton]}
-                      onPress={() => handleUserAction(user, 'verify')}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[styles.actionButtonGradient, { backgroundColor: 'rgba(79, 124, 255, 0.14)' }]}>
-                        <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
-                        <Text style={[styles.actionButtonText, { color: COLORS.primary }]}>
-                          Vérifier
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                  
-                  {user.verified && canVerifyUsers && (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.unverifyButton]}
-                      onPress={() => handleUserAction(user, 'unverify')}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient
-                        colors={['rgba(255, 71, 87, 0.2)', 'rgba(255, 71, 87, 0.1)']}
-                        style={styles.actionButtonGradient}
-                      >
-                        <Ionicons name="close-circle" size={16} color={COLORS.error} />
-                        <Text style={[styles.actionButtonText, { color: COLORS.error }]}>
-                          Révoquer
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </BlurView>
-            </Animated.View>
-          ))}
-          
-          <View style={{ height: insets.bottom + SPACING.xxl }} />
-        </ScrollView>
+      <View style={styles.searchRow}>
+        <Ionicons name="search" size={17} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher un utilisateur..."
+          placeholderTextColor={colors.textMuted}
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close-circle" size={17} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Modal de sanction professionnel */}
-      {selectedUser && (
-        <SanctionModal
-          visible={sanctionModalVisible}
-          onClose={() => {
-            setSanctionModalVisible(false);
-            setSelectedUser(null);
-          }}
-          onConfirm={handleSanctionConfirm}
-          user={selectedUser}
-          sanctionType={selectedSanctionType}
-        />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterRowContent}>
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          const count = f.key === 'all' ? users.length : users.filter((u) => u.status === f.key).length;
+          return (
+            <TouchableOpacity key={f.key} style={[styles.filterChip, active && styles.filterChipActive]} onPress={() => setFilter(f.key)} activeOpacity={0.8}>
+              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{f.label} ({count})</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {loading ? (
+        <View style={styles.loadingBox}><ActivityIndicator color={colors.accent} /></View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        >
+          {filtered.length === 0 ? (
+            <EmptyState icon="people-outline" title="Aucun utilisateur" message="Aucun compte ne correspond à ta recherche." />
+          ) : (
+            filtered.map((u) => {
+              const tone = STATUS_TONE[u.status] || 'neutral';
+              return (
+                <GlassCard key={u.id} style={styles.card}>
+                  <View style={styles.cardRow}>
+                    <Avatar size={44} username={u.username} uri={u.avatar} />
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.userName} numberOfLines={1}>{u.fullName || u.username}</Text>
+                        {u.verified && <VerifiedBadge verificationStyle={(u as any).verification_style || 'default'} size={14} />}
+                      </View>
+                      <Text style={styles.userHandle}>@{u.username}</Text>
+                      <Text style={styles.userStats}>
+                        {u.followers} abonnés · {u.tweets} tweets
+                        {u.reports > 0 ? ` · ${u.reports} signalement${u.reports > 1 ? 's' : ''}` : ''}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => openMore(u)} disabled={busyId === u.id} style={styles.moreBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      {busyId === u.id ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />}
+                    </TouchableOpacity>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: TONE_SOFT[tone] }]}>
+                    <Ionicons name={STATUS_ICON[u.status]} size={12} color={TONE_COLOR[tone]} />
+                    <Text style={[styles.statusText, { color: TONE_COLOR[tone] }]}>{STATUS_LABEL[u.status] || u.status}</Text>
+                  </View>
+                </GlassCard>
+              );
+            })
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
       )}
-    </View>
     </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
+  headerCount: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.round, backgroundColor: colors.overlaySoft },
+  headerCountText: { fontSize: 12, fontFamily: fonts.semibold, color: colors.textSecondary },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginBottom: 10, paddingHorizontal: 12, height: 42,
+    borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  gradient: {
-    flex: 1,
+  searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary },
+  filterRow: { maxHeight: 44, flexGrow: 0, marginBottom: 6 },
+  filterRowContent: { paddingHorizontal: 16, gap: 8 },
+  filterChip: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.round,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  header: {
-    position: 'relative',
-    zIndex: 100,
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-    paddingTop: SPACING.md,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    paddingTop: 16,
-  },
-  backBtn: {
-    marginRight: 16,
-  },
-  backBtnInner: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.overlayMedium,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700', fontFamily: fonts.bold,
-    flex: 1,
-  },
-  headerRight: {
-    width: 80,
-    alignItems: 'center',
-  },
-  headerStats: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: colors.overlayMedium,
-  },
-  headerStatsText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '500', fontFamily: fonts.medium,
-  },
-  searchContainer: {
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  searchBlur: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-    backgroundColor: COLORS.glassBackground,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: SPACING.sm,
-    fontSize: 16,
-    color: COLORS.textPrimary,
-  },
-  filtersContainer: {
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-  },
-  filterButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 24,
-    marginRight: SPACING.sm,
-    backgroundColor: COLORS.glassBackground,
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  activeFilterButton: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    fontWeight: '500', fontFamily: fonts.medium,
-  },
-  activeFilterButtonText: {
-    color: COLORS.bgPrimary,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: SPACING.lg,
-  },
-  userCard: {
-    marginBottom: SPACING.lg,
-    borderRadius: 24,
-    overflow: 'hidden',
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
-  userCardBlur: {
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-    backgroundColor: COLORS.glassBackground,
-  },
-  userCardHeader: {
-    flexDirection: 'row',
-    padding: SPACING.lg,
-    alignItems: 'center',
-  },
-  userInfo: {
-    flexDirection: 'row',
-    flex: 1,
-    alignItems: 'center',
-  },
-  userAvatar: {
-    marginRight: SPACING.md,
-  },
-  avatarGradient: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-  },
-  userDetails: {
-    flex: 1,
-  },
-  userNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    color: COLORS.textPrimary,
-    marginRight: SPACING.xs,
-  },
-  userHandle: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    marginBottom: SPACING.xs,
-  },
-  userStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  userStat: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginRight: SPACING.xs,
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-  },
-  statusGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: 12,
-    gap: SPACING.xs,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    textTransform: 'uppercase',
-  },
-  userCardActions: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.md,
-    gap: SPACING.sm,
-    borderWidth: 1,
-    borderColor: colors.overlayStrong,
-    position: 'relative',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  suspendButton: {},
-  banButton: {},
-  reactivateButton: {},
-  verifyButton: {},
-  unverifyButton: {},
-  accessDenied: {
-    flex: 1,
-  },
-  accessDeniedGradient: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  accessDeniedContent: {
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xxl,
-    maxWidth: 320,
-  },
-  accessDeniedTitle: {
-    fontSize: 28,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    color: COLORS.textPrimary,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.md,
-    textAlign: 'center',
-  },
-  accessDeniedText: {
-    fontSize: 16,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: SPACING.xxl,
-  },
-  backButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.xxl,
-  },
-  loadingText: {
-    marginTop: SPACING.md,
-    color: COLORS.textMuted,
-    fontSize: 18,
-  },
+  filterChipActive: { backgroundColor: colors.accentSoft, borderColor: colors.accentMuted },
+  filterChipText: { fontSize: 12.5, fontFamily: fonts.medium, color: colors.textSecondary },
+  filterChipTextActive: { color: colors.accent, fontFamily: fonts.semibold },
+  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 },
+  card: { padding: 14, marginBottom: 10 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  userName: { fontSize: 14.5, fontFamily: fonts.semibold, color: colors.textPrimary, flexShrink: 1 },
+  userHandle: { fontSize: 12.5, color: colors.textMuted, marginTop: 1 },
+  userStats: { fontSize: 11.5, color: colors.textMuted, marginTop: 4 },
+  moreBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.round },
+  statusText: { fontSize: 10.5, fontFamily: fonts.semibold, textTransform: 'uppercase', letterSpacing: 0.3 },
+  deniedBox: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 8 },
+  deniedTitle: { fontSize: 20, fontFamily: fonts.bold, color: colors.textPrimary, marginTop: 8 },
+  deniedText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
 });

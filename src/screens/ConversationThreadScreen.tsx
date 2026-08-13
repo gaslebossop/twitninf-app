@@ -47,6 +47,7 @@ import unreadService from '../services/unreadService';
 import VerifiedBadge from '../components/VerifiedBadge';
 import StoryRing from '../components/StoryRing';
 import StoryViewer from '../components/StoryViewer';
+import EmojiPickerSheet from '../components/EmojiPickerSheet';
 import storiesService, { StoryGroup, resolveStoryMedia } from '../services/storiesService';
 import { certifiedNameColors, nameIsLit, type ProfileCustomization } from '../services/profileCustomizationService';
 import { API_CONFIG } from '../config/api';
@@ -83,8 +84,27 @@ interface MessageReactionItem {
   username?: string;
 }
 
-/** Barre de réactions rapides façon Instagram DM — doit rester identique à `ALLOWED_REACTION_EMOJIS` côté API. */
+/**
+ * Raccourcis de la barre d'appui long, façon Instagram DM. Le serveur
+ * n'impose plus de liste : il valide la FORME de l'emoji, donc le sélecteur
+ * complet (bouton « + ») accepte n'importe lequel.
+ */
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍'];
+
+/**
+ * Géométrie de la barre de réactions.
+ *
+ * La largeur était figée à 232 px alors que le contenu en demandait ~254 :
+ * six emojis de 26 px (un glyphe emoji est plus large que sa taille de police)
+ * plus leurs marges. Résultat, les emojis débordaient du fond arrondi. Elle se
+ * calcule donc à partir des mêmes constantes que le rendu — impossible de
+ * désynchroniser l'un de l'autre.
+ */
+const REACTION_EMOJI_SIZE = 26;
+const REACTION_ITEM_WIDTH = 40;
+const REACTION_BAR_PADDING = 8;
+const REACTION_BAR_ITEMS = QUICK_REACTIONS.length + 1; // + le bouton « ␣ »
+const REACTION_BAR_WIDTH = REACTION_BAR_ITEMS * REACTION_ITEM_WIDTH + REACTION_BAR_PADDING * 2;
 
 interface SenderLike {
   id?: string;
@@ -313,15 +333,50 @@ function VoiceMessageBubble({
   bubbleRadius: any;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [totalMs, setTotalMs] = useState(durationMs || 0);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLoadTimeout = useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Sortie de secours quand le chargement/la lecture ne progresse jamais
+   * (réseau faible, flux coupé en route) : sans ça, `isLoaded` reste `false`
+   * indéfiniment côté expo-av, sans erreur ni statut exploitable — le bouton
+   * restait bloqué sur "lecture" avec 0 %/0 s, sans aucun moyen de réessayer.
+   */
+  const resetToIdle = useCallback(async (showError?: boolean) => {
+    clearLoadTimeout();
+    setIsPlaying(false);
+    setIsLoading(false);
+    setPositionMs(0);
+    const sound = soundRef.current;
+    soundRef.current = null;
+    if (sound) {
+      try {
+        await sound.unloadAsync();
+      } catch {
+        // Déjà déchargé ou jamais chargé : rien à faire.
+      }
+    }
+    if (showError) {
+      toast.error('Lecture impossible', { description: 'Vérifie ta connexion et réessaie.' });
+    }
+  }, [clearLoadTimeout]);
 
   useEffect(() => {
     return () => {
+      clearLoadTimeout();
       soundRef.current?.unloadAsync().catch(() => {});
     };
-  }, []);
+  }, [clearLoadTimeout]);
 
   const bars = useMemo(
     () => (waveform && waveform.length > 0 ? downsampleWaveform(waveform, WAVEFORM_BAR_COUNT) : pseudoWaveform(uri, WAVEFORM_BAR_COUNT)),
@@ -329,7 +384,12 @@ function VoiceMessageBubble({
   );
 
   const onStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
+    if (!status.isLoaded) {
+      if ((status as any).error) resetToIdle(true);
+      return;
+    }
+    clearLoadTimeout();
+    setIsLoading(false);
     setPositionMs(status.positionMillis || 0);
     if (status.durationMillis) setTotalMs(status.durationMillis);
     if (status.didJustFinish) {
@@ -337,19 +397,27 @@ function VoiceMessageBubble({
       setPositionMs(0);
       soundRef.current?.setPositionAsync(0).catch(() => {});
     }
-  }, []);
+  }, [clearLoadTimeout, resetToIdle]);
 
   const toggle = useCallback(async () => {
     try {
+      if (isLoading) return;
       await ensurePlaybackAudioMode();
       if (!soundRef.current) {
+        setIsLoading(true);
+        setIsPlaying(true);
+        // 12s : largement assez pour un début de flux même en 4G faible.
+        // Au-delà, on considère le chargement mort plutôt que de laisser
+        // l'utilisateur devant un lecteur figé sans recours.
+        loadTimeoutRef.current = setTimeout(() => {
+          resetToIdle(true);
+        }, 12000);
         const { sound } = await Audio.Sound.createAsync(
           { uri },
           { shouldPlay: true, volume: 1.0 },
           onStatusUpdate,
         );
         soundRef.current = sound;
-        setIsPlaying(true);
         return;
       }
       const status = await soundRef.current.getStatusAsync();
@@ -362,9 +430,9 @@ function VoiceMessageBubble({
         setIsPlaying(true);
       }
     } catch {
-      setIsPlaying(false);
+      resetToIdle(true);
     }
-  }, [uri, onStatusUpdate]);
+  }, [uri, onStatusUpdate, isLoading, resetToIdle]);
 
   const progress = totalMs > 0 ? Math.min(1, positionMs / totalMs) : 0;
   const activeBarIndex = Math.round(progress * (WAVEFORM_BAR_COUNT - 1));
@@ -373,12 +441,16 @@ function VoiceMessageBubble({
     <View style={styles.voiceRow}>
       <View style={[styles.voicePlayBtn, fromMe ? styles.voicePlayBtnMine : styles.voicePlayBtnOther]}>
         <TouchableOpacity onPress={toggle} hitSlop={hitSlop} style={styles.voicePlayBtnTouch}>
-          <Ionicons
-            name={isPlaying ? 'pause' : 'play'}
-            size={15}
-            color={fromMe ? '#3B5DF6' : '#fff'}
-            style={!isPlaying ? { marginLeft: 1 } : undefined}
-          />
+          {isLoading ? (
+            <ActivityIndicator size="small" color={fromMe ? '#3B5DF6' : '#fff'} />
+          ) : (
+            <Ionicons
+              name={isPlaying ? 'pause' : 'play'}
+              size={15}
+              color={fromMe ? '#3B5DF6' : '#fff'}
+              style={!isPlaying ? { marginLeft: 1 } : undefined}
+            />
+          )}
         </TouchableOpacity>
       </View>
       <View style={styles.voiceWaveform}>
@@ -515,6 +587,8 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   const [recordingDragX, setRecordingDragX] = useState(0);
   const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
   const [reactionBarFor, setReactionBarFor] = useState<{ messageId: string; x: number; y: number } | null>(null);
+  /** Message pour lequel le sélecteur complet d'emoji est ouvert (bouton « + »). */
+  const [emojiPickerFor, setEmojiPickerFor] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<any>(null);
@@ -1654,8 +1728,8 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     {
                       top: Math.max(50, reactionBarFor.y - 76),
                       left: Math.min(
-                        Dimensions.get('window').width - 232 - 12,
-                        Math.max(12, reactionBarFor.x - 116),
+                        Dimensions.get('window').width - REACTION_BAR_WIDTH - 12,
+                        Math.max(12, reactionBarFor.x - REACTION_BAR_WIDTH / 2),
                       ),
                     },
                   ]}
@@ -1665,16 +1739,38 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                       key={emoji}
                       onPress={() => sendReaction(reactionBarFor.messageId, emoji)}
                       style={styles.reactionBarItem}
-                      hitSlop={hitSlop}
                     >
                       <Text style={styles.reactionBarEmoji}>{emoji}</Text>
                     </TouchableOpacity>
                   ))}
+
+                  {/* « + » : ouvre le sélecteur complet, comme Instagram. */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEmojiPickerFor(reactionBarFor.messageId);
+                      setReactionBarFor(null);
+                    }}
+                    style={styles.reactionBarItem}
+                    accessibilityLabel="Choisir un autre emoji"
+                  >
+                    <View style={styles.reactionBarMore}>
+                      <Ionicons name="add" size={20} color={colors.textPrimary} />
+                    </View>
+                  </TouchableOpacity>
                 </Reanimated.View>
               )}
             </View>
           </TouchableWithoutFeedback>
         </Modal>
+
+        <EmojiPickerSheet
+          visible={!!emojiPickerFor}
+          onClose={() => setEmojiPickerFor(null)}
+          onSelect={(emoji) => {
+            if (emojiPickerFor) sendReaction(emojiPickerFor, emoji);
+            setEmojiPickerFor(null);
+          }}
+        />
       </SafeAreaView>
     </ScreenBackground>
   );
@@ -1891,14 +1987,13 @@ const styles = StyleSheet.create({
 
   reactionBar: {
     position: 'absolute',
-    width: 232,
+    width: REACTION_BAR_WIDTH,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: colors.surfaceAlt,
     borderRadius: 28,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: REACTION_BAR_PADDING,
+    paddingVertical: 6,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.borderStrong,
     shadowColor: '#000',
@@ -1907,8 +2002,24 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
-  reactionBarItem: { padding: 4 },
-  reactionBarEmoji: { fontSize: 26 },
+  // Largeur fixe par emplacement : c'est ce qui garantit que le contenu tient
+  // exactement dans REACTION_BAR_WIDTH, quelle que soit la largeur réelle du
+  // glyphe emoji (elle varie selon la police système et la plateforme).
+  reactionBarItem: {
+    width: REACTION_ITEM_WIDTH,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionBarEmoji: { fontSize: REACTION_EMOJI_SIZE, lineHeight: REACTION_EMOJI_SIZE + 6 },
+  reactionBarMore: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlayMedium,
+  },
 
   messageTime: { color: colors.textMuted, fontSize: 10.5, marginTop: 3, fontFamily: fonts.regular },
   messageTimeRight: { textAlign: 'right', marginRight: 6 },

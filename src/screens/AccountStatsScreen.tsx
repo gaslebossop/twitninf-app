@@ -24,11 +24,6 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
           navigation={navigation}
           title="Statistiques"
           subtitle="Votre activité et vos signaux privés"
-          right={(
-            <View style={styles.headerIcon} accessibilityLabel="Statistiques privées">
-              <Ionicons name="lock-closed" size={16} color={colors.textSecondary} />
-            </View>
-          )}
         />
 
         {user?.id ? (

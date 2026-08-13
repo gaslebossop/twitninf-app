@@ -227,10 +227,6 @@ export default function MessagesScreen({ navigation }: any) {
   };
 
   const openConversation = useCallback((item: ConvItem) => {
-    if (!item.isGroup && (item.username.toLowerCase() === 'policiercongo' || item.isAI)) {
-      navigation.navigate('PolicierCongoChat');
-      return;
-    }
     if (item.invitationStatus === 'pending') {
       navigation.navigate('NewConversation', { initialTab: 'invites' });
       return;

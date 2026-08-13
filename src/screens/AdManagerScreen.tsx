@@ -10,6 +10,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/api';
 import { BackButton } from '../components/ui';
@@ -49,6 +50,7 @@ interface AdStats {
 
 export default function AdManagerScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [balance, setBalance] = useState<AdBalance | null>(null);
   const [stats, setStats] = useState<AdStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,7 +120,7 @@ export default function AdManagerScreen() {
       }
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <BackButton navigation={navigation} />
         <Text style={styles.headerTitle}>Gestionnaire Publicitaire</Text>
         <TouchableOpacity

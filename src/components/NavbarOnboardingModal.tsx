@@ -402,10 +402,12 @@ export default function NavbarOnboardingModal({
 
   const stepTranslate = stepAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
 
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => onCancel?.()}>
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
+  // Au démarrage c'est une étape du parcours : page plein écran, comme les
+  // autres. Depuis les réglages, ça reste une feuille qui remonte du bas.
+  const isOnboarding = mode === 'onboarding';
+
+  const body = (
+    <View style={[styles.sheet, isOnboarding && styles.sheetFull]}>
           {/* Lueur de marque : en fond, sous tout le contenu. */}
           <Animated.View
             pointerEvents="none"
@@ -607,17 +609,40 @@ export default function NavbarOnboardingModal({
               </Pressable>
             </Animated.View>
           )}
-        </View>
-      </View>
+    </View>
+  );
+
+  if (isOnboarding) {
+    if (!visible) return null;
+    return <View style={styles.page}>{body}</View>;
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => onCancel?.()}>
+      <View style={styles.overlay}>{body}</View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  page: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.bg,
+    zIndex: 100,
+  },
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: colors.overlay,
+  },
+  sheetFull: {
+    flex: 1,
+    maxHeight: '100%',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    // Barre d'état en haut, navbar système en bas : marges fixes, aucun
+    // SafeAreaProvider n'est monté dans cette app.
+    paddingTop: 54,
   },
   sheet: {
     backgroundColor: colors.bgElevated,

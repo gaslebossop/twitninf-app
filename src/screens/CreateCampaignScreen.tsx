@@ -9,8 +9,11 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import apiService from '../services/api';
@@ -29,6 +32,7 @@ interface AdBalance {
 
 export default function CreateCampaignScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [balance, setBalance] = useState<AdBalance | null>(null);
   
@@ -212,9 +216,10 @@ export default function CreateCampaignScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScrollView keyboardShouldPersistTaps="handled">
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <BackButton navigation={navigation} />
         <Text style={styles.headerTitle}>Nouvelle Campagne</Text>
         <View style={styles.placeholder} />
@@ -531,6 +536,7 @@ export default function CreateCampaignScreen() {
         />
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

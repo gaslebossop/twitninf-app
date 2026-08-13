@@ -42,7 +42,6 @@ import { neuralRankService } from '../services/neuralRankService';
 import { Tweet, RecommendationItem, RecommendationRequest, ProgressiveRecommendationRequest, ProgressiveRecommendationItem } from '../types/api';
 import Avatar from '../components/Avatar';
 import BanAlertBanner from '../components/BanAlertBanner';
-import PatchNotesModal from '../components/PatchNotesModal';
 import ClickableMentions from '../components/ClickableMentions';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffline } from '../contexts/OfflineContext';
@@ -61,6 +60,7 @@ import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
 import { useFunctionalEventFeatures } from '../hooks/useFunctionalEventFeatures';
 import { FunctionalEventBanner } from '../components/FunctionalEventBanner';
 import StoriesTray from '../components/StoriesTray';
+import SpotlightBanner from '../components/SpotlightBanner';
 import storiesService from '../services/storiesService';
 import PaywallSetupSheet from '../components/PaywallSetupSheet';
 
@@ -1214,6 +1214,12 @@ export default function TweetsScreen() {
           }}
         />
 
+        {/* Spotlight : un vrai élément du fil, pas une notice au-dessus des stories. */}
+        <SpotlightBanner
+          refreshSignal={storiesRefresh}
+          onOpenTweet={(tweetId) => (navigation as any).navigate('TweetDetail', { tweetId })}
+        />
+
         {error && (
           <Animated.View entering={FadeIn.duration(180)} style={S.errorBanner}>
             <Ionicons name="alert-circle-outline" size={18} color={C.red} />
@@ -1244,7 +1250,6 @@ export default function TweetsScreen() {
       {/* ── Event banners ── */}
       <EventBanner />
       {hasActiveEvents && <FunctionalEventBanner events={functionalEvents} />}
-      <PatchNotesModal />
 
       {/* Signalement depuis le fil — la feuille se charge de tout le parcours. */}
       <ReportSheet

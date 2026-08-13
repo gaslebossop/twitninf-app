@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useReadingLanguage } from '../contexts/ReadingLanguageContext';
+import StartupStepPage from './StartupStepPage';
 import { colors, fonts } from '../theme';
 
 interface ReadingLanguageModalProps {
@@ -47,6 +48,53 @@ export default function ReadingLanguageModal({ visible, onClose }: ReadingLangua
     if (saved) onClose?.();
   };
 
+  const rows = languages.map((language) => {
+    const active = preferredLanguage === language.code;
+    const busy = saving && pendingCode === language.code;
+    return (
+      <Pressable
+        key={language.code}
+        style={({ pressed }) => [
+          styles.row,
+          active && styles.rowActive,
+          pressed && styles.rowPressed,
+        ]}
+        onPress={() => select(language.code)}
+        disabled={saving}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: active }}
+      >
+        <View style={styles.rowCopy}>
+          <Text style={styles.rowLabel}>{language.label}</Text>
+          {language.original && (
+            <Text style={styles.rowHint}>Langue d'origine des publications</Text>
+          )}
+        </View>
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.accent} />
+        ) : active ? (
+          <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+        ) : null}
+      </Pressable>
+    );
+  });
+
+  // Sans `onClose`, c'est l'étape de démarrage : une page plein écran dans
+  // l'esthétique du reste de l'app. Depuis les réglages, ça reste une feuille
+  // qui remonte du bas, cohérente avec les autres sélecteurs de cet écran.
+  if (!onClose) {
+    return (
+      <StartupStepPage
+        visible={visible}
+        icon="language"
+        title="Dans quelle langue veux-tu lire ?"
+        subtitle="Les publications traduites par leur auteur s'afficheront directement dans cette langue. Tu pourras en changer à tout moment dans les paramètres."
+      >
+        {rows}
+      </StartupStepPage>
+    );
+  }
+
   return (
     <Modal
       visible={visible}
@@ -60,11 +108,9 @@ export default function ReadingLanguageModal({ visible, onClose }: ReadingLangua
             <View style={styles.icon}>
               <Ionicons name="language" size={22} color={colors.accent} />
             </View>
-            {onClose && (
-              <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityLabel="Fermer">
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityLabel="Fermer">
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.title}>Dans quelle langue veux-tu lire ?</Text>
@@ -74,36 +120,7 @@ export default function ReadingLanguageModal({ visible, onClose }: ReadingLangua
           </Text>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {languages.map((language) => {
-              const active = preferredLanguage === language.code;
-              const busy = saving && pendingCode === language.code;
-              return (
-                <Pressable
-                  key={language.code}
-                  style={({ pressed }) => [
-                    styles.row,
-                    active && styles.rowActive,
-                    pressed && styles.rowPressed,
-                  ]}
-                  onPress={() => select(language.code)}
-                  disabled={saving}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
-                >
-                  <View style={styles.rowCopy}>
-                    <Text style={styles.rowLabel}>{language.label}</Text>
-                    {language.original && (
-                      <Text style={styles.rowHint}>Langue d'origine des publications</Text>
-                    )}
-                  </View>
-                  {busy ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : active ? (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                  ) : null}
-                </Pressable>
-              );
-            })}
+            {rows}
           </ScrollView>
         </View>
       </View>

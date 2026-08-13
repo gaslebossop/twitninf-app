@@ -7,12 +7,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Alert,
   ActivityIndicator,
   Modal,
   Image,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
+// `SafeAreaView` de 'react-native' (au-dessus) ne fait rien sur Android — seule
+// la version de react-native-safe-area-context applique un vrai inset sur les
+// deux plateformes ; c'est elle qu'il faut utiliser ici, pas celle du core.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { BackButton, ScreenSkeleton } from '../components/ui';
@@ -421,6 +426,7 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
 
       {/* ══ TAB: CREATE ══════════════════════════════════════ */}
       {activeTab === 'create' ? (
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={s.page} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
           {/* Cost banner */}
@@ -512,6 +518,7 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
             }
           </TouchableOpacity>
         </ScrollView>
+        </KeyboardAvoidingView>
 
       ) : (
         /* ══ TAB: STATS ══════════════════════════════════════ */

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -10,6 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+// La version de react-native (core) ne pose aucun inset sur Android — seule
+// celle de react-native-safe-area-context protège le haut de l'écran partout.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts, withAlpha , statusBarStyle} from '../theme';
@@ -149,7 +153,8 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {!canCustomize && (
             <View style={styles.lockBanner}>
               <Ionicons name="lock-closed" size={16} color={colors.gold} />
@@ -513,6 +518,7 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
             Palier actuel : {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Gratuit'}
           </Text>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ScreenBackground>
   );
@@ -522,6 +528,7 @@ const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
+  flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {

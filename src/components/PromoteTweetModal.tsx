@@ -10,6 +10,8 @@ import {
   Alert,
   ScrollView,
   Switch,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/api';
@@ -193,7 +195,8 @@ export default function PromoteTweetModal({
           <View style={styles.placeholder} />
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Tweet preview */}
           <View style={styles.tweetPreview}>
             <Text style={styles.tweetPreviewTitle}>Tweet à promouvoir :</Text>
@@ -340,12 +343,16 @@ export default function PromoteTweetModal({
             </Text>
           </TouchableOpacity>
         </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#f7f9fa',

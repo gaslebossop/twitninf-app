@@ -1,22 +1,22 @@
-import { colors, fonts } from '../theme';
-import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
+import { colors, fonts, statusBarStyle } from '../theme';
+import { ScreenBackground, AppHeader, IconButton, ScreenSkeleton } from '../components/ui';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
+  StatusBar,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { MainStackParamList } from '../navigation/MainNavigator';
 import NewEconomyService, { UserCurrency } from '../services/newEconomyService';
 import Avatar from '../components/Avatar';
-import CreateCurrencyModal from '../components/CreateCurrencyModal';
 
 function fmt(value: number, maxDigits = 2) {
   return Number(value ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: maxDigits });
@@ -34,8 +34,6 @@ export default function CommunityCurrenciesScreen() {
   const [pricing, setPricing] = useState<{ creationCostNf: number; initialSupply: number; minBasePriceEur: number; maxBasePriceEur: number; totalValueEur: number | null } | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [notice, setNotice] = useState('');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setError('');
@@ -53,6 +51,15 @@ export default function CommunityCurrenciesScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Rechargée à chaque retour de focus : c'est ainsi que la monnaie qu'on
+  // vient de créer sur `CreateCurrencyScreen` apparaît dans la liste, sans
+  // callback à faire remonter entre les deux écrans.
+  useFocusEffect(
+    useCallback(() => {
+      void load(true);
+    }, [load]),
+  );
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load(true);
@@ -61,24 +68,17 @@ export default function CommunityCurrenciesScreen() {
 
   return (
     <ScreenBackground>
-      <View style={styles.header}>
-        <BackButton navigation={navigation} />
-        <Text style={styles.headerTitle}>Monnaies communautaires</Text>
-        <TouchableOpacity style={styles.iconButton} onPress={() => setCreateOpen(true)}>
-          <Ionicons name="add" size={22} color={colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
+      <AppHeader
+        navigation={navigation}
+        title="Monnaies communautaires"
+        subtitle="Émises par la communauté"
+        right={<IconButton icon="add" onPress={() => navigation.navigate('CreateCurrency')} />}
+      />
 
       <Text style={styles.subtitle}>
         Émettez la vôtre pour {pricing ? fmt(pricing.creationCostNf, 0) : '10 000'} NF. Convertible en NF ou en euros à tout moment.
       </Text>
-
-      {notice !== '' && (
-        <View style={styles.noticeBox}>
-          <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-          <Text style={styles.noticeText}>{notice}</Text>
-        </View>
-      )}
 
       {error !== '' && !currencies ? (
         <View style={styles.centerWrap}>
@@ -123,30 +123,12 @@ export default function CommunityCurrenciesScreen() {
           )}
         />
       )}
-
-      <CreateCurrencyModal
-        visible={createOpen}
-        onClose={() => setCreateOpen(false)}
-        costNf={pricing?.creationCostNf ?? 10000}
-        minPriceEur={pricing?.minBasePriceEur ?? 0.0001}
-        maxPriceEur={pricing?.maxBasePriceEur ?? 1000}
-        totalValueEur={pricing?.totalValueEur ?? null}
-        onCreated={(symbol) => { setNotice(`${symbol} émise avec succès.`); void load(); }}
-      />
     </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4,
-  },
-  iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.overlaySoft },
-  headerTitle: { fontSize: 16, fontWeight: '700', fontFamily: fonts.bold, color: colors.textPrimary },
-  subtitle: { fontSize: 13, color: colors.textSecondary, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, lineHeight: 18 },
-  noticeBox: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 10, padding: 12, borderRadius: 12, backgroundColor: colors.successMuted },
-  noticeText: { flex: 1, fontSize: 13, color: colors.success, fontWeight: '500' },
+  subtitle: { fontSize: 13, color: colors.textSecondary, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, lineHeight: 18 },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 12, paddingTop: 60 },
   errorText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
   retryButton: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.overlayMedium },

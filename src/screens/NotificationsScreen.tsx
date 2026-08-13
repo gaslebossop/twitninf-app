@@ -472,9 +472,6 @@ export default function NotificationsScreen() {
               <Ionicons name="checkmark-done-outline" size={22} color={colors.textPrimary} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="settings-outline" size={22} color={colors.textPrimary} />
-          </TouchableOpacity>
         </View>
       </View>
 

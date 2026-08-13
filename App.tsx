@@ -26,6 +26,7 @@ import { registerForPushNotifications, setupFranceDailyLocalNotifications } from
 import { apiService } from './src/services';
 import ProfileCompletionGate from './src/components/ProfileCompletionGate';
 import ConsentGate from './src/components/ConsentGate';
+import PatchNotesModal from './src/components/PatchNotesModal';
 import FollowOnboardingGate from './src/components/FollowOnboardingGate';
 
 /**
@@ -168,6 +169,10 @@ export default function App() {
                     se pose une fois que les autres questions sont passées. */}
                 <ConsentGate />
                 <FollowOnboardingGate />
+                {/* À la racine, pas dans TweetsScreen : ces étapes sont des
+                    pages plein écran, et montées dans un écran elles
+                    laisseraient dépasser la barre d'onglets. */}
+                <PatchNotesModal />
               </FunctionalEventProvider>
             </EventThemeProvider>
           </EventProvider>

@@ -1,61 +1,76 @@
-import { fonts , colors, statusBarStyle} from '../theme';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-  FlatList,
-  RefreshControl,
-  Dimensions,
-  Animated,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
-  StatusBar,
-  Clipboard,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
+  ActivityIndicator, FlatList, RefreshControl, Modal, KeyboardAvoidingView,
+  Platform, StatusBar, Clipboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiService } from '../services/api';
-import { BackButton, ScreenSkeleton } from '../components/ui';
+import { AppHeader, ScreenBackground, ScreenSkeleton, GlassCard, GlassButton, EmptyState, showActionSheet } from '../components/ui';
 import { toast } from '../components/ui/Toast';
-import { showActionSheet } from '../components/ui/ActionSheet';
-
-const { width } = Dimensions.get('window');
+import { colors, fonts, radius, statusBarStyle } from '../theme';
+import { apiService } from '../services/api';
 
 type TabType = 'analytics' | 'transactions' | 'holders' | 'management';
 type TransactionTypeFilter = 'ALL' | 'TRANSFER' | 'PURCHASE' | 'SYSTEM' | 'REWARD' | 'REFUND';
 
-interface TransactionStats {
-  volume24h: number;
-  count24h: number;
+const TABS: { key: TabType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'analytics', label: 'Stats', icon: 'bar-chart-outline' },
+  { key: 'transactions', label: 'Flux', icon: 'swap-horizontal-outline' },
+  { key: 'holders', label: 'Riches', icon: 'trophy-outline' },
+  { key: 'management', label: 'Gérer', icon: 'construct-outline' },
+];
+
+const TX_FILTERS: { key: TransactionTypeFilter; label: string }[] = [
+  { key: 'ALL', label: 'Tout' },
+  { key: 'TRANSFER', label: 'Transferts' },
+  { key: 'PURCHASE', label: 'Achats' },
+  { key: 'REWARD', label: 'Récompenses' },
+  { key: 'SYSTEM', label: 'Système' },
+  { key: 'REFUND', label: 'Annulations' },
+];
+
+const TX_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  TRANSFER: 'swap-horizontal-outline', PURCHASE: 'cart-outline', REWARD: 'gift-outline',
+  REFUND: 'refresh-outline', SYSTEM: 'cog-outline',
+};
+
+function formatAmount(val: number): string {
+  if (val >= 1_000_000_000) return (val / 1_000_000_000).toFixed(2) + 'B';
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M';
+  return new Intl.NumberFormat('fr-FR').format(Math.floor(val));
+}
+
+function formatPreciseAmount(val: number): string {
+  return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2 }).format(val);
+}
+
+function StatTile({ label, value, sub, tone = 'neutral', wide }: { label: string; value: string; sub?: string; tone?: 'gold' | 'accent' | 'neutral'; wide?: boolean }) {
+  const tintColor = tone === 'gold' ? colors.gold : tone === 'accent' ? colors.accent : colors.textPrimary;
+  return (
+    <GlassCard style={[styles.statTile, wide && styles.statTileWide]}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { color: tintColor }]}>{value}</Text>
+      {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
+    </GlassCard>
+  );
 }
 
 export default function EconomyManagementScreen() {
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
-  
+
   const [activeTab, setActiveTab] = useState<TabType>('analytics');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Data States
+
   const [stats, setStats] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [transactionStats, setTransactionStats] = useState<TransactionStats>({ volume24h: 0, count24h: 0 });
+  const [transactionStats, setTransactionStats] = useState({ volume24h: 0, count24h: 0 });
   const [richList, setRichList] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<TransactionTypeFilter>('ALL');
-  
-  // Modal States
+
   const [modalVisible, setModalVisible] = useState(false);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -65,82 +80,34 @@ export default function EconomyManagementScreen() {
   const [modalReason, setModalReason] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  // Animation (Initialisée à 1 pour éviter l'écran noir)
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-
   const loadData = useCallback(async (filter: TransactionTypeFilter = 'ALL') => {
     setLoading(true);
     try {
       const [statsRes, txRes, richRes] = await Promise.all([
         apiService.getEconomyStats(),
         apiService.getEconomyTransactions({ limit: 50, type: filter }),
-        apiService.getEconomyRichList(30)
+        apiService.getEconomyRichList(30),
       ]);
-
       if (statsRes.success) setStats((statsRes as any).stats);
       if (txRes.success) {
         const txData = txRes as any;
         setTransactions(txData.data);
-        if (txData.stats24h) {
-          setTransactionStats({
-            volume24h: txData.stats24h.volume,
-            count24h: txData.stats24h.count
-          });
-        }
+        if (txData.stats24h) setTransactionStats({ volume24h: txData.stats24h.volume, count24h: txData.stats24h.count });
       }
-      if (richRes.success) setRichList(richRes.data);
-      
-    } catch (error) {
-      console.error('Erreur chargement économie:', error);
+      if (richRes.success) setRichList((richRes as any).data);
+    } catch {
       toast.error('Impossible de charger les données économiques');
     } finally {
       setLoading(false);
-      // Toujours lancer l'animation pour éviter l'écran noir si une requête a échoué
     }
   }, []);
 
-  useEffect(() => {
-    loadData(selectedFilter);
-  }, [loadData, selectedFilter]);
+  useEffect(() => { loadData(selectedFilter); }, [loadData, selectedFilter]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(selectedFilter);
     setRefreshing(false);
-  };
-
-  const handleAction = async () => {
-    if (!selectedUser) return;
-    setProcessing(true);
-    
-    try {
-      let res;
-      if (modalType === 'balance') {
-        res = await apiService.updateWalletBalance(selectedUser.id, parseFloat(modalValue), modalReason || 'Ajustement Gardien');
-      } else if (modalType === 'lock') {
-        res = await apiService.toggleWalletLock(selectedUser.id, !selectedUser.isLocked, modalReason || 'Action Gardien');
-      } else if (modalType === 'transfer') {
-        res = await apiService.manualEconomyTransfer({
-          fromUserId: null, // System by default for now
-          toUserId: selectedUser.id,
-          amount: parseFloat(modalValue),
-          description: modalReason || 'Récompense Gardien'
-        });
-      }
-
-      if (res?.success) {
-        toast.success('Opération effectuée avec succès');
-        setModalVisible(false);
-        loadData();
-        if (activeTab === 'management') handleSearchUsers();
-      } else {
-        toast.error(res?.message || 'L\'opération a échoué');
-      }
-    } catch (e) {
-      toast.error('Une erreur technique est survenue');
-    } finally {
-      setProcessing(false);
-    }
   };
 
   const openActionModal = (user: any, type: 'balance' | 'lock' | 'transfer') => {
@@ -151,27 +118,64 @@ export default function EconomyManagementScreen() {
     setModalVisible(true);
   };
 
+  const handleAction = async () => {
+    if (!selectedUser) return;
+    setProcessing(true);
+    try {
+      let res;
+      if (modalType === 'balance') {
+        res = await apiService.updateWalletBalance(selectedUser.id, parseFloat(modalValue), modalReason || 'Ajustement Gardien');
+      } else if (modalType === 'lock') {
+        res = await apiService.toggleWalletLock(selectedUser.id, !selectedUser.isLocked, modalReason || 'Action Gardien');
+      } else {
+        res = await apiService.manualEconomyTransfer({
+          fromUserId: null,
+          toUserId: selectedUser.id,
+          amount: parseFloat(modalValue),
+          description: modalReason || 'Récompense Gardien',
+        });
+      }
+      if (res?.success) {
+        toast.success('Opération effectuée avec succès');
+        setModalVisible(false);
+        loadData(selectedFilter);
+        if (activeTab === 'management') handleSearchUsers();
+      } else {
+        toast.error(res?.message || 'L\'opération a échoué');
+      }
+    } catch {
+      toast.error('Une erreur technique est survenue');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleSearchUsers = async () => {
     if (!searchQuery.trim()) return;
     setLoading(true);
     const res = await apiService.searchEconomyWallets(searchQuery);
-    if (res.success) {
-      setSearchResults(res.data);
-    }
+    if (res.success) setSearchResults((res as any).data);
     setLoading(false);
   };
 
-  const formatAmount = (val: number) => {
-    if (val >= 1000000000) return (val / 1000000000).toFixed(2) + 'B';
-    if (val >= 1000000) return (val / 1000000).toFixed(2) + 'M';
-    return new Intl.NumberFormat('fr-FR').format(Math.floor(val));
+  const executeDelete = async (id: string, refund: boolean) => {
+    setProcessing(true);
+    try {
+      const res = await apiService.deleteEconomyTransaction(id, refund);
+      if (res.success) {
+        toast.success('La transaction a été traitée.');
+        loadData(selectedFilter);
+      } else {
+        toast.error(res.message || 'Échec de l\'opération');
+      }
+    } catch {
+      toast.error('Erreur technique');
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const formatPreciseAmount = (val: number) => {
-    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2 }).format(val);
-  };
-
-  const handleDeleteTransaction = async (id: string) => {
+  const handleDeleteTransaction = (id: string) => {
     showActionSheet({
       title: 'Supprimer cette transaction',
       message: 'Deux effets très différents — le libellé seul ne suffisait pas à les distinguer.',
@@ -186,7 +190,7 @@ export default function EconomyManagementScreen() {
         {
           label: 'Supprimer et rembourser',
           icon: 'swap-horizontal-outline',
-          hint: 'Les soldes sont ajustés comme si la transaction n’avait pas eu lieu.',
+          hint: 'Les soldes sont ajustés comme si la transaction n\'avait pas eu lieu.',
           destructive: true,
           onPress: () => executeDelete(id, true),
         },
@@ -194,77 +198,43 @@ export default function EconomyManagementScreen() {
     });
   };
 
-  const executeDelete = async (id: string, refund: boolean) => {
-    setProcessing(true);
-    try {
-      const res = await apiService.deleteEconomyTransaction(id, refund);
-      if (res.success) {
-        toast.success('La transaction a été traitée.');
-        loadData();
-      } else {
-        toast.error(res.message);
-      }
-    } catch (e) {
-      toast.error('Erreur technique');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const renderAnalytics = () => (
-    <ScrollView 
+    <ScrollView
       style={styles.tabContent}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f7931e" />}
+      contentContainerStyle={{ paddingBottom: 100 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
     >
-      <View style={styles.statsGrid}>
-        <LinearGradient colors={['#1a1c2c', '#151724']} style={styles.statCardLarge}>
-          <Ionicons name="globe-outline" size={24} color="#f7931e" style={styles.cardIcon} />
-          <Text style={styles.statLabel}>Masse Monétaire (M0)</Text>
-          <Text style={styles.statValueLarge}>{formatAmount(stats?.circulatingSupply || 0)} <Text style={styles.currencySuffix}>TWC</Text></Text>
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressBar, { width: '70%' }]} />
-          </View>
-          <Text style={styles.statSub}>Total injecté dans l'écosystème</Text>
-        </LinearGradient>
-        
-        <View style={styles.statRow}>
-          <LinearGradient colors={['#1a1c2c', '#151724']} style={styles.statCardSmall}>
-            <Text style={styles.statLabel}>Réserve Système</Text>
-            <Text style={[styles.statValue, { color: '#f7931e' }]}>{formatAmount(stats?.systemReserve || 0)}</Text>
-            <Text style={styles.statSub}>Solde TwitNinf</Text>
-          </LinearGradient>
-
-          <LinearGradient colors={['#1a1c2c', '#151724']} style={styles.statCardSmall}>
-            <Text style={styles.statLabel}>Prix Marché</Text>
-            <Text style={[styles.statValue, { color: '#43e97b' }]}>{stats?.currencyPrice?.toFixed(4) || 0} €</Text>
-            <Text style={styles.statSub}>x{stats?.multiplier?.toFixed(2) || 1} multiplicateur</Text>
-          </LinearGradient>
-        </View>
-
-        <LinearGradient colors={['#1a1c2c', '#151724']} style={styles.statCardMedium}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.statLabel}>Solde Réel Total App</Text>
-            <Ionicons name="shield-checkmark" size={20} color="#43e97b" />
-          </View>
-          <Text style={styles.statValueMedium}>{formatAmount(stats?.realTimeTotalBalance || 0)} TWC</Text>
-          <Text style={styles.statSub}>Somme cumulée de tous les portefeuilles</Text>
-        </LinearGradient>
+      <StatTile
+        wide
+        label="Masse monétaire (M0)"
+        value={`${formatAmount(stats?.circulatingSupply || 0)} TWC`}
+        sub="Total injecté dans l'écosystème"
+        tone="gold"
+      />
+      <View style={styles.statRow}>
+        <StatTile label="Réserve système" value={formatAmount(stats?.systemReserve || 0)} sub="Solde TwitNinf" tone="gold" />
+        <StatTile label="Prix marché" value={`${stats?.currencyPrice?.toFixed(4) || 0} €`} sub={`x${stats?.multiplier?.toFixed(2) || 1} multiplicateur`} tone="accent" />
       </View>
+      <StatTile
+        wide
+        label="Solde réel total app"
+        value={`${formatAmount(stats?.realTimeTotalBalance || 0)} TWC`}
+        sub="Somme cumulée de tous les portefeuilles"
+        tone="accent"
+      />
 
-      <BlurView intensity={20} tint="dark" style={styles.infoBox}>
-        <Ionicons name="information-circle" size={24} color="#f7931e" />
+      <View style={styles.infoBox}>
+        <Ionicons name="information-circle-outline" size={20} color={colors.gold} />
         <Text style={styles.infoText}>
-          En tant que <Text style={{fontWeight: 'bold', fontFamily: fonts.bold, color: '#f7931e'}}>Gardien</Text>, votre mission est de maintenir l'inflation sous contrôle. 
-          Un écart trop grand entre M0 et le Solde Réel peut indiquer des duplications frauduleuses.
+          En tant que <Text style={{ fontFamily: fonts.bold, color: colors.gold }}>Gardien</Text>, ta mission est de garder l'inflation sous contrôle.
+          Un écart trop grand entre M0 et le solde réel peut indiquer des duplications frauduleuses.
         </Text>
-      </BlurView>
-      <View style={{ height: 100 }} />
+      </View>
     </ScrollView>
   );
 
   const renderTransactions = () => (
     <View style={{ flex: 1 }}>
-      {/* Stats Header */}
       <View style={styles.fluxStatsBar}>
         <View style={styles.fluxStatItem}>
           <Text style={styles.fluxStatLabel}>Vol. 24h</Text>
@@ -277,105 +247,60 @@ export default function EconomyManagementScreen() {
         </View>
       </View>
 
-      {/* Filters */}
-      <View style={{ height: 50 }}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.filterBar}
-          contentContainerStyle={styles.filterBarContent}
-        >
-          {(['ALL', 'TRANSFER', 'PURCHASE', 'REWARD', 'SYSTEM', 'REFUND'] as TransactionTypeFilter[]).map((f) => (
-            <TouchableOpacity 
-              key={f} 
-              style={[styles.filterChip, selectedFilter === f && styles.filterChipActive]}
-              onPress={() => setSelectedFilter(f)}
-            >
-              <Text style={[styles.filterChipText, selectedFilter === f && styles.filterChipTextActive]}>
-                {f === 'ALL' ? 'Tout' : f === 'TRANSFER' ? 'Transferts' : f === 'PURCHASE' ? 'Achats' : f === 'REWARD' ? 'Récompenses' : f === 'SYSTEM' ? 'Système' : 'Annulations'}
-              </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterRowContent}>
+        {TX_FILTERS.map((f) => {
+          const active = selectedFilter === f.key;
+          return (
+            <TouchableOpacity key={f.key} style={[styles.filterChip, active && styles.filterChipActive]} onPress={() => setSelectedFilter(f.key)} activeOpacity={0.8}>
+              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{f.label}</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+          );
+        })}
+      </ScrollView>
 
       <FlatList
         data={transactions}
         keyExtractor={(item) => item.id}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f7931e" />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="receipt-outline" size={64} color="#333" />
-            <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
-          </View>
-        }
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
+        ListEmptyComponent={<EmptyState icon="receipt-outline" title="Aucune transaction" message="Rien à afficher pour ce filtre." />}
         renderItem={({ item }) => {
           const isPositive = item.type === 'PURCHASE' || item.type === 'REWARD';
-          const typeIcon = 
-            item.type === 'TRANSFER' ? 'swap-horizontal-outline' :
-            item.type === 'PURCHASE' ? 'cart-outline' :
-            item.type === 'REWARD' ? 'gift-outline' :
-            item.type === 'REFUND' ? 'refresh-outline' : 'cog-outline';
-          
           return (
-            <TouchableOpacity 
-              style={styles.transactionCardNew}
-              onPress={() => {
-                setSelectedTransaction(item);
-                setDetailsModalVisible(true);
-              }}
-            >
-              <LinearGradient 
-                colors={['#1a1c2c', '#151724']} 
-                style={styles.txGradient}
-                start={{x: 0, y: 0}} 
-                end={{x: 1, y: 1}}
-              >
-                <View style={styles.txHeaderNew}>
-                  <View style={[styles.txIconContainer, { backgroundColor: isPositive ? 'rgba(67, 233, 123, 0.1)' : 'rgba(247, 147, 30, 0.1)' }]}>
-                    <Ionicons name={typeIcon} size={18} color={isPositive ? '#43e97b' : '#f7931e'} />
-                  </View>
-                  <View style={styles.txMainInfoNew}>
-                    <Text style={styles.txTypeTitle}>{item.type === 'TRANSFER' ? 'TRANSFERT FORCE' : item.type}</Text>
-                    <Text style={styles.txDateNew}>{new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} • {new Date(item.createdAt).toLocaleDateString()}</Text>
-                  </View>
-                  <View style={styles.txAmountContainerNew}>
-                    <Text style={[styles.txAmountNew, { color: isPositive ? '#43e97b' : (item.amount > 100000 ? '#ff4757' : '#fff') }]}>
-                      {item.fromUserId === null ? '+' : ''}{formatPreciseAmount(item.amount)}
-                    </Text>
-                  </View>
+            <TouchableOpacity style={styles.txCard} onPress={() => { setSelectedTransaction(item); setDetailsModalVisible(true); }} activeOpacity={0.85}>
+              <View style={styles.txTopRow}>
+                <View style={[styles.txIcon, { backgroundColor: isPositive ? colors.successMuted : 'rgba(255,210,77,0.10)' }]}>
+                  <Ionicons name={TX_ICON[item.type] || 'cog-outline'} size={17} color={isPositive ? colors.success : colors.gold} />
                 </View>
-
-                <View style={styles.txUsersRowNew}>
-                  <Text style={styles.txUserNameNew} numberOfLines={1}>{item.fromUser?.username || 'SYSTEM'}</Text>
-                  <Ionicons name="arrow-forward" size={12} color="#444" style={{ marginHorizontal: 8 }} />
-                  <Text style={styles.txUserNameNew} numberOfLines={1}>{item.toUser?.username || 'INCONNU'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.txType}>{item.type === 'TRANSFER' ? 'Transfert forcé' : item.type}</Text>
+                  <Text style={styles.txDate}>
+                    {new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {new Date(item.createdAt).toLocaleDateString('fr-FR')}
+                  </Text>
                 </View>
+                <Text style={[styles.txAmount, { color: isPositive ? colors.success : item.amount > 100000 ? colors.red : colors.textPrimary }]}>
+                  {item.fromUserId === null ? '+' : ''}{formatPreciseAmount(item.amount)}
+                </Text>
+              </View>
 
-                {item.description && (
-                  <View style={styles.txDescriptionBoxNew}>
-                    <Text style={styles.txDescriptionTextNew} numberOfLines={1}>"{item.description}"</Text>
-                  </View>
-                )}
+              <View style={styles.txUsersRow}>
+                <Text style={styles.txUserName} numberOfLines={1}>{item.fromUser?.username || 'SYSTÈME'}</Text>
+                <Ionicons name="arrow-forward" size={12} color={colors.textMuted} style={{ marginHorizontal: 6 }} />
+                <Text style={styles.txUserName} numberOfLines={1}>{item.toUser?.username || 'Inconnu'}</Text>
+              </View>
 
-                <View style={styles.txFooterNew}>
-                  <View style={styles.txStatusBadgeNew}>
-                    <View style={[styles.statusDotNew, { backgroundColor: item.status === 'COMPLETED' ? '#43e97b' : '#f7931e' }]} />
-                    <Text style={styles.statusTextNew}>{item.status}</Text>
-                  </View>
-                  <TouchableOpacity 
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleDeleteTransaction(item.id);
-                    }}
-                    style={styles.txActionBtnNew}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#ff4757" />
-                  </TouchableOpacity>
+              {item.description ? <Text style={styles.txDescription} numberOfLines={1}>« {item.description} »</Text> : null}
+
+              <View style={styles.txFooter}>
+                <View style={styles.txStatusBadge}>
+                  <View style={[styles.statusDot, { backgroundColor: item.status === 'COMPLETED' ? colors.success : colors.gold }]} />
+                  <Text style={styles.txStatusText}>{item.status}</Text>
                 </View>
-              </LinearGradient>
+                <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleDeleteTransaction(item.id); }} style={styles.txDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="trash-outline" size={15} color={colors.red} />
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           );
         }}
@@ -387,262 +312,116 @@ export default function EconomyManagementScreen() {
     <FlatList
       data={richList}
       keyExtractor={(item) => item.userId}
-      style={[styles.tabContent, { flex: 1 }]}
-      contentContainerStyle={{ paddingBottom: 120 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f7931e" />}
+      style={styles.tabContent}
+      contentContainerStyle={{ paddingBottom: 100 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
       renderItem={({ item, index }) => (
-        <LinearGradient 
-          colors={[colors.overlaySoft, colors.overlaySoft]} 
-          style={styles.holderItem}
-        >
-          <View style={styles.rankContainer}>
+        <GlassCard style={styles.holderCard} contentStyle={styles.holderCardContent}>
+          <View style={styles.rankBox}>
             {index < 3 ? (
-              <Text style={styles.rankBadge}>{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</Text>
+              <Text style={styles.rankEmoji}>{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</Text>
             ) : (
-              <Text style={styles.rankText}>#{index + 1}</Text>
+              <Text style={styles.rankNumber}>#{index + 1}</Text>
             )}
           </View>
-          
-          <View style={styles.holderInfo}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.holderName} numberOfLines={1}>{item.username}</Text>
-            <View style={styles.holderMeta}>
-              {item.isVerified && <Ionicons name="checkmark-circle" size={12} color="#4F7CFF" />}
-              <Text style={styles.holderShare}>{( (item.balance / (stats?.circulatingSupply || 1)) * 100 ).toFixed(2)}% de l'éco</Text>
-            </View>
+            <Text style={styles.holderShare}>
+              {((item.balance / (stats?.circulatingSupply || 1)) * 100).toFixed(2)}% de l'économie
+            </Text>
           </View>
-
-          <View style={styles.holderValue}>
+          <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.holderBalance}>{formatPreciseAmount(item.balance)}</Text>
             <Text style={styles.holderCurrency}>TWC</Text>
           </View>
-        </LinearGradient>
+        </GlassCard>
       )}
     />
   );
 
   const renderManagement = () => (
     <ScrollView style={styles.tabContent} contentContainerStyle={{ paddingBottom: 100 }}>
-      {/* Recherche Pro */}
-      <View style={styles.managementCard}>
-        <Text style={styles.cardTitle}>Gestion des Comptes</Text>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchBar}
-            placeholder="Pseudo ou ID utilisateur..."
-            placeholderTextColor="#9BA1AC"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearchUsers}
-          />
-          <TouchableOpacity style={styles.searchExecute} onPress={handleSearchUsers}>
-            <Ionicons name="search" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        {searchResults.map(user => (
-          <View key={user.id} style={styles.userResultCard}>
-            <View style={styles.userMain}>
-              <View style={styles.userAvatar}>
-                <Text style={styles.avatarInitial}>{user.username[0].toUpperCase()}</Text>
-              </View>
-              <View style={styles.userInfo}>
-                <Text style={styles.userName}>{user.username}</Text>
-                <Text style={styles.userBalance}>{formatPreciseAmount(user.balance)} TWC</Text>
-              </View>
-              {user.isLocked && <View style={styles.frozenBadge}><Text style={styles.frozenText}>GELÉ</Text></View>}
-            </View>
-            
-            <View style={styles.userActionsRow}>
-              <TouchableOpacity 
-                style={[styles.miniActionBtn, { backgroundColor: '#43e97b' }]}
-                onPress={() => openActionModal(user, 'transfer')}
-              >
-                <Ionicons name="gift-outline" size={16} color="#000" />
-                <Text style={styles.miniActionTxt}>Donner</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.miniActionBtn, { backgroundColor: '#f7931e' }]}
-                onPress={() => openActionModal(user, 'balance')}
-              >
-                <Ionicons name="create-outline" size={16} color="#000" />
-                <Text style={styles.miniActionTxt}>Éditer</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.miniActionBtn, { backgroundColor: user.isLocked ? '#9BA1AC' : '#ff4757' }]}
-                onPress={() => openActionModal(user, 'lock')}
-              >
-                <Ionicons name={user.isLocked ? "lock-open-outline" : "snow-outline"} size={16} color="#fff" />
-                <Text style={[styles.miniActionTxt, { color: '#fff' }]}>{user.isLocked ? 'Dégeler' : 'Geler'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
+      <Text style={styles.sectionTitle}>Gestion des comptes</Text>
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Pseudo ou ID utilisateur..."
+          placeholderTextColor={colors.textMuted}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          onSubmitEditing={handleSearchUsers}
+        />
+        <TouchableOpacity style={styles.searchBtn} onPress={handleSearchUsers} activeOpacity={0.85}>
+          <Ionicons name="search" size={19} color={colors.onAccent} />
+        </TouchableOpacity>
       </View>
 
+      {searchResults.map((u) => (
+        <GlassCard key={u.id} style={styles.resultCard}>
+          <View style={styles.resultTopRow}>
+            <View style={styles.resultAvatar}>
+              <Text style={styles.resultAvatarInitial}>{u.username[0]?.toUpperCase()}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.resultName}>{u.username}</Text>
+              <Text style={styles.resultBalance}>{formatPreciseAmount(u.balance)} TWC</Text>
+            </View>
+            {u.isLocked && (
+              <View style={styles.frozenBadge}><Text style={styles.frozenText}>GELÉ</Text></View>
+            )}
+          </View>
+
+          <View style={styles.resultActionsRow}>
+            <GlassButton label="Donner" icon="gift-outline" variant="secondary" style={{ flex: 1 }} onPress={() => openActionModal(u, 'transfer')} />
+            <GlassButton label="Éditer" icon="create-outline" variant="secondary" style={{ flex: 1 }} onPress={() => openActionModal(u, 'balance')} />
+            <GlassButton
+              label={u.isLocked ? 'Dégeler' : 'Geler'}
+              icon={u.isLocked ? 'lock-open-outline' : 'snow-outline'}
+              variant="secondary"
+              style={{ flex: 1 }}
+              onPress={() => openActionModal(u, 'lock')}
+            />
+          </View>
+        </GlassCard>
+      ))}
+
       <View style={styles.cautionBox}>
-        <Ionicons name="warning-outline" size={24} color="#ff4757" />
-        <View style={styles.cautionContent}>
-          <Text style={styles.cautionTitle}>Actions Irréversibles</Text>
-          <Text style={styles.cautionText}>Toute modification de solde impacte la masse monétaire. Soyez vigilant.</Text>
+        <Ionicons name="warning-outline" size={20} color={colors.red} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cautionTitle}>Actions irréversibles</Text>
+          <Text style={styles.cautionText}>Toute modification de solde impacte la masse monétaire. Sois vigilant.</Text>
         </View>
       </View>
     </ScrollView>
   );
 
-  const renderDetailsModal = () => {
-    if (!selectedTransaction) return null;
-
-    return (
-      <Modal
-        visible={detailsModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setDetailsModalVisible(false)}
-      >
-        <BlurView intensity={80} tint="dark" style={styles.modalOverlay}>
-          <View style={styles.detailsContainer}>
-            <View style={styles.detailsHeader}>
-              <View style={styles.detailsIconCircle}>
-                <Ionicons name="receipt" size={32} color="#f7931e" />
-              </View>
-              <Text style={styles.detailsTitle}>Détails Transaction</Text>
-              <Text style={styles.detailsId}>ID: {selectedTransaction.id.substring(0, 18)}...</Text>
-            </View>
-
-            <ScrollView style={styles.detailsContent}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Type</Text>
-                <Text style={styles.detailValue}>{selectedTransaction.type}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Statut</Text>
-                <View style={[styles.statusBadgeLarge, { backgroundColor: selectedTransaction.status === 'COMPLETED' ? 'rgba(67, 233, 123, 0.1)' : 'rgba(247, 147, 30, 0.1)' }]}>
-                  <Text style={[styles.statusTextLarge, { color: selectedTransaction.status === 'COMPLETED' ? '#43e97b' : '#f7931e' }]}>{selectedTransaction.status}</Text>
-                </View>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Montant</Text>
-                <Text style={styles.detailValueLarge}>{formatPreciseAmount(selectedTransaction.amount)} TWC</Text>
-              </View>
-
-              <View style={styles.detailsDivider} />
-
-              <View style={styles.detailSection}>
-                <Text style={styles.sectionTitle}>Flux Monétaire</Text>
-                <View style={styles.actorCard}>
-                  <View style={styles.actorInfo}>
-                    <Text style={styles.actorLabel}>EXPÉDITEUR</Text>
-                    <Text style={styles.actorName}>{selectedTransaction.fromUser?.username || 'SYSTÈME'}</Text>
-                    <Text style={styles.actorId}>{selectedTransaction.fromUserId || 'N/A'}</Text>
-                  </View>
-                </View>
-                <View style={styles.detailsArrow}>
-                  <Ionicons name="arrow-down" size={20} color="#444" />
-                </View>
-                <View style={styles.actorCard}>
-                  <View style={styles.actorInfo}>
-                    <Text style={styles.actorLabel}>DESTINATAIRE</Text>
-                    <Text style={styles.actorName}>{selectedTransaction.toUser?.username || 'Utilisateur'}</Text>
-                    <Text style={styles.actorId}>{selectedTransaction.toUserId}</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.detailsDivider} />
-
-              <View style={styles.detailSection}>
-                <Text style={styles.sectionTitle}>Description & Message</Text>
-                <View style={styles.descriptionCard}>
-                  <Text style={styles.descriptionTextFull}>{selectedTransaction.description || 'Aucune description fournie.'}</Text>
-                </View>
-              </View>
-
-              <View style={styles.detailSection}>
-                <Text style={styles.sectionTitle}>Preuve (Hash)</Text>
-                <TouchableOpacity 
-                  style={styles.hashCard}
-                  onPress={() => {
-                    Clipboard.setString(selectedTransaction.transactionHash);
-                    toast.success('Copié', {
-                      description: 'Le hash a été copié',
-                    });
-                  }}
-                >
-                  <Text style={styles.hashText}>{selectedTransaction.transactionHash}</Text>
-                  <Ionicons name="copy-outline" size={16} color="#f7931e" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Horodatage</Text>
-                <Text style={styles.detailValue}>{new Date(selectedTransaction.createdAt).toLocaleString('fr-FR')}</Text>
-              </View>
-              
-              <View style={{ height: 40 }} />
-            </ScrollView>
-
-            <TouchableOpacity 
-              style={styles.closeDetailsBtn}
-              onPress={() => setDetailsModalVisible(false)}
-            >
-              <Text style={styles.closeDetailsText}>Fermer</Text>
-            </TouchableOpacity>
-          </View>
-        </BlurView>
-      </Modal>
-    );
-  };
-
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle={statusBarStyle()} />
-      <LinearGradient colors={['#0a0b14', '#121422']} style={StyleSheet.absoluteFill} />
-      
-      {/* Dynamic Header */}
-      <View style={styles.header}>
-        <BackButton navigation={navigation} />
-        <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Economy Admin</Text>
-          <View style={styles.badgeRow}>
-            <View style={styles.statusDot} />
-            <Text style={styles.headerSub}>NOEUD RÉSEAU ACTIF</Text>
-          </View>
-        </View>
-        <TouchableOpacity onPress={() => loadData(selectedFilter)} style={styles.refreshCircle}>
-          <Ionicons name="sync-outline" size={20} color="#f7931e" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Modern Tabs */}
-      <View style={styles.tabContainer}>
-        {(['analytics', 'transactions', 'holders', 'management'] as TabType[]).map(tab => (
-          <TouchableOpacity 
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
-          >
-            <Ionicons 
-              name={
-                tab === 'analytics' ? 'bar-chart' : 
-                tab === 'transactions' ? 'swap-horizontal' : 
-                tab === 'holders' ? 'list' : 'construct'
-              } 
-              size={18} 
-              color={activeTab === tab ? '#f7931e' : '#9BA1AC'} 
-            />
-            {activeTab === tab && <Text style={styles.tabTextActive}>{
-              tab === 'analytics' ? 'Stats' : 
-              tab === 'transactions' ? 'Flux' : 
-              tab === 'holders' ? 'Riches' : 'Gérer'
-            }</Text>}
+    <ScreenBackground>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+      <AppHeader
+        navigation={navigation}
+        title="Économie"
+        subtitle="Nœud réseau actif"
+        right={(
+          <TouchableOpacity onPress={() => loadData(selectedFilter)} style={styles.refreshBtn}>
+            <Ionicons name="sync-outline" size={19} color={colors.gold} />
           </TouchableOpacity>
-        ))}
+        )}
+      />
+
+      <View style={styles.tabBar}>
+        {TABS.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <TouchableOpacity key={tab.key} onPress={() => setActiveTab(tab.key)} style={[styles.tabBtn, active && styles.tabBtnActive]} activeOpacity={0.85}>
+              <Ionicons name={tab.icon} size={16} color={active ? colors.gold : colors.textMuted} />
+              {active && <Text style={styles.tabBtnText}>{tab.label}</Text>}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* Main Content Area */}
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+      <View style={{ flex: 1 }}>
         {loading && !refreshing ? (
           <ScreenSkeleton variant="list" />
         ) : (
@@ -653,910 +432,210 @@ export default function EconomyManagementScreen() {
             {activeTab === 'management' && renderManagement()}
           </>
         )}
-      </Animated.View>
+      </View>
 
-      {/* Custom Action Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalOverlay}
-        >
-          <BlurView intensity={80} tint="dark" style={styles.modalBlur}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {modalType === 'balance' ? 'Ajuster le Solde' : 
-                   modalType === 'lock' ? (selectedUser?.isLocked ? 'Dégeler le Compte' : 'Geler le Compte') : 
-                   'Donner des TWC'}
-                </Text>
-                <TouchableOpacity onPress={() => setModalVisible(false)}>
-                  <Ionicons name="close-circle" size={28} color="#9BA1AC" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.modalTarget}>Utilisateur : <Text style={{color: '#f7931e'}}>{selectedUser?.username}</Text></Text>
-              
-              {modalType !== 'lock' && (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.modalLabel}>{modalType === 'balance' ? 'Nouveau Solde' : 'Montant à envoyer'}</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    keyboardType="numeric"
-                    value={modalValue}
-                    onChangeText={setModalValue}
-                    placeholder="0.00"
-                    placeholderTextColor="#444"
-                  />
-                </View>
-              )}
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.modalLabel}>Raison de l'action (interne)</Text>
-                <TextInput
-                  style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
-                  multiline
-                  numberOfLines={3}
-                  value={modalReason}
-                  onChangeText={setModalReason}
-                  placeholder="Ex: Correction bug, Récompense concours..."
-                  placeholderTextColor="#444"
-                />
-              </View>
-
-              <TouchableOpacity 
-                style={[styles.confirmBtn, { backgroundColor: modalType === 'lock' && !selectedUser?.isLocked ? '#ff4757' : '#f7931e' }]} 
-                onPress={handleAction}
-                disabled={processing}
-              >
-                {processing ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.confirmBtnText}>
-                    {modalType === 'balance' ? 'Mettre à jour' : 
-                     modalType === 'lock' ? (selectedUser?.isLocked ? 'Confirmer le dégel' : 'Confirmer le gel') : 
-                     'Envoyer les Fonds'}
-                  </Text>
-                )}
+      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>
+                {modalType === 'balance' ? 'Ajuster le solde' : modalType === 'lock' ? (selectedUser?.isLocked ? 'Dégeler le compte' : 'Geler le compte') : 'Donner des TWC'}
+              </Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
-          </BlurView>
+            <Text style={styles.modalTarget}>Utilisateur : <Text style={{ color: colors.gold, fontFamily: fonts.semibold }}>@{selectedUser?.username}</Text></Text>
+
+            {modalType !== 'lock' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{modalType === 'balance' ? 'Nouveau solde' : 'Montant à envoyer'}</Text>
+                <TextInput style={styles.modalInput} keyboardType="numeric" value={modalValue} onChangeText={setModalValue} placeholder="0.00" placeholderTextColor={colors.textMuted} />
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Raison de l'action (interne)</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalInputMultiline]}
+                multiline
+                value={modalReason}
+                onChangeText={setModalReason}
+                placeholder="Ex : correction bug, récompense concours..."
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+
+            <GlassButton
+              label={modalType === 'balance' ? 'Mettre à jour' : modalType === 'lock' ? (selectedUser?.isLocked ? 'Confirmer le dégel' : 'Confirmer le gel') : 'Envoyer les fonds'}
+              onPress={handleAction}
+              loading={processing}
+              fullWidth
+            />
+          </View>
         </KeyboardAvoidingView>
       </Modal>
-      {renderDetailsModal()}
-    </View>
-  );
-};
 
+      {selectedTransaction && (
+        <Modal visible={detailsModalVisible} transparent animationType="slide" onRequestClose={() => setDetailsModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.detailsSheet}>
+              <View style={styles.detailsHeader}>
+                <View style={styles.detailsIcon}><Ionicons name="receipt-outline" size={26} color={colors.gold} /></View>
+                <Text style={styles.detailsTitle}>Détails transaction</Text>
+                <Text style={styles.detailsId}>{selectedTransaction.id}</Text>
+              </View>
+
+              <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Type</Text><Text style={styles.detailValue}>{selectedTransaction.type}</Text></View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Statut</Text>
+                  <View style={[styles.statusPill, { backgroundColor: selectedTransaction.status === 'COMPLETED' ? colors.successMuted : 'rgba(255,210,77,0.10)' }]}>
+                    <Text style={[styles.statusPillText, { color: selectedTransaction.status === 'COMPLETED' ? colors.success : colors.gold }]}>{selectedTransaction.status}</Text>
+                  </View>
+                </View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Montant</Text><Text style={styles.detailValueLarge}>{formatPreciseAmount(selectedTransaction.amount)} TWC</Text></View>
+
+                <Text style={styles.detailSectionTitle}>Flux monétaire</Text>
+                <View style={styles.flowCard}>
+                  <Text style={styles.flowLabel}>Expéditeur</Text>
+                  <Text style={styles.flowName}>{selectedTransaction.fromUser?.username || 'Système'}</Text>
+                </View>
+                <View style={{ alignItems: 'center', marginVertical: 4 }}><Ionicons name="arrow-down" size={16} color={colors.textMuted} /></View>
+                <View style={styles.flowCard}>
+                  <Text style={styles.flowLabel}>Destinataire</Text>
+                  <Text style={styles.flowName}>{selectedTransaction.toUser?.username || 'Utilisateur'}</Text>
+                </View>
+
+                {selectedTransaction.description ? (
+                  <>
+                    <Text style={styles.detailSectionTitle}>Description</Text>
+                    <View style={styles.descriptionCard}><Text style={styles.descriptionText}>{selectedTransaction.description}</Text></View>
+                  </>
+                ) : null}
+
+                {selectedTransaction.transactionHash ? (
+                  <>
+                    <Text style={styles.detailSectionTitle}>Preuve (hash)</Text>
+                    <TouchableOpacity
+                      style={styles.hashCard}
+                      onPress={() => { Clipboard.setString(selectedTransaction.transactionHash); toast.success('Copié', { description: 'Le hash a été copié' }); }}
+                    >
+                      <Text style={styles.hashText} numberOfLines={1}>{selectedTransaction.transactionHash}</Text>
+                      <Ionicons name="copy-outline" size={15} color={colors.gold} />
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Horodatage</Text>
+                  <Text style={styles.detailValue}>{new Date(selectedTransaction.createdAt).toLocaleString('fr-FR')}</Text>
+                </View>
+              </ScrollView>
+
+              <GlassButton label="Fermer" variant="secondary" fullWidth onPress={() => setDetailsModalVisible(false)} />
+            </View>
+          </View>
+        </Modal>
+      )}
+    </ScreenBackground>
+  );
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0b14',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  backCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.overlayMedium,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitles: {
-    marginLeft: 15,
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800', fontFamily: fonts.bold,
-    color: '#fff',
-    letterSpacing: -0.5,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#43e97b',
-    marginRight: 6,
-    shadowColor: '#43e97b',
-    shadowRadius: 4,
-    shadowOpacity: 0.8,
-  },
-  headerSub: {
-    fontSize: 10,
-    color: '#9BA1AC',
-    fontWeight: '700', fontFamily: fonts.bold,
-    letterSpacing: 1,
-  },
-  refreshCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(247, 147, 30, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.overlaySoft,
-    marginHorizontal: 20,
-    marginTop: 10,
-    borderRadius: 16,
-    padding: 4,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-  },
-  tabButtonActive: {
-    backgroundColor: 'rgba(247, 147, 30, 0.1)',
-  },
-  tabTextActive: {
-    color: '#f7931e',
-    fontSize: 12,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    marginLeft: 6,
-  },
-  content: {
-    flex: 1,
-  },
-  tabContent: {
-    padding: 20,
-  },
-  statsGrid: {
-    gap: 12,
-  },
-  statCardLarge: {
-    padding: 24,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  cardIcon: {
-    position: 'absolute',
-    right: 20,
-    top: 20,
-    opacity: 0.2,
-  },
-  statLabel: {
-    color: '#9BA1AC',
-    fontSize: 13,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    marginBottom: 8,
-  },
-  statValueLarge: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '900', fontFamily: fonts.bold,
-    letterSpacing: -1,
-  },
-  currencySuffix: {
-    fontSize: 14,
-    color: '#9BA1AC',
-    fontWeight: '400', fontFamily: fonts.regular,
-  },
-  progressContainer: {
-    height: 4,
-    backgroundColor: colors.overlayMedium,
-    borderRadius: 2,
-    marginTop: 15,
-    marginBottom: 5,
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#f7931e',
-    borderRadius: 2,
-  },
-  statSub: {
-    color: '#9BA1AC',
-    fontSize: 11,
-  },
-  statRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statCardSmall: {
-    flex: 1,
-    padding: 18,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '800', fontFamily: fonts.bold,
-    marginBottom: 4,
-  },
-  statCardMedium: {
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  statValueMedium: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '800', fontFamily: fonts.bold,
-  },
+  refreshBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: 'rgba(255,210,77,0.2)', alignItems: 'center', justifyContent: 'center' },
+  tabBar: { flexDirection: 'row', backgroundColor: colors.overlaySoft, marginHorizontal: 16, marginTop: 6, marginBottom: 6, borderRadius: radius.md, padding: 4 },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: radius.sm },
+  tabBtnActive: { backgroundColor: 'rgba(255,210,77,0.10)' },
+  tabBtnText: { fontSize: 12, fontFamily: fonts.bold, color: colors.gold },
+  tabContent: { paddingHorizontal: 16, paddingTop: 4 },
+  statTile: { padding: 16, marginBottom: 10, flex: 1 },
+  statTileWide: { flex: undefined },
+  statLabel: { fontSize: 12, fontFamily: fonts.semibold, color: colors.textMuted, marginBottom: 6 },
+  statValue: { fontSize: 22, fontFamily: fonts.bold, letterSpacing: -0.5 },
+  statSub: { fontSize: 11, color: colors.textMuted, marginTop: 6 },
+  statRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   infoBox: {
-    marginTop: 20,
-    padding: 16,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(247, 147, 30, 0.1)',
-    overflow: 'hidden',
-  },
-  infoText: {
-    color: '#cbd5e0',
-    fontSize: 12,
-    marginLeft: 12,
-    flex: 1,
-    lineHeight: 18,
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    backgroundColor: colors.overlaySoft,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-    overflow: 'hidden',
-  },
-  txIndicator: {
-    width: 4,
-    backgroundColor: '#f7931e',
-    paddingVertical: 10,
-  },
-  txMain: {
-    flex: 1,
-    padding: 12,
-  },
-  txHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  txType: {
-    color: '#9BA1AC',
-    fontSize: 9,
-    fontWeight: '900', fontFamily: fonts.bold,
-    letterSpacing: 1,
-  },
-  txDate: {
-    color: '#555',
-    fontSize: 10,
-  },
-  txFlow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  txUserText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  txFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  txAmount: {
-    color: '#43e97b',
-    fontSize: 16,
-    fontWeight: '800', fontFamily: fonts.bold,
-  },
-  txActionBtn: {
-    padding: 4,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    marginTop: 60,
-  },
-  emptyText: {
-    color: '#1a1c2c',
-    fontSize: 14,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    marginTop: 10,
-  },
-  holderItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.overlaySoft,
-  },
-  rankContainer: {
-    width: 40,
-    alignItems: 'center',
-  },
-  rankBadge: {
-    fontSize: 22,
-  },
-  rankText: {
-    color: '#444',
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    fontSize: 14,
-  },
-  holderInfo: {
-    flex: 1,
-    paddingHorizontal: 12,
-  },
-  holderName: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700', fontFamily: fonts.bold,
-    marginBottom: 2,
-  },
-  holderMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  holderShare: {
-    color: '#9BA1AC',
-    fontSize: 10,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  holderValue: {
-    alignItems: 'flex-end',
-  },
-  holderBalance: {
-    color: '#43e97b',
-    fontSize: 16,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  holderCurrency: {
-    fontSize: 10,
-    color: '#444',
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  managementCard: {
-    backgroundColor: colors.overlaySoft,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  cardTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '800', fontFamily: fonts.bold,
-    marginBottom: 15,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  searchBar: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    color: '#fff',
-    borderWidth: 1,
-    borderColor: '#1a1c2c',
-  },
-  searchExecute: {
-    backgroundColor: '#f7931e',
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  userResultCard: {
-    backgroundColor: '#0a0b14',
-    padding: 15,
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#1a1c2c',
-  },
-  userMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1a1c2c',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarInitial: {
-    color: '#f7931e',
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  userInfo: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  userName: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700', fontFamily: fonts.bold,
-  },
-  userBalance: {
-    color: '#9BA1AC',
-    fontSize: 12,
-  },
-  frozenBadge: {
-    backgroundColor: 'rgba(255, 71, 87, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.3)',
-  },
-  frozenText: {
-    color: '#ff4757',
-    fontSize: 9,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  userActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  miniActionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 6,
-  },
-  miniActionTxt: {
-    fontSize: 11,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    color: '#000',
-  },
-  cautionBox: {
-    marginTop: 20,
-    backgroundColor: 'rgba(255, 71, 87, 0.05)',
-    padding: 16,
-    borderRadius: 16,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.1)',
-  },
-  cautionContent: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  cautionTitle: {
-    color: '#ff4757',
-    fontSize: 13,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    marginBottom: 2,
-  },
-  cautionText: {
-    color: '#9BA1AC',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  loadingOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#9BA1AC',
-    marginTop: 10,
-    fontSize: 12,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalBlur: {
-    borderRadius: 32,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  modalContent: {
-    padding: 24,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  modalTarget: {
-    color: '#9BA1AC',
-    fontSize: 14,
-    marginBottom: 25,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  modalLabel: {
-    color: '#9BA1AC',
-    fontSize: 12,
-    fontWeight: '700', fontFamily: fonts.bold,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  modalInput: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 16,
-    padding: 16,
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    borderWidth: 1,
-    borderColor: '#1a1c2c',
-  },
-  confirmBtn: {
-    paddingVertical: 18,
-    borderRadius: 20,
-    alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-  },
-  confirmBtnText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  // New Flux Styles
-  fluxStatsBar: {
-    flexDirection: 'row',
-    backgroundColor: '#0a0b14',
-    margin: 16,
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  fluxStatItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  fluxStatDivider: {
-    width: 1,
-    height: '60%',
-    backgroundColor: colors.overlayMedium,
-    alignSelf: 'center',
-  },
-  fluxStatLabel: {
-    color: '#9BA1AC',
-    fontSize: 10,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  fluxStatValue: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  filterBar: {
-    paddingHorizontal: 16,
-    marginBottom: 10,
-  },
-  filterBarContent: {
-    gap: 8,
-    paddingRight: 32,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#0a0b14',
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  filterChipActive: {
-    backgroundColor: '#f7931e',
-    borderColor: '#f7931e',
-  },
-  filterChipText: {
-    color: '#9BA1AC',
-    fontSize: 12,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  filterChipTextActive: {
-    color: '#000',
-  },
-  transactionCardNew: {
-    marginBottom: 12,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.overlaySoft,
-  },
-  txGradient: {
-    padding: 16,
-  },
-  txHeaderNew: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  txIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  txMainInfoNew: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  txTypeTitle: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  txDateNew: {
-    color: '#555',
-    fontSize: 10,
-  },
-  txAmountContainerNew: {
-    alignItems: 'flex-end',
-  },
-  txAmountNew: {
-    fontSize: 16,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  txUsersRowNew: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    padding: 8,
-    borderRadius: 10,
-    marginBottom: 8,
-  },
-  txUserNameNew: {
-    color: '#9BA1AC',
-    fontSize: 12,
-    fontWeight: '600', fontFamily: fonts.semibold,
-    flex: 1,
-  },
-  txDescriptionBoxNew: {
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  txDescriptionTextNew: {
-    color: '#555',
-    fontSize: 11,
-    fontStyle: 'italic',
-  },
-  txFooterNew: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  txStatusBadgeNew: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.overlaySoft,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusDotNew: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusTextNew: {
-    color: '#9BA1AC',
-    fontSize: 10,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  txActionBtnNew: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 71, 87, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Details Modal Styles
-  detailsContainer: {
-    backgroundColor: '#0a0b14',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 24,
-    maxHeight: '90%',
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  detailsHeader: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  detailsIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(247, 147, 30, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  detailsTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  detailsId: {
-    color: '#444',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  detailsContent: {
-    marginBottom: 20,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  detailLabel: {
-    color: '#9BA1AC',
-    fontSize: 13,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600', fontFamily: fonts.semibold,
-  },
-  detailValueLarge: {
-    color: '#43e97b',
-    fontSize: 20,
-    fontWeight: '900', fontFamily: fonts.bold,
-  },
-  statusBadgeLarge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  statusTextLarge: {
-    fontSize: 11,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  detailsDivider: {
-    height: 1,
-    backgroundColor: colors.overlayMedium,
-    marginVertical: 16,
-  },
-  detailSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    color: '#444',
-    fontSize: 11,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    marginBottom: 12,
-    letterSpacing: 1,
-  },
-  actorCard: {
-    backgroundColor: colors.overlaySoft,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.overlayMedium,
-  },
-  actorInfo: {
-    marginLeft: 0,
-  },
-  actorLabel: {
-    color: '#9BA1AC',
-    fontSize: 9,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-    marginBottom: 4,
-  },
-  actorName: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
-  actorId: {
-    color: '#333',
-    fontSize: 10,
-    marginTop: 2,
-  },
-  detailsArrow: {
-    alignItems: 'center',
-    marginVertical: 4,
-  },
-  descriptionCard: {
-    backgroundColor: 'rgba(247, 147, 30, 0.05)',
-    padding: 16,
-    borderRadius: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: '#f7931e',
-  },
-  descriptionTextFull: {
-    color: '#fff',
-    fontSize: 13,
-    fontStyle: 'italic',
-    lineHeight: 20,
-  },
-  hashCard: {
-    backgroundColor: 'transparent',
-    padding: 12,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1a1c2c',
-  },
-  hashText: {
-    color: '#9BA1AC',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    flex: 1,
-    marginRight: 10,
-  },
-  closeDetailsBtn: {
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  closeDetailsText: {
-    color: '#000',
-    fontSize: 15,
-    fontWeight: 'bold', fontFamily: fonts.bold,
-  },
+    flexDirection: 'row', gap: 10, padding: 14, borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,210,77,0.06)', borderWidth: 1, borderColor: 'rgba(255,210,77,0.15)', marginTop: 4,
+  },
+  infoText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
+  fluxStatsBar: { flexDirection: 'row', backgroundColor: colors.surface, marginHorizontal: 16, borderRadius: radius.lg, padding: 12, borderWidth: 1, borderColor: colors.border },
+  fluxStatItem: { flex: 1, alignItems: 'center' },
+  fluxStatDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.border },
+  fluxStatLabel: { fontSize: 10, fontFamily: fonts.bold, color: colors.textMuted, textTransform: 'uppercase', marginBottom: 4 },
+  fluxStatValue: { fontSize: 15, fontFamily: fonts.bold, color: colors.textPrimary },
+  filterRow: { maxHeight: 46, flexGrow: 0, marginVertical: 10 },
+  filterRowContent: { paddingHorizontal: 16, gap: 8 },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.round, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  filterChipActive: { backgroundColor: 'rgba(255,210,77,0.14)', borderColor: 'rgba(255,210,77,0.4)' },
+  filterChipText: { fontSize: 12, fontFamily: fonts.medium, color: colors.textSecondary },
+  filterChipTextActive: { color: colors.gold, fontFamily: fonts.semibold },
+  txCard: { borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 10 },
+  txTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  txIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  txType: { fontSize: 13, fontFamily: fonts.semibold, color: colors.textPrimary },
+  txDate: { fontSize: 10.5, color: colors.textMuted, marginTop: 1 },
+  txAmount: { fontSize: 15, fontFamily: fonts.bold },
+  txUsersRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.overlaySoft, padding: 8, borderRadius: radius.sm, marginBottom: 8 },
+  txUserName: { flex: 1, fontSize: 12, fontFamily: fonts.medium, color: colors.textSecondary },
+  txDescription: { fontSize: 11.5, color: colors.textMuted, fontStyle: 'italic', marginBottom: 10 },
+  txFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  txStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.overlaySoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  txStatusText: { fontSize: 10, fontFamily: fonts.bold, color: colors.textSecondary },
+  txDeleteBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.redMuted },
+  holderCard: { marginBottom: 10 },
+  holderCardContent: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  rankBox: { width: 34, alignItems: 'center' },
+  rankEmoji: { fontSize: 20 },
+  rankNumber: { fontSize: 13, fontFamily: fonts.bold, color: colors.textMuted },
+  holderName: { fontSize: 14.5, fontFamily: fonts.semibold, color: colors.textPrimary },
+  holderShare: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  holderBalance: { fontSize: 15, fontFamily: fonts.bold, color: colors.success },
+  holderCurrency: { fontSize: 10, color: colors.textMuted },
+  sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: colors.textPrimary, marginBottom: 12 },
+  searchRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  searchInput: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, color: colors.textPrimary, borderWidth: 1, borderColor: colors.border },
+  searchBtn: { width: 46, height: 46, borderRadius: radius.md, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
+  resultCard: { padding: 14, marginBottom: 12 },
+  resultTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  resultAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.overlaySoft, alignItems: 'center', justifyContent: 'center' },
+  resultAvatarInitial: { fontFamily: fonts.bold, color: colors.gold },
+  resultName: { fontSize: 14.5, fontFamily: fonts.semibold, color: colors.textPrimary },
+  resultBalance: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  frozenBadge: { backgroundColor: colors.redMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm },
+  frozenText: { fontSize: 9.5, fontFamily: fonts.bold, color: colors.red },
+  resultActionsRow: { flexDirection: 'row', gap: 8 },
+  cautionBox: { flexDirection: 'row', gap: 10, marginTop: 8, padding: 14, borderRadius: radius.lg, backgroundColor: colors.redMuted, borderWidth: 1, borderColor: 'rgba(245,55,43,0.2)' },
+  cautionTitle: { fontSize: 12.5, fontFamily: fonts.bold, color: colors.red },
+  cautionText: { fontSize: 11.5, color: colors.textSecondary, marginTop: 2, lineHeight: 16 },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: colors.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: 20, borderWidth: 1, borderColor: colors.border, borderBottomWidth: 0 },
+  modalHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  modalTitle: { fontSize: 18, fontFamily: fonts.bold, color: colors.textPrimary },
+  modalTarget: { fontSize: 13, color: colors.textMuted, marginBottom: 18 },
+  inputGroup: { marginBottom: 16 },
+  inputLabel: { fontSize: 11.5, fontFamily: fonts.bold, color: colors.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
+  modalInput: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14, color: colors.textPrimary, fontSize: 16, fontFamily: fonts.semibold, borderWidth: 1, borderColor: colors.border },
+  modalInputMultiline: { height: 80, textAlignVertical: 'top', fontFamily: fonts.regular, fontSize: 14 },
+  detailsSheet: { backgroundColor: colors.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: 20, maxHeight: '88%', borderWidth: 1, borderColor: colors.border, borderBottomWidth: 0 },
+  detailsHeader: { alignItems: 'center', marginBottom: 18 },
+  detailsIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,210,77,0.10)', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  detailsTitle: { fontSize: 17, fontFamily: fonts.bold, color: colors.textPrimary },
+  detailsId: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
+  detailLabel: { fontSize: 12, fontFamily: fonts.bold, color: colors.textMuted, textTransform: 'uppercase' },
+  detailValue: { fontSize: 13.5, fontFamily: fonts.semibold, color: colors.textPrimary },
+  detailValueLarge: { fontSize: 18, fontFamily: fonts.bold, color: colors.success },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm },
+  statusPillText: { fontSize: 10.5, fontFamily: fonts.bold },
+  detailSectionTitle: { fontSize: 11, fontFamily: fonts.bold, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 16, marginBottom: 8 },
+  flowCard: { backgroundColor: colors.surface, padding: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  flowLabel: { fontSize: 10, fontFamily: fonts.bold, color: colors.textMuted },
+  flowName: { fontSize: 14, fontFamily: fonts.semibold, color: colors.textPrimary, marginTop: 3 },
+  descriptionCard: { backgroundColor: 'rgba(255,210,77,0.06)', padding: 12, borderRadius: radius.md, borderLeftWidth: 3, borderLeftColor: colors.gold },
+  descriptionText: { fontSize: 13, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 18 },
+  hashCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, gap: 8 },
+  hashText: { flex: 1, fontSize: 11, color: colors.textMuted, fontFamily: 'monospace' },
 });

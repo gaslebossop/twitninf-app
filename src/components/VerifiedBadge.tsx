@@ -55,9 +55,17 @@ function VerifiedBadge({
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const pulseRingAnim = useRef(new Animated.Value(1)).current;
   
-  // Animation de pulsation douce
+  /**
+   * Pulsation douce — uniquement pour les styles rose/gris/or : ce sont les
+   * seuls rendus à lier `scaleAnim` à une transformation. Le style `default`
+   * (de très loin le plus fréquent : c'est la coche de tout compte vérifié
+   * standard) rend un simple `<Ionicons>` statique, donc démarrer cette
+   * boucle pour lui ne faisait tourner une animation en continu pour rien —
+   * multiplié par chaque badge visible dans un fil, c'était la première
+   * cause de saccades signalée, bien avant le poids propre du style rose.
+   */
   useEffect(() => {
-    if (!animated) return;
+    if (!animated || verificationStyle === 'default') return;
 
     const pulseAnimation = Animated.loop(
       Animated.sequence([
@@ -76,7 +84,7 @@ function VerifiedBadge({
     
     pulseAnimation.start();
     return () => pulseAnimation.stop();
-  }, [animated, scaleAnim]);
+  }, [animated, verificationStyle, scaleAnim]);
 
   /**
    * Halo de la pastille neutre accordée à un nom allumé.

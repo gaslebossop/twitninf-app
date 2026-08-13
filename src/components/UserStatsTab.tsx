@@ -1477,6 +1477,13 @@ const UserStatsTab: React.FC<UserStatsTabProps> = ({ userId, embedded = false, b
           audienceInsights.countries,
           `Pas encore assez de localisations consenties pour afficher une zone de manière anonyme.`,
         ) : null}
+
+        {audienceInsights ? renderDistribution(
+          'Villes de l’audience',
+          `Localisations consenties · groupes de ${audienceInsights.privacyThreshold} personnes minimum`,
+          audienceInsights.cities,
+          `Pas encore assez de localisations consenties pour afficher une ville de manière anonyme.`,
+        ) : null}
       </>
     );
   };

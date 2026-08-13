@@ -1,16 +1,16 @@
-import { fonts , colors} from '../theme';
+import { fonts, colors, statusBarStyle } from '../theme';
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, StatusBar, Platform, ActivityIndicator, ScrollView, KeyboardAvoidingView } from 'react-native';
 // `expo-image` : cache disque et décodage hors du thread JS. `transition={0}`
 // pour garder exactement l'apparition d'avant.
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { ScreenBackground, AppHeader } from '../components/ui';
 
 export default function EditProfileScreen({ navigation }: any) {
   const { user, refreshCurrentUser } = useAuth();
@@ -167,18 +167,29 @@ export default function EditProfileScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="close" size={22} color="#ffffff" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Modifier le profil</Text>
-        <TouchableOpacity onPress={handleSave} style={[styles.saveBtn, (isSaving || checkingUsername || usernameAvailable === false) && styles.saveBtnDisabled]} disabled={isSaving || checkingUsername || usernameAvailable === false}>
-          {isSaving ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.saveText}>Enregistrer</Text>}
-        </TouchableOpacity>
-      </View>
+    <ScreenBackground>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
+      <AppHeader
+        navigation={navigation}
+        title="Modifier le profil"
+        right={
+          <TouchableOpacity
+            onPress={handleSave}
+            style={[styles.saveBtn, (isSaving || checkingUsername || usernameAvailable === false) && styles.saveBtnDisabled]}
+            disabled={isSaving || checkingUsername || usernameAvailable === false}
+          >
+            {isSaving ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.saveText}>Enregistrer</Text>}
+          </TouchableOpacity>
+        }
+      />
 
-      <View style={styles.form}>
+      <KeyboardAvoidingView style={styles.contentContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.form}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.label}>Bannière du profil</Text>
         <View style={styles.bannerPreview}>
           {(user as any)?.banner ? (
@@ -223,7 +234,7 @@ export default function EditProfileScreen({ navigation }: any) {
           value={fullName}
           onChangeText={setFullName}
           placeholder="Votre nom complet"
-          placeholderTextColor="#5b6f83"
+          placeholderTextColor={colors.textMuted}
         />
         <Text style={styles.label}>Nom d’utilisateur</Text>
         <TextInput
@@ -231,7 +242,7 @@ export default function EditProfileScreen({ navigation }: any) {
           value={username}
           onChangeText={setUsername}
           placeholder="Votre nom d’utilisateur"
-          placeholderTextColor="#5b6f83"
+          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
         />
         {username.trim().length > 0 && (
@@ -247,68 +258,48 @@ export default function EditProfileScreen({ navigation }: any) {
           value={bio}
           onChangeText={(t) => setBio(t.length > 500 ? t.slice(0, 500) : t)}
           placeholder="Quelques mots sur vous…"
-          placeholderTextColor="#5b6f83"
+          placeholderTextColor={colors.textMuted}
           multiline
           textAlignVertical="top"
         />
         <Text style={styles.bioCount}>{bio.length}/500</Text>
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+      </KeyboardAvoidingView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  gradient: {
-    ...StyleSheet.absoluteFillObject as any,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.overlayMedium,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    flex: 1,
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700', fontFamily: fonts.bold,
-    textAlign: 'center',
-  },
   saveBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
   },
   saveBtnDisabled: {
-    backgroundColor: 'rgba(29, 155, 240, 0.5)',
+    opacity: 0.4,
   },
   saveText: {
-    color: '#ffffff',
+    color: colors.onAccent,
     fontSize: 14,
     fontWeight: '600', fontFamily: fonts.semibold,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
   },
   form: {
     paddingHorizontal: 16,
     paddingTop: 10,
+    paddingBottom: 40,
   },
   bannerPreview: {
     height: 100,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#2f3336',
+    backgroundColor: colors.surfaceAlt,
     marginBottom: 10,
     position: 'relative',
   },
@@ -319,7 +310,7 @@ const styles = StyleSheet.create({
   bannerPlaceholder: {
     flex: 1,
     minHeight: 100,
-    backgroundColor: '#38444d',
+    backgroundColor: colors.surfaceAlt,
   },
   bannerUploadOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -339,9 +330,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    backgroundColor: '#2f3336',
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 2,
-    borderColor: '#0B0C0F',
+    borderColor: colors.bg,
   },
   avatarImage: {
     width: 96,
@@ -349,7 +340,7 @@ const styles = StyleSheet.create({
     borderRadius: 48,
   },
   avatarInitials: {
-    color: '#ffffff',
+    color: colors.textPrimary,
     fontSize: 32,
     fontWeight: '700', fontFamily: fonts.bold,
   },
@@ -364,6 +355,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 48,
   },
+  // Pastille pleine blanche à contraste fixe : elle se pose SUR une photo
+  // (bannière/avatar) dont la couleur n'est pas prévisible, donc elle ne suit
+  // volontairement pas le thème clair/sombre — comme la pastille "changer la
+  // photo" d'Instagram.
   changePhotoBtn: {
     marginTop: 10,
     flexDirection: 'row',
@@ -384,23 +379,23 @@ const styles = StyleSheet.create({
   },
   usernameChecking: {
     marginTop: 6,
-    color: '#8b9dc3',
+    color: colors.textSecondary,
     fontSize: 12,
   },
   usernameAvailable: {
     marginTop: 6,
-    color: '#00ba7c',
+    color: colors.success,
     fontSize: 12,
     fontWeight: '600', fontFamily: fonts.semibold,
   },
   usernameNotAvailable: {
     marginTop: 6,
-    color: '#f91880',
+    color: colors.red,
     fontSize: 12,
     fontWeight: '600', fontFamily: fonts.semibold,
   },
   label: {
-    color: '#8b9dc3',
+    color: colors.textSecondary,
     fontSize: 13,
     marginTop: 16,
     marginBottom: 6,
@@ -408,11 +403,11 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#2f3336',
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 10,
-    color: '#ffffff',
+    color: colors.textPrimary,
     fontSize: 15,
   },
   bioInput: {
@@ -423,8 +418,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginTop: 4,
     fontSize: 12,
-    color: '#5b6f83',
+    color: colors.textMuted,
   },
 });
-
-

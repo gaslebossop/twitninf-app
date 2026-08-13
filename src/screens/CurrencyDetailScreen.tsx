@@ -1,11 +1,12 @@
-import { colors, fonts } from '../theme';
-import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
+import { colors, fonts, statusBarStyle } from '../theme';
+import { ScreenBackground, AppHeader, ScreenSkeleton } from '../components/ui';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  StatusBar,
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
@@ -103,11 +104,11 @@ export default function CurrencyDetailScreen() {
 
   return (
     <ScreenBackground>
-      <View style={styles.header}>
-        <BackButton navigation={navigation} />
-        <Text style={styles.headerTitle} numberOfLines={1}>{detail ? `${detail.name} · ${detail.symbol}` : 'Chargement…'}</Text>
-        <View style={styles.iconButton} />
-      </View>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
+      <AppHeader
+        navigation={navigation}
+        title={detail ? `${detail.name} · ${detail.symbol}` : 'Chargement…'}
+      />
 
       {error !== '' && (
         <View style={styles.centerWrap}>
@@ -241,12 +242,6 @@ export default function CurrencyDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4,
-  },
-  iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.overlaySoft },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', fontFamily: fonts.bold, color: colors.textPrimary, marginHorizontal: 8 },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 12 },
   errorText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
   retryButton: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.overlayMedium },

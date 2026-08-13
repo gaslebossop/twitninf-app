@@ -4,13 +4,15 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+// La version de react-native (core) ne pose aucun inset sur Android — seule
+// celle de react-native-safe-area-context protège le haut de l'écran partout.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton, EmptyState } from '../components/ui';

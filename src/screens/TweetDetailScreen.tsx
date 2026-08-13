@@ -1,7 +1,10 @@
 import { colors, fonts, glow, withAlpha } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, TextInput, Animated, LayoutAnimation, UIManager, Modal, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput, Animated, LayoutAnimation, UIManager, Modal, KeyboardAvoidingView } from 'react-native';
+// La version de react-native (core) ne pose aucun inset sur Android — seule
+// celle de react-native-safe-area-context protège le haut de l'écran partout.
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Reanimated from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -233,6 +236,7 @@ const ReplyItem = React.memo(ReplyItemBase);
 export default function TweetDetailScreen() {
   const route = useRoute();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { user: currentUser } = useAuth() as any;
   const { tweetId, isThread } = route.params as unknown as RouteParams;
   const [tweet, setTweet] = useState<Tweet | null>(null);
@@ -1351,7 +1355,7 @@ export default function TweetDetailScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalGradient}>
-            <View style={styles.modalHeader}>
+            <View style={[styles.modalHeader, { paddingTop: insets.top + 20 }]}>
               <Text style={styles.modalTitle}>🚀 Algorithme Progressif</Text>
               <View style={styles.modalHeaderActions}>
                 <TouchableOpacity

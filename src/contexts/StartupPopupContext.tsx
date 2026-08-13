@@ -4,7 +4,6 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   ReactNode,
 } from 'react';
@@ -47,6 +46,14 @@ export type StartupPopupId =
  * Ensuite : la langue de lecture conditionne tout le contenu du fil, et le
  * choix des onglets est le seul réellement reportable, il ferme la marche.
  */
+/**
+ * Delai laisse aux etapes pour se declarer avant qu'on designe la premiere.
+ * Doit couvrir le plus long des delais d'amorcage des etapes elles-memes
+ * (voir `STARTUP_SETTLE_MS` dans chaque composant), sinon une etape
+ * prioritaire arrivee en retard viendrait remplacer celle deja affichee.
+ */
+const REGISTRATION_WINDOW_MS = 700;
+
 const PRIORITY: StartupPopupId[] = [
   'consent',
   // Juste derrière le socle légal : sans abonnement, le recommandeur n'a aucun
@@ -60,12 +67,21 @@ interface StartupPopupContextValue {
   request: (id: StartupPopupId) => void;
   release: (id: StartupPopupId) => void;
   current: StartupPopupId | null;
+  /** Rang de l'étape courante dans le parcours (1-based), 0 si aucune. */
+  stepIndex: number;
+  /** Nombre d'étapes de ce parcours, y compris celles déjà passées. */
+  stepCount: number;
+  /** Étapes encore en attente, recensement initial compris. */
+  pendingCount: number;
 }
 
 const StartupPopupContext = createContext<StartupPopupContextValue>({
   request: () => {},
   release: () => {},
   current: null,
+  stepIndex: 0,
+  stepCount: 0,
+  pendingCount: 0,
 });
 
 export function StartupPopupProvider({ children }: { children: ReactNode }) {
@@ -85,42 +101,68 @@ export function StartupPopupProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * `current` retenu un instant a `null` lors d'une PASSATION entre deux
-   * popups (ex. langue -> consentement, quand le consentement obtient son
-   * creneau avant que la langue n'ait relache le sien).
+   * Fenetre de recensement avant d'afficher quoi que ce soit.
    *
-   * Chaque popup est un `<Modal>` natif independant, et elles ne se
-   * demontent pas toutes de la meme facon : `ReadingLanguageModal` disparait
-   * entierement de l'arbre (`if (!visible) return null`), `ConsentSheet` lui
-   * reste monte et bascule juste sa prop `visible`. Sans ce palier, la meme
-   * passe de rendu peut fermer la Dialog Android de l'une et en ouvrir une
-   * autre au meme instant — deux fenetres natives qui se chevauchent, ce que
-   * Android ne supporte pas proprement (au mieux l'ecran fige, au pire ca
-   * plante). Le palier ne s'applique qu'aux VRAIES passations (une valeur
-   * non nulle vers une autre) ; l'ouverture initiale et la fermeture finale
-   * restent instantanees.
+   * Les etapes ne s'annoncent pas toutes au meme instant : la langue sait
+   * immediatement qu'elle est necessaire, le consentement doit d'abord laisser
+   * le profil se charger. Sans ce palier, la langue prenait le creneau a
+   * t=0 et le consentement — pourtant prioritaire — la remplacait une seconde
+   * plus tard sous les yeux de l'utilisateur.
+   *
+   * On laisse donc toutes les etapes se declarer avant de designer la
+   * premiere. Le palier ne joue qu'a l'OUVERTURE du parcours : une fois
+   * lance, chaque etape passe la main a la suivante immediatement, sans blanc.
+   *
+   * (Un palier de 250 ms existait auparavant entre CHAQUE etape, parce que
+   * deux `<Modal>` natives ne peuvent pas se superposer sur Android. Ce sont
+   * maintenant des vues ordinaires : ce probleme-la a disparu.)
    */
-  const [current, setCurrent] = useState<StartupPopupId | null>(null);
-  const prevNonNullRef = useRef<StartupPopupId | null>(null);
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
-    if (rawCurrent === prevNonNullRef.current) {
-      setCurrent(rawCurrent);
+    if (pending.length === 0) {
+      setSettled(false);
       return;
     }
-    if (prevNonNullRef.current !== null && rawCurrent !== null) {
-      setCurrent(null);
-      const timer = setTimeout(() => {
-        prevNonNullRef.current = rawCurrent;
-        setCurrent(rawCurrent);
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-    prevNonNullRef.current = rawCurrent;
-    setCurrent(rawCurrent);
-  }, [rawCurrent]);
+    if (settled) return;
+    const timer = setTimeout(() => setSettled(true), REGISTRATION_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [pending.length, settled]);
 
-  const value = useMemo(() => ({ request, release, current }), [request, release, current]);
+  const current = settled ? rawCurrent : null;
+
+  /**
+   * Étapes rencontrées pendant CE parcours, pour afficher « étape 2 sur 4 ».
+   *
+   * On ne peut pas compter `pending` directement : il rétrécit à chaque étape
+   * franchie, et le total afficherait 4, puis 3, puis 2. On mémorise donc les
+   * identifiants vus depuis le début du parcours, et on remet à zéro quand la
+   * file se vide — un parcours qui s'ouvre plus tard repart proprement.
+   *
+   * L'ensemble peut GRANDIR en cours de route (une étape dont la condition
+   * n'est connue qu'après un appel réseau) : le total s'ajuste alors, ce qui
+   * vaut mieux qu'un total figé d'avance et faux.
+   */
+  const [flowIds, setFlowIds] = useState<StartupPopupId[]>([]);
+
+  useEffect(() => {
+    if (pending.length === 0) {
+      setFlowIds((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    setFlowIds((prev) => {
+      const merged = PRIORITY.filter((id) => prev.includes(id) || pending.includes(id));
+      return merged.length === prev.length && merged.every((id, i) => id === prev[i]) ? prev : merged;
+    });
+  }, [pending]);
+
+  const stepCount = flowIds.length;
+  const stepIndex = current ? flowIds.indexOf(current) + 1 : 0;
+
+  const value = useMemo(
+    () => ({ request, release, current, stepIndex, stepCount, pendingCount: pending.length }),
+    [request, release, current, stepIndex, stepCount, pending.length],
+  );
 
   return (
     <StartupPopupContext.Provider value={value}>{children}</StartupPopupContext.Provider>
@@ -144,4 +186,20 @@ export function useStartupPopupSlot(id: StartupPopupId, wanted: boolean): boolea
   }, [id, wanted, request, release]);
 
   return wanted && current === id;
+}
+
+/** Position de l'étape courante dans le parcours, pour l'indicateur d'avancement. */
+export function useStartupFlowProgress(): { stepIndex: number; stepCount: number } {
+  const { stepIndex, stepCount } = useContext(StartupPopupContext);
+  return { stepIndex, stepCount };
+}
+
+/**
+ * Vrai tant qu'il reste une étape à passer, y compris pendant le recensement
+ * initial et entre deux étapes. Sert à masquer l'application derrière le
+ * parcours : sans ça, le fil réapparaît un instant à chaque « Continuer ».
+ */
+export function useStartupFlowActive(): boolean {
+  const { pendingCount } = useContext(StartupPopupContext);
+  return pendingCount > 0;
 }

@@ -1,4 +1,4 @@
-import { fonts , colors} from '../theme';
+import { fonts, colors, radius, statusBarStyle } from '../theme';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -9,15 +9,18 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
-  SafeAreaView,
   Image,
+  KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
+// La version de react-native (core) ne pose aucun inset sur Android — seule
+// celle de react-native-safe-area-context protège le haut de l'écran partout.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { apiService } from '../services/api';
 import type { User } from '../types/api';
-import { BackButton } from '../components/ui';
+import { AppHeader, ScreenBackground } from '../components/ui';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
@@ -410,7 +413,7 @@ export default function SimilarityAlgorithmScreen() {
           onChangeText={(t) => setDrafts((prev) => ({ ...prev, [key]: t }))}
           onBlur={() => commitWeight(section, k)}
           keyboardType="decimal-pad"
-          placeholderTextColor="#5b6f83"
+          placeholderTextColor={colors.textMuted}
         />
       </View>
     );
@@ -434,7 +437,7 @@ export default function SimilarityAlgorithmScreen() {
           onChangeText={(t) => setDrafts((prev) => ({ ...prev, [key]: t }))}
           onBlur={() => commitNum(field, intOnly)}
           keyboardType="decimal-pad"
-          placeholderTextColor="#5b6f83"
+          placeholderTextColor={colors.textMuted}
         />
       </View>
     );
@@ -442,22 +445,28 @@ export default function SimilarityAlgorithmScreen() {
 
   if (permLoading || (canEditEngine && loading)) {
     return (
-      <SafeAreaView style={styles.container}>
-        <ActivityIndicator color="#4F7CFF" style={{ marginTop: 40 }} />
-      </SafeAreaView>
+      <ScreenBackground>
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+          <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
+        </SafeAreaView>
+      </ScreenBackground>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#0B0C0F', '#12122a']} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.header}>
-        <BackButton navigation={navigation} />
-        <Text style={styles.title}>{canEditEngine ? 'Fil « Pour vous »' : 'Visibilité du fil'}</Text>
-        <TouchableOpacity onPress={refreshAll} style={styles.iconBtn}>
-          <Ionicons name="refresh" size={22} color="#4F7CFF" />
-        </TouchableOpacity>
-      </View>
+    <ScreenBackground>
+    <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+      <AppHeader
+        navigation={navigation}
+        title={canEditEngine ? 'Fil « Pour vous »' : 'Visibilité du fil'}
+        right={(
+          <TouchableOpacity onPress={refreshAll} style={styles.iconBtn}>
+            <Ionicons name="refresh" size={22} color={colors.accent} />
+          </TouchableOpacity>
+        )}
+      />
 
       {canEditEngine ? (
         <View style={styles.tabRow}>
@@ -478,6 +487,7 @@ export default function SimilarityAlgorithmScreen() {
         </View>
       ) : null}
 
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {canEditEngine && tab === 'moteur' ? (
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {stats && (
@@ -518,7 +528,7 @@ export default function SimilarityAlgorithmScreen() {
           {rowNum('adIntensityPct', true)}
 
           <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={save} disabled={saving}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Enregistrer les formules</Text>}
+            {saving ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.saveText}>Enregistrer les formules</Text>}
           </TouchableOpacity>
           <Text style={styles.footerNote}>
             Superadmin. Valide chaque champ (clic hors champ) avant d’enregistrer si tu étais encore en train de taper.
@@ -530,7 +540,7 @@ export default function SimilarityAlgorithmScreen() {
             <Text style={styles.adminOnlyNote}>Réservé aux super-admins : onglet formules du moteur. Ici : visibilité des comptes et hashtags.</Text>
           ) : null}
           {visLoading && !overview ? (
-            <ActivityIndicator color="#4F7CFF" style={{ marginVertical: 24 }} />
+            <ActivityIndicator color={colors.accent} style={{ marginVertical: 24 }} />
           ) : null}
 
           {overview && (
@@ -542,7 +552,7 @@ export default function SimilarityAlgorithmScreen() {
           )}
 
           <View style={styles.infoCard}>
-            <Ionicons name="information-circle-outline" size={22} color="#38bdf8" style={{ marginRight: 10 }} />
+            <Ionicons name="information-circle-outline" size={22} color={colors.cyan} style={{ marginRight: 10 }} />
             <Text style={styles.infoCardText}>
               Règle le <Text style={styles.bold}>poids de ce compte dans le fil auto</Text> (reco « Pour vous ») : moins de 100 % = moins mis en
               avant, plus de 100 % = boost (jusqu’à 500 %). Le profil et les recherches ne changent pas. Tape le pseudo ou choisis dans la liste.
@@ -564,7 +574,7 @@ export default function SimilarityAlgorithmScreen() {
                 }
               }}
               placeholder="pseudo"
-              placeholderTextColor="#5b6f83"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="off"
@@ -574,7 +584,7 @@ export default function SimilarityAlgorithmScreen() {
               onPress={() => applyLookup(userSearch)}
               disabled={lookupBusy || stripAt(userSearch).length < 2}
             >
-              {lookupBusy ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.goBtnText}>OK</Text>}
+              {lookupBusy ? <ActivityIndicator color={colors.onAccent} size="small" /> : <Text style={styles.goBtnText}>OK</Text>}
             </TouchableOpacity>
           </View>
           {suggestLoading ? (
@@ -593,14 +603,14 @@ export default function SimilarityAlgorithmScreen() {
                     <Image source={{ uri: u.avatar }} style={styles.avatar} />
                   ) : (
                     <View style={[styles.avatar, styles.avatarPh]}>
-                      <Ionicons name="person" size={18} color="#8892a0" />
+                      <Ionicons name="person" size={18} color={colors.textMuted} />
                     </View>
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.suggestName}>@{u.username}</Text>
                     {u.full_name ? <Text style={styles.suggestSub}>{u.full_name}</Text> : null}
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#5b6f83" />
+                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -613,7 +623,7 @@ export default function SimilarityAlgorithmScreen() {
                   <Image source={{ uri: selectedPreview.avatar }} style={styles.avatarLg} />
                 ) : (
                   <View style={[styles.avatarLg, styles.avatarPh]}>
-                    <Ionicons name="person" size={28} color="#8892a0" />
+                    <Ionicons name="person" size={28} color={colors.textMuted} />
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
@@ -649,7 +659,7 @@ export default function SimilarityAlgorithmScreen() {
                   if (Number.isFinite(n)) setUserPct(Math.max(0, Math.min(500, n)));
                 }}
                 keyboardType="number-pad"
-                placeholderTextColor="#5b6f83"
+                placeholderTextColor={colors.textMuted}
               />
 
               <TouchableOpacity style={styles.saveBtn} onPress={saveUserVisibility}>
@@ -671,7 +681,7 @@ export default function SimilarityAlgorithmScreen() {
               value={tagNew}
               onChangeText={setTagNew}
               placeholder="ex. actualite"
-              placeholderTextColor="#5b6f83"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
             />
           </View>
@@ -699,17 +709,17 @@ export default function SimilarityAlgorithmScreen() {
               if (Number.isFinite(n)) setHashtagStrengthPct(Math.max(1, Math.min(500, n)));
             }}
             keyboardType="number-pad"
-            placeholderTextColor="#5b6f83"
+            placeholderTextColor={colors.textMuted}
           />
           <TextInput
             style={[styles.input, { marginTop: 8 }]}
             value={noteNew}
             onChangeText={setNoteNew}
             placeholder="Note interne (optionnel)"
-            placeholderTextColor="#5b6f83"
+            placeholderTextColor={colors.textMuted}
           />
           <TouchableOpacity style={[styles.saveBtn, rulesBusy && styles.saveBtnDisabled]} onPress={addHashtagRule} disabled={rulesBusy}>
-            {rulesBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Ajouter ou mettre à jour</Text>}
+            {rulesBusy ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.saveText}>Ajouter ou mettre à jour</Text>}
           </TouchableOpacity>
 
           {rules.map((r) => (
@@ -722,7 +732,7 @@ export default function SimilarityAlgorithmScreen() {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => deleteRule(r.id, r.tag_normalized)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <Ionicons name="trash-outline" size={22} color="#f4212e" />
+                <Ionicons name="trash-outline" size={22} color={colors.red} />
               </TouchableOpacity>
             </View>
           ))}
@@ -730,12 +740,15 @@ export default function SimilarityAlgorithmScreen() {
           <Text style={styles.footerNote}>Admins : les changements s’appliquent tout de suite côté moteur.</Text>
         </ScrollView>
       )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -753,7 +766,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 17, fontWeight: '700' },
+  title: { flex: 1, textAlign: 'center', color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
   tabRow: {
     flexDirection: 'row',
     marginHorizontal: 12,
@@ -770,40 +783,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabActive: {
-    backgroundColor: 'rgba(0,212,255,0.18)',
+    backgroundColor: colors.accentSoft,
   },
-  tabText: { color: '#8892a0', fontSize: 14, fontWeight: '600' },
-  tabTextActive: { color: '#e7e9ea' },
+  tabText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  tabTextActive: { color: colors.textPrimary },
   scroll: { padding: 16, paddingBottom: 40 },
   statsBox: {
-    backgroundColor: 'rgba(0,212,255,0.08)',
-    borderRadius: 12,
+    backgroundColor: colors.cyanSoft,
+    borderRadius: radius.md,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(0,212,255,0.2)',
+    borderColor: colors.cyanMuted,
   },
-  statsText: { color: '#e7e9ea', fontSize: 13 },
-  statsSub: { color: '#8892a0', fontSize: 12, marginTop: 6 },
+  statsText: { color: colors.textPrimary, fontSize: 13 },
+  statsSub: { color: colors.textMuted, fontSize: 12, marginTop: 6 },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(56,189,248,0.1)',
-    borderRadius: 12,
+    backgroundColor: colors.cyanSoft,
+    borderRadius: radius.md,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.25)',
+    borderColor: colors.cyanMuted,
   },
-  infoCardText: { flex: 1, color: '#c8e7f5', fontSize: 13, lineHeight: 19 },
-  bold: { fontWeight: '700', fontFamily: fonts.bold, color: '#fff' },
-  sectionTitle: { color: '#4F7CFF', fontSize: 15, fontWeight: '700', fontFamily: fonts.bold, marginTop: 16, marginBottom: 8 },
-  sectionBlurb: { color: '#8892a0', fontSize: 12, lineHeight: 17, marginBottom: 10 },
+  infoCardText: { flex: 1, color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  bold: { fontWeight: '700', fontFamily: fonts.bold, color: colors.textPrimary },
+  sectionTitle: { color: colors.accent, fontSize: 15, fontWeight: '700', fontFamily: fonts.bold, marginTop: 16, marginBottom: 8 },
+  sectionBlurb: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 10 },
   fieldRow: { marginBottom: 12 },
   fieldLabelWrap: { marginBottom: 4 },
-  fieldLabel: { color: '#c8d1dc', fontSize: 13, fontWeight: '600' },
-  fieldShort: { color: '#6b7c8f', fontSize: 11, marginTop: 2 },
-  fieldHint: { color: '#5b6f83', fontSize: 11, marginTop: 4, lineHeight: 15 },
+  fieldLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  fieldShort: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  fieldHint: { color: colors.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
   input: {
     backgroundColor: colors.overlaySoft,
     borderWidth: 1,
@@ -811,20 +824,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 10,
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 15,
   },
   atRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   atPrefix: {
     fontSize: 18,
     fontWeight: '700', fontFamily: fonts.bold,
-    color: '#4F7CFF',
+    color: colors.accent,
     width: 28,
     textAlign: 'center',
   },
   inputAt: { flex: 1 },
   goBtn: {
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 10,
@@ -832,8 +845,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  goBtnText: { color: '#fff', fontWeight: '700' },
-  hintMuted: { color: '#6b7c8f', fontSize: 12, marginBottom: 8 },
+  goBtnText: { color: colors.onAccent, fontWeight: '700' },
+  hintMuted: { color: colors.textMuted, fontSize: 12, marginBottom: 8 },
   suggestBox: {
     borderWidth: 1,
     borderColor: colors.overlayMedium,
@@ -857,8 +870,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarLg: { width: 52, height: 52, borderRadius: 26, marginRight: 12 },
-  suggestName: { color: '#e7e9ea', fontSize: 15, fontWeight: '600' },
-  suggestSub: { color: '#8892a0', fontSize: 13, marginTop: 2 },
+  suggestName: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  suggestSub: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
   card: {
     backgroundColor: colors.overlayMedium,
     borderRadius: 14,
@@ -868,10 +881,10 @@ const styles = StyleSheet.create({
     borderColor: colors.overlayMedium,
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  cardTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  cardSub: { color: '#8892a0', fontSize: 14, marginTop: 2 },
-  visLabel: { color: '#8892a0', fontSize: 13, marginTop: 4 },
-  visBig: { color: '#4F7CFF', fontSize: 36, fontWeight: '800', fontFamily: fonts.bold, marginVertical: 6 },
+  cardTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
+  cardSub: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  visLabel: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
+  visBig: { color: colors.accent, fontSize: 36, fontWeight: '800', fontFamily: fonts.bold, marginVertical: 6 },
   presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 12 },
   hashtagPresetWrap: { marginTop: 4, marginBottom: 2 },
   hashtagPresetChip: { paddingHorizontal: 10, paddingVertical: 7 },
@@ -884,21 +897,21 @@ const styles = StyleSheet.create({
     borderColor: colors.overlayMedium,
   },
   presetChipOn: {
-    backgroundColor: 'rgba(29,155,240,0.35)',
-    borderColor: '#4F7CFF',
+    backgroundColor: colors.accentMuted,
+    borderColor: colors.accent,
   },
-  presetChipText: { color: '#c8d1dc', fontSize: 13, fontWeight: '600' },
-  presetChipTextOn: { color: '#fff' },
-  miniLabel: { color: '#8892a0', fontSize: 12, marginBottom: 6, marginTop: 4 },
+  presetChipText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  presetChipTextOn: { color: colors.onAccent },
+  miniLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 6, marginTop: 4 },
   saveBtn: {
     marginTop: 14,
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
   },
   saveBtnDisabled: { opacity: 0.6 },
-  saveText: { color: '#fff', fontWeight: '700', fontFamily: fonts.bold, fontSize: 16 },
+  saveText: { color: colors.onAccent, fontWeight: '700', fontFamily: fonts.bold, fontSize: 16 },
   ruleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -906,11 +919,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.overlayMedium,
   },
-  ruleTag: { color: '#e7e9ea', fontSize: 15, fontWeight: '600' },
-  ruleMeta: { color: '#8892a0', fontSize: 12, marginTop: 4 },
-  footerNote: { color: '#5b6f83', fontSize: 11, marginTop: 14, textAlign: 'center', lineHeight: 16 },
+  ruleTag: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  ruleMeta: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
+  footerNote: { color: colors.textMuted, fontSize: 11, marginTop: 14, textAlign: 'center', lineHeight: 16 },
   adminOnlyNote: {
-    color: '#8892a0',
+    color: colors.textMuted,
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 12,

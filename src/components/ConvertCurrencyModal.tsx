@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   kav: { width: '100%' },
   sheet: {
-    backgroundColor: 'rgba(18,20,28,0.97)',
+    backgroundColor: colors.bgElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,

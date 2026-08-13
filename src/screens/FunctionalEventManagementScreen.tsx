@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
-import { BackButton } from '../components/ui';
+import { AppHeader } from '../components/ui';
 import { useFunctionalEvents } from '../contexts/FunctionalEventContext';
 import { FunctionalEvent } from '../types/functionalEvent';
 import { FunctionalEventBanner } from '../components/FunctionalEventBanner';
@@ -235,19 +235,17 @@ export default function FunctionalEventManagementScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle={statusBarStyle()} backgroundColor={COLORS.bgPrimary} />
-      
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <BackButton navigation={navigation} />
-        <Text style={styles.headerTitle}>Kospor Birthday Event</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleLaunchKosporEvent}
-        >
-          <Ionicons name="play" size={18} color={themeColors.white} />
-        </TouchableOpacity>
-      </View>
+      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+
+      <AppHeader
+        navigation={navigation}
+        title="Événements fonctionnels"
+        right={(
+          <TouchableOpacity style={styles.addButton} onPress={handleLaunchKosporEvent}>
+            <Ionicons name="play" size={18} color={themeColors.white} />
+          </TouchableOpacity>
+        )}
+      />
 
       {/* Bannière des événements actifs */}
       {activeEvents.length > 0 && (

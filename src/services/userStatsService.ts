@@ -84,6 +84,7 @@ export interface DeepInsights {
     demographicsCoverage: number;
     ageBands: { label: string; count: number; percentage: number }[];
     countries: { label: string; code: string; count: number; percentage: number }[];
+    cities: { label: string; code: string; count: number; percentage: number }[];
     privacyThreshold: number;
   };
   location: {

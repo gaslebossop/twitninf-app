@@ -17,6 +17,7 @@ import {
   TextInput,
   Modal,
   Pressable,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -935,6 +936,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             visible
             onRequestClose={() => setShowAddAccount(false)}
           >
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <Pressable style={S.modalOverlay} onPress={() => setShowAddAccount(false)}>
               <Pressable style={S.addAccountBox} onPress={(e) => e.stopPropagation()}>
                 <Text style={S.addAccountTitle}>Ajouter un compte</Text>
@@ -969,6 +971,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 </View>
               </Pressable>
             </Pressable>
+            </KeyboardAvoidingView>
           </Modal>
         )}
 

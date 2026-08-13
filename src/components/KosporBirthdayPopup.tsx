@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
-  Modal,
   TouchableOpacity,
   StyleSheet,
   Animated,
@@ -257,13 +256,13 @@ export default function KosporBirthdayPopup({ visible, onClose, onNavigateToKosp
     outputRange: ['0deg', '360deg'],
   });
 
+  // Page plein écran plutôt que `<Modal>` : ce composant est monté au-dessus du
+  // navigateur, une vue absolue le recouvre donc déjà. La fête garde toutes ses
+  // animations, elle cesse juste d'être une fenêtre native posée par-dessus.
+  if (!visible) return null;
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-    >
+    <View style={styles.page}>
       <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
         <LinearGradient
           colors={['rgba(15,10,30,0.95)', 'rgba(30,15,50,0.98)']}
@@ -485,11 +484,15 @@ export default function KosporBirthdayPopup({ visible, onClose, onNavigateToKosp
           </View>
         </Animated.View>
       </Animated.View>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  page: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+  },
   overlay: {
     flex: 1,
     justifyContent: 'center',

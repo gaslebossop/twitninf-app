@@ -9,6 +9,8 @@ import {
   TextInput,
   ScrollView,
   Dimensions,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -191,7 +193,10 @@ export default function SanctionModal({ visible, onClose, onConfirm, user, sanct
         />
         
         {/* Modal Content */}
-        <View style={[styles.modalContainer, { width: modalWidth, maxHeight }]}>
+        <KeyboardAvoidingView
+          style={[styles.modalContainer, { width: modalWidth, maxHeight }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerContent}>
@@ -237,10 +242,11 @@ export default function SanctionModal({ visible, onClose, onConfirm, user, sanct
           </View>
 
           {/* Content */}
-          <ScrollView 
-            style={styles.content} 
+          <ScrollView
+            style={styles.content}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Duration Selection - Only for suspensions */}
             {sanctionType === 'suspend' && (
@@ -371,7 +377,7 @@ export default function SanctionModal({ visible, onClose, onConfirm, user, sanct
               </LinearGradient>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

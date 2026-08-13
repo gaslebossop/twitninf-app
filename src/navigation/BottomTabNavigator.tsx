@@ -241,15 +241,14 @@ export default function BottomTabNavigator() {
               component={TwitNinfVideo}
             />
           )}
-          {/* Toujours monté. L'onglet n'apparaissait qu'en présence d'un live
-              déjà en cours, or c'est le seul chemin vers « Passer en direct » :
-              tant que personne ne diffusait, personne ne pouvait commencer.
-              L'écran a d'ailleurs un état vide écrit pour ce cas précis
-              (« Sois le premier à diffuser ! »), jusqu'ici inatteignable. */}
-          <Tab.Screen
-            name="Live"
-            component={LivesScreen}
-          />
+          {/* Masqué en l'absence de live actif. « Passer en direct » reste
+              joignable depuis Réglages > Diffusion en Direct. */}
+          {activeLiveCount > 0 && (
+            <Tab.Screen
+              name="Live"
+              component={LivesScreen}
+            />
+          )}
 
           <Tab.Screen
             name="Recherche"
