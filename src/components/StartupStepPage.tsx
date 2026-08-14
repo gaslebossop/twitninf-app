@@ -27,6 +27,11 @@ export function StartupFlowBackdrop() {
 interface StartupStepPageProps {
   visible: boolean;
   icon: keyof typeof Ionicons.glyphMap;
+  /**
+   * Illustration affichée à la place de la pastille d'icône. Réservé aux étapes
+   * qui ont quelque chose à montrer ; `icon` reste la règle.
+   */
+  hero?: ReactNode;
   title: string;
   subtitle?: string;
   /** Contenu défilant de l'étape. */
@@ -53,6 +58,7 @@ interface StartupStepPageProps {
 export default function StartupStepPage({
   visible,
   icon,
+  hero,
   title,
   subtitle,
   children,
@@ -105,9 +111,13 @@ export default function StartupStepPage({
         ) : null}
 
         <Animated.View entering={FadeInDown.delay(90).duration(300)}>
-          <View style={styles.iconCircle}>
-            <Ionicons name={icon} size={26} color={colors.accent} />
-          </View>
+          {hero ? (
+            <View style={styles.hero}>{hero}</View>
+          ) : (
+            <View style={styles.iconCircle}>
+              <Ionicons name={icon} size={26} color={colors.accent} />
+            </View>
+          )}
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </Animated.View>
@@ -159,6 +169,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   progressSegmentDone: { backgroundColor: colors.accent },
+  hero: {
+    // Calée sur la marge de gauche, là où se trouve la pastille d'icône qu'elle
+    // remplace : la page reste alignée sur une seule colonne.
+    alignSelf: 'flex-start',
+    marginTop: -8,
+    marginBottom: -12,
+    marginLeft: -8,
+  },
   iconCircle: {
     width: 54,
     height: 54,

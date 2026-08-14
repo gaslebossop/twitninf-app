@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../theme';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
 import StartupStepPage, { stepStyles } from './StartupStepPage';
+import LogoInjectionAnimation from './LogoInjectionAnimation';
 import {
   checkForUpdate,
   dismissUpdate,
@@ -86,6 +87,10 @@ export default function UpdateAvailableGate() {
     <StartupStepPage
       visible={visible}
       icon="arrow-up-circle"
+      // L'injection tourne en continu : c'est le geste que la page demande —
+      // aller chercher la version dans Kospor Injection — et il n'y a rien
+      // d'autre à regarder pendant qu'on lit les trois étapes.
+      hero={<LogoInjectionAnimation size={200} active={visible} />}
       title="Une nouvelle version est disponible"
       subtitle={
         update.label
