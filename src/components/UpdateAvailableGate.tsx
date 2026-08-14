@@ -1,0 +1,179 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+import { colors, fonts } from '../theme';
+import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
+import StartupStepPage, { stepStyles } from './StartupStepPage';
+import {
+  checkForUpdate,
+  dismissUpdate,
+  INSTALL_CHANNEL,
+  type UpdateInfo,
+} from '../services/updateCheck';
+
+/**
+ * Page « une mise à jour existe », affichée quand le build installé est
+ * antérieur à celui publié dans le flux de versions.
+ *
+ * L'app n'étant sur aucun store, rien ne prévient l'utilisateur qu'une version
+ * plus récente est sortie : il faut le lui dire, et lui dire OÙ l'installer —
+ * le canal n'est pas le même selon la plateforme.
+ *
+ * La page est écartable, pas bloquante. Une vérification de version dépend d'un
+ * appel réseau à un service tiers ; en faire une condition d'accès à l'app
+ * reviendrait à laisser GitHub décider si l'application démarre. Le refus vaut
+ * pour ce build-là seulement : la publication suivante le repropose (voir
+ * `dismissUpdate`).
+ */
+
+/**
+ * Laisse le démarrage se faire avant d'annoncer quoi que ce soit. La file
+ * d'attente (StartupPopupContext) décide de l'ordre réel d'affichage ; ce délai
+ * ne fait qu'éviter de peser sur les toutes premières frames.
+ */
+const STARTUP_SETTLE_MS = 400;
+
+/** Marches à suivre, dans l'ordre, propres à chaque canal d'installation. */
+const STEPS = Platform.select({
+  ios: [
+    `Ouvre ${INSTALL_CHANNEL} sur ton iPhone.`,
+    'TwitNinf apparaît avec une mise à jour disponible.',
+    'Lance la mise à jour et laisse-la aller au bout.',
+  ],
+  default: [
+    `Ouvre ${INSTALL_CHANNEL} sur ton téléphone.`,
+    'TwitNinf apparaît avec une mise à jour disponible.',
+    "Installe-la par-dessus : tes comptes et tes brouillons sont conservés.",
+  ],
+}) as string[];
+
+export default function UpdateAvailableGate() {
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const visible = useStartupPopupSlot('update', !!update);
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    timer = setTimeout(() => {
+      checkForUpdate()
+        .then((found) => {
+          if (active) setUpdate(found);
+        })
+        // `checkForUpdate` avale déjà ses erreurs ; ce garde-fou couvre
+        // l'imprévu, car une promesse rejetée ici ferait tomber le démarrage.
+        .catch(() => {});
+    }, STARTUP_SETTLE_MS);
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  const handleDismiss = async () => {
+    const dismissed = update;
+    // Libère le créneau tout de suite : l'écriture du refus ne doit pas
+    // retarder l'étape suivante du parcours de démarrage.
+    setUpdate(null);
+    if (dismissed) await dismissUpdate(dismissed.buildVersion);
+  };
+
+  if (!visible || !update) return null;
+
+  return (
+    <StartupStepPage
+      visible={visible}
+      icon="arrow-up-circle"
+      title="Une nouvelle version est disponible"
+      subtitle={
+        update.label
+          ? `Version ${update.label} — à installer depuis ${INSTALL_CHANNEL}`
+          : `À installer depuis ${INSTALL_CHANNEL}`
+      }
+      footer={
+        <TouchableOpacity
+          style={stepStyles.primaryButton}
+          onPress={handleDismiss}
+          activeOpacity={0.85}
+        >
+          <Text style={stepStyles.primaryText}>J'ai compris</Text>
+        </TouchableOpacity>
+      }
+    >
+      <View style={S.channelCard}>
+        <Ionicons name="cube-outline" size={18} color={colors.accent} />
+        <Text style={S.channelText}>{INSTALL_CHANNEL}</Text>
+      </View>
+
+      {STEPS.map((step, index) => (
+        <View key={index} style={S.stepRow}>
+          <View style={S.stepBadge}>
+            <Text style={S.stepBadgeText}>{index + 1}</Text>
+          </View>
+          <Text style={S.stepText}>{step}</Text>
+        </View>
+      ))}
+
+      <Text style={S.note}>
+        Tu peux continuer à utiliser cette version, mais les nouveautés et les
+        corrections ne seront là qu'après la mise à jour.
+      </Text>
+    </StartupStepPage>
+  );
+}
+
+const S = StyleSheet.create({
+  channelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 18,
+    borderRadius: 12,
+    backgroundColor: colors.accentMuted,
+  },
+  channelText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontFamily: fonts.bold,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+    paddingRight: 8,
+  },
+  stepBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    backgroundColor: colors.surfaceElevated,
+  },
+  stepBadgeText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontFamily: fonts.bold,
+  },
+  stepText: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: fonts.regular,
+    paddingTop: 1,
+  },
+  note: {
+    marginTop: 8,
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: fonts.regular,
+  },
+});

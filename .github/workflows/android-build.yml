@@ -48,6 +48,38 @@ jobs:
             echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
           } >> "$GITHUB_ENV"
 
+      # Meme flux de versions que sur iOS (voir src/services/updateCheck.ts),
+      # mais l'APK ne PUBLIE rien dans le gist : c'est le Kospor Store qui le
+      # distribue. On estampille donc ce build avec le numero DEJA publie, sans
+      # l'incrementer — sinon un APK fraichement construit se declarerait
+      # perime des son premier lancement.
+      #
+      # Lecture anonyme : un gist secret reste lisible par l'API a qui connait
+      # son identifiant, et ce job n'a pas besoin d'y ecrire.
+      - name: Recupere la version publiee
+        run: |
+          set -euo pipefail
+          GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
+          FEED_URL="https://api.github.com/gists/${GIST_ID}"
+
+          BUILD_VERSION=$(curl -sS -m 20 -H "Accept: application/json" "$FEED_URL" \
+            | python3 -c "import json,sys;print(json.loads(json.load(sys.stdin)['files']['apps.json']['content'])['apps'][0]['versions'][0]['buildVersion'])")
+
+          if [ -z "$BUILD_VERSION" ]; then
+            echo "::error::buildVersion introuvable dans le gist $GIST_ID."
+            exit 1
+          fi
+          echo "buildVersion estampillee : $BUILD_VERSION"
+
+          {
+            echo "EXPO_PUBLIC_BUILD_VERSION=$BUILD_VERSION"
+            echo "EXPO_PUBLIC_UPDATE_FEED_URL=$FEED_URL"
+          } >> .env
+          {
+            echo "EXPO_PUBLIC_BUILD_VERSION=$BUILD_VERSION"
+            echo "EXPO_PUBLIC_UPDATE_FEED_URL=$FEED_URL"
+          } >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20

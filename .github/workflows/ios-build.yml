@@ -68,6 +68,39 @@ jobs:
             echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
           } >> "$GITHUB_ENV"
 
+      # Le numero de build doit etre connu AVANT le bundling JS : c'est lui que
+      # l'app compare ensuite au gist pour savoir qu'elle est perimee (voir
+      # src/services/updateCheck.ts). On lit donc le gist maintenant, on calcule
+      # le prochain numero, et c'est ce meme numero qui sera ecrit dans
+      # apps.json a la toute fin — les deux valeurs doivent coincider, sinon
+      # l'app fraichement publiee se croirait deja en retard sur elle-meme.
+      #
+      # Le clone sert aussi a la publication finale : inutile de le refaire.
+      - name: Prepare la version publiee
+        env:
+          GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
+
+          git clone -q "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo
+          CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])")
+          NEXT=$((CURRENT + 1))
+          echo "buildVersion publiee : $CURRENT -> $NEXT"
+
+          # L'API du gist plutot que l'URL brute : elle ne demande pas de
+          # connaitre le compte proprietaire et fonctionne sur un gist secret.
+          FEED_URL="https://api.github.com/gists/${GIST_ID}"
+
+          {
+            echo "EXPO_PUBLIC_BUILD_VERSION=$NEXT"
+            echo "EXPO_PUBLIC_UPDATE_FEED_URL=$FEED_URL"
+          } >> .env
+          {
+            echo "EXPO_PUBLIC_BUILD_VERSION=$NEXT"
+            echo "EXPO_PUBLIC_UPDATE_FEED_URL=$FEED_URL"
+          } >> "$GITHUB_ENV"
+
       - name: Select latest Xcode
         run: |
           set -euo pipefail
@@ -202,12 +235,13 @@ jobs:
           GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
         run: |
           set -euo pipefail
-          GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
           IPA=$(ls ios/*.ipa | head -1)
 
-          git clone "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo
+          # `gist-repo` a deja ete clone par l'etape "Prepare la version
+          # publiee", qui a fixe $EXPO_PUBLIC_BUILD_VERSION. On republie ce
+          # numero-la tel quel : c'est celui qui est grave dans le bundle.
           cp "$IPA" gist-repo/TwitNinf.ipa
-          python3 .github/scripts/update_gist.py gist-repo "$IPA"
+          python3 .github/scripts/update_gist.py gist-repo "$IPA" "$EXPO_PUBLIC_BUILD_VERSION"
 
           cd gist-repo
           git config user.name "twitninf-ci"

@@ -28,6 +28,7 @@ import ProfileCompletionGate from './src/components/ProfileCompletionGate';
 import ConsentGate from './src/components/ConsentGate';
 import PatchNotesModal from './src/components/PatchNotesModal';
 import FollowOnboardingGate from './src/components/FollowOnboardingGate';
+import UpdateAvailableGate from './src/components/UpdateAvailableGate';
 
 /**
  * Choix de la langue de lecture à la première connexion.
@@ -176,6 +177,9 @@ export default function App() {
                     se pose une fois que les autres questions sont passées. */}
                 <ConsentGate />
                 <FollowOnboardingGate />
+                {/* L'app n'est sur aucun store : sans cette page, un appareil
+                    reste indéfiniment sur un build périmé sans le savoir. */}
+                <UpdateAvailableGate />
                 {/* À la racine, pas dans TweetsScreen : ces étapes sont des
                     pages plein écran, et montées dans un écran elles
                     laisseraient dépasser la barre d'onglets. */}

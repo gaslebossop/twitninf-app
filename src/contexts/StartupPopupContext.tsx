@@ -28,7 +28,7 @@ import React, {
  */
 export type StartupPopupId =
   | 'language' | 'patch' | 'birthday' | 'navbar' | 'profile'
-  | 'consent' | 'follow_onboarding';
+  | 'consent' | 'follow_onboarding' | 'update';
 
 /**
  * Du plus bloquant au plus accessoire.
@@ -55,6 +55,11 @@ export type StartupPopupId =
 const REGISTRATION_WINDOW_MS = 700;
 
 const PRIORITY: StartupPopupId[] = [
+  // Avant tout le reste : l'app installée est périmée, et les étapes qui
+  // suivent (patch notes, choix d'onglets) décrivent parfois des écrans que
+  // cette version-là n'a pas encore. Annoncer la mise à jour d'abord évite de
+  // présenter des nouveautés introuvables.
+  'update',
   'consent',
   // Juste derrière le socle légal : sans abonnement, le recommandeur n'a aucun
   // signal et sert un fil générique. Cette étape conditionne donc tout ce que
