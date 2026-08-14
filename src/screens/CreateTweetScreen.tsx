@@ -1015,6 +1015,19 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     </TouchableOpacity>
                   )}
 
+                  {/* Concours : un tweet a cagnotte a son propre formulaire
+                      (montant, devise, conditions, duree). On quitte donc le
+                      composeur au lieu d'entasser ces champs ici. */}
+                  <TouchableOpacity
+                    style={styles.optionChip}
+                    onPress={() => (navigation as any).navigate('CreateContest')}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Creer un concours"
+                  >
+                    <Ionicons name="gift-outline" size={17} color={colors.textMuted} />
+                    <Text style={styles.optionText}>CONCOURS</Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[
                       styles.optionChip,

@@ -473,6 +473,11 @@ export default function UserProfileScreen() {
       case 'openQuote':
         (navigation as any).navigate('TweetDetail', { tweetId });
         break;
+      case 'openContest':
+        if (payload?.contestId) {
+          (navigation as any).navigate('Contest', { contestId: payload.contestId });
+        }
+        break;
       case 'profile': {
         const author = payload?.author;
         if (!author?.id) return;

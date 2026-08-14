@@ -27,6 +27,7 @@ import VerifiedBadge from '../VerifiedBadge';
 import PremiumDisplayName from '../PremiumDisplayName';
 import { STORY_GRADIENT } from '../StoryRing';
 import PaidContentLock from '../PaidContentLock';
+import ContestCard from '../ContestCard';
 import LockedText from '../LockedText';
 import { certifiedNameColors, type ProfileCustomization } from '../../services/profileCustomizationService';
 import { colors } from '../../theme';
@@ -58,7 +59,7 @@ const C = {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface TweetRowAction {
-  type: 'like' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report';
+  type: 'like' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report' | 'openContest';
   tweetId: string;
   payload?: any;
 }
@@ -142,6 +143,7 @@ function TweetRow({
   const isAd = !!(tweet as any).is_ad;
   const isRetweet = !!((tweet as any).is_retweet || (tweet as any).tweet_type === 'retweet');
   const isQuote = !!((tweet as any).is_quote || (tweet as any).tweet_type === 'quote');
+  const isContest = (tweet as any).tweet_type === 'concours';
   const originalTweet = (tweet as any)?.originalTweet || null;
   const retweeter = tweet.author;
 
@@ -522,6 +524,18 @@ function TweetRow({
                 // Après l'achat, on ouvre le tweet : c'est là que le serveur
                 // renverra le contenu complet, désormais accessible.
                 onUnlocked={() => onAction({ type: 'open', tweetId: tweet.id })}
+              />
+            )}
+
+            {/* Concours : la cagnotte, le rebours et l'accès a l'ecran de
+                participation. La carte va chercher le concours elle-meme —
+                le fil est servi par plusieurs moteurs, aucun ne le joint. */}
+            {isContest && (
+              <ContestCard
+                tweetId={String(tweet.id)}
+                onOpen={(contestId) =>
+                  onAction({ type: 'openContest', tweetId: tweet.id, payload: { contestId } })
+                }
               />
             )}
 

@@ -965,6 +965,14 @@ export default function TweetsScreen() {
         (navigation as any).navigate('TweetDetail', { tweetId });
         break;
 
+      // Concours : l'identifiant vient de la carte, qui l'a resolu elle-meme
+      // depuis le tweet — le fil ne transporte pas le concours.
+      case 'openContest':
+        if (payload?.contestId) {
+          (navigation as any).navigate('Contest', { contestId: payload.contestId });
+        }
+        break;
+
       case 'profile': {
         const author = payload?.author;
         if (!author?.id) return;

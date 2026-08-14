@@ -101,6 +101,8 @@ import ConversationThreadScreen from '../screens/ConversationThreadScreen';
 import FollowRequestsScreen from '../screens/FollowRequestsScreen';
 import UserConnectionsScreen from '../screens/UserConnectionsScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
+import ContestScreen from '../screens/ContestScreen';
+import CreateContestScreen from '../screens/CreateContestScreen';
 import { navigationRef } from './NavigationService';
 import { colors } from '../theme';
 
@@ -170,6 +172,9 @@ export type MainStackParamList = {
   Video: undefined;
   Messages: undefined;
   CreateVideo: undefined;
+  /** Concours : page de participation, ouverte depuis la carte du fil. */
+  Contest: { contestId: string };
+  CreateContest: undefined;
   /**
    * `returnTo` : écran à qui rendre la prise, au lieu d'enchaîner sur
    * `VideoCaption`. Le composeur de tweet en a besoin — la vidéo s'y attache
@@ -324,6 +329,27 @@ function MainNavigatorInner() {
         }}
       />
       
+      {/* Concours : la page de participation, et le formulaire de creation. */}
+      <MainStack.Screen
+        name="Contest"
+        component={ContestScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_right',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="CreateContest"
+        component={CreateContestScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
       <MainStack.Screen 
         name="CreateTweet" 
         component={CreateTweetScreen}
