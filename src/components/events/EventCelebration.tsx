@@ -270,8 +270,16 @@ const S = StyleSheet.create({
   root: { gap: 12 },
 
   panel: {
-    borderRadius: radius.lg,
+    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
+    // Ombre douce plutôt que filet : c'est ce qui fait « flotter » une carte
+    // blanche sur un gris très clair. Une bordure, à cet écart de valeur, se
+    // verrait comme un trait sale.
+    shadowColor: '#2A1240',
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
     padding: 15,
     overflow: 'hidden',
   },

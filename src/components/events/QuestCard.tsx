@@ -13,6 +13,7 @@ import { fonts, radius, withAlpha } from '../../theme';
 import type { EventArt } from '../../theme/eventArt';
 import { ease } from '../../utils/gesture';
 import Tappable from '../ui/Tappable';
+import RewardArt from './RewardArt';
 import type { QuestView } from '../../types/events';
 
 /**
@@ -104,12 +105,22 @@ function QuestCardBase({ quest, art, claiming, onClaim }: Props) {
 
       {/* ── Ligne 1 : ce que c'est, et ce que ça rapporte ── */}
       <View style={S.head}>
-        <View style={[S.icon, { backgroundColor: withAlpha(tint, 0.15) }]}>
-          <Ionicons
-            name={(locked ? 'lock-closed' : done ? 'checkmark' : quest.icon) as any}
-            size={16}
-            color={tint}
-          />
+        {/* L'illustration de la récompense sert de vignette : on reconnaît ce
+            qu'il y a à gagner avant même d'avoir lu le titre. Vectorielle,
+            donc nette à toutes les densités (voir `RewardArt`). */}
+        <View style={S.icon}>
+          {locked || done ? (
+            <View style={[S.iconFallback, { backgroundColor: withAlpha(tint, 0.15) }]}>
+              <Ionicons name={(done ? 'checkmark' : 'lock-closed') as any} size={16} color={tint} />
+            </View>
+          ) : (
+            <RewardArt
+              kind={quest.reward.kind}
+              tint={tier.color}
+              accent={art.colors.ember}
+              size={34}
+            />
+          )}
         </View>
 
         <Text
@@ -197,10 +208,20 @@ export default memo(QuestCardBase, (prev, next) => {
 
 const S = StyleSheet.create({
   card: {
-    borderRadius: radius.lg,
+    // Rayon généreux : la rondeur est la signature de cette DA.
+    borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 10,
     borderWidth: StyleSheet.hairlineWidth,
+    // Ombre douce plutôt que filet : c'est ce qui fait « flotter » une carte
+    // blanche sur un gris très clair. Une bordure, à cet écart de valeur, se
+    // verrait comme un trait sale.
+    shadowColor: '#2A1240',
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
+
     paddingHorizontal: 13,
     paddingTop: 11,
     paddingBottom: 12,
@@ -209,6 +230,12 @@ const S = StyleSheet.create({
 
   head: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   icon: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconFallback: {
     width: 30,
     height: 30,
     borderRadius: 15,
@@ -231,7 +258,7 @@ const S = StyleSheet.create({
     marginTop: 8,
     // Aligné sur le titre, pas sur l'icône : le bloc de texte forme une
     // colonne nette au lieu de repartir du bord à chaque carte.
-    marginLeft: 39,
+    marginLeft: 43,
   },
 
   footer: {
@@ -239,7 +266,7 @@ const S = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginTop: 10,
-    marginLeft: 39,
+    marginLeft: 43,
   },
   track: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 2 },

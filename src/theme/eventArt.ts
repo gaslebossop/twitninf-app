@@ -71,12 +71,35 @@ export interface EventArt {
     ember: string;
     /** Texte sur un aplat festif. */
     onFestive: string;
+    /**
+     * Texte posé sur le dégradé d'en-tête.
+     *
+     * Distinct de `text` : sur une DA claire, le corps de page est en texte
+     * sombre alors que l'en-tête est un aplat saturé qui réclame du blanc.
+     * Confondre les deux donne du noir sur du magenta.
+     */
+    onHeader: string;
     /** Reste la marque, quoi qu'il arrive. Voir l'en-tête. */
     brand: string;
   };
+  /**
+   * Style de la barre d'état pendant que la page est ouverte.
+   *
+   * Fait partie de la DA et pas de l'écran : une DA claire a besoin d'icônes
+   * sombres, une DA sombre d'icônes claires. Le figer dans l'écran rendait
+   * l'heure invisible dès qu'on changeait de direction artistique.
+   */
+  statusBar: 'light' | 'dark';
   gradients: {
-    /** Bandeau et en-tête de la page d'événement. */
-    header: [string, string];
+    /**
+     * Bandeau et en-tête de la page d'événement.
+     *
+     * Deux arrêts au minimum, trois autorisés : un dégradé de fête a souvent
+     * besoin d'une couleur intermédiaire pour ne pas virer au boueux entre ses
+     * extrêmes (un magenta qui va vers l'ambre passe par du brun s'il n'a pas
+     * de corail au milieu).
+     */
+    header: [string, string] | [string, string, string];
     /** Carte de quête au repos. */
     card: [string, string];
     /** Aplat festif : bouton de réclamation, palier légendaire. */
@@ -117,8 +140,10 @@ const NONE: EventArt = {
     festiveSoft: colors.accentSoft,
     ember: colors.accentHover,
     onFestive: colors.white,
+    onHeader: colors.textPrimary,
     brand: colors.accent,
   },
+  statusBar: 'light',
   gradients: {
     header: [colors.surface, colors.bg],
     card: [colors.surface, colors.surfaceAlt],
@@ -135,75 +160,96 @@ const NONE: EventArt = {
 };
 
 /**
- * « Minuit » — la DA de l'anniversaire de twitninf.
+ * « Confettis » — la DA de l'anniversaire de twitninf.
  *
  * ── L'idée ───────────────────────────────────────────────────────────────
- * Pas des confettis. Des confettis, c'est ce qu'on met quand on n'a pas
- * d'idée : bruyant pendant deux secondes, puis insupportable pendant huit
- * jours. Ici, la scène est celle de la seconde où l'on allume les bougies —
- * la pièce est sombre, et une lumière chaude tombe d'en haut.
+ * Une fête, pas une veillée. Fond CLAIR, dégradé saturé en héros, cartes
+ * blanches très arrondies posées par une ombre douce plutôt que par un filet,
+ * et le jaune sur ce qui s'appuie. C'est la grammaire de Snapchat, et elle
+ * convient à un anniversaire : elle est bruyante en haut, calme en bas.
  *
- * Concrètement : le noir de l'app se teinte imperceptiblement de violet
- * (`#0B0710` contre `#0A0A0A` — assez pour qu'on le sente, pas assez pour
- * qu'on le remarque), et tout ce qui appartient à la fête est doré. Des
- * braises montent lentement en fond, à très faible opacité.
+ * ── Ce que ça remplace ────────────────────────────────────────────────────
+ * Une première DA, « Minuit », jouait la scène de l'allumage des bougies :
+ * fond violet-noir, or, braises montantes. Elle était cohérente et sombre —
+ * mais un anniversaire n'est pas une veillée, et une page qu'on ouvre tous
+ * les jours pendant huit jours gagne à être accueillante plutôt que
+ * solennelle.
+ *
+ * ── Le point technique qui rend ce revirement possible ────────────────────
+ * Rien d'autre n'a bougé. Les composants ne connaissent que `art.colors.*` :
+ * passer d'une DA sombre à une DA claire est un changement de CE fichier, pas
+ * des écrans. C'est exactement ce pour quoi la palette a été rendue autonome.
  *
  * ── Ce qui NE change pas ─────────────────────────────────────────────────
  * Le rouge. `brand` reste `colors.accent` : le cœur des likes, le bouton de
- * publication et le rouge des actions destructrices sont exactement ceux
- * d'hier. On habille la fête, on ne réapprend pas l'app.
+ * publication et le rouge des actions destructrices sont ceux d'hier. On
+ * habille la fête, on ne réapprend pas l'app.
  *
- * ── Contraste ────────────────────────────────────────────────────────────
- * `onFestive` est un brun très sombre et non du blanc : du blanc sur `#F5C24B`
- * tombe à 1,9:1, illisible. Le brun tient 9:1. C'est le genre de vérification
- * qu'un formulaire d'admin ne fait jamais.
+ * ── Contraste, vérifié ───────────────────────────────────────────────────
+ * `festive` (#E11B72) sur blanc tient 5,3:1 — au-dessus du seuil de 4,5:1 pour
+ * du texte. Le jaune iconique (#FFE600) ne sert JAMAIS de couleur de texte :
+ * sur blanc il tombe à 1,2:1. Il n'est utilisé qu'en APLAT, avec du texte
+ * quasi noir dessus (14:1). C'est la vérification qu'un formulaire d'admin ne
+ * fait jamais, et c'est pour ça que la DA vit dans le code.
  */
 const BIRTHDAY: EventArt = {
   id: 'birthday',
-  name: 'Minuit — anniversaire twitninf',
+  name: 'Confettis — anniversaire twitninf',
   colors: {
-    ink: '#0B0710',
-    // Surfaces écrites en DUR, jamais reprises du thème : la page impose son
-    // fond sombre, elle doit donc imposer aussi ses cartes. Les laisser suivre
-    // le thème donnait des cartes blanches sur fond noir en thème clair.
-    surface: '#17101F',
-    surfaceAlt: '#221830',
-    border: 'rgba(245,194,75,0.14)',
-    text: '#F7F2EA',
-    textDim: '#B8ADBF',
-    textMuted: '#7E7389',
-    festive: '#F5C24B',
-    festiveBright: '#FFD980',
-    festiveSoft: 'rgba(245,194,75,0.12)',
-    ember: '#FF7A3D',
-    onFestive: '#2A1C05',
+    // Gris très clair pour la page, blanc pur pour les cartes : c'est cet
+    // écart minuscule qui fait « décoller » les cartes sans aucune bordure.
+    ink: '#F4F3F7',
+    surface: '#FFFFFF',
+    surfaceAlt: '#EFEEF4',
+    border: 'rgba(17,12,28,0.07)',
+    text: '#120E1C',
+    textDim: '#5C5470',
+    textMuted: '#948CA6',
+    // Magenta vif, lisible sur blanc — c'est lui qui porte les accents de
+    // texte, pas le jaune.
+    festive: '#E11B72',
+    festiveBright: '#FF4D9A',
+    festiveSoft: 'rgba(225,27,114,0.09)',
+    ember: '#FF8A3D',
+    // Le jaune est un APLAT : texte quasi noir dessus.
+    onFestive: '#1A1020',
+    // Sur le dégradé saturé de l'en-tête, le blanc est la seule option.
+    onHeader: '#FFFFFF',
     brand: colors.accent,
   },
+  statusBar: 'light',
   gradients: {
-    // Le ciel de la pièce : violet profond en haut, noir en bas.
-    header: ['#1C1026', '#0B0710'],
-    // Une carte de quête n'est pas dorée — seulement effleurée par la lumière.
-    // Un aplat d'or sur chacune des onze cartes rendrait l'or insignifiant.
-    card: ['#1B1324', '#150E1D'],
-    festive: ['#FFD980', '#F5C24B', '#E09A2B'],
+    // Le héros : magenta profond → corail → ambre. Saturé, franc, et il
+    // s'arrête net — le reste de la page est calme, sinon rien ne ressort.
+    header: ['#8E1C5E', '#FF5E5B', '#FFB03A'],
+    // Les cartes sont BLANCHES. Un dégradé dessus les salirait ; ce sont
+    // l'ombre et le rayon qui font le travail.
+    card: ['#FFFFFF', '#FFFFFF'],
+    // Le jaune Snapchat, réservé au bouton de réclamation. Une seule chose
+    // dans toute la page le porte, donc on ne peut pas le rater.
+    festive: ['#FFF04D', '#FFE600', '#FFC800'],
   },
   fonts: {
-    // Anton : une police d'affiche, condensée et lourde. Réservée aux chiffres
-    // de l'événement (le compte à rebours, « 10 quêtes », les paliers). Le
-    // corps de texte reste Inter — une police d'affiche à 14 px ne se lit pas.
-    display: displayNameFonts.poster,
+    // Poppins : géométrique, ronde, chaleureuse — la famille la plus proche de
+    // l'esprit recherché parmi celles déjà embarquées. Anton, la police
+    // d'affiche de la version précédente, était juste mais froide.
+    display: displayNameFonts.rounded,
     body: fonts.regular,
   },
   tier: {
-    bronze: { label: 'Bronze', color: '#C08552', glow: 'rgba(192,133,82,0.30)' },
-    silver: { label: 'Argent', color: '#D6DBE4', glow: 'rgba(214,219,228,0.30)' },
-    gold: { label: 'Or', color: '#F5C24B', glow: 'rgba(245,194,75,0.36)' },
-    // Le légendaire est la SEULE chose qui mêle le rouge de la marque et l'or
-    // de la fête. C'est ce qui en fait un sommet : la couleur ne se voit nulle
-    // part ailleurs, ni dans l'app ordinaire, ni dans le reste de l'événement.
-    legendary: { label: 'Légendaire', color: '#FF6B8A', glow: 'rgba(255,107,138,0.42)' },
+    // Assombris par rapport à la version sombre : sur fond blanc, un bronze
+    // clair et un argent pâle deviennent illisibles.
+    bronze: { label: 'Bronze', color: '#B0703A', glow: 'rgba(176,112,58,0.22)' },
+    silver: { label: 'Argent', color: '#6E7A8A', glow: 'rgba(110,122,138,0.22)' },
+    gold: { label: 'Or', color: '#D69A0C', glow: 'rgba(214,154,12,0.26)' },
+    // Le légendaire est le seul à porter le magenta de la fête : la couleur ne
+    // se voit nulle part ailleurs, ce qui en fait un sommet.
+    legendary: { label: 'Légendaire', color: '#E11B72', glow: 'rgba(225,27,114,0.30)' },
   },
-  particles: 'embers',
+  // Des braises montantes sur un fond clair ne se verraient pas, et des
+  // confettis en boucle sur une page qu'on ouvre huit jours de suite
+  // deviendraient vite insupportables. C'est le dégradé qui porte l'énergie.
+  particles: 'none',
 };
 
 const REGISTRY: Record<EventArtId, EventArt> = {

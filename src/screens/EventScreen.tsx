@@ -144,7 +144,11 @@ export default function EventScreen() {
 
   return (
     <View style={[S.root, { backgroundColor: art.colors.ink }]}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar
+        barStyle={art.statusBar === 'dark' ? 'dark-content' : 'light-content'}
+        translucent
+        backgroundColor="transparent"
+      />
       <SafeAreaView style={S.safe} edges={['top']}>
         <ScrollView
           contentContainerStyle={S.content}
@@ -162,14 +166,14 @@ export default function EventScreen() {
             <EventAmbience art={art} height={210} />
 
             <View style={S.headerBody}>
-              <Text style={[S.eyebrow, { color: art.colors.festive }]}>
+              <Text style={[S.eyebrow, { color: withAlpha(art.colors.onHeader, 0.85) }]}>
                 {isLive ? 'EN COURS' : 'BIENTÔT'}
               </Text>
 
               {/* La police d'affiche est réservée au titre et aux chiffres.
                   L'employer partout la banaliserait en une journée. */}
               <Text
-                style={[S.title, { fontFamily: art.fonts.display, color: art.colors.text }]}
+                style={[S.title, { fontFamily: art.fonts.display, color: art.colors.onHeader }]}
                 numberOfLines={2}
               >
                 {event?.name ?? 'Événement'}
@@ -186,8 +190,8 @@ export default function EventScreen() {
                         S.segment,
                         {
                           backgroundColor: quest.state.completed
-                            ? art.tier[quest.tier].color
-                            : withAlpha(art.colors.text, 0.12),
+                            ? art.colors.onHeader
+                            : withAlpha(art.colors.onHeader, 0.28),
                         },
                       ]}
                     />
@@ -197,14 +201,14 @@ export default function EventScreen() {
 
               <View style={S.metrics}>
                 <Text
-                  style={[S.metricValue, { fontFamily: art.fonts.display, color: art.colors.festive }]}
+                  style={[S.metricValue, { fontFamily: art.fonts.display, color: art.colors.onHeader }]}
                 >
                   {doneCount}/{quests.length}
                 </Text>
-                <Text style={[S.metricLabel, { color: art.colors.textDim }]}>quêtes</Text>
-                <View style={[S.dot, { backgroundColor: art.colors.textMuted }]} />
-                <Ionicons name="time-outline" size={13} color={art.colors.textDim} />
-                <Text style={[S.metricLabel, { color: art.colors.textDim }]}>
+                <Text style={[S.metricLabel, { color: withAlpha(art.colors.onHeader, 0.75) }]}>quêtes</Text>
+                <View style={[S.dot, { backgroundColor: withAlpha(art.colors.onHeader, 0.5) }]} />
+                <Ionicons name="time-outline" size={13} color={withAlpha(art.colors.onHeader, 0.75)} />
+                <Text style={[S.metricLabel, { color: withAlpha(art.colors.onHeader, 0.75) }]}>
                   {formatRemaining(endsIn)}
                 </Text>
               </View>
@@ -310,8 +314,10 @@ const S = StyleSheet.create({
     marginHorizontal: -16,
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 18,
+    paddingBottom: 20,
     overflow: 'hidden',
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
   },
   headerBody: { gap: 5 },
   eyebrow: { fontFamily: fonts.bold, fontSize: 10.5, letterSpacing: 1.6 },
@@ -327,8 +333,11 @@ const S = StyleSheet.create({
 
   tabs: {
     flexDirection: 'row',
-    borderRadius: radius.lg,
-    padding: 3,
+    // Pilule pleine : le conteneur ET l'onglet actif sont entièrement
+    // arrondis, ce qui est la forme de bouton la plus reconnaissable de
+    // cette grammaire.
+    borderRadius: 999,
+    padding: 4,
     gap: 3,
     marginTop: 14,
     marginBottom: 16,
@@ -339,8 +348,8 @@ const S = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    height: 36,
-    borderRadius: radius.md,
+    height: 38,
+    borderRadius: 999,
   },
   tabLabel: { fontFamily: fonts.semibold, fontSize: 12.5 },
   badge: {
