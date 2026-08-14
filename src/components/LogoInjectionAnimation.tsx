@@ -1,5 +1,5 @@
-﻿import React, { memo, useEffect, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+﻿import React, { memo, useEffect, useMemo, useState } from 'react';
+import { AppState, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 import Animated, {
   cancelAnimation,
@@ -92,8 +92,52 @@ type Step = { to: number; dur: number; ease?: WithTimingConfig['easing']; delay?
  * d'image clé » : les styles interpolent dessus, ce qui donne une courbe propre
  * par segment sans multiplier les valeurs partagées.
  */
+/**
+ * Compteur de resynchronisation, partagé par tous les éléments.
+ *
+ * ── Le problème ───────────────────────────────────────────────────────────
+ * Cette animation est composée d'une trentaine d'éléments (anneaux, rayons,
+ * particules, seringue, logo, halo), et chacun fait tourner SA propre boucle
+ * `withRepeat`. Elles ne restent en phase que parce qu'elles ont toutes
+ * démarré au même instant, et que chaque boucle est calée sur la même durée
+ * de cycle.
+ *
+ * Cette hypothèse tombe dès que l'app passe en arrière-plan : le système gèle
+ * les animations, et au retour chacune reprend où elle peut. Les éléments
+ * dérivent les uns par rapport aux autres, et ceux dont la fenêtre de
+ * visibilité ne tombe plus au bon moment paraissent tout simplement absents.
+ *
+ * ── Le correctif ──────────────────────────────────────────────────────────
+ * Un compteur unique, incrémenté au retour au premier plan. Il fait partie des
+ * dépendances de chaque boucle : toutes sont donc reconstruites ET redémarrées
+ * à zéro au même instant. La chorégraphie repart du début, entière et alignée.
+ *
+ * Un abonnement de module plutôt qu'un par élément : trente abonnés à
+ * `AppState` pour la même information, c'est vingt-neuf de trop.
+ */
+let resyncEpoch = 0;
+const resyncListeners = new Set<(epoch: number) => void>();
+
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active') return;
+  resyncEpoch += 1;
+  resyncListeners.forEach((notify) => notify(resyncEpoch));
+});
+
+function useResyncEpoch(): number {
+  const [epoch, setEpoch] = useState(resyncEpoch);
+  useEffect(() => {
+    resyncListeners.add(setEpoch);
+    return () => {
+      resyncListeners.delete(setEpoch);
+    };
+  }, []);
+  return epoch;
+}
+
 function usePhase(steps: Step[], active: boolean) {
   const phase = useSharedValue(0);
+  const epoch = useResyncEpoch();
 
   useEffect(() => {
     if (!active) {
@@ -125,8 +169,10 @@ function usePhase(steps: Step[], active: boolean) {
     return () => cancelAnimation(phase);
     // `steps` est reconstruit à chaque rendu ; seules la taille et l'activité
     // changent réellement la chorégraphie.
+    // `epoch` change au retour au premier plan : la boucle est alors
+    // reconstruite depuis zéro, en même temps que toutes les autres.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, steps.length]);
+  }, [active, steps.length, epoch]);
 
   return phase;
 }
@@ -519,7 +565,19 @@ function LogoInjectionAnimation({ size = 200, tint, active = true }: Props) {
             top: size / 2 - LOGO_BOX * LOGO_CENTER.y,
             width: LOGO_BOX,
             height: LOGO_BOX,
-            transformOrigin: `50% ${LOGO_CENTER.y * 100}%`,
+            // Pixels, pas pourcentages — et c'est un correctif, pas un style.
+            //
+            // React Native analyse la forme texte avec
+            // /(top|bottom|left|right|center|\d+(?:%|px)|0)/gi : `\d+`
+            // n'accepte AUCUNE decimale. `50% 52.800000000000004%` y etait
+            // decoupe en ["50%", "800000000000004%"], soit une origine
+            // verticale a huit cents mille milliards de pour cent. Le logo
+            // pivotait donc autour d'un point aberrant, sans la moindre erreur.
+            //
+            // La forme tableau ne passe pas par cet analyseur : les nombres y
+            // sont des pixels, exacts, et la valeur reste juste a toutes les
+            // tailles.
+            transformOrigin: [LOGO_BOX * LOGO_CENTER.x, LOGO_BOX * LOGO_CENTER.y, 0],
           },
           logoStyle,
         ]}
@@ -583,7 +641,12 @@ function LogoInjectionAnimation({ size = 200, tint, active = true }: Props) {
             top: size / 2 - SYR_BOX * NEEDLE_TIP.y,
             width: SYR_BOX,
             height: SYR_BOX,
-            transformOrigin: `${NEEDLE_TIP.x * 100}% ${NEEDLE_TIP.y * 100}%`,
+            // Meme correctif, et c'est ICI que ca plantait : `20.5% 83.7%`
+            // etait decoupe en ["0", "5%", "7%"] — trois valeurs, donc la
+            // troisieme partait en position Z, qui n'admet qu'un nombre.
+            // D'ou « Transform origin z-position must be a number.
+            // Passed value: 7%. » et l'ecran rouge au montage.
+            transformOrigin: [SYR_BOX * NEEDLE_TIP.x, SYR_BOX * NEEDLE_TIP.y, 0],
           },
           syringeStyle,
         ]}

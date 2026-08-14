@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -51,6 +52,21 @@ const STEPS = Platform.select({
 
 export default function UpdateAvailableGate() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const { width } = useWindowDimensions();
+
+  /**
+   * Taille du visuel : 400, borné par la largeur de l'écran.
+   *
+   * Elle valait 200 en dur, ce qui laissait l'illustration flotter dans le
+   * vide. Le plafond de 400 est le format voulu ; le `min` sur la largeur
+   * existe pour qu'un téléphone plus étroit ne se retrouve pas avec un visuel
+   * plus large que son écran.
+   *
+   * Déborder la marge du texte est SANS conséquence ici : les bords de
+   * l'illustration sont un halo transparent, pas du trait. Le sujet lui-même
+   * n'occupe qu'environ deux tiers de la boîte.
+   */
+  const heroSize = Math.round(Math.min(400, width));
   const visible = useStartupPopupSlot('update', !!update);
 
   useEffect(() => {
@@ -90,7 +106,7 @@ export default function UpdateAvailableGate() {
       // L'injection tourne en continu : c'est le geste que la page demande —
       // aller chercher la version dans Kospor Injection — et il n'y a rien
       // d'autre à regarder pendant qu'on lit les trois étapes.
-      hero={<LogoInjectionAnimation size={200} active={visible} />}
+      hero={<LogoInjectionAnimation size={heroSize} active={visible} />}
       title="Une nouvelle version est disponible"
       subtitle={
         update.label

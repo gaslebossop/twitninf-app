@@ -67,6 +67,7 @@ import FeatureFlagsAdminScreen from '../screens/FeatureFlagsAdminScreen';
 import NfMapScreen from '../screens/NfMapScreen';
 import KosporBirthdayScreen from '../screens/KosporBirthdayScreen';
 import EventScreen from '../screens/EventScreen';
+import AnimationLabScreen from '../screens/AnimationLabScreen';
 import VerificationStyleScreen from '../screens/VerificationStyleScreen';
 import VersionNotesScreen from '../screens/VersionNotesScreen';
 import ReadingLanguageScreen from '../screens/ReadingLanguageScreen';
@@ -158,6 +159,7 @@ export type MainStackParamList = {
   NfMap: undefined;
   KosporBirthday: undefined;
   Event: undefined;
+  AnimationLab: undefined;
   VerificationStyle: undefined;
   VersionNotes: undefined;
   ReadingLanguage: undefined;
@@ -644,6 +646,18 @@ function MainNavigatorInner() {
           contenu était écrit en dur pour une seule fête. Celui-ci rend
           n'importe quel événement que le serveur déclare actif, avec sa
           direction artistique. */}
+      {/* Banc d'essai des animations de demarrage. Outil interne, atteint
+          uniquement depuis les reglages d'un compte certifie. */}
+      <MainStack.Screen
+        name="AnimationLab"
+        component={AnimationLabScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_right',
+          headerShown: false,
+        }}
+      />
+
       <MainStack.Screen
         name="Event"
         component={EventScreen}

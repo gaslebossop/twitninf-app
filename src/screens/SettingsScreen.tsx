@@ -498,6 +498,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           () => navigation.navigate('VerificationStyle' as never)
         )}
 
+        {/* Banc d'essai des animations. Reserve aux comptes certifies : ce
+            n'est pas une fonctionnalite mais un outil, et les pages qu'il
+            montre ne s'affichent normalement que dans des conditions qu'on ne
+            peut pas provoquer a la demande. */}
+        {user?.verified && renderActionButton(
+          'Animations',
+          'Voir les pages de démarrage sans attendre leur déclencheur',
+          'flask-outline',
+          () => navigation.navigate('AnimationLab' as never)
+        )}
+
         {/* Bouton de gestion des événements fonctionnels (admin uniquement) */}
         {(isAdmin || isSuperAdmin) && renderActionButton(
           'Gestion des Événements',

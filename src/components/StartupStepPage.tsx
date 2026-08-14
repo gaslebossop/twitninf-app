@@ -170,12 +170,21 @@ const styles = StyleSheet.create({
   },
   progressSegmentDone: { backgroundColor: colors.accent },
   hero: {
-    // Calée sur la marge de gauche, là où se trouve la pastille d'icône qu'elle
-    // remplace : la page reste alignée sur une seule colonne.
-    alignSelf: 'flex-start',
+    /**
+     * Centrée, contrairement à la pastille d'icône qu'elle remplace.
+     *
+     * La première version la calait à gauche pour « garder la page sur une
+     * seule colonne ». Le raisonnement tient pour une pastille de 54 px ; il
+     * ne tient plus pour une illustration de 200 et plus, qui occupe alors la
+     * moitié de la largeur en laissant un vide béant à droite — on ne lit pas
+     * un alignement, on lit un décalage accidentel.
+     *
+     * Une illustration de cette taille EST le sujet du haut de page : sa place
+     * est au centre.
+     */
+    alignSelf: 'center',
     marginTop: -8,
-    marginBottom: -12,
-    marginLeft: -8,
+    marginBottom: -4,
   },
   iconCircle: {
     width: 54,
