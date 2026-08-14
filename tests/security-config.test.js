@@ -46,8 +46,32 @@ test('release Android configuration applies least privilege', () => {
     'WRITE_EXTERNAL_STORAGE',
     'SYSTEM_ALERT_WINDOW',
   ]) {
-    assert.doesNotMatch(releaseManifest, new RegExp(`android.permission.${permission}`));
+    // On vérifie qu'aucune permission n'est ACCORDÉE, pas que la chaîne est
+    // absente du fichier : `android.blockedPermissions` fait écrire à
+    // `expo prebuild` une ligne `tools:node="remove"` qui cite justement le
+    // nom de la permission pour la retirer à la fusion. Chercher le simple
+    // nom ferait échouer le test sur un manifeste pourtant durci.
+    assert.doesNotMatch(
+      releaseManifest,
+      new RegExp(`<uses-permission(?![^>]*tools:node="remove")[^>]*android.permission.${permission}"`),
+    );
     assert.ok(!appConfig.android.permissions.includes(permission));
+  }
+});
+
+test('les permissions larges sont explicitement retirées de la fusion du manifeste', () => {
+  // `android.permissions` n'ajoute que : les bibliothèques (expo-media-library,
+  // libs vidéo) fusionnent les leurs sans rien demander. Seul
+  // `blockedPermissions` les empêche d'atterrir dans l'APK publié.
+  for (const permission of [
+    'android.permission.READ_EXTERNAL_STORAGE',
+    'android.permission.WRITE_EXTERNAL_STORAGE',
+    'android.permission.SYSTEM_ALERT_WINDOW',
+  ]) {
+    assert.ok(
+      appConfig.android.blockedPermissions.includes(permission),
+      `${permission} doit rester dans android.blockedPermissions`,
+    );
   }
 });
 

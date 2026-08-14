@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import eventService, { Event, EventConfig } from '../services/eventService';
 import { getEventTheme, EventThemeConfig } from '../themes/eventThemes';
+import useForegroundInterval from '../hooks/useForegroundInterval';
 
 interface EventContextType {
   // État des événements
@@ -213,11 +214,15 @@ export const EventProvider: React.FC<EventProviderProps> = ({ children }) => {
     refreshActiveEvent();
   }, []);
 
-  // Vérifier périodiquement s'il y a de nouveaux événements
-  useEffect(() => {
-    const interval = setInterval(checkForEvents, 5 * 60 * 1000); // 5 minutes
-    return () => clearInterval(interval);
-  }, [hasActiveEvent]);
+  // Vérifier périodiquement s'il y a de nouveaux événements.
+  //
+  // `useForegroundInterval` et non un `setInterval` nu : le minuteur battait
+  // app fermée, réveillant le thread JS toutes les 5 minutes pour une requête
+  // dont personne ne pouvait voir le résultat. Le hook garde par ailleurs la
+  // dernière version du callback, là où le tableau de dépendances
+  // `[hasActiveEvent]` figeait `checkForEvents` sur un `hasActiveEvent` périmé
+  // entre deux changements d'état.
+  useForegroundInterval(checkForEvents, 5 * 60 * 1000, { runImmediately: false });
 
   // Mémoïsé : ce contexte est monté à la racine de l'application. Recréer
   // l'objet à chaque rendu forçait un nouveau rendu de tout l'arbre — y compris

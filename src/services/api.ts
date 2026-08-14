@@ -50,6 +50,13 @@ import tokenStore from './tokenStore';
  */
 type RefreshOutcome = 'renewed' | 'rejected' | 'unavailable';
 
+/**
+ * Verbes acceptés par `request()`. `PATCH` en fait partie : l'API l'utilise là
+ * où une mise à jour est partielle (post programmé, story mise en avant), et
+ * l'omettre de cette union forçait les appelants à retomber sur `PUT`.
+ */
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
 class ApiService {
   public token: string | null = null;
   private searchSummarySocket: any | null = null;
@@ -217,7 +224,7 @@ class ApiService {
   async request(
     endpoint: string,
     options: {
-      method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+      method?: HttpMethod;
       body?: any;
       requiresAuth?: boolean;
       token?: string;
@@ -256,8 +263,15 @@ class ApiService {
     return this.request(endpoint, { method: 'PUT', body: data, requiresAuth });
   }
 
+  /**
+   * `patch` envoyait un PUT. Express distingue strictement les deux verbes :
+   * une route déclarée en `router.patch()` seule ne répond simplement pas à un
+   * PUT, et le client recevait un 404 sur un chemin pourtant correct. C'est ce
+   * qui rendait la modification d'un post programmé (`PATCH
+   * /api/scheduled-tweets/:id`) systématiquement impossible.
+   */
   async patch(endpoint: string, data?: any, requiresAuth: boolean = true): Promise<any> {
-    return this.request(endpoint, { method: 'PUT', body: data, requiresAuth });
+    return this.request(endpoint, { method: 'PATCH', body: data, requiresAuth });
   }
 
   async delete(endpoint: string, requiresAuth: boolean = true): Promise<any> {
@@ -328,7 +342,7 @@ class ApiService {
   private async makeRequest(
     endpoint: string,
     options: {
-      method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+      method?: HttpMethod;
       body?: any;
       requiresAuth?: boolean;
       token?: string;

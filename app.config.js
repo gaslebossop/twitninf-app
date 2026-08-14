@@ -17,11 +17,20 @@ module.exports = ({ config }) => {
       url: "https://u.expo.dev/5370e501-b1a8-4999-bc98-83194b608a8e"
     },
     icon: "./assets/icon.png",
-    userInterfaceStyle: "light",
+    // « light » forçait `UIUserInterfaceStyle` à Light : `Appearance
+    // .getColorScheme()` renvoyait alors toujours 'light', quel que soit le
+    // réglage du téléphone. L'option « Système » de l'écran Thème (voir
+    // src/theme/themePreference.ts) ne pouvait donc JAMAIS donner du sombre, et
+    // les vues natives (clavier, feuilles d'action) s'affichaient en clair
+    // par-dessus une app sombre.
+    userInterfaceStyle: "automatic",
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
-      backgroundColor: "#ffffff"
+      // Aligné sur `colors.bg` du thème sombre, qui est le thème par défaut
+      // (themePreference.loadThemePreference). Un fond blanc ici produisait un
+      // flash blanc plein écran entre l'écran de démarrage et le premier rendu.
+      backgroundColor: "#0A0A0A"
     },
     ios: {
       // Obligatoire pour `expo prebuild` : Expo ne peut pas l'ecrire lui-meme
@@ -61,7 +70,36 @@ module.exports = ({ config }) => {
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "POST_NOTIFICATIONS"
+      ],
+      // `permissions` ci-dessus ne fait qu'AJOUTER : les bibliothèques
+      // fusionnent les leurs dans le manifeste, et trois permissions larges
+      // arrivaient ainsi sans que personne les demande — le manifeste généré
+      // les portait toutes les trois (voir tests/security-config.test.js, qui
+      // échouait dessus).
+      //
+      // - READ/WRITE_EXTERNAL_STORAGE viennent d'expo-media-library. L'app ne
+      //   fait qu'y LIRE une vignette (RecordVideoScreen), couverte par
+      //   READ_MEDIA_IMAGES/VIDEO sur Android 13+ ; rien n'écrit dans la
+      //   photothèque. Sur Android 12 et avant, la vignette retombe sur
+      //   l'icône par défaut — le code teste déjà `granted`.
+      // - SYSTEM_ALERT_WINDOW (dessiner par-dessus les autres applications)
+      //   est tiré par les libs vidéo pour un mode PiP que l'app n'utilise
+      //   pas. C'est la permission la plus alarmante de la liste du Play
+      //   Store pour un réseau social.
+      blockedPermissions: [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ]
+    },
+    // Valeurs écrites dans le thème natif Android, donc appliquées AVANT que
+    // le premier rendu JS ne pose sa propre <StatusBar>. Sans elles, Expo
+    // laissait une barre d'état blanche par-dessus un écran de démarrage
+    // désormais sombre.
+    androidStatusBar: {
+      barStyle: "light-content",
+      backgroundColor: "#0A0A0A",
+      translucent: false
     },
     web: {
       favicon: "./assets/favicon.png"
@@ -77,6 +115,9 @@ module.exports = ({ config }) => {
   // Configuration des plugins pour tous les environnements
   baseConfig.plugins = [
     "./plugins/withPodfileSwift5",
+    // Injecte la clé Google Maps à chaque prebuild — voir le plugin pour
+    // pourquoi la ligne écrite à la main dans le manifeste ne tenait pas.
+    "./plugins/withGoogleMapsApiKey",
     "expo-secure-store",
     "expo-web-browser",
     [
@@ -141,13 +182,17 @@ module.exports = ({ config }) => {
     // n'existe qu'à partir de 1.22.0 — l'ajouter ferait échouer Expo au
     // chargement de ce fichier.
     //
-    // Conséquence pour Android : la clé Google Maps ne peut pas passer par un
-    // plugin. Elle doit être écrite à la main dans
-    // `android/app/src/main/AndroidManifest.xml` :
-    //   <meta-data android:name="com.google.android.geo.API_KEY"
-    //              android:value="..." />
-    // Sans elle, la carte se rend en rectangle gris uni sur Android, sans la
-    // moindre erreur JS. Aucun impact sur iOS : Apple Maps ne demande rien.
+    // Conséquence pour Android : la clé Google Maps ne peut pas passer par le
+    // plugin de react-native-maps. Elle est injectée par
+    // `./plugins/withGoogleMapsApiKey` (déclaré en tête de cette liste), qui la
+    // lit dans EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY.
+    //
+    // La consigne précédente — écrire la balise <meta-data> à la main dans
+    // `android/app/src/main/AndroidManifest.xml` — ne pouvait pas tenir : les
+    // deux workflows CI lancent `expo prebuild --clean`, qui régénère tout le
+    // dossier `android/` et efface la retouche. Sans clé, la carte se rend en
+    // rectangle gris uni sur Android, sans la moindre erreur JS.
+    // Aucun impact sur iOS : Apple Maps ne demande rien.
     "react-native-video",
     // Config plugin de la lib de live : injecte les podspecs HaishinKit
     // vendorisés dans le Podfile généré. Nos chaînes NSCameraUsageDescription

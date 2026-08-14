@@ -1,4 +1,4 @@
-import { fonts } from '../theme';
+import { fonts, colors, withAlpha } from '../theme';
 import { ScreenBackground, BackButton } from '../components/ui';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -30,6 +30,18 @@ import { certifiedNameColors, type ProfileCustomization } from '../services/prof
 import { toast } from '../components/ui/Toast';
 
 const { width: SCREEN_W } = Dimensions.get('window');
+
+/**
+ * Pastilles de repli quand un compte n'a pas d'avatar. Volontairement hors de
+ * la palette de marque : ce sont des teintes catégorielles, elles doivent se
+ * distinguer les unes des autres, pas porter l'identité. Elles restent
+ * lisibles sur les deux thèmes (initiales blanches sur fond saturé).
+ *
+ * Déclarées ici et non dans `Avatar` : la constante s'appelait `colors` et
+ * masquait la palette du thème dans tout le composant, en plus d'être
+ * reconstruite à chaque rendu.
+ */
+const AVATAR_COLORS = ['#1d4ed8', '#7c3aed', '#db2777', '#059669', '#d97706'];
 
 interface UserCandidate {
   id: string;
@@ -198,12 +210,11 @@ export default function NewConversationScreen({ navigation, route }: any) {
   const Avatar = ({ user, size = 46 }: { user: UserCandidate; size?: number }) => {
     const uri = getAvatarUri(user.avatar);
     const initials = (user.full_name || user.username).slice(0, 2).toUpperCase();
-    const colors = ['#1d4ed8', '#7c3aed', '#db2777', '#059669', '#d97706'];
-    const colorIdx = user.id.charCodeAt(0) % colors.length;
+    const colorIdx = user.id.charCodeAt(0) % AVATAR_COLORS.length;
     if (uri) return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />;
     return (
-      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors[colorIdx], alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#fff', fontWeight: '800', fontFamily: fonts.bold, fontSize: size * 0.32 }}>{initials}</Text>
+      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: AVATAR_COLORS[colorIdx], alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: colors.white, fontWeight: '800', fontFamily: fonts.bold, fontSize: size * 0.32 }}>{initials}</Text>
       </View>
     );
   };
@@ -221,7 +232,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
           <Avatar user={u} size={46} />
           {selected && (
             <View style={styles.selectedDot}>
-              <Ionicons name="checkmark" size={10} color="#fff" />
+              <Ionicons name="checkmark" size={10} color={colors.onAccent} />
             </View>
           )}
         </View>
@@ -289,7 +300,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
             <Animated.View style={[styles.tabIndicator, { left: tabIndicatorLeft, width: (SCREEN_W - 32) / 3 - 8 }]} />
             {TABS.map((tab) => (
               <TouchableOpacity key={tab.key} style={styles.tab} onPress={() => setMode(tab.key as any)} activeOpacity={0.8}>
-                <Ionicons name={tab.icon} size={15} color={mode === tab.key ? '#fff' : '#6b7280'} />
+                <Ionicons name={tab.icon} size={15} color={mode === tab.key ? colors.onAccent : colors.textMuted} />
                 <Text style={[styles.tabTxt, mode === tab.key && styles.tabTxtActive]}>{tab.label}</Text>
               </TouchableOpacity>
             ))}
@@ -301,7 +312,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
           <ScrollView contentContainerStyle={styles.invitesList} showsVerticalScrollIndicator={false}>
             {invitations.length === 0 ? (
               <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}><Ionicons name="mail-open-outline" size={32} color="#374151" /></View>
+                <View style={styles.emptyIcon}><Ionicons name="mail-open-outline" size={32} color={colors.textMuted} /></View>
                 <Text style={styles.emptyTitle}>Pas d'invitation</Text>
                 <Text style={styles.emptyBody}>Les demandes de message apparaîtront ici</Text>
               </View>
@@ -311,13 +322,13 @@ export default function NewConversationScreen({ navigation, route }: any) {
               return (
                 <View key={inv.conversation_id} style={styles.inviteCard}>
                   <View style={styles.inviteTop}>
-                    {sender ? <Avatar user={sender} size={40} /> : <View style={[styles.avatarWrap, { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1f2937' }]} />}
+                    {sender ? <Avatar user={sender} size={40} /> : <View style={[styles.avatarWrap, { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceAlt }]} />}
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <View style={styles.inviteLine}>
                         <Text style={styles.inviteSender}>@{sender?.username || 'utilisateur'}</Text>
                         {isGroupInvite && (
                           <View style={styles.groupInviteBadge}>
-                            <Ionicons name="people" size={11} color="#93c5fd" />
+                            <Ionicons name="people" size={11} color={colors.accent} />
                             <Text style={styles.groupInviteBadgeTxt}>GROUPE</Text>
                           </View>
                         )}
@@ -345,18 +356,18 @@ export default function NewConversationScreen({ navigation, route }: any) {
           <>
             {/* ── SEARCH BAR ── */}
             <View style={styles.searchWrap}>
-              <Ionicons name="search-outline" size={16} color="#6b7280" style={styles.searchIcon} />
+              <Ionicons name="search-outline" size={16} color={colors.textMuted} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
                 placeholder={mode === 'dm' ? 'Rechercher une personne…' : 'Ajouter des membres…'}
-                placeholderTextColor="#4b5563"
+                placeholderTextColor={colors.textMuted}
                 value={query}
                 onChangeText={setQuery}
                 returnKeyType="search"
               />
               {query.length > 0 && (
                 <TouchableOpacity onPress={() => setQuery('')}>
-                  <Ionicons name="close-circle" size={16} color="#4b5563" />
+                  <Ionicons name="close-circle" size={16} color={colors.textMuted} />
                 </TouchableOpacity>
               )}
             </View>
@@ -368,7 +379,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
                   <TouchableOpacity key={u.id} style={styles.chip} onPress={() => toggleGroupMember(u)} activeOpacity={0.8}>
                     <Avatar user={u} size={22} />
                     <Text style={styles.chipTxt}>@{u.username}</Text>
-                    <Ionicons name="close" size={12} color="#93c5fd" />
+                    <Ionicons name="close" size={12} color={colors.accent} />
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -383,7 +394,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
                   <Text style={styles.selectedBannerHandle}>@{selectedDmUser.username}</Text>
                 </View>
                 <TouchableOpacity onPress={() => setSelectedDmUser(null)}>
-                  <Ionicons name="close-circle-outline" size={20} color="#6b7280" />
+                  <Ionicons name="close-circle-outline" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
               </Animated.View>
             )}
@@ -391,12 +402,12 @@ export default function NewConversationScreen({ navigation, route }: any) {
             {/* ── USER LIST ── */}
             <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.userList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {loadingDefaults && query.trim().length < 2 ? (
-                <View style={styles.loaderWrap}><ActivityIndicator color="#4F7CFF" size="small" /></View>
+                <View style={styles.loaderWrap}><ActivityIndicator color={colors.accent} size="small" /></View>
               ) : searching ? (
-                <View style={styles.loaderWrap}><ActivityIndicator color="#4F7CFF" size="small" /></View>
+                <View style={styles.loaderWrap}><ActivityIndicator color={colors.accent} size="small" /></View>
               ) : displayUsers.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <View style={styles.emptyIcon}><Ionicons name="person-outline" size={28} color="#374151" /></View>
+                  <View style={styles.emptyIcon}><Ionicons name="person-outline" size={28} color={colors.textMuted} /></View>
                   <Text style={styles.emptyTitle}>{query.trim().length >= 2 ? 'Aucun résultat' : 'Aucun contact'}</Text>
                   <Text style={styles.emptyBody}>{query.trim().length >= 2 ? `Rien pour "${query}"` : 'Suivez des personnes pour les retrouver ici'}</Text>
                 </View>
@@ -413,7 +424,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
                     <TextInput
                       style={styles.msgInput}
                       placeholder={selectedDmUser ? `Message à @${selectedDmUser.username}…` : 'Sélectionnez d\'abord un destinataire'}
-                      placeholderTextColor="#4b5563"
+                      placeholderTextColor={colors.textMuted}
                       value={dmMessage}
                       onChangeText={setDmMessage}
                       multiline
@@ -427,8 +438,8 @@ export default function NewConversationScreen({ navigation, route }: any) {
                       activeOpacity={0.8}
                     >
                       {isSubmitting
-                        ? <ActivityIndicator color="#fff" size="small" />
-                        : <Ionicons name="send" size={17} color={canSendDM ? '#fff' : '#374151'} />}
+                        ? <ActivityIndicator color={colors.onAccent} size="small" />
+                        : <Ionicons name="send" size={17} color={canSendDM ? colors.onAccent : colors.textDisabled} />}
                     </TouchableOpacity>
                   </View>
                 </>
@@ -437,7 +448,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
                   <TextInput
                     style={styles.titleInput}
                     placeholder="Nom du groupe"
-                    placeholderTextColor="#4b5563"
+                    placeholderTextColor={colors.textMuted}
                     value={groupTitle}
                     onChangeText={setGroupTitle}
                   />
@@ -445,7 +456,7 @@ export default function NewConversationScreen({ navigation, route }: any) {
                     <TextInput
                       style={styles.msgInput}
                       placeholder="Message de bienvenue (optionnel)…"
-                      placeholderTextColor="#4b5563"
+                      placeholderTextColor={colors.textMuted}
                       value={groupMessage}
                       onChangeText={setGroupMessage}
                       multiline
@@ -458,8 +469,8 @@ export default function NewConversationScreen({ navigation, route }: any) {
                     activeOpacity={0.8}
                   >
                     {isSubmitting
-                      ? <ActivityIndicator color="#fff" size="small" />
-                      : <><Ionicons name="people" size={16} color={canCreateGroup ? '#fff' : '#374151'} /><Text style={[styles.createGroupTxt, canCreateGroup && styles.createGroupTxtActive]}>Créer le groupe</Text></>}
+                      ? <ActivityIndicator color={colors.onAccent} size="small" />
+                      : <><Ionicons name="people" size={16} color={canCreateGroup ? colors.onAccent : colors.textDisabled} /><Text style={[styles.createGroupTxt, canCreateGroup && styles.createGroupTxtActive]}>Créer le groupe</Text></>}
                   </TouchableOpacity>
                 </>
               )}
@@ -486,24 +497,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1f2937',
+    borderBottomColor: colors.border,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#111827',
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontSize: 17,
     fontWeight: '800', fontFamily: fonts.bold,
     letterSpacing: -0.3,
   },
   headerSub: {
-    color: '#4F7CFF',
+    color: colors.accent,
     fontSize: 12,
     fontWeight: '600', fontFamily: fonts.semibold,
     textAlign: 'center',
@@ -517,7 +528,7 @@ const styles = StyleSheet.create({
   },
   tabsTrack: {
     flexDirection: 'row',
-    backgroundColor: '#111827',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 14,
     padding: 4,
     position: 'relative',
@@ -526,7 +537,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     height: '100%',
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
     borderRadius: 11,
     zIndex: 0,
   },
@@ -540,12 +551,12 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   tabTxt: {
-    color: '#6b7280',
+    color: colors.textMuted,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 13,
   },
   tabTxtActive: {
-    color: '#fff',
+    color: colors.onAccent,
   },
 
   // ── SEARCH
@@ -556,16 +567,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#0d1117',
+    backgroundColor: colors.surface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: colors.border,
     gap: 8,
   },
   searchIcon: { flexShrink: 0 },
   searchInput: {
     flex: 1,
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontSize: 15,
     padding: 0,
   },
@@ -579,15 +590,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(29,155,240,0.12)',
+    backgroundColor: colors.accentMuted,
     borderWidth: 1,
-    borderColor: 'rgba(29,155,240,0.3)',
+    borderColor: withAlpha(colors.accent, 0.3),
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   chipTxt: {
-    color: '#93c5fd',
+    color: colors.accent,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 12,
   },
@@ -599,18 +610,18 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 10,
     padding: 10,
-    backgroundColor: 'rgba(29,155,240,0.07)',
+    backgroundColor: colors.accentSoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(29,155,240,0.2)',
+    borderColor: withAlpha(colors.accent, 0.2),
   },
   selectedBannerName: {
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 14,
   },
   selectedBannerHandle: {
-    color: '#6b7280',
+    color: colors.textMuted,
     fontSize: 12,
     marginTop: 1,
   },
@@ -630,10 +641,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 11,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#0d1117',
+    borderBottomColor: colors.borderSubtle,
   },
   userRowSelected: {
-    backgroundColor: 'rgba(29,155,240,0.05)',
+    backgroundColor: colors.accentSoft,
     borderRadius: 12,
     paddingHorizontal: 8,
     marginHorizontal: -8,
@@ -648,11 +659,11 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#000',
+    borderColor: colors.bg,
   },
   nameLine: {
     flexDirection: 'row',
@@ -660,24 +671,24 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   nameTxt: {
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 14,
     maxWidth: '80%',
   },
   userHandleTxt: {
-    color: '#6b7280',
+    color: colors.textMuted,
     fontSize: 13,
     marginTop: 1,
   },
   selectedBadge: {
-    backgroundColor: 'rgba(29,155,240,0.15)',
+    backgroundColor: colors.accentMuted,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   selectedBadgeTxt: {
-    color: '#4F7CFF',
+    color: colors.accent,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 11,
   },
@@ -686,12 +697,12 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#374151',
+    borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
   selectBtnTxt: {
-    color: '#6b7280',
+    color: colors.textMuted,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 16,
     lineHeight: 18,
@@ -707,18 +718,18 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#0d1117',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
   emptyTitle: {
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontWeight: '800', fontFamily: fonts.bold,
     fontSize: 17,
   },
   emptyBody: {
-    color: '#6b7280',
+    color: colors.textMuted,
     fontSize: 14,
     textAlign: 'center',
     maxWidth: 220,
@@ -728,7 +739,7 @@ const styles = StyleSheet.create({
   // ── FOOTER
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#1f2937',
+    borderTopColor: colors.border,
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 8,
@@ -737,9 +748,9 @@ const styles = StyleSheet.create({
   msgInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: '#0d1117',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: colors.border,
     borderRadius: 16,
     paddingLeft: 14,
     paddingRight: 6,
@@ -751,7 +762,7 @@ const styles = StyleSheet.create({
   },
   msgInput: {
     flex: 1,
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontSize: 15,
     minHeight: 38,
     maxHeight: 100,
@@ -762,7 +773,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1f2937',
+    backgroundColor: colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -770,14 +781,14 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
   sendBtnActive: {
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
   },
   titleInput: {
-    backgroundColor: '#0d1117',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: colors.border,
     borderRadius: 14,
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontSize: 15,
     paddingHorizontal: 14,
     paddingVertical: 11,
@@ -789,19 +800,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderRadius: 14,
-    backgroundColor: '#111827',
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 13,
   },
   createGroupBtnActive: {
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
   },
   createGroupTxt: {
-    color: '#374151',
+    color: colors.textDisabled,
     fontWeight: '800', fontFamily: fonts.bold,
     fontSize: 15,
   },
   createGroupTxtActive: {
-    color: '#fff',
+    color: colors.onAccent,
   },
 
   // ── INVITATIONS
@@ -810,9 +821,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   inviteCard: {
-    backgroundColor: '#0a0e14',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: colors.border,
     borderRadius: 18,
     padding: 14,
     gap: 10,
@@ -822,7 +833,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inviteSender: {
-    color: '#f9fafb',
+    color: colors.textPrimary,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 14,
   },
@@ -838,23 +849,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(29,155,240,0.12)',
+    backgroundColor: colors.accentMuted,
     borderWidth: 1,
-    borderColor: 'rgba(29,155,240,0.3)',
+    borderColor: withAlpha(colors.accent, 0.3),
   },
   groupInviteBadgeTxt: {
-    color: '#93c5fd',
+    color: colors.accent,
     fontSize: 10,
     fontWeight: '800', fontFamily: fonts.bold,
     letterSpacing: 0.3,
   },
   inviteTime: {
-    color: '#6b7280',
+    color: colors.textMuted,
     fontSize: 12,
     marginTop: 2,
   },
   inviteMsg: {
-    color: '#9ca3af',
+    color: colors.textSecondary,
     fontSize: 13,
     fontStyle: 'italic',
     lineHeight: 18,
@@ -871,11 +882,11 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#374151',
-    backgroundColor: '#0d1117',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
   },
   declineTxt: {
-    color: '#9ca3af',
+    color: colors.textSecondary,
     fontWeight: '700', fontFamily: fonts.bold,
     fontSize: 13,
   },
@@ -884,10 +895,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: '#4F7CFF',
+    backgroundColor: colors.accent,
   },
   acceptTxt: {
-    color: '#fff',
+    color: colors.onAccent,
     fontWeight: '800', fontFamily: fonts.bold,
     fontSize: 13,
   },

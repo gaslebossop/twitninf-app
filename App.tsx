@@ -4,7 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
-import { fontAssets, colors } from './src/theme';
+import { fontAssets, colors, statusBarStyle } from './src/theme';
 import AppLoadingScreen from './src/components/ui/AppLoadingScreen';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { EventProvider } from './src/contexts/EventContext';
@@ -157,10 +157,17 @@ export default function App() {
           <EventProvider>
             <EventThemeProvider>
               <FunctionalEventProvider>
+                {/* `light-content` et `#010008` étaient écrits en dur, hérités
+                    de l'époque où l'app n'existait qu'en sombre. En thème
+                    clair, cela donnait des icônes blanches sur fond blanc sur
+                    iOS — heure et batterie purement invisibles — et une bande
+                    noire au-dessus d'une app blanche sur Android. Les 80 écrans
+                    qui posent leur propre StatusBar utilisent déjà
+                    `statusBarStyle()` ; seule la racine avait été oubliée. */}
                 <StatusBar
-                  barStyle="light-content"
+                  barStyle={statusBarStyle()}
                   translucent={Platform.OS !== 'android'}
-                  backgroundColor={Platform.OS === 'android' ? '#010008' : 'transparent'}
+                  backgroundColor={Platform.OS === 'android' ? colors.bg : 'transparent'}
                 />
                 <AppNavigator />
                 <ReadingLanguageGate />

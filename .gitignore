@@ -49,3 +49,9 @@ currentprice-error-final-fix.md
 !babel.config.js
 !metro.config.js
 !App.tsx
+# Les config plugins Expo sont referencees par app.config.js et executees
+# pendant `expo prebuild` : sans elles, le build CI echoue des la generation
+# du projet natif. `withPodfileSwift5.js` n'etait suivi que parce qu'il est
+# anterieur a la regle `*.js` ci-dessus — tout nouveau plugin serait parti
+# silencieusement a la poubelle, sans le moindre avertissement de git.
+!plugins/*.js
