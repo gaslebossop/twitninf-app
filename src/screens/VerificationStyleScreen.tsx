@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
 export default function VerificationStyleScreen() {
   const navigation = useNavigation();
   const { top: headerTopInset } = useHeaderMetrics();
-  const { user } = useAuth();
+  const { user, refreshCurrentUser } = useAuth();
   const [currentStyle, setCurrentStyle] = useState<VerificationStyle>('default');
   const [loading, setLoading] = useState(true);
   const [changing, setChanging] = useState(false);
@@ -188,6 +188,12 @@ export default function VerificationStyleScreen() {
 
       if (success) {
         setCurrentStyle(newStyle);
+        // Le badge affiché AILLEURS dans l'app (profil, fil, messages) lit
+        // `user.verification_style` du contexte d'authentification, pas cet
+        // état local. Sans ce rafraîchissement, on annonçait « Style changé »
+        // alors que le badge restait le même partout jusqu'au redémarrage —
+        // ce qui se lit comme un enregistrement qui n'a pas pris.
+        await refreshCurrentUser();
         toast.success('Style changé !', {
           description: `Votre style de certification a été changé en ${newStyle === 'rose' ? 'rose' : newStyle === 'gray' ? 'gris' : newStyle === 'gold' ? 'or' : 'bleu'}.`,
         });
