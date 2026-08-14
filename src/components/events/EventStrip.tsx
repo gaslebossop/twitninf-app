@@ -24,9 +24,17 @@ import Tappable from '../ui/Tappable';
  * de 44 px qui dit ce qui se passe, combien il reste à récupérer, et emmène
  * au hub. Le décor est SUR la page d'événement ; le fil, lui, reste le fil.
  *
+ * ── Pourquoi il suit le thème de l'app, et pas la DA ──────────────────────
+ * Une première version peignait ici le dégradé sombre de l'événement tout en
+ * laissant les textes sur les jetons du thème. En thème CLAIR, cela donnait du
+ * texte foncé sur un violet profond — illisible. La règle qui en découle : une
+ * DA n'impose son fond que sur SA page. Ailleurs, elle ne prête qu'une couleur
+ * d'accent, et c'est la surface de l'écran hôte qui commande. Le bandeau vit
+ * dans le fil, il a donc le fond du fil.
+ *
  * Le bandeau ne s'affiche que s'il y a quelque chose à dire : pas d'événement,
- * pas de ligne. Et il passe en doré dès qu'une récompense attend — c'est la
- * seule chose qui justifie d'attirer l'œil hors de la page d'événement.
+ * pas de ligne. Et il se dore dès qu'une récompense attend — c'est la seule
+ * chose qui justifie d'attirer l'œil hors de la page d'événement.
  */
 export default function EventStrip() {
   const navigation = useNavigation<any>();
@@ -50,8 +58,10 @@ export default function EventStrip() {
       onPress={() => navigation.navigate('Event')}
       accessibilityLabel={`Événement ${event.name}`}
     >
+      {/* Un voile de la couleur de fête sur la surface du fil — assez pour
+          qu'on remarque la ligne, jamais assez pour repeindre le fond. */}
       <LinearGradient
-        colors={art.gradients.header}
+        colors={[withAlpha(art.colors.festive, urgent ? 0.16 : 0.09), 'transparent']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={StyleSheet.absoluteFill}
@@ -97,6 +107,10 @@ const S = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+    // La surface du FIL, pas celle de l'événement : sans ce fond opaque, le
+    // voile doré ci-dessus se poserait sur le vide et changerait d'aspect
+    // selon le thème.
+    backgroundColor: colors.surface,
   },
   edge: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   icon: {

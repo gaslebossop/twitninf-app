@@ -291,4 +291,56 @@ export async function reportSignal(eventSlug: string, signal: QuestSignal): Prom
   }
 }
 
-export default { fetchCurrent, claimQuest, reportSignal, invalidate };
+// ─── Livre d'or ──────────────────────────────────────────────────────────────
+
+export interface GuestbookPost {
+  id: string;
+  message: string;
+  created_at: string;
+  author: { id: string; username: string; avatar?: string; verified?: boolean } | null;
+}
+
+/**
+ * Le livre d'or est la seule partie de l'événement qui soit du CONTENU.
+ *
+ * Une page qui ne contient qu'une liste de quêtes est une liste de corvées :
+ * on la remplit une fois et on n'y revient pas. Ici, ce que les gens écrivent
+ * change à chaque visite — c'est ce qui fait de la page un lieu.
+ */
+export async function fetchGuestbook(
+  eventSlug: string,
+): Promise<{ posts: GuestbookPost[]; mine: GuestbookPost | null }> {
+  try {
+    const response = await apiService.get(
+      `/api/events/${encodeURIComponent(eventSlug)}/guestbook`,
+      { limit: 40 },
+    );
+    return {
+      posts: response?.data?.posts ?? [],
+      mine: response?.data?.mine ?? null,
+    };
+  } catch {
+    return { posts: [], mine: null };
+  }
+}
+
+/** Laisse un mot. Un seul par compte : le serveur refuse le second. */
+export async function postGuestbook(
+  eventSlug: string,
+  message: string,
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const response = await apiService.post(
+      `/api/events/${encodeURIComponent(eventSlug)}/guestbook`,
+      { message },
+    );
+    // Écrire valide la quête du livre d'or côté serveur : l'état des quêtes
+    // vient donc de changer.
+    if (response?.success) invalidate();
+    return { ok: !!response?.success, message: response?.message };
+  } catch (error: any) {
+    return { ok: false, message: error?.message ?? 'Réseau indisponible' };
+  }
+}
+
+export default { fetchCurrent, claimQuest, reportSignal, invalidate, fetchGuestbook, postGuestbook };

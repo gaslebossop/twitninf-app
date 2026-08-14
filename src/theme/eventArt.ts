@@ -35,9 +35,34 @@ export interface EventArt {
   id: EventArtId;
   /** Nom montré dans les réglages et l'admin. */
   name: string;
+  /**
+   * Palette AUTONOME — c'est le point important.
+   *
+   * La première version ne définissait que les couleurs de fête et laissait
+   * les surfaces et les textes aux jetons du thème (`colors.surface`,
+   * `colors.textPrimary`). En thème sombre, ça passait. En thème CLAIR, la
+   * page gardait son fond noir imposé et récupérait des cartes blanches avec
+   * du texte foncé : des rectangles crème posés sur du noir, illisibles et
+   * hideux.
+   *
+   * Une DA qui impose son fond doit imposer TOUT le reste. Aucune valeur
+   * ci-dessous ne vient du thème de l'app.
+   */
   colors: {
     /** Fond de la page d'événement. Jamais appliqué au fil. */
     ink: string;
+    /** Fond d'une carte. */
+    surface: string;
+    /** Fond d'un élément posé sur une carte (pastille d'icône, jauge). */
+    surfaceAlt: string;
+    /** Filet de séparation. */
+    border: string;
+    /** Texte principal. */
+    text: string;
+    /** Texte secondaire — descriptions. */
+    textDim: string;
+    /** Texte tertiaire — libellés d'état, unités. */
+    textMuted: string;
     /** La couleur de la fête. Sert aux titres, aux paliers, aux bordures. */
     festive: string;
     festiveBright: string;
@@ -81,6 +106,12 @@ const NONE: EventArt = {
   name: 'Standard',
   colors: {
     ink: colors.bg,
+    surface: colors.surface,
+    surfaceAlt: colors.surfaceElevated,
+    border: colors.border,
+    text: colors.textPrimary,
+    textDim: colors.textSecondary,
+    textMuted: colors.textMuted,
     festive: colors.accent,
     festiveBright: colors.accentBright,
     festiveSoft: colors.accentSoft,
@@ -132,6 +163,15 @@ const BIRTHDAY: EventArt = {
   name: 'Minuit — anniversaire twitninf',
   colors: {
     ink: '#0B0710',
+    // Surfaces écrites en DUR, jamais reprises du thème : la page impose son
+    // fond sombre, elle doit donc imposer aussi ses cartes. Les laisser suivre
+    // le thème donnait des cartes blanches sur fond noir en thème clair.
+    surface: '#17101F',
+    surfaceAlt: '#221830',
+    border: 'rgba(245,194,75,0.14)',
+    text: '#F7F2EA',
+    textDim: '#B8ADBF',
+    textMuted: '#7E7389',
     festive: '#F5C24B',
     festiveBright: '#FFD980',
     festiveSoft: 'rgba(245,194,75,0.12)',
@@ -143,8 +183,8 @@ const BIRTHDAY: EventArt = {
     // Le ciel de la pièce : violet profond en haut, noir en bas.
     header: ['#1C1026', '#0B0710'],
     // Une carte de quête n'est pas dorée — seulement effleurée par la lumière.
-    // Un aplat d'or sur chacune des dix cartes rendrait l'or insignifiant.
-    card: ['rgba(245,194,75,0.07)', 'rgba(254,44,85,0.04)'],
+    // Un aplat d'or sur chacune des onze cartes rendrait l'or insignifiant.
+    card: ['#1B1324', '#150E1D'],
     festive: ['#FFD980', '#F5C24B', '#E09A2B'],
   },
   fonts: {

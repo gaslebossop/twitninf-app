@@ -9,30 +9,37 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, fonts, radius, withAlpha } from '../../theme';
+import { fonts, radius, withAlpha } from '../../theme';
 import type { EventArt } from '../../theme/eventArt';
 import { ease } from '../../utils/gesture';
 import Tappable from '../ui/Tappable';
 import type { QuestView } from '../../types/events';
 
 /**
- * Une quête, telle qu'elle se lit dans le hub.
+ * Une quête.
  *
- * ── La règle de lecture ───────────────────────────────────────────────────
- * Une carte de quête doit répondre à trois questions dans cet ordre, sans
- * qu'on ait à chercher : qu'est-ce qu'on me demande, où j'en suis, qu'est-ce
- * que ça rapporte. L'ancienne version affichait le titre, la description, la
- * barre, la récompense et le bouton à la même force typographique — il fallait
- * lire les cinq pour comprendre lequel comptait.
+ * ── Ce que la première version ratait ─────────────────────────────────────
+ * Elle empilait onze blocs strictement identiques : même taille, même poids
+ * typographique pour le titre, la description, la récompense et l'état. Rien
+ * ne disait lequel comptait, et on ne voyait que deux quêtes par écran — sur
+ * onze. Le résultat se lisait comme un formulaire, pas comme une fête.
  *
- * Ici, un seul élément change d'apparence selon l'état : le bloc de droite.
- * Il porte la progression tant qu'il en reste, puis le bouton quand c'est
- * gagné, puis rien quand c'est encaissé. Le reste de la carte ne bouge pas.
+ * Trois corrections structurelles :
  *
- * ── Ce qui distingue verrouillé et caché ──────────────────────────────────
- * Verrouillé : on VOIT la quête, on sait ce qu'il faut faire avant. C'est ce
- * qui donne envie de finir la précédente. Caché : la carte n'existe pas —
- * c'est le contexte qui l'écarte, jamais ce composant.
+ * 1. **La récompense est une pastille, pas une ligne.** C'est l'accroche : ce
+ *    qu'on regarde en premier pour décider si ça vaut le coup. Elle est
+ *    remontée sur la ligne du titre, à droite, où l'œil la trouve sans lire.
+ * 2. **Le palier est une couleur, pas un mot.** « Bronze » écrit en toutes
+ *    lettres sous chaque titre prenait une ligne pour ne rien dire de plus
+ *    que la teinte de la pastille.
+ * 3. **Une seule zone change selon l'état.** Réclamable : la carte se borde
+ *    d'or et le bouton apparaît. Terminée : tout s'éteint. Le reste ne bouge
+ *    jamais, donc l'œil apprend où regarder.
+ *
+ * ── Autonomie de la palette ───────────────────────────────────────────────
+ * Toutes les couleurs viennent de `art.colors`, jamais des jetons du thème.
+ * La version précédente mélangeait les deux : en thème clair, la page gardait
+ * son fond sombre imposé et récupérait des cartes blanches à texte foncé.
  */
 
 interface Props {
@@ -51,117 +58,121 @@ function QuestCardBase({ quest, art, claiming, onClaim }: Props) {
   const ratio = Math.min(1, shown.goal > 0 ? shown.progress / shown.goal : 0);
 
   const claimable = state.completed && !state.claimed && !locked;
+  const done = state.claimed;
 
-  // La barre s'anime vers sa valeur : à l'ouverture du hub elle est déjà à sa
-  // place (rien ne s'anime au montage), mais après une réclamation ou un
-  // rafraîchissement, on VOIT qu'elle a bougé — c'est le seul retour visuel
-  // qui dit que le serveur a bien pris en compte le geste.
-  const target = useDerivedValue(() => withTiming(ratio, { duration: 420, easing: ease.out }), [ratio]);
+  // La barre rejoint sa valeur : à l'ouverture elle est déjà en place (rien ne
+  // s'anime au montage), mais après une réclamation on VOIT qu'elle a bougé —
+  // seul retour visuel disant que le serveur a pris le geste en compte.
+  const target = useDerivedValue(
+    () => withTiming(ratio, { duration: 420, easing: ease.out }),
+    [ratio],
+  );
   const fillStyle = useAnimatedStyle(() => ({
     width: `${interpolate(target.value, [0, 1], [0, 100], Extrapolation.CLAMP)}%`,
   }));
 
   const progressLabel = useMemo(() => {
-    if (state.claimed) return 'Récupéré';
+    if (done) return 'Récupéré';
     if (locked) return 'Verrouillé';
     if (quest.goal === 1) return state.completed ? 'Fait' : 'À faire';
     return `${Math.min(shown.progress, shown.goal).toLocaleString('fr-FR')} / ${shown.goal.toLocaleString('fr-FR')}`;
-  }, [state.claimed, state.completed, locked, quest.goal, shown.progress, shown.goal]);
+  }, [done, locked, quest.goal, state.completed, shown.progress, shown.goal]);
+
+  const tint = locked || done ? art.colors.textMuted : tier.color;
 
   return (
-    <View style={[S.card, locked && S.cardLocked]}>
-      <LinearGradient
-        colors={art.gradients.card}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      {/* Le liseré de palier est la seule couleur forte de la carte : c'est
-          lui qui hiérarchise la liste d'un coup d'œil. */}
-      <View style={[S.tierEdge, { backgroundColor: locked ? colors.border : tier.color }]} />
+    <View
+      style={[
+        S.card,
+        { backgroundColor: art.colors.surface, borderColor: art.colors.border },
+        // La bordure dorée est réservée au réclamable. C'est la seule chose de
+        // la liste qui appelle une action immédiate ; lui donner un traitement
+        // que rien d'autre ne porte est ce qui la rend trouvable d'un coup d'œil.
+        claimable && { borderColor: art.colors.festive, borderWidth: 1.5 },
+        (locked || done) && S.cardMuted,
+      ]}
+    >
+      {claimable && (
+        <LinearGradient
+          colors={[withAlpha(art.colors.festive, 0.14), 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+      )}
 
-      <View style={S.body}>
-        <View style={S.head}>
-          <View
-            style={[
-              S.icon,
-              { backgroundColor: locked ? colors.surfaceElevated : withAlpha(tier.color, 0.16) },
-            ]}
-          >
-            <Ionicons
-              name={(locked ? 'lock-closed' : quest.icon) as any}
-              size={17}
-              color={locked ? colors.textMuted : tier.color}
-            />
-          </View>
-
-          <View style={S.headText}>
-            <Text style={[S.title, locked && S.dimmed]} numberOfLines={1}>
-              {quest.title}
-            </Text>
-            <Text style={[S.tierLabel, { color: locked ? colors.textMuted : tier.color }]}>
-              {tier.label}
-              {quest.kind === 'collective' ? ' · communauté' : ''}
-              {quest.kind === 'secret' ? ' · secrète' : ''}
-            </Text>
-          </View>
+      {/* ── Ligne 1 : ce que c'est, et ce que ça rapporte ── */}
+      <View style={S.head}>
+        <View style={[S.icon, { backgroundColor: withAlpha(tint, 0.15) }]}>
+          <Ionicons
+            name={(locked ? 'lock-closed' : done ? 'checkmark' : quest.icon) as any}
+            size={16}
+            color={tint}
+          />
         </View>
 
-        <Text style={[S.description, locked && S.dimmed]}>{quest.description}</Text>
+        <Text
+          style={[S.title, { color: done ? art.colors.textMuted : art.colors.text }]}
+          numberOfLines={1}
+        >
+          {quest.title}
+        </Text>
 
-        {/* Récompense : toujours écrite en toutes lettres, jamais devinée
-            depuis le type. Un « paquet surprise » annonce sa table sans
-            annoncer son tirage. */}
-        <View style={S.rewardRow}>
-          <Ionicons
-            name="gift"
-            size={13}
-            color={locked ? colors.textMuted : art.colors.festive}
-          />
-          <Text style={[S.reward, { color: locked ? colors.textMuted : art.colors.festive }]}>
+        <View
+          style={[
+            S.rewardChip,
+            {
+              backgroundColor: withAlpha(locked || done ? art.colors.textMuted : art.colors.festive, 0.14),
+            },
+          ]}
+        >
+          <Text
+            style={[
+              S.rewardText,
+              { color: locked || done ? art.colors.textMuted : art.colors.festive },
+            ]}
+            numberOfLines={1}
+          >
             {quest.reward.label}
           </Text>
         </View>
-        {!!quest.reward.teaser?.length && !locked && (
-          <Text style={S.teaser}>Peut contenir : {quest.reward.teaser.join(' · ')}</Text>
-        )}
-
-        <View style={S.footer}>
-          <View style={S.track}>
-            <Animated.View
-              style={[
-                S.fill,
-                fillStyle,
-                { backgroundColor: locked ? colors.borderStrong : tier.color },
-              ]}
-            />
-          </View>
-          <Text style={[S.progressLabel, state.claimed && { color: tier.color }]}>
-            {progressLabel}
-          </Text>
-        </View>
-
-        {claimable && (
-          <Tappable
-            style={S.claim}
-            onPress={() => onClaim(quest.id)}
-            disabled={claiming}
-            haptic="select"
-            accessibilityLabel={`Récupérer : ${quest.reward.label}`}
-          >
-            <LinearGradient
-              colors={art.gradients.festive}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <Text style={[S.claimLabel, { color: art.colors.onFestive }]}>
-              {claiming ? 'Un instant…' : 'Récupérer'}
-            </Text>
-          </Tappable>
-        )}
       </View>
+
+      {/* ── Ligne 2 : pourquoi, en deux lignes maximum ── */}
+      <Text style={[S.description, { color: art.colors.textDim }]} numberOfLines={2}>
+        {quest.description}
+      </Text>
+
+      {/* ── Ligne 3 : où j'en suis ── */}
+      <View style={S.footer}>
+        <View style={[S.track, { backgroundColor: art.colors.surfaceAlt }]}>
+          <Animated.View style={[S.fill, fillStyle, { backgroundColor: tint }]} />
+        </View>
+        <Text style={[S.progressLabel, { color: done ? tier.color : art.colors.textMuted }]}>
+          {progressLabel}
+        </Text>
+      </View>
+
+      {claimable && (
+        <Tappable
+          style={S.claim}
+          onPress={() => onClaim(quest.id)}
+          disabled={claiming}
+          haptic="select"
+          accessibilityLabel={`Récupérer : ${quest.reward.label}`}
+        >
+          <LinearGradient
+            colors={art.gradients.festive}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Text style={[S.claimLabel, { color: art.colors.onFestive }]}>
+            {claiming ? 'Un instant…' : 'Récupérer'}
+          </Text>
+        </Tappable>
+      )}
     </View>
   );
 }
@@ -188,71 +199,64 @@ const S = StyleSheet.create({
   card: {
     borderRadius: radius.lg,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    paddingHorizontal: 13,
+    paddingTop: 11,
+    paddingBottom: 12,
   },
-  cardLocked: { opacity: 0.55 },
-  tierEdge: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
-  body: { padding: 14, paddingLeft: 16 },
+  cardMuted: { opacity: 0.6 },
 
-  head: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   icon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
-  headText: { flex: 1 },
-  title: { color: colors.textPrimary, fontFamily: fonts.heading, fontSize: 15.5 },
-  tierLabel: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.3, marginTop: 1 },
-  dimmed: { color: colors.textMuted },
+  title: { flex: 1, fontFamily: fonts.heading, fontSize: 15 },
+  rewardChip: {
+    maxWidth: '42%',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
+  rewardText: { fontFamily: fonts.bold, fontSize: 11.5 },
 
   description: {
-    color: colors.textSecondary,
     fontFamily: fonts.regular,
-    fontSize: 13,
-    lineHeight: 18.5,
-    marginBottom: 10,
+    fontSize: 12.5,
+    lineHeight: 17.5,
+    marginTop: 8,
+    // Aligné sur le titre, pas sur l'icône : le bloc de texte forme une
+    // colonne nette au lieu de repartir du bord à chaque carte.
+    marginLeft: 39,
   },
 
-  rewardRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  reward: { fontFamily: fonts.semibold, fontSize: 13 },
-  teaser: {
-    color: colors.textMuted,
-    fontFamily: fonts.regular,
-    fontSize: 11.5,
-    lineHeight: 16,
-    marginTop: 3,
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    marginLeft: 39,
   },
-
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
-  track: {
-    flex: 1,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.surfaceElevated,
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', borderRadius: 3 },
+  track: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 2 },
   progressLabel: {
-    color: colors.textMuted,
     fontFamily: fonts.semibold,
-    fontSize: 11.5,
-    minWidth: 62,
+    fontSize: 11,
+    minWidth: 58,
     textAlign: 'right',
   },
 
   claim: {
-    height: 42,
+    height: 40,
     borderRadius: radius.md,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
+    marginTop: 11,
   },
-  claimLabel: { fontFamily: fonts.bold, fontSize: 14.5 },
+  claimLabel: { fontFamily: fonts.bold, fontSize: 14 },
 });
