@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, statusBarStyle } from '../theme';
 import {
   ScreenBackground,
@@ -20,7 +21,12 @@ import {
   Tappable,
   toast,
 } from '../components/ui';
-import { createContest, formatPrize } from '../services/contestService';
+import {
+  ContestCurrency,
+  createContest,
+  fetchCurrencies,
+  formatAmount,
+} from '../services/contestService';
 
 /**
  * Création d'un concours : un tweet et sa cagnotte, publiés ensemble.
@@ -31,10 +37,16 @@ import { createContest, formatPrize } from '../services/contestService';
  * différents iOS/Android, et le piège du fuseau horaire), et rendent
  * impossible de créer par erreur un concours qui se termine dans le passé.
  *
- * ── Devise libre ─────────────────────────────────────────────────────────
- * Le champ accepte n'importe quel code court (EUR, USD, XAF, NF…) : la
- * plateforme ne convertit rien et ne détient rien, elle affiche ce que
- * l'organisateur annonce. Les paliers proposés ne sont qu'un raccourci.
+ * ── Monnaies réelles, jamais saisies à la main ───────────────────────────
+ * La liste vient du serveur : NF, l'EUR interne et les monnaies
+ * communautaires actives, chacune avec le solde de l'organisateur. Laisser
+ * taper un code libre revenait à promettre une somme dans une devise que
+ * personne ne peut verser.
+ *
+ * ── La cagnotte est prélevée à la publication ────────────────────────────
+ * `montant × gagnants` quitte le portefeuille tout de suite. L'écran affiche
+ * donc ce total et le solde restant AVANT l'appui : découvrir le
+ * prélèvement après coup serait la pire surprise possible.
  */
 
 const DURATIONS = [
@@ -45,12 +57,12 @@ const DURATIONS = [
   { label: '7 j', hours: 168 },
 ];
 
-const CURRENCIES = ['EUR', 'USD', 'XAF', 'NF'];
-
 export default function CreateContestScreen({ navigation }: any) {
   const [content, setContent] = useState('');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('EUR');
+  const [currencies, setCurrencies] = useState<ContestCurrency[]>([]);
+  const [currencyId, setCurrencyId] = useState<string | null>(null);
+  const [loadingCurrencies, setLoadingCurrencies] = useState(true);
   const [note, setNote] = useState('');
   const [winners, setWinners] = useState('1');
   const [hours, setHours] = useState(24);
@@ -65,10 +77,34 @@ export default function CreateContestScreen({ navigation }: any) {
   const parsedAmount = Number.parseFloat(amount.replace(',', '.'));
   const parsedWinners = Number.parseInt(winners, 10) || 1;
 
-  const preview = useMemo(() => {
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return null;
-    return formatPrize({ prize_amount: parsedAmount, prize_currency: currency });
-  }, [parsedAmount, currency]);
+  useEffect(() => {
+    fetchCurrencies()
+      .then(({ currencies: list }) => {
+        setCurrencies(list);
+        // Sélection par défaut : la monnaie où il y a le plus de quoi
+        // financer, sinon la première. Ouvrir sur une monnaie à 0 de solde
+        // donnerait un « il te manque X » dès la première frappe.
+        const best = [...list].sort((a, b) => b.balance - a.balance)[0];
+        setCurrencyId((best ?? list[0])?.id ?? null);
+      })
+      .catch(() => toast.error('Monnaies indisponibles', {
+        description: 'Vérifie ta connexion et rouvre cet écran.',
+      }))
+      .finally(() => setLoadingCurrencies(false));
+  }, []);
+
+  const currency = useMemo(
+    () => currencies.find((c) => c.id === currencyId) ?? null,
+    [currencies, currencyId]
+  );
+
+  // Le gain est PAR gagnant : c'est le total qui est débité, et c'est lui
+  // qu'il faut montrer.
+  const total = Number.isFinite(parsedAmount) && parsedAmount > 0
+    ? parsedAmount * parsedWinners
+    : 0;
+  const balance = currency?.balance ?? 0;
+  const missing = Math.max(0, total - balance);
 
   const submit = async () => {
     if (submitting) return;
@@ -85,14 +121,20 @@ export default function CreateContestScreen({ navigation }: any) {
       toast.error('Indique le montant mis en jeu');
       return;
     }
-    if (!/^[A-Za-z0-9]{2,8}$/.test(currency.trim())) {
-      toast.error('Devise invalide', {
-        description: 'Un code court en lettres ou chiffres : EUR, USD, XAF, NF…',
-      });
+    if (!currency) {
+      toast.error('Choisis la monnaie de la cagnotte');
       return;
     }
     if (parsedWinners < 1 || parsedWinners > 100) {
       toast.error('Entre 1 et 100 gagnants');
+      return;
+    }
+    // Contrôle de confort : le serveur refait le calcul sous verrou, c'est
+    // lui qui fait autorité. Ça évite juste un aller-retour pour rien.
+    if (missing > 0) {
+      toast.error(`Il te manque ${formatAmount(missing)} ${currency.symbol}`, {
+        description: `La cagnotte (${formatAmount(total)} ${currency.symbol}) est prélevée dès la publication.`,
+      });
       return;
     }
 
@@ -101,7 +143,7 @@ export default function CreateContestScreen({ navigation }: any) {
       const { contest } = await createContest({
         content: content.trim(),
         prizeAmount: parsedAmount,
-        prizeCurrency: currency.trim().toUpperCase(),
+        currencyId: currency.id,
         prizeNote: note.trim() || null,
         winnersCount: parsedWinners,
         endsAt: new Date(Date.now() + hours * 3_600_000),
@@ -115,7 +157,7 @@ export default function CreateContestScreen({ navigation }: any) {
         },
       });
       toast.success('Concours publié', {
-        description: 'Le tirage se fera tout seul à la fin du compte à rebours.',
+        description: `${formatAmount(total)} ${currency.symbol} mis de côté. Le tirage et le versement se feront tout seuls à la fin.`,
       });
       // `replace` et pas `navigate` : revenir en arrière sur le formulaire
       // d'un concours déjà publié invite à le republier.
@@ -156,7 +198,43 @@ export default function CreateContestScreen({ navigation }: any) {
             <Text style={S.counter}>{content.length}/500</Text>
 
             {/* --- Cagnotte --- */}
-            <Text style={S.label}>Montant mis en jeu</Text>
+            <Text style={S.label}>Monnaie de la cagnotte</Text>
+            {loadingCurrencies ? (
+              <Text style={S.help}>Chargement des monnaies...</Text>
+            ) : currencies.length === 0 ? (
+              <Text style={S.help}>Aucune monnaie disponible sur ton compte.</Text>
+            ) : (
+              <View style={S.currencyList}>
+                {currencies.map((c) => {
+                  const active = c.id === currencyId;
+                  return (
+                    <Tappable
+                      key={c.id}
+                      style={[S.currencyRow, active && S.currencyRowActive]}
+                      onPress={() => setCurrencyId(c.id)}
+                    >
+                      <View
+                        style={[S.currencyDot, { backgroundColor: c.color || colors.accent }]}
+                      />
+                      <View style={S.currencyText}>
+                        <Text style={S.currencyName}>
+                          {c.symbol}
+                          {c.is_community ? '  \u00b7  communautaire' : ''}
+                        </Text>
+                        <Text style={S.currencyBalance}>
+                          solde {formatAmount(c.balance)} {c.symbol}
+                        </Text>
+                      </View>
+                      {active && (
+                        <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
+                      )}
+                    </Tappable>
+                  );
+                })}
+              </View>
+            )}
+
+            <Text style={S.label}>Montant par gagnant</Text>
             <View style={S.row}>
               <TextInput
                 style={[S.input, S.amountInput]}
@@ -166,25 +244,9 @@ export default function CreateContestScreen({ navigation }: any) {
                 placeholderTextColor={colors.textMuted}
                 keyboardType="decimal-pad"
               />
-              <TextInput
-                style={[S.input, S.currencyInput]}
-                value={currency}
-                onChangeText={(v) => setCurrency(v.toUpperCase().slice(0, 8))}
-                placeholder="EUR"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="characters"
-                maxLength={8}
-              />
-            </View>
-            <View style={S.chips}>
-              {CURRENCIES.map((code) => (
-                <Chip
-                  key={code}
-                  label={code}
-                  active={currency === code}
-                  onPress={() => setCurrency(code)}
-                />
-              ))}
+              <View style={[S.input, S.currencyBadge]}>
+                <Text style={S.currencyBadgeText}>{currency?.symbol ?? '-'}</Text>
+              </View>
             </View>
 
             <TextInput
@@ -246,20 +308,41 @@ export default function CreateContestScreen({ navigation }: any) {
 
             {/* --- Récapitulatif --- */}
             <Card style={S.summary}>
-              <Text style={S.summaryTitle}>Ce qui sera publié</Text>
-              <Text style={S.summaryLine}>
-                {preview ?? '—'} · {parsedWinners} gagnant{parsedWinners > 1 ? 's' : ''} · tirage
-                dans {DURATIONS.find((d) => d.hours === hours)?.label}
+              <Text style={S.summaryTitle}>Preleve a la publication</Text>
+              <Text style={[S.summaryLine, missing > 0 && S.summaryLineBad]}>
+                {total > 0 && currency ? `${formatAmount(total)} ${currency.symbol}` : '-'}
               </Text>
+              <Text style={S.summaryDetail}>
+                {total > 0 && currency
+                  ? `${formatAmount(parsedAmount)} x ${parsedWinners} gagnant${
+                      parsedWinners > 1 ? 's' : ''
+                    } \u00b7 tirage dans ${DURATIONS.find((d) => d.hours === hours)?.label}`
+                  : 'Saisis un montant pour voir le total.'}
+              </Text>
+
+              {currency && total > 0 && (
+                <Text style={[S.summaryNote, missing > 0 && S.summaryLineBad]}>
+                  {missing > 0
+                    ? `Il te manque ${formatAmount(missing)} ${currency.symbol} (solde ${formatAmount(balance)}).`
+                    : `Solde apres publication : ${formatAmount(balance - total)} ${currency.symbol}.`}
+                </Text>
+              )}
+
               <Text style={S.summaryNote}>
-                Le tirage est automatique et vérifiable : l’ordre est calculé à partir d’une graine
-                publiée après coup. Tu verses toi-même la cagnotte au(x) gagnant(s) — TwitNinf
-                n’encaisse rien.
+                La cagnotte quitte ton portefeuille maintenant et attend le tirage. Les gagnants
+                sont credites automatiquement ; s'il y a moins de gagnants eligibles que prevu, la
+                part non attribuee te revient.
               </Text>
             </Card>
 
             <Button
-              label={submitting ? 'Publication…' : 'Publier le concours'}
+              label={
+                submitting
+                  ? 'Publication...'
+                  : total > 0 && currency
+                    ? `Publier et bloquer ${formatAmount(total)} ${currency.symbol}`
+                    : 'Publier le concours'
+              }
               onPress={submit}
               loading={submitting}
               disabled={submitting}
@@ -362,7 +445,33 @@ const S = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10 },
   half: { flex: 1 },
   amountInput: { flex: 2 },
-  currencyInput: { flex: 1, textAlign: 'center', fontWeight: '700' },
+  currencyBadge: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currencyBadgeText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+
+  currencyList: { gap: 6 },
+  currencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.overlaySoft,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  currencyRowActive: { borderColor: colors.accent, backgroundColor: colors.accentMuted },
+  currencyDot: { width: 10, height: 10, borderRadius: 5 },
+  currencyText: { flex: 1 },
+  currencyName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  currencyBalance: { fontSize: 11.5, color: colors.textMuted },
+
+  summaryDetail: { marginTop: 4, fontSize: 12.5, color: colors.textSecondary },
+  summaryLineBad: { color: colors.red },
 
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10, marginBottom: 4 },
   chip: {

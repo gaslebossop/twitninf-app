@@ -103,6 +103,7 @@ export default function ContestCard({ tweetId, onOpen }: Props) {
       </View>
 
       <Text style={S.prize}>{formatPrize(contest)}</Text>
+      {contest.winners_count > 1 && <Text style={S.perWinner}>par gagnant</Text>}
       {!!contest.title && <Text style={S.title} numberOfLines={2}>{contest.title}</Text>}
 
       <View style={S.metaRow}>
@@ -212,6 +213,11 @@ const S = StyleSheet.create({
     fontWeight: '800',
     color: colors.textPrimary,
     letterSpacing: -0.5,
+  },
+  perWinner: {
+    marginTop: 1,
+    fontSize: 11,
+    color: colors.textMuted,
   },
   title: {
     marginTop: 3,

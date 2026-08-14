@@ -29,6 +29,7 @@ import {
   cancelContest,
   describeConditions,
   fetchContest,
+  formatAmount,
   formatPrize,
   formatTimeLeft,
   participate,
@@ -43,9 +44,10 @@ import {
  * 2. **Ce qu'il reste à faire** pour être éligible. Le serveur renvoie la
  *    liste exacte (`missing_conditions`) : elle est affichée telle quelle,
  *    cochée/décochée. Un bouton grisé sans explication serait le pire cas.
- * 3. **Que l'argent n'est pas séquestré par la plateforme.** C'est
- *    l'organisateur qui verse. Le taire laisserait croire à une garantie qui
- *    n'existe pas.
+ * 3. **Que l'argent est déjà bloqué.** La cagnotte a quitté le portefeuille de
+ *    l'organisateur à la création et attend le tirage ; les gagnants sont
+ *    crédités automatiquement. C'est la différence entre un concours et une
+ *    promesse, elle doit se voir.
  *
  * ── Pourquoi les conditions sont rechargées après chaque action ──────────
  * Aimer le tweet ou suivre l'organisateur se fait ailleurs dans l'app. Au
@@ -184,6 +186,7 @@ export default function ContestScreen({ route, navigation }: any) {
   }
 
   const timeLeft = formatTimeLeft(contest.ends_at);
+  const escrow = describeEscrow(contest);
   const allConditions = describeConditions(contest.conditions);
   const missingLabels = new Set(contest.viewer.missing_conditions.map((m) => m.label));
   const closed = contest.status === 'closed';
@@ -205,6 +208,22 @@ export default function ContestScreen({ route, navigation }: any) {
             <Text style={S.heroLabel}>À GAGNER</Text>
             <Text style={S.heroPrize}>{formatPrize(contest)}</Text>
             {!!contest.prize_note && <Text style={S.heroNote}>{contest.prize_note}</Text>}
+            {contest.winners_count > 1 && <Text style={S.heroNote}>par gagnant</Text>}
+
+            {/* L'état du séquestre est ce qui distingue un concours financé
+                d'une simple annonce. Il ne se déduit d'aucun autre champ. */}
+            {!!escrow && (
+              <View style={[S.escrow, escrow.tone === 'ok' && S.escrowOk]}>
+                <Ionicons
+                  name={escrow.icon}
+                  size={13}
+                  color={escrow.tone === 'ok' ? colors.success : colors.textMuted}
+                />
+                <Text style={[S.escrowText, escrow.tone === 'ok' && S.escrowTextOk]}>
+                  {escrow.label}
+                </Text>
+              </View>
+            )}
             {!!contest.title && <Text style={S.heroTitle}>{contest.title}</Text>}
 
             <View style={S.heroMeta}>
@@ -323,8 +342,9 @@ export default function ContestScreen({ route, navigation }: any) {
           )}
 
           <Text style={S.disclaimer}>
-            La cagnotte est annoncée et versée par l’organisateur. TwitNinf n’encaisse ni ne
-            conserve cet argent, et ne garantit pas le paiement.
+            {contest.escrow?.is_funded
+              ? 'La cagnotte a été prélevée sur le portefeuille de l’organisateur dès la création. Les gagnants sont crédités automatiquement au tirage ; une part sans gagnant lui est rendue.'
+              : 'Ce concours a été annoncé sans cagnotte bloquée : le versement dépend uniquement de son organisateur.'}
           </Text>
         </ScrollView>
 
@@ -344,6 +364,42 @@ export default function ContestScreen({ route, navigation }: any) {
       </SafeAreaView>
     </ScreenBackground>
   );
+}
+
+/**
+ * Ce qu'on dit de l'argent, selon l'état réel du séquestre. `none` couvre les
+ * concours créés avant le prélèvement : annoncer une cagnotte bloquée qui ne
+ * l'a jamais été serait faux.
+ */
+function describeEscrow(contest: Contest) {
+  const status = contest.escrow?.status ?? 'none';
+  const total = contest.escrow?.total;
+  switch (status) {
+    case 'held':
+      return {
+        tone: 'ok' as const,
+        icon: 'lock-closed' as const,
+        label: `Cagnotte bloquée : ${formatAmount(total ?? 0)} ${contest.prize_currency}`,
+      };
+    case 'paid':
+      return {
+        tone: 'ok' as const,
+        icon: 'checkmark-done' as const,
+        label: 'Gagnants crédités automatiquement',
+      };
+    case 'refunded':
+      return {
+        tone: 'muted' as const,
+        icon: 'return-down-back' as const,
+        label: "Cagnotte rendue à l'organisateur",
+      };
+    default:
+      return {
+        tone: 'muted' as const,
+        icon: 'information-circle-outline' as const,
+        label: 'Concours annoncé sans cagnotte bloquée',
+      };
+  }
 }
 
 /**
@@ -368,7 +424,9 @@ function PrimaryAction({
     return (
       <Text style={S.footerNote}>
         {contest.viewer.is_winner
-          ? 'Tu as gagné. L’organisateur va te contacter pour le versement.'
+          ? contest.escrow?.status === 'paid'
+            ? 'Tu as gagné : le montant est déjà sur ton portefeuille.'
+            : 'Tu as gagné. L’organisateur doit te verser la cagnotte.'
           : 'Le tirage a eu lieu.'}
       </Text>
     );
@@ -451,6 +509,20 @@ const S = StyleSheet.create({
     textAlign: 'center',
     color: colors.textSecondary,
   },
+  escrow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.overlaySoft,
+  },
+  escrowOk: { backgroundColor: 'rgba(34,197,94,0.12)' },
+  escrowText: { fontSize: 11.5, fontWeight: '600', color: colors.textMuted },
+  escrowTextOk: { color: colors.success },
+
   heroMeta: {
     flexDirection: 'row',
     justifyContent: 'space-around',

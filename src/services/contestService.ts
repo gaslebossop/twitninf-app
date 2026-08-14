@@ -7,10 +7,16 @@ import { apiService } from './api';
  * Miroir de `api/src/routes/contestRoutes.js`. Trois choses à garder en tête
  * en lisant l'app :
  *
- * - **Le montant est déclaratif.** Le créateur annonce ce qu'il met en jeu,
- *   dans la devise qu'il veut, et règle le gagnant lui-même. Rien n'est
- *   prélevé ni séquestré par la plateforme — l'écran doit le dire, sinon un
- *   participant croira l'argent bloqué quelque part.
+ * - **La cagnotte est prélevée d'avance.** À la création, `montant ×
+ *   gagnants` quitte le portefeuille de l'organisateur et attend à la
+ *   trésorerie ; au tirage, chaque gagnant est crédité automatiquement et la
+ *   part non attribuée revient à l'organisateur. C'est ce qui rend le
+ *   concours crédible, et l'écran doit le dire — sinon on croit à une simple
+ *   promesse.
+ * - **Les monnaies viennent du catalogue**, jamais d'une saisie libre :
+ *   `fetchCurrencies` renvoie NF, l'EUR interne et les monnaies
+ *   communautaires actives, avec le solde. Une devise inventée serait une
+ *   somme que personne ne peut verser.
  * - **`missing_conditions` est la vérité affichable.** Quand le serveur
  *   refuse une participation, il renvoie la liste de ce qu'il reste à faire :
  *   c'est cette liste qu'on montre, jamais un « conditions non remplies »
@@ -71,13 +77,31 @@ export interface ContestEntry {
   user?: ContestUser;
 }
 
+/** Une monnaie proposée pour la cagnotte, avec le solde de l'utilisateur. */
+export interface ContestCurrency {
+  id: string;
+  name: string;
+  symbol: string;
+  color?: string | null;
+  icon?: string | null;
+  balance: number;
+  is_community: boolean;
+  price_eur: number;
+}
+
+export type EscrowStatus = 'none' | 'held' | 'paid' | 'refunded';
+
 export interface Contest {
   id: string;
   tweet_id: string;
   creator_id: string;
   title?: string | null;
+  /** Gain PAR gagnant. */
   prize_amount: string | number;
   prize_currency: string;
+  currency_id?: string | null;
+  /** Où en est l'argent. `none` = ancien concours, purement déclaratif. */
+  escrow?: { status: EscrowStatus; total: string | number; is_funded: boolean };
   prize_note?: string | null;
   winners_count: number;
   conditions: ContestConditions;
@@ -110,21 +134,34 @@ function unwrap(response: any, fallback: string) {
   throw new ContestError(response?.message || fallback, response?.code, response?.missing);
 }
 
+/** Monnaies utilisables, avec le solde — à appeler avant d'ouvrir le formulaire. */
+export async function fetchCurrencies(): Promise<{
+  currencies: ContestCurrency[];
+  min_prize: number;
+}> {
+  const response = await apiService.get(`${BASE}/currencies`);
+  return unwrap(response, 'Monnaies indisponibles.');
+}
+
+/**
+ * Publie le concours ET prélève la cagnotte, en une seule opération côté
+ * serveur : un refus (solde insuffisant, anti-fraude) ne publie aucun tweet.
+ */
 export async function createContest(params: {
   content: string;
   prizeAmount: number;
-  prizeCurrency: string;
+  currencyId: string;
   prizeNote?: string | null;
   title?: string | null;
   winnersCount: number;
   endsAt: Date;
   conditions: Partial<ContestConditions>;
   mediaUrls?: string[];
-}): Promise<{ tweet: any; contest: Contest }> {
+}): Promise<{ tweet: any; contest: Contest; remaining_balance?: number }> {
   const response = await apiService.post(BASE, {
     content: params.content,
     prize_amount: params.prizeAmount,
-    prize_currency: params.prizeCurrency,
+    currency_id: params.currencyId,
     prize_note: params.prizeNote ?? null,
     title: params.title ?? null,
     winners_count: params.winnersCount,
@@ -203,15 +240,19 @@ export async function cancelContest(contestId: string, reason?: string): Promise
 // ---------------------------------------------------------------------------
 
 /** « 250 EUR », « 5000 XAF » — le code de devise est libre côté serveur. */
-export function formatPrize(contest: Pick<Contest, 'prize_amount' | 'prize_currency'>): string {
-  const amount = Number(contest.prize_amount);
-  if (!Number.isFinite(amount)) return `? ${contest.prize_currency}`;
-  // Pas de décimales quand il n'y en a pas : « 250 EUR » plutôt que
-  // « 250,00 EUR », qui donne l'air d'un relevé bancaire sur une carte de fil.
-  const body = Number.isInteger(amount)
+export function formatAmount(value: number | string): string {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '?';
+  // Les montants sont stockés en DECIMAL(20,8) : « 250.00000000 » sur une
+  // carte de fil est illisible. On coupe les zéros de fin sans jamais
+  // arrondir vers le haut un solde réel.
+  return Number.isInteger(amount)
     ? amount.toLocaleString('fr-FR')
-    : amount.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${body} ${contest.prize_currency}`;
+    : amount.toLocaleString('fr-FR', { maximumFractionDigits: 8 });
+}
+
+export function formatPrize(contest: Pick<Contest, 'prize_amount' | 'prize_currency'>): string {
+  return `${formatAmount(contest.prize_amount)} ${contest.prize_currency}`;
 }
 
 /**
