@@ -7,6 +7,7 @@ import { useFonts } from 'expo-font';
 import { fontAssets, colors, statusBarStyle } from './src/theme';
 import AppLoadingScreen from './src/components/ui/AppLoadingScreen';
 import { AuthProvider } from './src/contexts/AuthContext';
+import { EventsProvider } from './src/contexts/EventsContext';
 import { EventProvider } from './src/contexts/EventContext';
 import { EventThemeProvider } from './src/components/EventThemeProvider';
 import { FunctionalEventProvider } from './src/contexts/FunctionalEventContext';
@@ -155,6 +156,11 @@ export default function App() {
         <OfflineProvider>
           <ReadingLanguageProvider>
           <StartupPopupProvider>
+          {/* La source de vérité des événements. Les trois fournisseurs qui
+              suivent ne sont plus que des adaptateurs vers celui-ci : ils ne
+              tiennent plus d'état et n'interrogent plus le réseau. Il doit
+              donc rester AU-DESSUS d'eux. */}
+          <EventsProvider>
           <EventProvider>
             <EventThemeProvider>
               <FunctionalEventProvider>
@@ -187,6 +193,7 @@ export default function App() {
               </FunctionalEventProvider>
             </EventThemeProvider>
           </EventProvider>
+          </EventsProvider>
           </StartupPopupProvider>
           </ReadingLanguageProvider>
         </OfflineProvider>
