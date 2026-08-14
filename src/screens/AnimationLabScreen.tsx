@@ -6,9 +6,12 @@ import { AppHeader, ScreenBackground } from '../components/ui';
 import StartupStepPage, { stepStyles } from '../components/StartupStepPage';
 import LogoInjectionAnimation from '../components/LogoInjectionAnimation';
 import { INSTALL_CHANNEL } from '../services/updateCheck';
+import { EventsPreviewProvider } from '../contexts/EventsContext';
+import EventScreen from './EventScreen';
+import { buildPreviewState } from './eventPreviewFixture';
 
 /**
- * Banc d'essai des animations de démarrage.
+ * Banc d'essai des écrans qu'on ne peut pas provoquer.
  *
  * ── Pourquoi cet écran existe ─────────────────────────────────────────────
  * Les pages de démarrage ne s'affichent que dans des conditions qu'on ne
@@ -48,6 +51,11 @@ const PREVIEWS: Preview[] = [
     label: 'Nouvelle version disponible',
     hint: "La seringue de Kospor Injection, en boucle pendant la lecture.",
   },
+  {
+    key: 'event',
+    label: "Page d'événement",
+    hint: "L'anniversaire twitninf, avec une quête de chaque état possible.",
+  },
 ];
 
 /** Tailles d'épreuve. Un tracé juste à 200 peut se disloquer ailleurs. */
@@ -67,6 +75,23 @@ export default function AnimationLabScreen({ navigation }: any) {
 
   const close = useCallback(() => setPreview(null), []);
   const replay = useCallback(() => setRun((n) => n + 1), []);
+
+  if (preview === 'event') {
+    return (
+      <View style={S.fill}>
+        {/* Le VRAI `EventScreen`, avec un état substitué à celui du serveur.
+            Un aperçu qui passerait par un autre chemin de rendu ne prouverait
+            rien de la vraie page. */}
+        <EventsPreviewProvider value={buildPreviewState()}>
+          <EventScreen />
+        </EventsPreviewProvider>
+        <TouchableOpacity style={S.floatingClose} onPress={close} activeOpacity={0.85}>
+          <Ionicons name="close" size={18} color={colors.white} />
+          <Text style={S.floatingCloseText}>Fermer l'aperçu</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (preview === 'update') {
     return (
@@ -152,6 +177,27 @@ export default function AnimationLabScreen({ navigation }: any) {
 
 const S = StyleSheet.create({
   fill: { flex: 1 },
+  /**
+   * Bouton de sortie flottant.
+   *
+   * `EventScreen` occupe tout l'écran et n'a pas de bouton retour : sans cette
+   * sortie, l'aperçu serait un cul-de-sac. Posé en bas, au-dessus de la barre
+   * d'onglets qui n'existe pas ici.
+   */
+  floatingClose: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 28,
+    height: 48,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(10,6,16,0.86)',
+  },
+  floatingCloseText: { color: colors.white, fontFamily: fonts.bold, fontSize: 14 },
   list: { padding: 16, gap: 12 },
 
   note: {

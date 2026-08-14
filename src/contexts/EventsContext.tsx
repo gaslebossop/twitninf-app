@@ -210,6 +210,34 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 }
 
 /** L'état complet de l'événement en cours. */
+/**
+ * Fournisseur d'APERÇU, réservé aux outils internes.
+ *
+ * ── Pourquoi il existe ────────────────────────────────────────────────────
+ * La page d'événement ne montre quelque chose que si un événement est
+ * RÉELLEMENT en cours côté serveur. Hors période, elle affiche « bientôt » et
+ * zéro quête — donc impossible d'en juger la mise en page, ni de voir à quoi
+ * ressemble une quête réclamable, verrouillée ou déjà encaissée.
+ *
+ * Les seules alternatives étaient d'allumer l'événement en production ou de
+ * décaler ses dates : deux gestes visibles par tous les utilisateurs, pour
+ * regarder un écran.
+ *
+ * Celui-ci substitue un état complet à celui du serveur, sans toucher à
+ * `EventScreen` — qui reste strictement le même composant, avec les mêmes
+ * données en entrée. Un aperçu qui passe par un chemin de rendu différent de
+ * la vraie page ne prouve rien.
+ */
+export function EventsPreviewProvider({
+  value,
+  children,
+}: {
+  value: EventsContextValue;
+  children: ReactNode;
+}) {
+  return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;
+}
+
 export function useEvents(): EventsContextValue {
   return useContext(EventsContext);
 }
