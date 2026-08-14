@@ -67,6 +67,9 @@ import FeatureFlagsAdminScreen from '../screens/FeatureFlagsAdminScreen';
 import NfMapScreen from '../screens/NfMapScreen';
 import KosporBirthdayScreen from '../screens/KosporBirthdayScreen';
 import VerificationStyleScreen from '../screens/VerificationStyleScreen';
+import VersionNotesScreen from '../screens/VersionNotesScreen';
+import ReadingLanguageScreen from '../screens/ReadingLanguageScreen';
+import NavbarCustomizationScreen from '../screens/NavbarCustomizationScreen';
 import CreateTargetingAdScreen from '../screens/CreateTargetingAdScreen';
 import ReportsScreen from '../screens/ReportsScreen';
 import ReportInvestigationScreen from '../screens/ReportInvestigationScreen';
@@ -152,6 +155,9 @@ export type MainStackParamList = {
   NfMap: undefined;
   KosporBirthday: undefined;
   VerificationStyle: undefined;
+  VersionNotes: undefined;
+  ReadingLanguage: undefined;
+  NavbarCustomization: undefined;
   CreateTargetingAd: undefined;
   CreateCampaign: undefined;
   CreateAdvertisement: undefined;
@@ -606,8 +612,8 @@ function MainNavigatorInner() {
         }}
       />
       
-      <MainStack.Screen 
-        name="VerificationStyle" 
+      <MainStack.Screen
+        name="VerificationStyle"
         component={VerificationStyleScreen}
         options={{
           presentation: 'card',
@@ -615,7 +621,37 @@ function MainNavigatorInner() {
           headerShown: false,
         }}
       />
-      
+
+      <MainStack.Screen
+        name="VersionNotes"
+        component={VersionNotesScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="ReadingLanguage"
+        component={ReadingLanguageScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
+      <MainStack.Screen
+        name="NavbarCustomization"
+        component={NavbarCustomizationScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
       <MainStack.Screen 
         name="CreateTargetingAd" 
         component={CreateTargetingAdScreen}

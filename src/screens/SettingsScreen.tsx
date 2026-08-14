@@ -13,7 +13,6 @@ import {
   useWindowDimensions,
   Platform,
   Switch,
-  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,10 +37,6 @@ import {
 } from '../services/push';
 import { APP_VERSION } from '../services/clientIdentity';
 import { useReadingLanguage } from '../contexts/ReadingLanguageContext';
-import ReadingLanguageModal from '../components/ReadingLanguageModal';
-import { PATCH_NOTES } from '../data/patchNotes';
-import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
-import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
 import { linkGAuthAccount } from '../services/gAuthLogin';
@@ -74,13 +69,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [showVerificationForm, setShowVerificationForm] = useState(false);
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [showPremiumPopup, setShowPremiumPopup] = useState(false);
-  const [showPatchNotes, setShowPatchNotes] = useState(false);
-  const [showNavbarCustomization, setShowNavbarCustomization] = useState(false);
-  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const { preferredLanguage, languages } = useReadingLanguage();
   const currentLanguageLabel =
     languages.find((language) => language.code === preferredLanguage)?.label || 'Non définie';
-  const { selected: selectedOptionalTabs, save: saveNavbarPrefs } = useNavbarPrefs();
 
   // États pour les paramètres
   const [privacyLoading, setPrivacyLoading] = useState(false);
@@ -307,14 +298,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'Langue de lecture',
               `${currentLanguageLabel} · les publications traduites s'affichent dans cette langue`,
               'language-outline',
-              () => setShowLanguagePicker(true)
+              () => navigation.navigate('ReadingLanguage')
             )}
 
             {renderActionButton(
               'Personnaliser la navbar',
               'Choisis les raccourcis affichés en bas de l\'écran',
               'options-outline',
-              () => setShowNavbarCustomization(true)
+              () => navigation.navigate('NavbarCustomization')
             )}
 
             {renderActionButton(
@@ -544,7 +535,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           'Notes de version',
           `Version ${APP_VERSION} — voir les dernières nouveautés`,
           'sparkles-outline',
-          () => setShowPatchNotes(true)
+          () => navigation.navigate('VersionNotes')
         )}
 
         {/* SECTION STREAMING (Vérifiés uniquement) */}
@@ -687,59 +678,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         }}
       />
 
-      {/* Modal Notes de version */}
-      <Modal
-        visible={showPatchNotes}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowPatchNotes(false)}
-      >
-        <View style={styles.patchOverlay}>
-          <View style={styles.patchSheet}>
-            <View style={styles.patchHeader}>
-              <View>
-                <Text style={styles.patchTitle}>Notes de version</Text>
-                <Text style={styles.patchVersion}>Version {APP_VERSION}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowPatchNotes(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: screenHeight * 0.6 }}>
-              {PATCH_NOTES.map((note) => (
-                <View key={note.date} style={styles.patchEntry}>
-                  <Text style={styles.patchDate}>{note.date}</Text>
-                  <Text style={styles.patchEntryTitle}>{note.title}</Text>
-                  {note.items.map((item) => (
-                    <View key={item} style={styles.patchItemRow}>
-                      <Text style={styles.patchBullet}>•</Text>
-                      <Text style={styles.patchItemText}>{item}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal Personnalisation de la navbar */}
-      <NavbarOnboardingModal
-        visible={showNavbarCustomization}
-        mode="settings"
-        initialSelected={selectedOptionalTabs}
-        onComplete={(selected) => {
-          saveNavbarPrefs(selected);
-          setShowNavbarCustomization(false);
-        }}
-        onCancel={() => setShowNavbarCustomization(false)}
-      />
-
-      {/* Modal Langue de lecture — fermable ici, contrairement à l'accueil */}
-      <ReadingLanguageModal
-        visible={showLanguagePicker}
-        onClose={() => setShowLanguagePicker(false)}
-      />
     </View>
     </ScreenBackground>
   );
@@ -946,69 +884,6 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 12,
     fontWeight: '700', fontFamily: fonts.bold,
-  },
-  // NOTES DE VERSION
-  patchOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  patchSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  patchHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  patchTitle: {
-    fontSize: 20,
-    fontFamily: fonts.bold,
-    color: colors.textPrimary,
-  },
-  patchVersion: {
-    fontSize: 13,
-    color: colors.accent,
-    fontFamily: fonts.semibold,
-    marginTop: 2,
-  },
-  patchEntry: {
-    marginBottom: 20,
-  },
-  patchDate: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 2,
-  },
-  patchEntryTitle: {
-    fontSize: 16,
-    fontFamily: fonts.semibold,
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  patchItemRow: {
-    flexDirection: 'row',
-    marginBottom: 6,
-    paddingRight: 4,
-  },
-  patchBullet: {
-    color: colors.accent,
-    fontSize: 14,
-    marginRight: 8,
-    lineHeight: 19,
-  },
-  patchItemText: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 19,
   },
 });
 

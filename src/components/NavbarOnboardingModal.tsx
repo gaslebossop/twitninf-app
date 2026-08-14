@@ -52,6 +52,12 @@ interface NavbarOnboardingModalProps {
   initialSelected?: OptionalTabKey[];
   onComplete: (selected: OptionalTabKey[]) => void;
   onCancel?: () => void;
+  /**
+   * Rendu sans `<Modal>` ni fond absolu : juste le contenu, pour un appelant
+   * qui fournit deja son propre habillage plein ecran (AppHeader compris).
+   * Utilise par l'ecran de reglages ; laisse a `false` partout ailleurs.
+   */
+  embedded?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -270,6 +276,7 @@ export default function NavbarOnboardingModal({
   initialSelected = [],
   onComplete,
   onCancel,
+  embedded = false,
 }: NavbarOnboardingModalProps) {
   const [selected, setSelected] = useState<OptionalTabKey[]>(initialSelected);
   const [step, setStep] = useState<'select' | 'tutorial'>('select');
@@ -407,7 +414,7 @@ export default function NavbarOnboardingModal({
   const isOnboarding = mode === 'onboarding';
 
   const body = (
-    <View style={[styles.sheet, isOnboarding && styles.sheetFull]}>
+    <View style={[styles.sheet, isOnboarding && styles.sheetFull, embedded && styles.sheetEmbedded]}>
           {/* Lueur de marque : en fond, sous tout le contenu. */}
           <Animated.View
             pointerEvents="none"
@@ -424,7 +431,9 @@ export default function NavbarOnboardingModal({
             <LinearGradient colors={gradients.glow} style={StyleSheet.absoluteFill} />
           </Animated.View>
 
-          <View style={styles.grabber} />
+          {/* Poignee de feuille : n'a de sens que pour un habillage sheet/page,
+              pas quand l'appelant fournit deja son propre AppHeader. */}
+          {!embedded && <View style={styles.grabber} />}
 
           {step === 'select' ? (
             <>
@@ -612,6 +621,11 @@ export default function NavbarOnboardingModal({
     </View>
   );
 
+  if (embedded) {
+    if (!visible) return null;
+    return body;
+  }
+
   if (isOnboarding) {
     if (!visible) return null;
     return <View style={styles.page}>{body}</View>;
@@ -643,6 +657,16 @@ const styles = StyleSheet.create({
     // Barre d'état en haut, navbar système en bas : marges fixes, aucun
     // SafeAreaProvider n'est monté dans cette app.
     paddingTop: 54,
+  },
+  sheetEmbedded: {
+    flex: 1,
+    maxHeight: '100%',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    backgroundColor: 'transparent',
+    // Pas de gros paddingTop ici : l'appelant a deja son propre AppHeader
+    // au-dessus, contrairement au mode onboarding qui est seul sur l'ecran.
+    paddingTop: 6,
   },
   sheet: {
     backgroundColor: colors.bgElevated,
