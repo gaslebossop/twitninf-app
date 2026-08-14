@@ -9,7 +9,6 @@ import React, {
   ReactNode,
 } from 'react';
 import {
-  Animated,
   BackHandler,
   Platform,
   Pressable,
@@ -17,8 +16,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../../theme';
+import { colors, fonts, radius, withAlpha } from '../../theme';
+import useSheetGesture from '../../hooks/useSheetGesture';
 import feedback from '../../utils/feedback';
 
 /**
@@ -63,9 +65,9 @@ const ConfirmContext = createContext<(options: ConfirmOptions) => Promise<boolea
   async () => false,
 );
 
-const ENTER_MS = D.base;
-const EXIT_MS = D.fast;
 const BOTTOM_INSET = Platform.OS === 'ios' ? 34 : 16;
+/** Course d'entrée et de sortie, en px. */
+const TRAVEL = 220;
 
 /**
  * Passerelle impérative, même raison d'être que celle du toast : beaucoup de
@@ -82,8 +84,12 @@ export function confirmAsync(options: ConfirmOptions): Promise<boolean> {
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const resolverRef = useRef<Resolver | null>(null);
-  const progress = useRef(new Animated.Value(0)).current;
-  const closing = useRef(false);
+  /**
+   * Réponse retenue pendant que la feuille descend. Le glissé la laisse à
+   * `false` : se débarrasser d'une question au doigt, c'est y répondre non —
+   * jamais confirmer par accident une action destructive.
+   */
+  const answerRef = useRef(false);
 
   const confirm = useCallback((next: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
@@ -91,28 +97,29 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       // aucun appelant ne doit rester bloqué sur une promesse orpheline.
       resolverRef.current?.(false);
       resolverRef.current = resolve;
-      closing.current = false;
+      answerRef.current = false;
       setOptions(next);
     });
   }, []);
 
+  const handleClosed = useCallback(() => {
+    const resolve = resolverRef.current;
+    resolverRef.current = null;
+    setOptions(null);
+    resolve?.(answerRef.current);
+  }, []);
+
+  const { gesture, sheetStyle, scrimStyle, open, close } = useSheetGesture({
+    onClosed: handleClosed,
+    travel: TRAVEL,
+  });
+
   const settle = useCallback(
     (answer: boolean) => {
-      if (closing.current) return;
-      closing.current = true;
-      Animated.timing(progress, {
-        toValue: 0,
-        duration: EXIT_MS,
-        easing: E.in,
-        useNativeDriver: true,
-      }).start(() => {
-        const resolve = resolverRef.current;
-        resolverRef.current = null;
-        setOptions(null);
-        resolve?.(answer);
-      });
+      answerRef.current = answer;
+      close();
     },
-    [progress],
+    [close],
   );
 
   useEffect(() => {
@@ -121,13 +128,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     if (options.destructive) feedback.refuse();
     else feedback.select();
 
-    progress.setValue(0);
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: ENTER_MS,
-      easing: E.out,
-      useNativeDriver: true,
-    }).start();
+    open();
 
     // Le retour Android doit annuler, pas quitter l'écran de dessous.
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -135,7 +136,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       return true;
     });
     return () => sub.remove();
-  }, [options, progress, settle]);
+  }, [options, open, settle]);
 
   useEffect(() => {
     hostConfirm = confirm;
@@ -154,26 +155,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {options && (
         <View style={styles.host}>
-          <Animated.View style={[styles.scrim, { opacity: progress }]}>
+          <Animated.View style={[styles.scrim, scrimStyle]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => settle(false)} />
           </Animated.View>
 
-          <Animated.View
-            style={[
-              styles.sheet,
-              {
-                opacity: progress,
-                transform: [
-                  {
-                    translateY: progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [220, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
+          {/* La poignée n'était que décorative : la feuille se glisse
+              maintenant vraiment, et le geste répond « non ». */}
+          <GestureDetector gesture={gesture}>
+            <Animated.View style={[styles.sheet, sheetStyle]}>
             <View style={styles.grabber} />
 
             <View style={[styles.iconWrap, { backgroundColor: withAlpha(accent, 0.16) }]}>
@@ -213,7 +202,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             >
               <Text style={styles.cancelLabel}>{options.cancelLabel ?? 'Annuler'}</Text>
             </Pressable>
-          </Animated.View>
+            </Animated.View>
+          </GestureDetector>
         </View>
       )}
     </ConfirmContext.Provider>

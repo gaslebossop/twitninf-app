@@ -6,7 +6,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  PanResponder,
   Platform,
   SafeAreaView,
   StatusBar,
@@ -118,6 +117,18 @@ interface SenderLike {
 
 /** Bulles « moi » : dégradé Instagram bleu → violet. */
 const MY_BUBBLE_GRADIENT = ['#3B5DF6', '#8134AF'] as const;
+
+/**
+ * Glissé « annuler » du message vocal.
+ *
+ * Deux seuils, et pas un seul : le libellé passe au rouge AVANT le point de
+ * non-retour, si bien qu'on voit qu'on va annuler avant de l'avoir fait. Un
+ * seuil unique ne laisse le choix qu'entre deviner et rater.
+ */
+const CANCEL_ARM_DISTANCE = -70;
+const CANCEL_SEND_DISTANCE = -90;
+/** Amorti sans dépassement : le micro grossit et se pose, il ne rebondit pas. */
+const MIC_SPRING = { damping: 24, stiffness: 260, mass: 1 } as const;
 /** Au-delà de 15 min entre deux messages, Instagram insère un séparateur. */
 const TIME_SEPARATOR_GAP_MS = 15 * 60 * 1000;
 
@@ -584,7 +595,16 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   const [attachmentSending, setAttachmentSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
-  const [recordingDragX, setRecordingDragX] = useState(0);
+  /**
+   * Le glissé « annuler » n'est plus un état React.
+   *
+   * `setRecordingDragX` était appelé à CHAQUE événement de déplacement : tout
+   * l'écran de conversation — sa liste de messages comprise — se rendait à
+   * nouveau soixante fois par seconde pendant qu'on glissait le pouce. Seul le
+   * franchissement du seuil mérite un rendu ; le reste est du mouvement, et le
+   * mouvement va sur le thread UI.
+   */
+  const [cancelArmed, setCancelArmed] = useState(false);
   const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
   const [reactionBarFor, setReactionBarFor] = useState<{ messageId: string; x: number; y: number } | null>(null);
   /** Message pour lequel le sélecteur complet d'emoji est ouvert (bouton « + »). */
@@ -625,7 +645,11 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   const dot1 = useRef(new Animated.Value(0.25)).current;
   const dot2 = useRef(new Animated.Value(0.25)).current;
   const dot3 = useRef(new Animated.Value(0.25)).current;
-  const micScale = useRef(new Animated.Value(1)).current;
+  const micScale = useSharedValue(1);
+  /** Décalage horizontal du pouce pendant l'enregistrement, en px (≤ 0). */
+  const recordingDragX = useSharedValue(0);
+  /** Miroir du seuil côté UI : évite de renvoyer vers JS à chaque image. */
+  const cancelArmedUI = useSharedValue(false);
 
   // Visualiseur d'image : glissé vertical piloté sur le thread UI (Reanimated)
   // pour rester fluide même quand le thread JS est occupé.
@@ -1034,10 +1058,10 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     };
   }, []);
 
-  // Le PanResponder ci-dessous est créé une seule fois (useRef) : sans cette
-  // ref « toujours à jour », ses callbacks fermeraient sur les toutes
-  // premières versions de start/stop/cancelRecording (donc sur un `recordingMs`
-  // figé à 0 pour toujours) au lieu des dernières.
+  // Le geste ci-dessous n'est construit qu'une fois : sans cette ref
+  // « toujours à jour », ses callbacks fermeraient sur les toutes premières
+  // versions de start/stop/cancelRecording (donc sur un `recordingMs` figé à 0
+  // pour toujours) au lieu des dernières.
   const recordingActionsRef = useRef({ startRecording, stopAndSendRecording, cancelRecording });
   useEffect(() => {
     recordingActionsRef.current = { startRecording, stopAndSendRecording, cancelRecording };
@@ -1047,35 +1071,63 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
    * Geste façon Instagram/WhatsApp : on maintient le micro appuyé pour
    * enregistrer, on relâche pour envoyer, on glisse vers la gauche au-delà
    * du seuil pour annuler.
+   *
+   * `minDistance(0)` : le geste s'active au contact, sans attendre les 10 px
+   * réglementaires — sans quoi un message vocal court, enregistré sans bouger
+   * le pouce, ne serait jamais reconnu comme un geste terminé.
+   *
+   * Les trois passages vers JS (`runOnJS`) sont les seuls qui restent, et ils
+   * correspondent chacun à un vrai événement : on commence, on franchit le
+   * seuil, on lâche.
    */
-  const micPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        setRecordingDragX(0);
-        Animated.spring(micScale, { toValue: 1.25, friction: 24, tension: 140, useNativeDriver: true }).start();
-        recordingActionsRef.current.startRecording();
-      },
-      onPanResponderMove: (_evt, gesture) => {
-        setRecordingDragX(Math.min(0, gesture.dx));
-      },
-      onPanResponderRelease: (_evt, gesture) => {
-        Animated.spring(micScale, { toValue: 1, friction: 24, tension: 140, useNativeDriver: true }).start();
-        setRecordingDragX(0);
-        if (gesture.dx < -90) {
-          recordingActionsRef.current.cancelRecording();
-        } else {
-          recordingActionsRef.current.stopAndSendRecording();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(micScale, { toValue: 1, friction: 24, tension: 140, useNativeDriver: true }).start();
-        setRecordingDragX(0);
-        recordingActionsRef.current.cancelRecording();
-      },
-    }),
-  ).current;
+  const startRec = useCallback(() => recordingActionsRef.current.startRecording(), []);
+  const cancelRec = useCallback(() => recordingActionsRef.current.cancelRecording(), []);
+  const sendRec = useCallback(() => recordingActionsRef.current.stopAndSendRecording(), []);
+
+  const micGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .onBegin(() => {
+          recordingDragX.value = 0;
+          cancelArmedUI.value = false;
+          micScale.value = withSpring(1.25, MIC_SPRING);
+          runOnJS(startRec)();
+        })
+        .onUpdate((event) => {
+          // Vers la droite, il n'y a rien à faire : le geste ne va que vers
+          // l'annulation, et laisser le micro suivre à droite le suggérerait.
+          const next = Math.min(0, event.translationX);
+          recordingDragX.value = next;
+
+          const armed = next < CANCEL_ARM_DISTANCE;
+          if (armed !== cancelArmedUI.value) {
+            cancelArmedUI.value = armed;
+            runOnJS(setCancelArmed)(armed);
+          }
+        })
+        .onEnd((event, success) => {
+          // Geste interrompu par le système : on n'envoie surtout pas un
+          // message que l'utilisateur n'a pas relâché lui-même.
+          if (!success || event.translationX < CANCEL_SEND_DISTANCE) runOnJS(cancelRec)();
+          else runOnJS(sendRec)();
+        })
+        .onFinalize(() => {
+          micScale.value = withSpring(1, MIC_SPRING);
+          recordingDragX.value = 0;
+          cancelArmedUI.value = false;
+          runOnJS(setCancelArmed)(false);
+        }),
+    [micScale, recordingDragX, cancelArmedUI, startRec, cancelRec, sendRec],
+  );
+
+  const micStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: micScale.value }] as const,
+  }));
+
+  const slideHintStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: recordingDragX.value }] as const,
+  }));
 
   const closeImageViewer = useCallback(() => {
     setViewerImageUrl(null);
@@ -1612,20 +1664,21 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                   <View style={styles.recordingRow}>
                     <View style={styles.recordingDot} />
                     <Text style={styles.recordingTimer}>{formatDuration(recordingMs)}</Text>
-                    <View
-                      style={[styles.recordingSlideHint, { transform: [{ translateX: recordingDragX }] }]}
-                    >
+                    {/* Le déplacement suit le pouce sur le thread UI ; seul le
+                        passage du seuil (`cancelArmed`) redescend jusqu'à
+                        React, où il change une couleur. */}
+                    <Reanimated.View style={[styles.recordingSlideHint, slideHintStyle]}>
                       <Ionicons
                         name="chevron-back"
                         size={14}
-                        color={recordingDragX < -70 ? '#FF3B30' : colors.textMuted}
+                        color={cancelArmed ? '#FF3B30' : colors.textMuted}
                       />
                       <Text
-                        style={[styles.recordingSlideHintText, recordingDragX < -70 && styles.recordingSlideHintTextActive]}
+                        style={[styles.recordingSlideHintText, cancelArmed && styles.recordingSlideHintTextActive]}
                       >
                         Glisser pour annuler
                       </Text>
-                    </View>
+                    </Reanimated.View>
                   </View>
                 ) : (
                   <TextInput
@@ -1654,20 +1707,21 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                       </TouchableOpacity>
                     )}
                     {!isRecording && <Ionicons name="happy-outline" size={22} color={colors.textSecondary} />}
-                    <Animated.View
-                      {...micPanResponder.panHandlers}
-                      style={[
-                        styles.micButton,
-                        isRecording && styles.micButtonActive,
-                        { transform: [{ scale: micScale }] },
-                      ]}
-                    >
-                      <Ionicons
-                        name={isRecording ? 'mic' : 'mic-outline'}
-                        size={20}
-                        color={isRecording ? '#fff' : colors.textSecondary}
-                      />
-                    </Animated.View>
+                    <GestureDetector gesture={micGesture}>
+                      <Reanimated.View
+                        style={[
+                          styles.micButton,
+                          isRecording && styles.micButtonActive,
+                          micStyle,
+                        ]}
+                      >
+                        <Ionicons
+                          name={isRecording ? 'mic' : 'mic-outline'}
+                          size={20}
+                          color={isRecording ? '#fff' : colors.textSecondary}
+                        />
+                      </Reanimated.View>
+                    </GestureDetector>
                   </View>
                 )}
               </View>

@@ -9,9 +9,7 @@ import React, {
   ReactNode,
 } from 'react';
 import {
-  Animated,
   BackHandler,
-  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -19,8 +17,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../../theme';
+import { colors, fonts, radius, withAlpha } from '../../theme';
+import useSheetGesture from '../../hooks/useSheetGesture';
 import feedback from '../../utils/feedback';
 
 /**
@@ -58,11 +59,16 @@ export interface ActionSheetOptions {
 
 const ActionSheetContext = createContext<(options: ActionSheetOptions) => void>(() => {});
 
-const ENTER_MS = D.base;
-const EXIT_MS = D.fast;
 const BOTTOM_INSET = Platform.OS === 'ios' ? 34 : 16;
-/** Au-delà, le glissé vers le bas referme au lieu de reposer la feuille. */
-const DISMISS_DISTANCE = 64;
+/** Course d'entrée, et distance de sortie une fois la fermeture lancée. */
+const TRAVEL = 280;
+/**
+ * Au-delà de cette position PROJETÉE (voir `useSheetGesture`), le glissé
+ * referme au lieu de reposer la feuille. Le seuil porte sur l'endroit où le
+ * geste envoyait la feuille, pas sur la distance réellement parcourue : un
+ * coup sec de 20 px ferme, une traînée molle de 80 px repose.
+ */
+const DISMISS_DISTANCE = 88;
 
 let hostShow: ((options: ActionSheetOptions) => void) | null = null;
 
@@ -73,90 +79,54 @@ export function showActionSheet(options: ActionSheetOptions) {
 
 export function ActionSheetProvider({ children }: { children: ReactNode }) {
   const [options, setOptions] = useState<ActionSheetOptions | null>(null);
-  const progress = useRef(new Animated.Value(0)).current;
-  /** Décalage vertical ajouté par le doigt pendant un glissé. */
-  const drag = useRef(new Animated.Value(0)).current;
-  const closing = useRef(false);
+  /**
+   * Action choisie, jouée APRÈS la fermeture : si elle ouvre un écran ou une
+   * autre feuille, les deux ne se chevauchent pas.
+   */
+  const pending = useRef<(() => void) | null>(null);
 
-  const show = useCallback((next: ActionSheetOptions) => {
-    closing.current = false;
-    drag.setValue(0);
-    setOptions(next);
-  }, [drag]);
-
-  const close = useCallback(
-    (then?: () => void, velocity = 0) => {
-      if (closing.current) return;
-      closing.current = true;
-      Animated.parallel([
-        Animated.timing(progress, {
-          toValue: 0,
-          duration: EXIT_MS,
-          easing: E.in,
-          useNativeDriver: true,
-        }),
-        // La feuille finit sa course dans le sens du geste : jetée d'un coup
-        // sec elle sort vite, relâchée mollement elle redescend doucement.
-        Animated.timing(drag, {
-          toValue: 320,
-          duration: velocity > 0.8 ? 130 : EXIT_MS,
-          easing: E.in,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        setOptions(null);
-        // L'action part APRÈS la fermeture : si elle ouvre un écran ou une
-        // autre feuille, les deux ne se chevauchent pas.
-        then?.();
-      });
-    },
-    [progress, drag],
-  );
+  const handleClosed = useCallback(() => {
+    setOptions(null);
+    const then = pending.current;
+    pending.current = null;
+    then?.();
+  }, []);
 
   /**
-   * Glissé vers le bas pour refermer.
-   *
-   * C'est ce qui distingue une feuille d'une boîte de dialogue : on la
-   * manipule, elle suit le doigt, et on s'en débarrasse d'un geste plutôt
-   * qu'en visant un bouton « Annuler ». Vers le haut, une forte résistance —
-   * la feuille est en butée et ne doit pas décoller du bord.
+   * Tout le glissé — suivi du doigt, butée élastique, décision au
+   * relâchement — vit dans ce hook et tourne sur le thread UI.
    */
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_, g) => drag.setValue(g.dy > 0 ? g.dy : g.dy * 0.14),
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > DISMISS_DISTANCE || g.vy > 0.7) {
-          close(undefined, g.vy);
-          return;
-        }
-        Animated.timing(drag, {
-          toValue: 0,
-          duration: D.base,
-          easing: E.out,
-          useNativeDriver: true,
-        }).start();
-      },
-    }),
-  ).current;
+  const { gesture, sheetStyle, scrimStyle, open, close } = useSheetGesture({
+    onClosed: handleClosed,
+    travel: TRAVEL,
+    dismissDistance: DISMISS_DISTANCE,
+  });
+
+  const show = useCallback((next: ActionSheetOptions) => {
+    pending.current = null;
+    setOptions(next);
+  }, []);
+
+  /** Ferme, puis joue l'action choisie. */
+  const dismissWith = useCallback(
+    (then?: () => void) => {
+      pending.current = then ?? null;
+      close();
+    },
+    [close],
+  );
 
   useEffect(() => {
     if (!options) return;
     feedback.select();
-    progress.setValue(0);
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: ENTER_MS,
-      easing: E.out,
-      useNativeDriver: true,
-    }).start();
+    open();
 
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       close();
       return true;
     });
     return () => sub.remove();
-  }, [options, progress, close]);
+  }, [options, open, close]);
 
   useEffect(() => {
     hostShow = show;
@@ -172,29 +142,14 @@ export function ActionSheetProvider({ children }: { children: ReactNode }) {
       {children}
       {options && (
         <View style={styles.host}>
-          <Animated.View style={[styles.scrim, { opacity: progress }]}>
+          <Animated.View style={[styles.scrim, scrimStyle]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => close()} />
           </Animated.View>
 
-          <Animated.View
-            {...pan.panHandlers}
-            style={[
-              styles.sheet,
-              {
-                opacity: progress,
-                transform: [
-                  {
-                    // Entrée + doigt sur la même propriété : la feuille ne
-                    // « saute » pas quand on la saisit en pleine ouverture.
-                    translateY: Animated.add(
-                      progress.interpolate({ inputRange: [0, 1], outputRange: [280, 0] }),
-                      drag,
-                    ),
-                  },
-                ],
-              },
-            ]}
-          >
+          {/* Entrée et doigt s'additionnent sur la même propriété : la feuille
+              ne « saute » pas quand on la saisit en pleine ouverture. */}
+          <GestureDetector gesture={gesture}>
+            <Animated.View style={[styles.sheet, sheetStyle]}>
             <View style={styles.grabber} />
 
             {(!!options.title || !!options.message) && (
@@ -218,7 +173,7 @@ export function ActionSheetProvider({ children }: { children: ReactNode }) {
                     disabled={item.disabled}
                     onPress={() => {
                       feedback.tap();
-                      close(item.onPress);
+                      dismissWith(item.onPress);
                     }}
                     style={({ pressed }) => [
                       styles.item,
@@ -261,7 +216,8 @@ export function ActionSheetProvider({ children }: { children: ReactNode }) {
             >
               <Text style={styles.cancelLabel}>{options.cancelLabel ?? 'Annuler'}</Text>
             </Pressable>
-          </Animated.View>
+            </Animated.View>
+          </GestureDetector>
         </View>
       )}
     </ActionSheetContext.Provider>

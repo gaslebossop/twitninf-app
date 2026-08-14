@@ -7,15 +7,23 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
-  Animated,
   Dimensions,
   useWindowDimensions,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ActivityIndicator,
-  PanResponder,
 } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { ease, springs } from '../utils/gesture';
+import useSheetGesture from '../hooks/useSheetGesture';
 // `expo-image` plutôt que `Image` de React Native : cache disque et décodage
 // hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
 // reste identique.
@@ -27,8 +35,6 @@ import apiService from '../services/api';
 import { Tweet } from '../types/api';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
-const SHEET_OPEN_SPRING = { tension: 78, friction: 14 } as const;
-const SHEET_SETTLE_SPRING = { tension: 90, friction: 18 } as const;
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -131,13 +137,18 @@ const ReplyRow = ({
   onLike: () => void;
   onReplyPress: (username: string, commentId: string) => void;
 }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+  const heartStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }] as const,
+  }));
 
   const handleLike = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 1.4, duration: 100, useNativeDriver: true }),
-      Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
-    ]).start();
+    // Le pop part sur le thread UI : il ne dépend donc pas de l'aller-retour
+    // réseau du like, qui est justement ce qui le retardait.
+    scale.value = withSequence(
+      withTiming(1.4, { duration: 100, easing: ease.out }),
+      withTiming(1, { duration: 100, easing: ease.out }),
+    );
     onLike();
   };
 
@@ -160,7 +171,7 @@ const ReplyRow = ({
         </TouchableOpacity>
       </View>
       <TouchableOpacity onPress={handleLike} style={replyStyles.likeBtn}>
-        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+        <Animated.View style={heartStyle}>
           <Ionicons name="heart" size={15} color={reply.liked ? '#fe2c55' : colors.textSecondary} />
         </Animated.View>
         <Text style={replyStyles.likeCount}>{formatLikes(reply.likes)}</Text>
@@ -198,13 +209,16 @@ const CommentRow = ({
   onReplyPress: (username: string, commentId: string) => void;
   onToggleReplies: () => void;
 }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+  const heartStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }] as const,
+  }));
 
   const handleLike = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 1.5, duration: 120, useNativeDriver: true }),
-      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }),
-    ]).start();
+    scale.value = withSequence(
+      withTiming(1.5, { duration: 120, easing: ease.out }),
+      withSpring(1, springs.snappy),
+    );
     onLike();
   };
 
@@ -232,7 +246,7 @@ const CommentRow = ({
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={handleLike} style={commentStyles.likeBtn}>
-          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+          <Animated.View style={heartStyle}>
             <Ionicons name="heart" size={18} color={comment.liked ? '#fe2c55' : colors.textSecondary} />
           </Animated.View>
           <Text style={commentStyles.likeCount}>{formatLikes(comment.likes)}</Text>
@@ -319,8 +333,28 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
   const closeDistance = Math.max(96, sheetHeight * 0.18);
   const { enabled: offlineEnabled, online, queueAction } = useOffline();
 
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const backdropAnim = useRef(new Animated.Value(0)).current;
+  /**
+   * Fermeture réelle : on remet le champ à zéro et on prévient le parent.
+   *
+   * Appelée par le hook UNE FOIS la feuille sortie de l'écran. C'est ce qui
+   * répare un défaut de longue date : `if (!visible) return null` démontait le
+   * composant à l'instant où le parent basculait `visible`, si bien que
+   * l'animation de sortie écrite plus bas n'a jamais eu l'occasion de jouer —
+   * la feuille disparaissait d'un coup. Maintenant elle descend, PUIS le
+   * parent est prévenu.
+   */
+  const finishClose = useCallback(() => {
+    setReplyingTo(null);
+    setReplyingToCommentId(null);
+    setInputText('');
+    onClose();
+  }, [onClose]);
+
+  const { gesture, sheetStyle, scrimStyle, open, close } = useSheetGesture({
+    onClosed: finishClose,
+    travel: sheetHeight,
+    dismissDistance: closeDistance,
+  });
 
   // Mise à jour du compteur quand la prop change
   useEffect(() => {
@@ -347,62 +381,13 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
     fetchUser();
   }, []);
 
-  // PanResponder pour le slide de fermeture
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.35,
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dy > 0) {
-          slideAnim.setValue(gestureState.dy);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > closeDistance || gestureState.vy > 0.85) {
-          handleClose();
-        } else {
-          Animated.spring(slideAnim, {
-            toValue: 0,
-            ...SHEET_SETTLE_SPRING,
-            useNativeDriver: true,
-          }).start();
-        }
-      },
-    })
-  ).current;
-
-  // Animations montée/descente
+  // Montée à l'ouverture. La descente, elle, est déclenchée par `close()` :
+  // elle doit précéder le changement de `visible`, pas le suivre.
   useEffect(() => {
-    if (visible) {
-      slideAnim.setValue(SCREEN_HEIGHT);
-      Animated.parallel([
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          ...SHEET_OPEN_SPRING,
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropAnim, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
-      fetchComments();
-    } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
+    if (!visible) return;
+    open();
+    fetchComments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const fetchComments = async () => {
@@ -485,12 +470,8 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
     }
   };
 
-  const handleClose = () => {
-    setReplyingTo(null);
-    setReplyingToCommentId(null);
-    setInputText('');
-    onClose();
-  };
+  /** Bouton « fermer » et voile : ils lancent la sortie, ils ne la court-circuitent pas. */
+  const handleClose = close;
 
   const handleReplyPress = useCallback((username: string, commentId?: string) => {
     setReplyingTo(username);
@@ -643,18 +624,27 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
   return (
     <>
       <Animated.View
-        style={[sheetStyles.backdrop, { opacity: backdropAnim }]}
+        style={[sheetStyles.backdrop, scrimStyle]}
         pointerEvents={visible ? 'auto' : 'none'}
       >
         <Pressable style={StyleSheet.absoluteFillObject} onPress={handleClose} />
       </Animated.View>
 
       <Animated.View
-        style={[sheetStyles.sheet, { height: sheetHeight, maxHeight: windowHeight - insets.top - 8, transform: [{ translateY: slideAnim }] }]}
+        style={[
+          sheetStyles.sheet,
+          { height: sheetHeight, maxHeight: windowHeight - insets.top - 8 },
+          sheetStyle,
+        ]}
       >
-        <View style={sheetStyles.handleBarArea} {...panResponder.panHandlers}>
-          <View style={sheetStyles.handleBar} />
-        </View>
+        {/* Le geste reste sur la POIGNÉE seule, comme avant : la feuille est
+            pleine d'une liste de commentaires, et un glissé attrapé n'importe
+            où lui volerait son défilement. */}
+        <GestureDetector gesture={gesture}>
+          <View style={sheetStyles.handleBarArea}>
+            <View style={sheetStyles.handleBar} />
+          </View>
+        </GestureDetector>
 
         <View style={sheetStyles.header}>
           <Text style={sheetStyles.headerTitle}>

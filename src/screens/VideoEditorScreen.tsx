@@ -7,11 +7,11 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  PanResponder,
   Dimensions,
   Platform,
   Keyboard,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -75,11 +75,6 @@ interface Guides { x: boolean; y: boolean; }
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 const clampSize = (value: number) => Math.min(TEXT_SIZE_MAX, Math.max(TEXT_SIZE_MIN, value));
 
-/** Écart entre deux doigts, pour le pincement. */
-function spreadOf(touches: readonly { pageX: number; pageY: number }[]) {
-  return Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
-}
-
 /**
  * Un texte posé sur la vidéo, déplaçable et redimensionnable au doigt.
  *
@@ -89,11 +84,26 @@ function spreadOf(touches: readonly { pageX: number; pageY: number }[]) {
  * `translateX` négatif proportionnel, or les deux s'annulaient exactement et
  * le texte ne bougeait jamais horizontalement.
  *
- * ⚠️ Tout ce que le geste consulte passe par des refs, et le `PanResponder`
- * n'est créé qu'une fois. Le faire dépendre de `overlay.x`/`overlay.y` le
- * reconstruisait à chaque image du glissement : le `gestureState` du nouvel
- * exemplaire repartait de `dx = 0`, donc le texte revenait sur sa position de
- * départ à chaque frame et paraissait cloué au centre.
+ * ⚠️ Tout ce que le geste consulte passe par des refs, et les gestes ne sont
+ * créés qu'une fois. Les faire dépendre de `overlay.x`/`overlay.y` les
+ * reconstruirait à chaque image du glissement : le nouvel exemplaire repartirait
+ * d'une translation nulle, donc le texte reviendrait sur sa position de départ
+ * à chaque frame et paraîtrait cloué au centre.
+ *
+ * ── Pourquoi `runOnJS(true)` sur ces gestes ───────────────────────────────
+ * Ailleurs dans l'app, les gestes tournent en worklet sur le thread UI. Pas
+ * ici, et c'est délibéré : la position de l'incrustation vit dans l'état React
+ * (c'est elle qu'on rend à ffmpeg à l'export), donc chaque déplacement doit de
+ * toute façon repasser par React. Un worklet ne ferait qu'ajouter un
+ * aller-retour — et il lirait une COPIE figée des refs ci-dessus, ce qui
+ * casserait tout silencieusement.
+ *
+ * Ce qu'on gagne malgré tout à quitter `PanResponder` : la reconnaissance
+ * devient native. Le pincement est un vrai `Gesture.Pinch` (plus de comptage
+ * de doigts ni de recalage du centroïde à la main), le tap est un vrai
+ * `Gesture.Tap` (plus de drapeau `moved`), et `blocksExternalGesture` empêche
+ * proprement le geste de retour de la pile d'attraper un glissement
+ * horizontal — ce que les 2 px de seuil ne faisaient qu'atténuer.
  */
 function DraggableOverlay({
   overlay,
@@ -127,105 +137,74 @@ function DraggableOverlay({
     live.current = { overlay, freeWidth, freeHeight };
   }, [overlay, freeWidth, freeHeight]);
 
-  const gesture = useRef({
-    /** Position de l'incrustation au moment où le suivi a (re)commencé. */
-    fromX: 0,
-    fromY: 0,
-    /** Déplacement déjà parcouru à ce moment-là, à retrancher. */
-    baseDx: 0,
-    baseDy: 0,
-    /** Écart initial entre les deux doigts, et taille associée. */
-    pinchFrom: 0,
-    sizeFrom: 0,
-    fingers: 0,
-    moved: false,
-  });
+  /** Position et taille au moment où le geste a commencé. */
+  const from = useRef({ x: 0, y: 0, size: 0 });
 
-  const rebase = useCallback((dx: number, dy: number, fingers: number) => {
-    const state = gesture.current;
-    state.fingers = fingers;
-    state.fromX = live.current.overlay.x;
-    state.fromY = live.current.overlay.y;
-    state.baseDx = dx;
-    state.baseDy = dy;
-    state.pinchFrom = 0;
-    state.sizeFrom = live.current.overlay.size;
-  }, []);
+  const composed = useMemo(() => {
+    const pan = Gesture.Pan()
+      .runOnJS(true)
+      // Le pincement, lui, se charge du redimensionnement : deux doigts ne
+      // doivent pas AUSSI déplacer le texte, sinon il fuit sous les doigts.
+      .maxPointers(1)
+      .minDistance(2)
+      .onStart(() => {
+        from.current = {
+          x: live.current.overlay.x,
+          y: live.current.overlay.y,
+          size: live.current.overlay.size,
+        };
+      })
+      .onUpdate((event) => {
+        let nextX = clamp01(from.current.x + event.translationX / live.current.freeWidth);
+        let nextY = clamp01(from.current.y + event.translationY / live.current.freeHeight);
 
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        // Réclamé dès 2 px : sans ça, le geste de retour de la pile de
-        // navigation attrapait le glissement horizontal et quittait l'écran.
-        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: () => {
-          rebase(0, 0, 1);
-          gesture.current.moved = false;
-        },
-        onPanResponderMove: (event, state) => {
-          const current = gesture.current;
-          const touches = event.nativeEvent.touches;
+        // Aimantation au centre, comme sur TikTok : on colle à 0.5 et on
+        // montre le repère correspondant. Sans aimantation, viser le centre
+        // exact au doigt est impossible — on finit toujours à un ou deux
+        // pixels près, ce qui se voit sur un texte centré.
+        const onX = Math.abs(nextX - 0.5) < SNAP_TOLERANCE;
+        const onY = Math.abs(nextY - 0.5) < SNAP_TOLERANCE;
+        if (onX) nextX = 0.5;
+        if (onY) nextY = 0.5;
 
-          // Le centroïde saute dès qu'un doigt se pose ou se lève, et
-          // `gestureState.dx` avec lui. On repart de la position réelle à cet
-          // instant précis, sinon le texte bondit à l'écran.
-          if (touches.length !== current.fingers) {
-            rebase(state.dx, state.dy, touches.length);
-          }
+        onGuides({ x: onX, y: onY });
+        onMove(id, nextX, nextY);
+      })
+      .onFinalize(() => onGuides({ x: false, y: false }));
 
-          // Seuil de 3 px avant de parler de glissement : un doigt bouge
-          // toujours un peu en tapant, et sans marge le tap ne rouvrait
-          // jamais l'éditeur.
-          if (Math.abs(state.dx) > 3 || Math.abs(state.dy) > 3) current.moved = true;
+    // `Gesture.Pinch` donne `scale` directement, relatif au début du geste :
+    // plus besoin de mesurer l'écart entre les doigts ni de recaler le
+    // centroïde quand un doigt se pose ou se lève.
+    const pinch = Gesture.Pinch()
+      .runOnJS(true)
+      .onStart(() => {
+        from.current = { ...from.current, size: live.current.overlay.size };
+      })
+      .onUpdate((event) => {
+        onResize(id, clampSize(from.current.size * event.scale));
+      });
 
-          if (touches.length >= 2) {
-            const spread = spreadOf(touches);
-            if (!current.pinchFrom) {
-              current.pinchFrom = spread;
-              current.sizeFrom = live.current.overlay.size;
-              return;
-            }
-            current.moved = true;
-            onResize(id, clampSize(current.sizeFrom * (spread / current.pinchFrom)));
-            return; // pendant un pincement, on ne déplace pas
-          }
+    // Un tap rouvre l'éditeur. C'est un recognizer à part entière : il
+    // remplace le drapeau `moved` et son seuil de 3 px écrits à la main.
+    const tap = Gesture.Tap()
+      .runOnJS(true)
+      .maxDistance(6)
+      .onEnd((_event, success) => {
+        if (success) onPress(live.current.overlay);
+      });
 
-          let nextX = clamp01(current.fromX + (state.dx - current.baseDx) / live.current.freeWidth);
-          let nextY = clamp01(current.fromY + (state.dy - current.baseDy) / live.current.freeHeight);
-
-          // Aimantation au centre, comme sur TikTok : on colle à 0.5 et on
-          // montre le repère correspondant. Sans aimantation, viser le centre
-          // exact au doigt est impossible — on finit toujours à un ou deux
-          // pixels près, ce qui se voit sur un texte centré.
-          const onX = Math.abs(nextX - 0.5) < SNAP_TOLERANCE;
-          const onY = Math.abs(nextY - 0.5) < SNAP_TOLERANCE;
-          if (onX) nextX = 0.5;
-          if (onY) nextY = 0.5;
-
-          onGuides({ x: onX, y: onY });
-          onMove(id, nextX, nextY);
-        },
-        onPanResponderRelease: () => {
-          onGuides({ x: false, y: false });
-          // Un tap rouvre l'éditeur ; un glissement ne doit pas le faire.
-          if (!gesture.current.moved) onPress(live.current.overlay);
-        },
-        onPanResponderTerminate: () => onGuides({ x: false, y: false }),
-      }),
-    // Uniquement des valeurs stables : c'est la condition pour que le
-    // responder survive au glissement — voir la note du composant.
-    [id, rebase, onMove, onResize, onPress, onGuides],
-  );
+    return Gesture.Exclusive(Gesture.Simultaneous(pan, pinch), tap);
+    // Uniquement des valeurs stables : c'est la condition pour que les gestes
+    // survivent au glissement — voir la note du composant.
+  }, [id, onMove, onResize, onPress, onGuides]);
 
   const fontSize = overlay.size * frame.height;
   const lines = wrapOverlayText(overlay.text, overlay.size * FRAME_HEIGHT);
   const padding = fontSize * BOX_PADDING_RATIO;
 
   return (
+    <GestureDetector gesture={composed}>
     <View
-      {...responder.panHandlers}
       onLayout={(event) => {
         const { width, height } = event.nativeEvent.layout;
         if (measured?.width !== width || measured?.height !== height) {
@@ -269,6 +248,7 @@ function DraggableOverlay({
         ))}
       </View>
     </View>
+    </GestureDetector>
   );
 }
 
