@@ -80,11 +80,26 @@ jobs:
         env:
           GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
 
-          git clone -q "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo
-          CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])")
+          # Volontairement SANS `set -e` : cette etape est au mieux utile, jamais
+          # bloquante. L'IPA est publie en artefact AVANT l'etape de gist, et un
+          # jeton expire ou un gist momentanement injoignable ne doit pas priver
+          # d'un build par ailleurs sain. Sans numero, la verification de mise a
+          # jour se desactive d'elle-meme cote app (voir updateCheck.ts) ; c'est
+          # l'etape finale de publication qui, elle, echouera bruyamment.
+          if ! git clone -q "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo; then
+            echo "::warning::Gist injoignable — build sans estampille de version."
+            exit 0
+          fi
+
+          CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])" || true)
+          if ! [ "$CURRENT" -eq "$CURRENT" ] 2>/dev/null; then
+            echo "::warning::buildVersion illisible dans le gist — build sans estampille."
+            exit 0
+          fi
+
           NEXT=$((CURRENT + 1))
           echo "buildVersion publiee : $CURRENT -> $NEXT"
 
@@ -235,13 +250,29 @@ jobs:
           GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
         run: |
           set -euo pipefail
+          GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
           IPA=$(ls ios/*.ipa | head -1)
 
-          # `gist-repo` a deja ete clone par l'etape "Prepare la version
-          # publiee", qui a fixe $EXPO_PUBLIC_BUILD_VERSION. On republie ce
-          # numero-la tel quel : c'est celui qui est grave dans le bundle.
+          # `gist-repo` a normalement ete clone par l'etape "Prepare la version
+          # publiee". Elle est best-effort : si elle a renonce, on reclone ici,
+          # ou l'echec est cette fois bloquant — publier est le but de l'etape.
+          if [ ! -d gist-repo ]; then
+            git clone -q "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo
+          fi
+
+          # On republie le numero grave dans le bundle, pour que les deux
+          # coincident. S'il manque (estampillage renonce plus haut), on retombe
+          # sur un simple increment : l'IPA est alors publie sans savoir se
+          # comparer au flux, mais AltStore, lui, voit bien la nouvelle version.
+          BUILD_VERSION="${EXPO_PUBLIC_BUILD_VERSION:-}"
+          if [ -z "$BUILD_VERSION" ]; then
+            CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])")
+            BUILD_VERSION=$((CURRENT + 1))
+            echo "::warning::IPA non estampille — buildVersion incrementee a $BUILD_VERSION sans correspondance dans le bundle."
+          fi
+
           cp "$IPA" gist-repo/TwitNinf.ipa
-          python3 .github/scripts/update_gist.py gist-repo "$IPA" "$EXPO_PUBLIC_BUILD_VERSION"
+          python3 .github/scripts/update_gist.py gist-repo "$IPA" "$BUILD_VERSION"
 
           cd gist-repo
           git config user.name "twitninf-ci"
