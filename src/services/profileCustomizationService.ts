@@ -49,6 +49,36 @@ export interface ProfileCustomization {
   /** Titre court affiché sous le pseudo. */
   profile_title?: string;
   about_me?: string;
+
+  /**
+   * Habillages POSSÉDÉS, indépendamment de l'abonnement.
+   *
+   * Jetons de la forme `slot:valeur` (`avatar_decoration:petals`), écrits par
+   * le serveur quand une récompense d'événement est réclamée. Ils ne sont
+   * jamais posés par le client.
+   *
+   * Pourquoi une liste à part et pas un simple déblocage du palier Pro : un
+   * habillage gagné à un événement est acquis À VIE, y compris si
+   * l'abonnement s'arrête. C'est ce qui fait la valeur d'une récompense
+   * « qu'on ne reverra pas » — sinon elle n'est qu'un essai gratuit.
+   */
+  unlocked?: string[];
+}
+
+/**
+ * Cet habillage précis est-il possédé, hors abonnement ?
+ *
+ * À combiner avec le palier, jamais à remplacer : `palier || possédé`. Un
+ * abonné Pro garde accès à tout, et celui qui a gagné un élément le garde même
+ * sans abonnement.
+ */
+export function ownsCosmetic(
+  customization: ProfileCustomization | null | undefined,
+  slot: string,
+  value: string,
+): boolean {
+  const owned = customization?.unlocked;
+  return Array.isArray(owned) && owned.includes(`${slot}:${value}`);
 }
 
 /** Longueur max du titre — alignée sur la validation de l'API. */

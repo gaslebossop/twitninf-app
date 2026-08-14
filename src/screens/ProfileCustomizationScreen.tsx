@@ -31,6 +31,7 @@ import { resolveDisplayNameFontFamily } from '../utils/profileDisplayNamePrefs';
 import profileCustomizationService, {
   ACCENT_PRESETS,
   AVATAR_DECORATIONS,
+  ownsCosmetic,
   NAME_EFFECTS,
   NAME_FONTS,
   NAME_SIZES,
@@ -95,15 +96,33 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   const certifColors = certifiedNameColors(verificationStyle);
 
   /** Un réglage Pro touché sans le palier : on le dit, on ne l'applique pas. */
-  const requirePro = (apply: () => void) => {
-    if (!canUseDecorations) {
-      toast.info('Palier Pro', {
-        description: 'Cet habillage est réservé à l\'abonnement Pro.',
+  /**
+   * Cet habillage est-il accessible ?
+   *
+   * Palier OU possession. Un habillage gagné à un événement est acquis À VIE :
+   * le refuser parce que l'abonnement a expiré reviendrait à reprendre une
+   * récompense, ce qui vide de sens la promesse « on ne la reverra pas ».
+   *
+   * Avant, tout passait par le seul booléen d'abonnement — les cosmétiques
+   * gagnés n'avaient donc AUCUN effet : le serveur les accordait, l'app ne les
+   * lisait nulle part.
+   */
+  const allows = (slot: string, key: string) =>
+    canUseDecorations || ownsCosmetic(draft, slot, key);
+
+  /** Un réglage touché sans le palier ni la possession. */
+  const requireAccess = (slot: string, key: string, apply: () => void) => {
+    if (!allows(slot, key)) {
+      toast.info('Réservé', {
+        description: "Cet habillage demande l'abonnement Pro, ou se gagne pendant un événement.",
       });
       return;
     }
     apply();
   };
+
+  /** Réglages qui ne portent pas sur un habillage identifiable. */
+  const requirePro = (apply: () => void) => requireAccess('', '', apply);
 
   const update = (patch: Partial<ProfileCustomization>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -310,12 +329,12 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                     styles.chip,
                     styles.chipIcon,
                     active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'none' && styles.chipDisabled,
+                    !allows('profile_effect', option.key) && option.key !== 'none' && styles.chipDisabled,
                   ]}
                   onPress={() =>
                     option.key === 'none'
                       ? update({ profile_effect: 'none' })
-                      : requirePro(() => update({ profile_effect: option.key as ProfileEffect }))
+                      : requireAccess('profile_effect', option.key, () => update({ profile_effect: option.key as ProfileEffect }))
                   }
                   activeOpacity={0.8}
                 >
@@ -345,12 +364,12 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                   style={[
                     styles.chip,
                     active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'system' && styles.chipDisabled,
+                    !allows('name_font', option.key) && option.key !== 'system' && styles.chipDisabled,
                   ]}
                   onPress={() =>
                     option.key === 'system'
                       ? update({ name_font: 'system' })
-                      : requirePro(() => update({ name_font: option.key as NameFont }))
+                      : requireAccess('name_font', option.key, () => update({ name_font: option.key as NameFont }))
                   }
                   activeOpacity={0.8}
                 >
@@ -462,12 +481,12 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                     styles.chip,
                     styles.chipIcon,
                     active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'none' && styles.chipDisabled,
+                    !allows('avatar_decoration', option.key) && option.key !== 'none' && styles.chipDisabled,
                   ]}
                   onPress={() =>
                     option.key === 'none'
                       ? update({ avatar_decoration: 'none' })
-                      : requirePro(() => update({ avatar_decoration: option.key as AvatarDecoration }))
+                      : requireAccess('avatar_decoration', option.key, () => update({ avatar_decoration: option.key as AvatarDecoration }))
                   }
                   activeOpacity={0.8}
                 >
