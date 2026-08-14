@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { fonts, withAlpha } from '../../theme';
@@ -7,6 +8,7 @@ import { round, space, type } from '../../theme/eventScale';
 import type { EventArt } from '../../theme/eventArt';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
 import RewardIcon from './RewardIcon';
+import { enterItem } from './enter';
 import type { QuestRewardKind, QuestView } from '../../types/events';
 
 /**
@@ -78,19 +80,35 @@ export default function EventRewards({ art, quests }: Props) {
     [quests],
   );
 
-  const renderCard = (quest: QuestView, isOwned: boolean) => {
+  const renderCard = (quest: QuestView, isOwned: boolean, index: number) => {
     const tier = art.tier[quest.tier];
     const kind = quest.reward.kind;
 
+    /**
+     * Une récompense OBTENUE doit se lire comme un gain, jamais comme une case
+     * grisée.
+     *
+     * La première version teintait la carte par son palier. Or l'argent est un
+     * gris : sur fond clair, une récompense gagnée au palier argent devenait
+     * une carte grise à icône grise — exactement l'apparence d'un élément
+     * désactivé. Le contraire de ce qu'on veut dire.
+     *
+     * Le palier reste sur l'ICÔNE, qui est là pour hiérarchiser. Le chrome de
+     * la carte (fond, bordure, pastille de validation) passe, lui, à la
+     * couleur de la fête : c'est elle qui dit « c'est à toi ».
+     */
+    const ownedTint = art.colors.festive;
+
     return (
-      <View
+      <Animated.View
         key={quest.id}
+        entering={enterItem(index)}
         style={[
           S.card,
           {
             width: layout.cardWidth,
             backgroundColor: art.colors.surface,
-            borderColor: isOwned ? withAlpha(tier.color, 0.5) : art.colors.border,
+            borderColor: isOwned ? withAlpha(ownedTint, 0.45) : art.colors.border,
           },
         ]}
       >
@@ -100,8 +118,8 @@ export default function EventRewards({ art, quests }: Props) {
         <LinearGradient
           colors={
             isOwned
-              ? [withAlpha(tier.color, 0.22), withAlpha(tier.color, 0.04)]
-              : [withAlpha(art.colors.text, 0.04), 'transparent']
+              ? [withAlpha(ownedTint, 0.16), withAlpha(ownedTint, 0.03)]
+              : [withAlpha(art.colors.text, 0.035), 'transparent']
           }
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
@@ -117,14 +135,14 @@ export default function EventRewards({ art, quests }: Props) {
             dimmed={!isOwned}
           />
           {isOwned && (
-            <View style={[S.check, { backgroundColor: tier.color }]}>
-              <Ionicons name="checkmark" size={11} color={art.colors.onFestive} />
+            <View style={[S.check, { backgroundColor: ownedTint }]}>
+              <Ionicons name="checkmark" size={13} color="#FFFFFF" />
             </View>
           )}
         </View>
 
         <Text
-          style={[S.kind, { color: isOwned ? tier.color : art.colors.textMuted }]}
+          style={[S.kind, { color: isOwned ? ownedTint : art.colors.textMuted }]}
           numberOfLines={1}
         >
           {KIND_LABEL[kind] ?? 'Récompense'}
@@ -140,7 +158,7 @@ export default function EventRewards({ art, quests }: Props) {
         <Text style={[S.from, { color: art.colors.textMuted }]} numberOfLines={1}>
           {quest.title}
         </Text>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -154,7 +172,7 @@ export default function EventRewards({ art, quests }: Props) {
           </View>
         </View>
         <View style={[S.grid, { gap: layout.gap }]}>
-          {data.map((quest) => renderCard(quest, isOwned))}
+          {data.map((quest, index) => renderCard(quest, isOwned, index))}
         </View>
       </View>
     );

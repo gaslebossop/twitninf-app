@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +16,9 @@ import QuestCard from '../components/events/QuestCard';
 import EventAmbience from '../components/events/EventAmbience';
 import EventCelebration from '../components/events/EventCelebration';
 import EventRewards from '../components/events/EventRewards';
-import type { QuestView } from '../types/events';
+import RewardReveal from '../components/events/RewardReveal';
+import { enterItem, enterPanel } from '../components/events/enter';
+import type { QuestReward, QuestView } from '../types/events';
 
 /**
  * Le hub d'événement.
@@ -46,10 +49,20 @@ import type { QuestView } from '../types/events';
 
 type Tab = 'party' | 'quests' | 'rewards';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'party', label: 'Fête', icon: 'sparkles' },
-  { key: 'quests', label: 'Quêtes', icon: 'flag' },
-  { key: 'rewards', label: 'Récompenses', icon: 'gift' },
+/**
+ * Libellés seuls, sans icône.
+ *
+ * Une première version mettait une icône devant chaque libellé. Sur un écran
+ * de 375 px, trois onglets à parts égales font 111 px chacun ; « Récompenses »
+ * à 14 pt en occupe déjà 95, plus 16 d'icône et 4 d'écart — la pilule
+ * débordait. Réduire le corps aurait fait passer le libellé sous le plancher
+ * de lisibilité de 14 pt : c'est l'icône qui saute, elle n'apportait rien que
+ * le mot ne disait déjà.
+ */
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'party', label: 'Fête' },
+  { key: 'quests', label: 'Quêtes' },
+  { key: 'rewards', label: 'Récompenses' },
 ];
 
 function formatRemaining(ms: number | null): string {
@@ -73,6 +86,8 @@ export default function EventScreen() {
   const [tab, setTab] = useState<Tab>('party');
   const [refreshing, setRefreshing] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  /** Récompense à révéler. La popup remplace le toast : voir `RewardReveal`. */
+  const [revealed, setRevealed] = useState<QuestReward | null>(null);
 
   const doneCount = useMemo(
     () => quests.filter((q) => q.state.completed).length,
@@ -131,11 +146,13 @@ export default function EventScreen() {
       const granted = result.granted;
       const amount = Number(granted?.payload?.amount ?? 0);
 
+      feedback.reward();
+      if (granted) setRevealed(granted);
+      // La pluie de pièces du casino, en PLUS de la popup, quand le gain est
+      // monétaire : c'est le retour que l'app donne déjà pour un gain en NF,
+      // et le réutiliser garde l'app cohérente avec elle-même.
       if (granted?.kind === 'coins' && amount > 0) {
         celebrateReward({ amount, unit: 'NF', label: granted.label });
-      } else {
-        feedback.reward();
-        toast.success('Récompense débloquée', { description: granted?.label });
       }
 
       setClaimingId(null);
@@ -234,16 +251,12 @@ export default function EventScreen() {
                   onPress={() => setTab(item.key)}
                   accessibilityLabel={item.label}
                 >
-                  <Ionicons
-                    name={item.icon as any}
-                    size={iconSize.sm}
-                    color={active ? art.colors.onFestive : art.colors.textDim}
-                  />
                   <Text
                     style={[
                       S.tabLabel,
                       { color: active ? art.colors.onFestive : art.colors.textDim },
                     ]}
+                    numberOfLines={1}
                   >
                     {item.label}
                   </Text>
@@ -267,17 +280,21 @@ export default function EventScreen() {
               </Text>
             </View>
           ) : tab === 'party' && event ? (
+            <Animated.View key="party" entering={enterPanel()}>
             <EventCelebration
               event={event}
               art={art}
               quests={quests}
               onQuestsChanged={() => refresh(true)}
             />
+            </Animated.View>
           ) : tab === 'rewards' ? (
-            <EventRewards art={art} quests={questList} />
+            <Animated.View key="rewards" entering={enterPanel()}>
+              <EventRewards art={art} quests={quests} />
+            </Animated.View>
           ) : (
-            grouped.map((section) => (
-              <View key={section.title}>
+            grouped.map((section, sectionIndex) => (
+              <Animated.View key={section.title} entering={enterItem(sectionIndex)}>
                 <View style={S.sectionHeader}>
                   <Text style={[S.sectionTitle, { color: art.colors.text }]}>{section.title}</Text>
                   <View style={[S.sectionCount, { backgroundColor: art.colors.surfaceAlt }]}>
@@ -286,22 +303,30 @@ export default function EventScreen() {
                     </Text>
                   </View>
                 </View>
-                {section.data.map((quest) => (
-                  <QuestCard
-                    key={quest.id}
-                    quest={quest}
-                    art={art}
-                    claiming={claimingId === quest.id}
-                    onClaim={onClaim}
-                  />
+                {section.data.map((quest, index) => (
+                  <Animated.View key={quest.id} entering={enterItem(index)}>
+                    <QuestCard
+                      quest={quest}
+                      art={art}
+                      claiming={claimingId === quest.id}
+                      onClaim={onClaim}
+                    />
+                  </Animated.View>
                 ))}
-              </View>
+              </Animated.View>
             ))
           )}
 
           <View style={{ height: 120 }} />
         </ScrollView>
       </SafeAreaView>
+
+      <RewardReveal
+        visible={!!revealed}
+        reward={revealed}
+        art={art}
+        onClose={() => setRevealed(null)}
+      />
     </View>
   );
 }
