@@ -55,12 +55,21 @@ const DISMISSED_KEY = 'update_notice_dismissed_build';
 const LAST_CHECK_KEY = 'update_notice_last_check';
 
 /**
- * Une seule interrogation par tranche de 6 h. Le flux ne bouge qu'à chaque
- * publication (quelques fois par semaine au mieux) et il est servi par GitHub,
- * dont les quotas anonymes se comptent par adresse IP : interroger à chaque
- * lancement n'apporterait rien et exposerait à un 403 collectif.
+ * Intervalle minimal entre deux interrogations du flux.
+ *
+ * Il valait 6 h, par crainte des quotas anonymes de l'API GitHub (60
+ * requêtes/heure/IP). C'était trop prudent, et ça s'est vu au premier essai
+ * réel : l'app avait vérifié au lancement — rien de neuf à cet instant — puis
+ * une version a été publiée dans la minute, et plus aucun lancement ne
+ * regardait le flux pendant six heures. Une mise à jour publiée juste après un
+ * démarrage restait donc invisible une demi-journée.
+ *
+ * Le compte est vite fait : la vérification n'a lieu qu'une fois par démarrage
+ * à froid, et coûte deux requêtes (l'API, puis `raw_url`). Même une dizaine
+ * d'appareils derrière la même adresse restent très loin du plafond. Ce délai
+ * ne sert donc qu'à absorber les fermetures/réouvertures en rafale.
  */
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /** Version publiée, strictement plus récente que celle installée. */
 export type UpdateInfo = PublishedVersion;
