@@ -24,16 +24,22 @@ import {
   StatusBar,
   Image,
   AppState,
+  Dimensions,
   type LayoutChangeEvent,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
   interpolate,
+  cancelAnimation,
+  runOnJS,
+  Extrapolation,
   FadeIn,
 } from 'react-native-reanimated';
+import { clamp, projectDecay, rubberBand, springFrom } from '../utils/gesture';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -52,13 +58,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { trackingService } from '../services/trackingService';
 import { useTweetScreenTracking } from '../hooks/useBehaviorTracking';
 import { useEventStyles } from '../hooks/useEventStyles';
-import { EventBanner } from '../components/EventBanner';
+import EventStrip from '../components/events/EventStrip';
 import ReportSheet from '../components/ReportSheet';
 import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
 import TweetSkeleton from '../components/feed/TweetSkeleton';
 import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
-import { useFunctionalEventFeatures } from '../hooks/useFunctionalEventFeatures';
-import { FunctionalEventBanner } from '../components/FunctionalEventBanner';
 import StoriesTray from '../components/StoriesTray';
 import SpotlightBanner from '../components/SpotlightBanner';
 import storiesService from '../services/storiesService';
@@ -87,6 +91,18 @@ const C = {
   textMuted: colors.textMuted,
   white: colors.white,
 };
+
+/**
+ * Course de référence du glissé entre onglets : la largeur de l'écran.
+ *
+ * C'est elle qui convertit des pixels de doigt en fraction de bascule. On la
+ * lit une fois : la valeur ne sert qu'à donner une échelle au geste, une
+ * rotation d'écran ne la rend pas fausse au point de justifier de rebrancher
+ * un abonnement aux dimensions dans le chemin chaud du fil.
+ */
+const SWIPE_SPAN = Dimensions.get('window').width;
+/** Fraction de la course, PROJETÉE, au-delà de laquelle l'onglet bascule. */
+const SWIPE_COMMIT = 0.32;
 
 /**
  * Fusionne une nouvelle page de tweets dans la liste existante en écartant les
@@ -141,10 +157,11 @@ export default function TweetsScreen() {
       réafficher une erreur que le repli vient justement d'écarter. */
   const servedFromCacheRef = useRef(false);
 
-  const { events: functionalEvents, features: functionalFeatures, hasActiveEvents } = useFunctionalEventFeatures({
-    pageName: 'tweets',
-    refreshInterval: 30000,
-  });
+  // `useFunctionalEventFeatures({ pageName: 'tweets', refreshInterval: 30000 })`
+  // vivait ici et n'alimentait plus que le second bandeau, désormais supprimé.
+  // Il entretenait un minuteur de 30 s relançant deux requêtes non mises en
+  // cache — sur l'écran du fil, en permanence. `EventStrip` lit l'état déjà
+  // chargé par `EventsProvider` et ne demande rien à personne.
 
   const { trackTweetInteraction, trackProfileInteraction, trackSettingChange, trackCustomAction } = useTweetScreenTracking('TweetsScreen');
 
@@ -229,6 +246,24 @@ export default function TweetsScreen() {
     [tabLayouts, tabsReady],
   );
 
+  /**
+   * Glissé horizontal entre les deux onglets.
+   *
+   * `swipe` porte le décalage du doigt en px. Il sert à DEUX choses en même
+   * temps — décaler le fil et avancer la pastille — parce qu'un geste doit
+   * montrer où il mène pendant qu'on le fait, pas seulement une fois relâché.
+   */
+  const swipe = useSharedValue(0);
+  const swipeStart = useSharedValue(0);
+  /**
+   * Onglet courant, en valeur partagée : un worklet ne peut pas lire un state
+   * React ni une ref. 0 = « Abonnements » (à gauche), 1 = « Pour toi ».
+   */
+  const tabIndex = useSharedValue(activeTab === 'forYou' ? 1 : 0);
+  useEffect(() => {
+    tabIndex.value = activeTab === 'forYou' ? 1 : 0;
+  }, [activeTab, tabIndex]);
+
   const tabIndicatorStyle = useAnimatedStyle(() => {
     const [left, right] = tabLayouts.value;
     if (!left.width || !right.width) {
@@ -239,7 +274,10 @@ export default function TweetsScreen() {
         transform: [{ translateX: 0 }, { translateY: 0 }] as const,
       };
     }
-    const p = tabIndicator.value;
+    // La pastille suit le doigt : glisser vers la gauche (valeur négative) la
+    // fait avancer vers « Pour toi ». Sans ce terme, le geste n'aurait de
+    // retour visuel qu'au moment où il est déjà joué.
+    const p = clamp(tabIndicator.value - swipe.value / SWIPE_SPAN, 0, 1);
     return {
       opacity: tabsReady.value,
       width: interpolate(p, [0, 1], [left.width, right.width]),
@@ -258,6 +296,84 @@ export default function TweetsScreen() {
     });
   }, [tabIndicator]);
 
+  /**
+   * Indirection vers `handleTabChange`, qui est déclaré bien plus bas.
+   *
+   * Le geste est construit une fois et ne peut donc pas capturer une closure
+   * qui, elle, change à chaque rendu. La ref règle à la fois le problème de
+   * l'ordre de déclaration et celui de la fraîcheur.
+   *
+   * `switchTab` est indispensable : un worklet reçoit une COPIE des objets
+   * qu'il capture, donc lire `ref.current` depuis le thread UI renverrait
+   * éternellement la valeur du premier rendu — ici la fonction vide, et la
+   * bascule ne partirait jamais. En passant par `runOnJS(switchTab)`, la
+   * lecture de la ref a lieu côté JS, où elle est à jour.
+   */
+  const handleTabChangeRef = useRef<(tab: 'following' | 'forYou') => void>(() => {});
+  const switchTab = useCallback((tab: 'following' | 'forYou') => {
+    handleTabChangeRef.current(tab);
+  }, []);
+
+  /**
+   * Le geste de bascule d'onglet.
+   *
+   * Deux onglets côte à côte se changent au doigt, pas seulement en visant un
+   * libellé de 90 px en haut de l'écran — c'est le geste le plus fréquent d'un
+   * fil, et il n'existait pas.
+   *
+   * Les trois réglages qui font qu'il ne gêne pas le défilement :
+   *  - `activeOffsetX([-24, 24])` : il faut 24 px franchement horizontaux pour
+   *    que le geste s'active. En dessous, la liste garde la main.
+   *  - `failOffsetY([-16, 16])` : dès que le doigt part vraiment vers le haut
+   *    ou le bas, le geste ABANDONNE — il ne reviendra pas voler le
+   *    défilement en cours de route.
+   *  - `Extrapolation` en butée : sur le premier onglet on ne peut pas aller
+   *    plus à gauche ; le fil résiste au lieu de suivre dans le vide.
+   */
+  const feedSwipe = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-16, 16])
+        .onBegin(() => {
+          cancelAnimation(swipe);
+          swipeStart.value = swipe.value;
+        })
+        .onUpdate((event) => {
+          const raw = swipeStart.value + event.translationX;
+          // Sur « Abonnements » (index 0) un glissé vers la droite ne mène
+          // nulle part, et sur « Pour toi » (index 1) c'est la gauche. Dans ce
+          // sens-là, butée élastique : le geste est vu, il n'aboutit pas.
+          const outward = tabIndex.value === 0 ? raw > 0 : raw < 0;
+          swipe.value = outward ? rubberBand(raw, SWIPE_SPAN * 0.5, 0.55) : raw;
+        })
+        .onEnd((event) => {
+          // Où le doigt envoyait le fil, pas où il l'a laissé : un petit coup
+          // sec bascule, une longue traînée molle repose.
+          const projected = swipe.value + projectDecay(event.velocityX);
+          const commit = Math.abs(projected) > SWIPE_SPAN * SWIPE_COMMIT;
+          const target = projected < 0 ? 1 : 0;
+
+          if (commit && target !== tabIndex.value) {
+            runOnJS(switchTab)(target === 1 ? 'forYou' : 'following');
+          }
+          // Le fil revient toujours à sa place : le contenu du nouvel onglet
+          // est servi depuis son cache et remplace l'ancien sous le doigt. Le
+          // faire sortir puis rentrer ferait clignoter une liste déjà là.
+          swipe.value = withSpring(0, springFrom(event.velocityX));
+        }),
+    [swipe, swipeStart, tabIndex, switchTab],
+  );
+
+  /**
+   * Le retour visuel du geste passe UNIQUEMENT par la pastille d'onglet
+   * (voir `tabIndicatorStyle`), et surtout pas par une translation de la liste.
+   *
+   * Une vue animée posée autour du fil empêche l'aplatissement des vues sur
+   * tout son sous-arbre et ajoute une composition par image pendant le
+   * défilement — c'est-à-dire exactement là où l'app doit être irréprochable.
+   * Le prix payé était sans commune mesure avec ce que le décalage apportait.
+   */
   // Un seul traqueur de vues pour tout le fil. Auparavant chaque tweet montait
   // sa propre instance ET un setInterval(500ms) avec measureInWindow : à 150
   // tweets, ~300 allers-retours de pont par seconde, et aucun regroupement
@@ -638,6 +754,9 @@ export default function TweetsScreen() {
       else await fetchTweets(true);
     }
   }, [activeTab, currentAlgorithm, trackCustomAction, animateTabSwitch]);
+
+  // Rend la dernière version accessible au geste construit plus haut.
+  handleTabChangeRef.current = handleTabChange;
 
   const handleAlgorithmChange = useCallback(async (_newAlgorithm: string) => {
     // Toujours NeuralRank
@@ -1255,9 +1374,11 @@ export default function TweetsScreen() {
     <SafeAreaView style={S.container}>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
-      {/* ── Event banners ── */}
-      <EventBanner />
-      {hasActiveEvents && <FunctionalEventBanner events={functionalEvents} />}
+      {/* ── Bandeau d'événement ──
+          Un seul, désormais. `EventBanner` et `FunctionalEventBanner` étaient
+          empilés ici et annonçaient la même fête deux fois dès que les deux
+          systèmes étaient actifs — c'est-à-dire dans le cas nominal. */}
+      <EventStrip />
 
       {/* Signalement depuis le fil — la feuille se charge de tout le parcours. */}
       <ReportSheet
@@ -1350,6 +1471,12 @@ export default function TweetsScreen() {
       {/* FlatList au lieu d'un ScrollView : les lignes sont recyclées. Le fil
           montait auparavant chaque tweet chargé simultanément et ne les
           démontait jamais — 150 sous-arbres vivants après trois pages. */}
+      {/* Le geste de bascule d'onglet enveloppe la liste, il ne la modifie
+          pas : ni vue animée, ni gestionnaire de défilement, ni style
+          recalculé — le fil rend exactement ce qu'il rendait, et le
+          défilement vertical reste natif et prioritaire (`failOffsetY`). */}
+      <GestureDetector gesture={feedSwipe}>
+      <View style={S.feedWrap}>
       <FlatList
         data={visibleTweets}
         renderItem={renderTweet}
@@ -1408,6 +1535,9 @@ export default function TweetsScreen() {
           </>
         }
       />
+      </View>
+      </GestureDetector>
+
 
       {/* Mise en vente d'un de ses tweets — déclenchée depuis le menu « … ». */}
       <PaywallSetupSheet
@@ -1568,6 +1698,14 @@ const S = StyleSheet.create({
   },
 
   // ── Feed ──
+  /**
+   * Conteneur du geste de bascule : une vue ordinaire, qui prend simplement la
+   * place que la liste occupait. Rien d'animé ici — voir le commentaire du
+   * geste sur ce que coûtait une vue animée à cet endroit.
+   */
+  feedWrap: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
     backgroundColor: 'transparent',

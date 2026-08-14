@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  PanResponder,
   Platform,
   Pressable,
   StatusBar,
@@ -17,6 +15,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 // La barre de progression passe par Reanimated : elle tourne pendant TOUTE la
 // lecture d'une story, et `width` n'est pas animable par le native driver
 // d'`Animated` — chaque frame traversait donc le pont JS, en concurrence avec
@@ -27,8 +26,10 @@ import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { projectDecay, rubberBand, springFrom } from '../utils/gesture';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode } from 'expo-av';
@@ -86,7 +87,9 @@ export default function StoryViewer({
   const [likeBusy, setLikeBusy] = useState(false);
 
   const progress = useSharedValue(0);
-  const translateY = useRef(new Animated.Value(0)).current;
+  /** Décalage vertical du glissé de fermeture, sur le thread UI. */
+  const translateY = useSharedValue(0);
+  const dragStart = useSharedValue(0);
   const pressStartedAt = useRef(0);
   const seenRef = useRef<Set<string>>(new Set());
 
@@ -105,7 +108,7 @@ export default function StoryViewer({
     setPaused(false);
     setReply('');
     setReplySent(false);
-    translateY.setValue(0);
+    translateY.value = 0;
     seenRef.current = new Set();
   }, [visible, initialGroupIndex, translateY]);
 
@@ -206,34 +209,61 @@ export default function StoryViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused]);
 
-  const panResponder = useMemo(
+  /**
+   * Glissé vers le bas pour fermer la story.
+   *
+   * Le geste vit maintenant sur le thread UI, et c'est ici que ça compte le
+   * plus de toute l'app : une story décode une photo ou lit une vidéo pendant
+   * qu'on la manipule. Avec `PanResponder`, chaque déplacement du doigt
+   * attendait son tour derrière ce décodage — la story se décollait du doigt
+   * exactement quand elle était la plus lourde.
+   *
+   * Le ressort de retour valait `bounciness: 6` : il dépassait la cible et
+   * revenait. Sur une image plein écran, ce rebond se lit comme un défaut. Il
+   * est remplacé par un ressort amorti qui hérite de la vitesse du doigt.
+   */
+  const closeGesture = useMemo(
     () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, gesture) =>
-          Math.abs(gesture.dy) > 14 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.6,
-        onPanResponderGrant: () => setPaused(true),
-        onPanResponderMove: (_event, gesture) => {
-          if (gesture.dy > 0) translateY.setValue(gesture.dy);
-        },
-        onPanResponderRelease: (_event, gesture) => {
-          if (gesture.dy > SWIPE_CLOSE_DISTANCE) {
-            onClose();
+      Gesture.Pan()
+        .activeOffsetY([-14, 14])
+        // Un mouvement horizontal appartient aux zones de tap (précédent /
+        // suivant), pas au glissé de fermeture.
+        .failOffsetX([-26, 26])
+        .onBegin(() => {
+          cancelAnimation(translateY);
+          dragStart.value = translateY.value;
+          // La lecture se met en pause dès le contact : on ne perd pas la fin
+          // d'une story parce qu'on avait le doigt posé dessus.
+          runOnJS(setPaused)(true);
+        })
+        .onUpdate((event) => {
+          const next = dragStart.value + event.translationY;
+          // Vers le haut, la story est en butée : elle résiste au lieu de
+          // suivre (le glissé vers le haut, lui, ouvre le champ de réponse).
+          translateY.value = next >= 0 ? next : rubberBand(next, 220, 0.55);
+        })
+        .onEnd((event) => {
+          // Où le doigt envoyait la story, pas où il l'a laissée.
+          if (translateY.value + projectDecay(event.velocityY) > SWIPE_CLOSE_DISTANCE) {
+            runOnJS(onClose)();
             return;
           }
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 6,
-          }).start();
-          setPaused(false);
-        },
-        onPanResponderTerminate: () => {
-          translateY.setValue(0);
-          setPaused(false);
-        },
-      }),
-    [onClose, translateY],
+          translateY.value = withSpring(0, springFrom(event.velocityY));
+          runOnJS(setPaused)(false);
+        })
+        // Geste interrompu par le système (appel entrant, notification) : la
+        // story doit revenir en place, pas rester coincée à mi-course.
+        .onFinalize((_event, success) => {
+          if (success) return;
+          translateY.value = withSpring(0, springFrom(0));
+          runOnJS(setPaused)(false);
+        }),
+    [onClose, translateY, dragStart],
   );
+
+  const rootStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }] as const,
+  }));
 
   const handlePressIn = () => {
     pressStartedAt.current = Date.now();
@@ -342,10 +372,13 @@ export default function StoryViewer({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <Animated.View
-          style={[styles.root, { transform: [{ translateY }] }]}
-          {...panResponder.panHandlers}
-        >
+        {/* Une `<Modal>` rend dans sa propre fenêtre, hors de l'arbre React :
+            le `GestureHandlerRootView` de `App.tsx` ne la couvre pas, et sans
+            celui-ci le glissé ci-dessous ne serait jamais reconnu sous
+            Android. */}
+        <GestureHandlerRootView style={styles.root}>
+        <GestureDetector gesture={closeGesture}>
+        <Reanimated.View style={[styles.root, rootStyle]}>
         <View style={[styles.mediaWrap, { width, height }]}>
           {/* Le média est affiché ENTIER (`contain`). Les photos qui ne sont pas
               en 9:16 laisseraient sinon des bandes noires : on remplit le fond
@@ -540,7 +573,9 @@ export default function StoryViewer({
             </>
           )}
         </View>
-        </Animated.View>
+        </Reanimated.View>
+        </GestureDetector>
+        </GestureHandlerRootView>
       </KeyboardAvoidingView>
     </Modal>
   );

@@ -31,6 +31,8 @@ import { resolveDisplayNameFontFamily } from '../utils/profileDisplayNamePrefs';
 import profileCustomizationService, {
   ACCENT_PRESETS,
   AVATAR_DECORATIONS,
+  ownsCosmetic,
+  isTitleLocked,
   NAME_EFFECTS,
   NAME_FONTS,
   NAME_SIZES,
@@ -95,15 +97,33 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   const certifColors = certifiedNameColors(verificationStyle);
 
   /** Un réglage Pro touché sans le palier : on le dit, on ne l'applique pas. */
-  const requirePro = (apply: () => void) => {
-    if (!canUseDecorations) {
-      toast.info('Palier Pro', {
-        description: 'Cet habillage est réservé à l\'abonnement Pro.',
+  /**
+   * Cet habillage est-il accessible ?
+   *
+   * Palier OU possession. Un habillage gagné à un événement est acquis À VIE :
+   * le refuser parce que l'abonnement a expiré reviendrait à reprendre une
+   * récompense, ce qui vide de sens la promesse « on ne la reverra pas ».
+   *
+   * Avant, tout passait par le seul booléen d'abonnement — les cosmétiques
+   * gagnés n'avaient donc AUCUN effet : le serveur les accordait, l'app ne les
+   * lisait nulle part.
+   */
+  const allows = (slot: string, key: string) =>
+    canUseDecorations || ownsCosmetic(draft, slot, key);
+
+  /** Un réglage touché sans le palier ni la possession. */
+  const requireAccess = (slot: string, key: string, apply: () => void) => {
+    if (!allows(slot, key)) {
+      toast.info('Réservé', {
+        description: "Cet habillage demande l'abonnement Pro, ou se gagne pendant un événement.",
       });
       return;
     }
     apply();
   };
+
+  /** Réglages qui ne portent pas sur un habillage identifiable. */
+  const requirePro = (apply: () => void) => requireAccess('', '', apply);
 
   const update = (patch: Partial<ProfileCustomization>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -310,12 +330,12 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                     styles.chip,
                     styles.chipIcon,
                     active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'none' && styles.chipDisabled,
+                    !allows('profile_effect', option.key) && option.key !== 'none' && styles.chipDisabled,
                   ]}
                   onPress={() =>
                     option.key === 'none'
                       ? update({ profile_effect: 'none' })
-                      : requirePro(() => update({ profile_effect: option.key as ProfileEffect }))
+                      : requireAccess('profile_effect', option.key, () => update({ profile_effect: option.key as ProfileEffect }))
                   }
                   activeOpacity={0.8}
                 >
@@ -345,12 +365,12 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                   style={[
                     styles.chip,
                     active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'system' && styles.chipDisabled,
+                    !allows('name_font', option.key) && option.key !== 'system' && styles.chipDisabled,
                   ]}
                   onPress={() =>
                     option.key === 'system'
                       ? update({ name_font: 'system' })
-                      : requirePro(() => update({ name_font: option.key as NameFont }))
+                      : requireAccess('name_font', option.key, () => update({ name_font: option.key as NameFont }))
                   }
                   activeOpacity={0.8}
                 >
@@ -462,12 +482,12 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                     styles.chip,
                     styles.chipIcon,
                     active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'none' && styles.chipDisabled,
+                    !allows('avatar_decoration', option.key) && option.key !== 'none' && styles.chipDisabled,
                   ]}
                   onPress={() =>
                     option.key === 'none'
                       ? update({ avatar_decoration: 'none' })
-                      : requirePro(() => update({ avatar_decoration: option.key as AvatarDecoration }))
+                      : requireAccess('avatar_decoration', option.key, () => update({ avatar_decoration: option.key as AvatarDecoration }))
                   }
                   activeOpacity={0.8}
                 >
@@ -492,6 +512,37 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
           <Text style={styles.counter}>
             {(draft.profile_title || '').length}/{PROFILE_TITLE_MAX}
           </Text>
+
+          {/* Certains titres se GAGNENT et ne s'écrivent pas. On le dit
+              pendant la saisie, jamais après : découvrir au moment de
+              l'enregistrement que son titre a été refusé est la mauvaise
+              façon de l'apprendre. Le serveur reste seul juge. */}
+          {isTitleLocked(draft, draft.profile_title || '') && (
+            <Text style={styles.titleLocked}>
+              Ce titre se gagne pendant un événement — il ne peut pas être écrit.
+            </Text>
+          )}
+
+          {/* Les titres gagnés, posables en un tap. */}
+          {(draft.titles ?? []).length > 0 && (
+            <View style={styles.titleChips}>
+              {(draft.titles ?? []).map((title) => (
+                <TouchableOpacity
+                  key={title}
+                  style={[
+                    styles.chip,
+                    draft.profile_title === title && {
+                      borderColor: accent,
+                      backgroundColor: withAlpha(accent, 0.14),
+                    },
+                  ]}
+                  onPress={() => update({ profile_title: title })}
+                >
+                  <Text style={styles.chipText}>{title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* ── À propos ── */}
           <Text style={styles.sectionTitle}>À propos de moi</Text>
@@ -527,6 +578,14 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
+  titleLocked: {
+    color: colors.red,
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  titleChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

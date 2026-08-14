@@ -1,27 +1,46 @@
+import React, { useMemo, type ReactNode } from 'react';
+import eventService, { type Event, type EventConfig } from '../services/eventService';
+import { getEventTheme, type EventThemeConfig } from '../themes/eventThemes';
+import { useEvents as useEventsState } from './EventsContext';
+
 /**
- * Contexte pour la gestion des événements dans l'application
- * Permet de gérer l'état global des événements et des thèmes
+ * Adaptateur vers le nouveau système d'événements.
+ *
+ * ── Pourquoi ce fichier existe encore ─────────────────────────────────────
+ * Le système d'événements a été refait (`contexts/EventsContext`,
+ * `services/eventsApi`, `types/events`). Restaient neuf écrans et composants
+ * qui appelaient `useEvents()` sur CE contexte-ci.
+ *
+ * Les réécrire tous d'un coup, sans pouvoir lancer l'app, aurait été le genre
+ * de refonte à l'aveugle qui casse plus qu'elle ne répare. Or leur besoin réel
+ * est minuscule : huit d'entre eux ne lisent que `{ activeEvent,
+ * hasActiveEvent }`, et seul l'écran d'administration touche au reste.
+ *
+ * Ce module traduit donc l'ancien vocabulaire dans le nouveau. Ce qui compte
+ * est acquis : il n'y a plus qu'UN sondage, plus qu'UNE source de vérité, et
+ * plus aucun risque de voir la DA d'un événement s'afficher au-dessus de
+ * quêtes appartenant à un autre.
+ *
+ * ── Ce qui reste à faire ──────────────────────────────────────────────────
+ * Migrer les neuf appelants vers `useEvents()` de `EventsContext`, puis
+ * supprimer ce fichier, `themes/eventThemes.ts` et `services/eventService.ts`.
+ * C'est du travail mécanique, mais qui se vérifie écran par écran — donc à
+ * faire quand on peut regarder l'app tourner.
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import eventService, { Event, EventConfig } from '../services/eventService';
-import { getEventTheme, EventThemeConfig } from '../themes/eventThemes';
-import useForegroundInterval from '../hooks/useForegroundInterval';
-
 interface EventContextType {
-  // État des événements
   activeEvent: Event | null;
   eventTheme: EventThemeConfig | null;
   eventConfig: EventConfig | null;
   isLoading: boolean;
   hasActiveEvent: boolean;
 
-  // Actions
   refreshActiveEvent: () => Promise<void>;
   checkForEvents: () => Promise<void>;
   applyEventTheme: (theme: EventThemeConfig | null) => void;
-  
-  // Pour les admins
+
+  // Administration. Ces opérations écrivent, donc elles vont directement au
+  // serveur : elles n'ont pas d'état local à tenir.
   activateEvent: (id: string, deactivateOthers?: boolean) => Promise<boolean>;
   deactivateEvent: (id: string) => Promise<boolean>;
   createEvent: (eventData: Partial<Event>) => Promise<Event | null>;
@@ -29,237 +48,79 @@ interface EventContextType {
   deleteEvent: (id: string) => Promise<boolean>;
 }
 
-const EventContext = createContext<EventContextType | undefined>(undefined);
+/**
+ * Le fournisseur n'est plus qu'un passe-plat.
+ *
+ * L'état vit dans `EventsProvider`, monté au-dessus dans `App.tsx`. On garde
+ * la balise pour ne pas avoir à toucher à l'arbre de fournisseurs, dont
+ * l'ordre est déjà commenté ligne à ligne là-bas.
+ */
+export const EventProvider: React.FC<{ children: ReactNode }> = ({ children }) => (
+  <>{children}</>
+);
 
-interface EventProviderProps {
-  children: ReactNode;
-}
-
-export const EventProvider: React.FC<EventProviderProps> = ({ children }) => {
-  const [activeEvent, setActiveEvent] = useState<Event | null>(null);
-  const [eventTheme, setEventTheme] = useState<EventThemeConfig | null>(null);
-  const [eventConfig, setEventConfig] = useState<EventConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasActiveEvent, setHasActiveEvent] = useState(false);
-
-  /**
-   * Rafraîchir l'événement actif
-   */
-  const refreshActiveEvent = async (forceRefresh = false): Promise<void> => {
-    try {
-      setIsLoading(true);
-      
-      // Récupérer l'événement actif
-      const event = await eventService.getActiveEvent(forceRefresh);
-      console.log('🔍 EventContext - Événement récupéré:', event ? {
-        id: event.id,
-        name: event.name,
-        theme_id: event.theme_id,
-        is_active: event.is_active
-      } : null);
-      
-      setActiveEvent(event);
-      setHasActiveEvent(event !== null);
-
-      // Récupérer le thème basé sur le theme_id
-      if (event && event.theme_id) {
-        const theme = getEventTheme(event.theme_id);
-        setEventTheme(theme);
-        setEventConfig(null); // Plus besoin de l'ancien système
-        
-        console.log('🎉 Événement actif détecté:', {
-          name: event.name,
-          theme_id: event.theme_id,
-          theme: theme ? theme.name : 'Aucun thème trouvé'
-        });
-      } else {
-        setEventConfig(null);
-        setEventTheme(null);
-        console.log('🎉 Aucun événement actif ou pas de theme_id');
-      }
-    } catch (error) {
-      console.error('❌ Erreur lors du rafraîchissement de l\'événement:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  /**
-   * Vérifier s'il y a des événements (utilisé périodiquement)
-   */
-  const checkForEvents = async (): Promise<void> => {
-    try {
-      // Vérifier sans charger
-      const hasEvent = await eventService.hasActiveEvent();
-      
-      // Si l'état a changé, rafraîchir complètement
-      if (hasEvent !== hasActiveEvent) {
-        await refreshActiveEvent(true);
-      }
-    } catch (error) {
-      console.error('❌ Erreur lors de la vérification d\'événements:', error);
-    }
-  };
-
-  /**
-   * Appliquer manuellement un thème d'événement
-   */
-  const applyEventTheme = (theme: EventThemeConfig | null): void => {
-    setEventTheme(theme);
-  };
-
-  /**
-   * Activer un événement (admin)
-   */
-  const activateEvent = async (id: string, deactivateOthers = true): Promise<boolean> => {
-    try {
-      const success = await eventService.activateEvent(id, deactivateOthers);
-      
-      if (success) {
-        // Rafraîchir l'événement actif
-        await refreshActiveEvent(true);
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('❌ Erreur lors de l\'activation de l\'événement:', error);
-      return false;
-    }
-  };
-
-  /**
-   * Désactiver un événement (admin)
-   */
-  const deactivateEvent = async (id: string): Promise<boolean> => {
-    try {
-      const success = await eventService.deactivateEvent(id);
-      
-      if (success) {
-        // Rafraîchir l'événement actif
-        await refreshActiveEvent(true);
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('❌ Erreur lors de la désactivation de l\'événement:', error);
-      return false;
-    }
-  };
-
-  /**
-   * Créer un événement (admin)
-   */
-  const createEvent = async (eventData: Partial<Event>): Promise<Event | null> => {
-    try {
-      const event = await eventService.createEvent(eventData);
-      
-      if (event) {
-        // Rafraîchir si c'est un événement actif
-        if (event.is_active) {
-          await refreshActiveEvent(true);
-        }
-      }
-      
-      return event;
-    } catch (error) {
-      console.error('❌ Erreur lors de la création de l\'événement:', error);
-      throw error;
-    }
-  };
-
-  /**
-   * Modifier un événement (admin)
-   */
-  const updateEvent = async (id: string, updateData: Partial<Event>): Promise<Event | null> => {
-    try {
-      const event = await eventService.updateEvent(id, updateData);
-      
-      if (event) {
-        // Rafraîchir si c'est l'événement actif ou s'il devient actif
-        if (event.is_active || (activeEvent && activeEvent.id === id)) {
-          await refreshActiveEvent(true);
-        }
-      }
-      
-      return event;
-    } catch (error) {
-      console.error('❌ Erreur lors de la mise à jour de l\'événement:', error);
-      throw error;
-    }
-  };
-
-  /**
-   * Supprimer un événement (admin)
-   */
-  const deleteEvent = async (id: string): Promise<boolean> => {
-    try {
-      const success = await eventService.deleteEvent(id);
-      
-      if (success) {
-        // Rafraîchir si c'était l'événement actif
-        if (activeEvent && activeEvent.id === id) {
-          await refreshActiveEvent(true);
-        }
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('❌ Erreur lors de la suppression de l\'événement:', error);
-      return false;
-    }
-  };
-
-  // Charger l'événement actif au démarrage
-  useEffect(() => {
-    refreshActiveEvent();
-  }, []);
-
-  // Vérifier périodiquement s'il y a de nouveaux événements.
-  //
-  // `useForegroundInterval` et non un `setInterval` nu : le minuteur battait
-  // app fermée, réveillant le thread JS toutes les 5 minutes pour une requête
-  // dont personne ne pouvait voir le résultat. Le hook garde par ailleurs la
-  // dernière version du callback, là où le tableau de dépendances
-  // `[hasActiveEvent]` figeait `checkForEvents` sur un `hasActiveEvent` périmé
-  // entre deux changements d'état.
-  useForegroundInterval(checkForEvents, 5 * 60 * 1000, { runImmediately: false });
-
-  // Mémoïsé : ce contexte est monté à la racine de l'application. Recréer
-  // l'objet à chaque rendu forçait un nouveau rendu de tout l'arbre — y compris
-  // le fil — à chaque tick du minuteur de 5 minutes.
-  const value: EventContextType = React.useMemo(
-    () => ({
-      activeEvent,
-      eventTheme,
-      eventConfig,
-      isLoading,
-      hasActiveEvent,
-      refreshActiveEvent,
-      checkForEvents,
-      applyEventTheme,
-      activateEvent,
-      deactivateEvent,
-      createEvent,
-      updateEvent,
-      deleteEvent,
-    }),
-    [activeEvent, eventTheme, eventConfig, isLoading, hasActiveEvent]
-  );
-
-  return (
-    <EventContext.Provider value={value}>
-      {children}
-    </EventContext.Provider>
-  );
-};
-
-// Hook pour utiliser le contexte d'événements
 export const useEvents = (): EventContextType => {
-  const context = useContext(EventContext);
-  if (context === undefined) {
-    throw new Error('useEvents doit être utilisé dans un EventProvider');
-  }
-  return context;
+  const { event, art, isLive, loading, refresh } = useEventsState();
+
+  return useMemo(() => {
+    /**
+     * Traduction du nouvel événement vers l'ancienne forme.
+     *
+     * `theme_id` porte désormais la clé de DA (`art`), ce qui garde
+     * `getEventTheme()` fonctionnel pour les appelants qui s'en servent encore.
+     * `colors` est reconstruit depuis la DA plutôt que reçu du serveur : c'est
+     * tout l'objet de la refonte — les couleurs sont dessinées dans l'app, pas
+     * saisies dans un formulaire.
+     */
+    const activeEvent: Event | null =
+      event && isLive
+        ? ({
+            id: event.id,
+            name: event.name,
+            slug: event.slug,
+            description: event.description,
+            is_active: event.is_active,
+            priority: event.priority,
+            theme_id: event.art,
+            theme_config: {
+              id: event.art,
+              name: art.name,
+              description: event.description ?? '',
+              colors: [art.colors.festive, art.colors.ember, art.colors.ink],
+              icon: 'sparkles',
+            },
+            start_date: event.starts_at,
+            end_date: event.ends_at,
+            auto_activate: true,
+            icon: 'sparkles',
+            colors: [art.colors.festive, art.colors.ember, art.colors.ink],
+            effects: {},
+            created_at: '',
+            updated_at: '',
+          } as Event)
+        : null;
+
+    return {
+      activeEvent,
+      eventTheme: activeEvent?.theme_id ? getEventTheme(activeEvent.theme_id) : null,
+      eventConfig: null,
+      isLoading: loading,
+      hasActiveEvent: !!activeEvent,
+
+      refreshActiveEvent: () => refresh(true),
+      checkForEvents: () => refresh(true),
+      // La DA ne se pose plus depuis l'extérieur : elle est déduite de
+      // l'événement en cours. Conservé pour ne pas casser les appelants.
+      applyEventTheme: () => {},
+
+      activateEvent: (id, deactivateOthers = true) =>
+        eventService.activateEvent(id, deactivateOthers),
+      deactivateEvent: (id) => eventService.deactivateEvent(id),
+      createEvent: (data) => eventService.createEvent(data),
+      updateEvent: (id, data) => eventService.updateEvent(id, data),
+      deleteEvent: (id) => eventService.deleteEvent(id),
+    };
+  }, [event, art, isLive, loading, refresh]);
 };
 
-export default EventContext;
+export default EventProvider;

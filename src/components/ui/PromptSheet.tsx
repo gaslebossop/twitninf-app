@@ -9,8 +9,8 @@ import React, {
   ReactNode,
 } from 'react';
 import {
-  Animated,
   BackHandler,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -19,8 +19,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../../theme';
+import { colors, fonts, radius, withAlpha } from '../../theme';
+import useSheetGesture from '../../hooks/useSheetGesture';
 import feedback from '../../utils/feedback';
 
 /**
@@ -64,64 +67,71 @@ export function promptAsync(options: PromptOptions): Promise<string | null> {
   return hostPrompt ? hostPrompt(options) : Promise.resolve(null);
 }
 
-const ENTER_MS = D.base;
-const EXIT_MS = D.fast;
 const BOTTOM_INSET = Platform.OS === 'ios' ? 34 : 16;
+const TRAVEL = 240;
+/**
+ * Seuil volontairement plus haut que sur les autres feuilles.
+ *
+ * Ici, se débarrasser de la feuille jette un texte qu'on vient d'écrire. Le
+ * geste reste possible — la feuille suit le doigt dès le premier pixel — mais
+ * il faut l'assumer : un frôlement en remontant vers le champ ne doit pas
+ * effacer une saisie.
+ */
+const DISMISS_DISTANCE = 150;
 
 export function PromptProvider({ children }: { children: ReactNode }) {
   const [options, setOptions] = useState<PromptOptions | null>(null);
   const [value, setValue] = useState('');
   const resolverRef = useRef<Resolver | null>(null);
-  const progress = useRef(new Animated.Value(0)).current;
-  const closing = useRef(false);
+  /** Réponse retenue le temps de la sortie. Le glissé la laisse à `null`. */
+  const answerRef = useRef<string | null>(null);
 
   const prompt = useCallback((next: PromptOptions) => {
     return new Promise<string | null>((resolve) => {
       resolverRef.current?.(null);
       resolverRef.current = resolve;
-      closing.current = false;
+      answerRef.current = null;
       setValue(next.defaultValue ?? '');
       setOptions(next);
     });
   }, []);
 
+  const handleClosed = useCallback(() => {
+    const resolve = resolverRef.current;
+    resolverRef.current = null;
+    setOptions(null);
+    setValue('');
+    resolve?.(answerRef.current);
+  }, []);
+
+  const { gesture, sheetStyle, scrimStyle, open, close } = useSheetGesture({
+    onClosed: handleClosed,
+    travel: TRAVEL,
+    dismissDistance: DISMISS_DISTANCE,
+  });
+
   const settle = useCallback(
     (answer: string | null) => {
-      if (closing.current) return;
-      closing.current = true;
-      Animated.timing(progress, {
-        toValue: 0,
-        duration: EXIT_MS,
-        easing: E.in,
-        useNativeDriver: true,
-      }).start(() => {
-        const resolve = resolverRef.current;
-        resolverRef.current = null;
-        setOptions(null);
-        setValue('');
-        resolve?.(answer);
-      });
+      answerRef.current = answer;
+      // Le clavier part AVANT la feuille : laissé ouvert, il resterait seul à
+      // l'écran une fraction de seconde, posé sur l'écran de dessous.
+      Keyboard.dismiss();
+      close();
     },
-    [progress],
+    [close],
   );
 
   useEffect(() => {
     if (!options) return;
     feedback.select();
-    progress.setValue(0);
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: ENTER_MS,
-      easing: E.out,
-      useNativeDriver: true,
-    }).start();
+    open();
 
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       settle(null);
       return true;
     });
     return () => sub.remove();
-  }, [options, progress, settle]);
+  }, [options, open, settle]);
 
   useEffect(() => {
     hostPrompt = prompt;
@@ -141,7 +151,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
       {children}
       {options && (
         <View style={styles.host}>
-          <Animated.View style={[styles.scrim, { opacity: progress }]}>
+          <Animated.View style={[styles.scrim, scrimStyle]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => settle(null)} />
           </Animated.View>
 
@@ -150,22 +160,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
             style={styles.keyboardWrap}
             pointerEvents="box-none"
           >
-            <Animated.View
-              style={[
-                styles.sheet,
-                {
-                  opacity: progress,
-                  transform: [
-                    {
-                      translateY: progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [240, 0],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
+            <GestureDetector gesture={gesture}>
+              <Animated.View style={[styles.sheet, sheetStyle]}>
               <View style={styles.grabber} />
 
               <View style={[styles.iconWrap, { backgroundColor: withAlpha(accent, 0.16) }]}>
@@ -215,7 +211,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
               >
                 <Text style={styles.cancelLabel}>{options.cancelLabel ?? 'Annuler'}</Text>
               </Pressable>
-            </Animated.View>
+              </Animated.View>
+            </GestureDetector>
           </KeyboardAvoidingView>
         </View>
       )}

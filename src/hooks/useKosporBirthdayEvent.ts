@@ -1,123 +1,51 @@
+import { useMemo } from 'react';
+import { useEvents } from '../contexts/EventsContext';
+
 /**
- * Hook spécialisé pour l'événement Kospor Birthday
- * Vérifie si l'événement est actif et gère l'affichage de la page et de l'onglet
+ * Adaptateur vers le nouveau système d'événements.
  *
- * ## Pourquoi un sondage PARTAGÉ et non un `setInterval` par composant
+ * ── Son histoire, qui vaut la peine d'être gardée ─────────────────────────
+ * Ce hook était monté par six endroits à la fois (navigateur principal, barre
+ * d'onglets, réglages, profil, page et popup de l'événement). Chaque instance
+ * entretenait son propre minuteur de 30 s, et chaque tic déclenchait DEUX
+ * appels réseau non mis en cache : une dizaine de requêtes toutes les trente
+ * secondes, sur un simple profil ouvert, pour une réponse qui change une fois
+ * par an.
  *
- * Ce hook est monté simultanément par six endroits (MainNavigator,
- * BottomTabNavigator, SettingsScreen, UserProfileScreen, KosporBirthdayScreen
- * et KosporBirthdayPopup). Chaque instance entretenait son propre minuteur de
- * 30 s, et chaque tick déclenchait DEUX appels réseau — soit, sur un simple
- * profil ouvert, une dizaine de requêtes toutes les 30 secondes pour une
- * réponse qui ne change qu'une fois par an. Aucune de ces requêtes n'était
- * mise en cache (`functionalEventService` va au réseau à chaque appel).
+ * Le correctif de l'époque — un singleton de module avec abonnés, requête en
+ * vol partagée et suspension en arrière-plan — était juste, et il est
+ * documenté ici parce qu'il a servi de modèle au reste. Il traitait pourtant
+ * un symptôme : la vraie cause était qu'aucune des six instances n'avait de
+ * raison d'exister. Un fournisseur monté une fois à la racine EST le
+ * propriétaire unique, et rend tout ce mécanisme inutile.
  *
- * Le minuteur vit donc désormais dans le module : un seul, quel que soit le
- * nombre d'abonnés, et les composants ne font que lire l'état partagé.
- *
- * Il est aussi suspendu quand l'app passe en arrière-plan, comme
- * `useForegroundInterval` le fait pour les autres sondages : les minuteurs nus
- * réveillaient le thread JS et alimentaient pour rien les compteurs de cadence
- * de l'anti-fraude côté API.
+ * ── Ce qui reste à faire ──────────────────────────────────────────────────
+ * Les six appelants testent `isEventActive` pour afficher un onglet et une
+ * page dédiés à UN événement. Le nouveau système rend ces branches génériques
+ * (`features.hub`) : à migrer, puis supprimer ce fichier ainsi que
+ * `KosporBirthdayScreen` et `KosporBirthdayPopup`, tous deux remplacés par
+ * `EventScreen`.
  */
 
-import { useEffect, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
-import { functionalEventService } from '../services/functionalEventService';
-
-const PAGE = 'kosporbirthday';
-const FEATURE = 'kosporbirthday';
-const REFRESH_MS = 5 * 60 * 1000;
-
-interface KosporState {
-  isEventActive: boolean;
-  isLoading: boolean;
-  events: any[];
-}
-
-let state: KosporState = { isEventActive: false, isLoading: true, events: [] };
-
-const subscribers = new Set<(next: KosporState) => void>();
-let timer: ReturnType<typeof setInterval> | null = null;
-let appStateSub: { remove: () => void } | null = null;
-/** Requête en vol partagée : six montages simultanés = un seul aller-retour. */
-let inFlight: Promise<void> | null = null;
-
-function publish(next: KosporState): void {
-  state = next;
-  subscribers.forEach((notify) => notify(next));
-}
-
-function refresh(): Promise<void> {
-  if (inFlight) return inFlight;
-
-  inFlight = (async () => {
-    try {
-      const [isActive, events] = await Promise.all([
-        functionalEventService.isFeatureActive(FEATURE, PAGE),
-        functionalEventService.getActiveEventsForPage(PAGE),
-      ]);
-      publish({ isEventActive: isActive, isLoading: false, events });
-    } catch (error) {
-      console.error('Erreur lors de la vérification de l\'événement Kospor Birthday:', error);
-      publish({ isEventActive: false, isLoading: false, events: [] });
-    } finally {
-      inFlight = null;
-    }
-  })();
-
-  return inFlight;
-}
-
-function startTimer(): void {
-  if (timer) return;
-  timer = setInterval(refresh, REFRESH_MS);
-}
-
-function stopTimer(): void {
-  if (!timer) return;
-  clearInterval(timer);
-  timer = null;
-}
-
-function onAppStateChange(status: AppStateStatus): void {
-  if (status === 'active') {
-    refresh();
-    startTimer();
-  } else {
-    stopTimer();
-  }
-}
-
-/** Démarre le sondage au premier abonné, l'arrête quand le dernier s'en va. */
-function subscribe(notify: (next: KosporState) => void): () => void {
-  subscribers.add(notify);
-
-  if (subscribers.size === 1) {
-    refresh();
-    if (AppState.currentState === 'active') startTimer();
-    appStateSub = AppState.addEventListener('change', onAppStateChange);
-  }
-
-  return () => {
-    subscribers.delete(notify);
-    if (subscribers.size === 0) {
-      stopTimer();
-      appStateSub?.remove();
-      appStateSub = null;
-    }
-  };
-}
+/** Slug historique, conservé le temps que les six appelants soient migrés. */
+const LEGACY_SLUG = 'kosporbirthday';
 
 export function useKosporBirthdayEvent() {
-  const [local, setLocal] = useState<KosporState>(state);
+  const { event, isLive, loading, refresh } = useEvents();
 
-  useEffect(() => subscribe(setLocal), []);
+  return useMemo(() => {
+    // On ne répond vrai que pour CET événement : sinon l'anniversaire de
+    // twitninf allumerait l'onglet Kospor, et les deux fêtes se
+    // superposeraient dans la barre du bas.
+    const isEventActive = isLive && event?.slug === LEGACY_SLUG;
 
-  return {
-    isEventActive: local.isEventActive,
-    isLoading: local.isLoading,
-    events: local.events,
-    refreshEvent: refresh,
-  };
+    return {
+      isEventActive,
+      isLoading: loading,
+      events: isEventActive && event ? [event] : [],
+      refreshEvent: () => refresh(true),
+    };
+  }, [event, isLive, loading, refresh]);
 }
+
+export default useKosporBirthdayEvent;

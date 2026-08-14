@@ -9,9 +9,7 @@ import React, {
   ReactNode,
 } from 'react';
 import {
-  Animated,
   Dimensions,
-  PanResponder,
   Platform,
   Pressable,
   StatusBar,
@@ -19,8 +17,20 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, withAlpha, duration as D, easing as E } from '../../theme';
+import { colors, fonts, withAlpha, duration } from '../../theme';
+import { clamp, ease, projectDecay, rubberBand, springFrom } from '../../utils/gesture';
 import feedback from '../../utils/feedback';
 
 /**
@@ -110,131 +120,149 @@ const KIND: Record<
 const TOP_INSET = Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight ?? 24) + 8;
 
 const CARD_WIDTH = Math.min(520, Dimensions.get('window').width * 0.94);
-const ENTER_MS = D.base;
-const EXIT_MS = D.fast;
-/** Au-delà, le glissé vers le haut renvoie le bloc au lieu de le reposer. */
+const ENTER_MS = duration.base;
+/**
+ * Au-delà de cette position PROJETÉE, le glissé renvoie le bloc au lieu de le
+ * reposer. Le seuil est court, et il le reste : sur un message qu'on veut
+ * chasser, l'intention est toujours nette — c'est la vitesse du geste, pas sa
+ * longueur, qui la porte.
+ */
 const DISMISS_DISTANCE = 26;
 
 function ToastCard({ entry, onDone }: { entry: ToastEntry; onDone: () => void }) {
   const { icon, tint, onTint } = KIND[entry.kind];
 
   // Une seule valeur pilote l'entrée : opacité, glissement et échelle ne
-  // peuvent pas se désynchroniser, et tout reste sur le thread natif.
-  const enter = useRef(new Animated.Value(0)).current;
+  // peuvent pas se désynchroniser, et tout reste sur le thread UI.
+  const enter = useSharedValue(0);
   /** Décalage ajouté par le doigt, en plus de l'animation d'entrée. */
-  const drag = useRef(new Animated.Value(0)).current;
+  const drag = useSharedValue(0);
   /** Progression de la jauge, indépendante : elle s'écoule linéairement. */
-  const drain = useRef(new Animated.Value(0)).current;
+  const drain = useSharedValue(0);
+  /** Position du doigt au début du geste, pour rattraper un bloc en vol. */
+  const start = useSharedValue(0);
+  const closing = useSharedValue(0);
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closing = useRef(false);
 
-  const close = useCallback(
-    (velocity = 0) => {
-      if (closing.current) return;
-      closing.current = true;
-      if (timer.current) clearTimeout(timer.current);
-      drain.stopAnimation();
-      Animated.parallel([
-        Animated.timing(enter, {
-          toValue: 0,
-          duration: EXIT_MS,
-          easing: E.in,
-          useNativeDriver: true,
-        }),
-        // Le bloc part dans le sens du geste : renvoyé d'un coup sec, il
-        // sort vite ; relâché mollement, il remonte doucement.
-        Animated.timing(drag, {
-          toValue: -90,
-          duration: velocity < -0.6 ? 120 : EXIT_MS,
-          easing: E.in,
-          useNativeDriver: true,
-        }),
-      ]).start(() => onDone());
+  const clearTimer = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+
+  const finish = useCallback(() => {
+    clearTimer();
+    onDone();
+  }, [clearTimer, onDone]);
+
+  /**
+   * Sortie par le haut, d'où le bloc est venu.
+   *
+   * « Ce qui disparaît d'un côté doit être venu de ce côté » : un bloc qui
+   * entre par le haut et sortirait par le bas se lit comme deux éléments
+   * différents. Le sens du geste est aussi celui de l'animation.
+   */
+  const close = useMemo(() => {
+    const run = (velocity: number) => {
+      'worklet';
+      if (closing.value) return;
+      closing.value = 1;
+      cancelAnimation(drain);
+
+      const remaining = Math.max(90 + drag.value, 1);
+      const speed = Math.max(Math.abs(velocity), 400);
+      const ms = clamp((remaining / speed) * 1000, 110, duration.fast);
+
+      enter.value = withTiming(0, { duration: ms, easing: ease.in });
+      drag.value = withTiming(-90, { duration: ms, easing: ease.in }, (done) => {
+        if (done) runOnJS(finish)();
+      });
+    };
+    return run;
+  }, [closing, drain, drag, enter, finish]);
+
+  const closeFromJS = useCallback(() => close(0), [close]);
+
+  const armTimer = useCallback(
+    (ms: number) => {
+      clearTimer();
+      timer.current = setTimeout(closeFromJS, ms);
     },
-    [enter, drag, drain, onDone],
+    [clearTimer, closeFromJS],
   );
 
-  const pan = useRef(
-    PanResponder.create({
-      // On ne capture qu'un geste vertical franc : un appui simple doit
-      // toujours atteindre le bouton d'action en dessous.
-      onMoveShouldSetPanResponder: (_, g) => g.dy < -3 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderGrant: () => {
-        if (timer.current) clearTimeout(timer.current);
-        drain.stopAnimation();
-      },
-      onPanResponderMove: (_, g) => {
-        // Vers le haut : suivi au doigt. Vers le bas : résistance, le bloc
-        // est déjà en butée et ne doit pas se décoller de son bord.
-        drag.setValue(g.dy < 0 ? g.dy : g.dy * 0.18);
-      },
-      onPanResponderRelease: (_, g) => {
-        if (g.dy < -DISMISS_DISTANCE || g.vy < -0.5) {
-          close(g.vy);
-          return;
-        }
-        Animated.timing(drag, {
-          toValue: 0,
-          duration: D.fast,
-          easing: E.out,
-          useNativeDriver: true,
-        }).start();
-        // Le geste avorté rend un peu de temps de lecture.
-        timer.current = setTimeout(close, 1600);
-      },
-    }),
-  ).current;
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        // On ne capture qu'un geste vertical franc VERS LE HAUT : un appui
+        // simple doit toujours atteindre le bouton d'action en dessous.
+        .activeOffsetY(-6)
+        .failOffsetX([-24, 24])
+        .onBegin(() => {
+          // Le doigt suspend le compte à rebours : on ne fait pas disparaître
+          // sous la main de quelqu'un le message qu'il est en train de lire.
+          cancelAnimation(drag);
+          cancelAnimation(drain);
+          start.value = drag.value;
+          runOnJS(clearTimer)();
+        })
+        .onUpdate((event) => {
+          const next = start.value + event.translationY;
+          // Vers le haut : suivi au doigt. Vers le bas : butée élastique, le
+          // bloc est déjà contre son bord et ne doit pas s'en décoller.
+          drag.value = next <= 0 ? next : rubberBand(next, 90, 0.55);
+        })
+        .onEnd((event) => {
+          const projected = drag.value + projectDecay(event.velocityY);
+          if (projected < -DISMISS_DISTANCE) {
+            close(event.velocityY);
+            return;
+          }
+          drag.value = withSpring(0, springFrom(event.velocityY));
+          // Le geste avorté rend un peu de temps de lecture.
+          runOnJS(armTimer)(1600);
+        }),
+    [drag, drain, start, close, clearTimer, armTimer],
+  );
 
   useEffect(() => {
     if (!entry.silent) KIND[entry.kind].haptic();
 
     const life = entry.duration ?? (entry.kind === 'error' ? 4200 : 2800);
 
-    Animated.timing(enter, {
-      toValue: 1,
-      duration: ENTER_MS,
-      easing: E.out,
-      useNativeDriver: true,
-    }).start();
+    enter.value = withTiming(1, { duration: ENTER_MS, easing: ease.out });
 
     // Linéaire, et seulement ici : une jauge de temps qui accélère ou
     // ralentit ment sur le temps qui reste.
-    Animated.timing(drain, {
-      toValue: 1,
-      duration: life,
-      easing: E.linear,
-      useNativeDriver: true,
-    }).start();
+    drain.value = withTiming(1, { duration: life, easing: Easing.linear });
 
-    timer.current = setTimeout(close, life);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    armTimer(life);
+    return clearTimer;
     // Une carte est montée une fois par toast (clé = id) : pas de re-jeu.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [
+      { translateY: interpolate(enter.value, [0, 1], [-64, 0]) + drag.value },
+      { scale: interpolate(enter.value, [0, 1], [0.92, 1]) },
+    ] as const,
+  }));
+
+  const drainStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(drain.value, [0, 1], [0, -CARD_WIDTH]) }],
+  }));
+
   return (
+    <GestureDetector gesture={pan}>
     <Animated.View
-      {...pan.panHandlers}
       style={[
         styles.card,
         // Le halo prend la couleur du type : c'est lui qui remplace la
         // bordure, et il décolle le bloc du contenu au lieu de l'encadrer.
-        {
-          shadowColor: tint,
-          opacity: enter,
-          transform: [
-            {
-              translateY: Animated.add(
-                enter.interpolate({ inputRange: [0, 1], outputRange: [-64, 0] }),
-                drag,
-              ),
-            },
-            { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
-          ],
-        },
+        { shadowColor: tint },
+        cardStyle,
       ]}
     >
       <View style={styles.row}>
@@ -259,7 +287,7 @@ function ToastCard({ entry, onDone }: { entry: ToastEntry; onDone: () => void })
             onPress={() => {
               feedback.tap();
               entry.action?.onPress();
-              close();
+              closeFromJS();
             }}
             hitSlop={8}
             style={({ pressed }) => [
@@ -278,24 +306,10 @@ function ToastCard({ entry, onDone }: { entry: ToastEntry; onDone: () => void })
           encore visible est le temps qu'il reste. Transform seul → thread
           natif, aucun coût de rendu React pendant l'écoulement. */}
       <View style={styles.drainTrack}>
-        <Animated.View
-          style={[
-            styles.drainFill,
-            {
-              backgroundColor: tint,
-              transform: [
-                {
-                  translateX: drain.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -CARD_WIDTH],
-                  }),
-                },
-              ],
-            },
-          ]}
-        />
+        <Animated.View style={[styles.drainFill, { backgroundColor: tint }, drainStyle]} />
       </View>
     </Animated.View>
+    </GestureDetector>
   );
 }
 

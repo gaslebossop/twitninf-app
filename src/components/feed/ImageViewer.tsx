@@ -32,7 +32,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -221,7 +221,12 @@ export default function ImageViewer({ urls, initialIndex = 0, visible, onClose }
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar barStyle={statusBarStyle()} />
-      <View style={styles.root}>
+      {/* Une `<Modal>` native rend dans SA fenêtre, hors de l'arbre React :
+          le `GestureHandlerRootView` posé dans `App.tsx` ne la couvre pas, et
+          sans celui-ci les gestes ci-dessous (pincer, glisser, double-tap)
+          n'étaient jamais reconnus sous Android — la visionneuse s'y résumait
+          à une image fixe qu'on ne pouvait ni zoomer ni fermer au doigt. */}
+      <GestureHandlerRootView style={styles.root}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
 
         <GestureDetector gesture={gestures}>
@@ -255,7 +260,7 @@ export default function ImageViewer({ urls, initialIndex = 0, visible, onClose }
             </View>
           )}
         </Animated.View>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

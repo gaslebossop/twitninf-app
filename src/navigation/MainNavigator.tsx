@@ -66,6 +66,7 @@ import FunctionalEventManagementScreen from '../screens/FunctionalEventManagemen
 import FeatureFlagsAdminScreen from '../screens/FeatureFlagsAdminScreen';
 import NfMapScreen from '../screens/NfMapScreen';
 import KosporBirthdayScreen from '../screens/KosporBirthdayScreen';
+import EventScreen from '../screens/EventScreen';
 import VerificationStyleScreen from '../screens/VerificationStyleScreen';
 import VersionNotesScreen from '../screens/VersionNotesScreen';
 import ReadingLanguageScreen from '../screens/ReadingLanguageScreen';
@@ -156,6 +157,7 @@ export type MainStackParamList = {
   FeatureFlagsAdmin: undefined;
   NfMap: undefined;
   KosporBirthday: undefined;
+  Event: undefined;
   VerificationStyle: undefined;
   VersionNotes: undefined;
   ReadingLanguage: undefined;
@@ -628,8 +630,8 @@ function MainNavigatorInner() {
         }}
       />
 
-      <MainStack.Screen 
-        name="KosporBirthday" 
+      <MainStack.Screen
+        name="KosporBirthday"
         component={KosporBirthdayScreen}
         options={{
           presentation: 'card',
@@ -637,7 +639,21 @@ function MainNavigatorInner() {
           headerShown: false,
         }}
       />
-      
+
+      {/* Le hub d'événement générique — il remplace `KosporBirthday`, dont le
+          contenu était écrit en dur pour une seule fête. Celui-ci rend
+          n'importe quel événement que le serveur déclare actif, avec sa
+          direction artistique. */}
+      <MainStack.Screen
+        name="Event"
+        component={EventScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_bottom',
+          headerShown: false,
+        }}
+      />
+
       <MainStack.Screen
         name="VerificationStyle"
         component={VerificationStyleScreen}
