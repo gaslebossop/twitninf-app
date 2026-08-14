@@ -89,10 +89,7 @@ jobs:
       # apps.json a la toute fin — les deux valeurs doivent coincider, sinon
       # l'app fraichement publiee se croirait deja en retard sur elle-meme.
       #
-      # Le clone sert aussi a la publication finale : inutile de le refaire.
       - name: Prepare la version publiee
-        env:
-          GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
         run: |
           set -uo pipefail
           GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
@@ -103,12 +100,17 @@ jobs:
           # d'un build par ailleurs sain. Sans numero, la verification de mise a
           # jour se desactive d'elle-meme cote app (voir updateCheck.ts) ; c'est
           # l'etape finale de publication qui, elle, echouera bruyamment.
-          if ! git clone -q "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo; then
+          #
+          # L'URL brute plutot qu'un clone : le gist traine encore l'historique
+          # des IPA publies avant que l'hebergement ne bascule sur le VPS, et
+          # seul apps.json (1 Ko) nous interesse ici.
+          if ! curl -sfL --max-time 30 -o published-apps.json \
+               "https://gist.githubusercontent.com/gaslebossop/${GIST_ID}/raw/apps.json"; then
             echo "::warning::Gist injoignable — build sans estampille de version."
             exit 0
           fi
 
-          CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])" || true)
+          CURRENT=$(python3 -c "import json;print(json.load(open('published-apps.json'))['apps'][0]['versions'][0]['buildVersion'])" || true)
           if ! [ "$CURRENT" -eq "$CURRENT" ] 2>/dev/null; then
             echo "::warning::buildVersion illisible dans le gist — build sans estampille."
             exit 0
@@ -254,25 +256,67 @@ jobs:
           path: ios/*.ipa
           if-no-files-found: error
 
-      # Met a jour la source AltStore privee (gist secret) avec le nouvel
-      # IPA a chaque push sur main : la famille recoit la notification de
-      # maj sans qu'on ait besoin de republier a la main. buildVersion est
-      # ce qu'AltStore compare pour detecter une nouvelle version — il DOIT
-      # augmenter a chaque fois, "version" reste un simple libelle humain.
-      - name: Mettre a jour le gist AltStore
+      # ── Publication ──────────────────────────────────────────────────────
+      #
+      # L'IPA vit sur le VPS, plus dans le gist. Pourquoi : le gist commitait
+      # 27 Mo par version DANS SON HISTORIQUE. A la quinzieme, il pesait 97 Mo
+      # et GitHub a ferme le robinet — « Repository is above its size quota »,
+      # tout push rejete, y compris un force-push qui aurait fait maigrir le
+      # depot. Plus aucune version ne pouvait etre publiee.
+      #
+      # Le gist reste le FLUX (apps.json + icon.png) : son identifiant ne
+      # change pas, donc la source AltStore de chacun reste valable. Il n'est
+      # plus ecrit par `git push` mais par l'API, qui n'est pas soumise au
+      # quota — et 1 Ko de JSON par publication ne le fera plus grossir.
+      - name: Publier l'IPA sur le VPS
+        env:
+          VPS_IPA_KEY: ${{ secrets.VPS_IPA_KEY }}
+          VPS_IPA_HOST: ${{ secrets.VPS_IPA_HOST }}
+          VPS_IPA_HOSTKEY: ${{ secrets.VPS_IPA_HOSTKEY }}
+        run: |
+          set -euo pipefail
+          IPA=$(ls ios/*.ipa | head -1)
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_IPA_KEY" > ~/.ssh/ipa_key
+          chmod 600 ~/.ssh/ipa_key
+          # Cle d'hote epinglee : `accept-new` accepterait n'importe quel
+          # serveur qui repondrait a cette adresse.
+          printf '%s\n' "$VPS_IPA_HOSTKEY" >> ~/.ssh/known_hosts
+
+          # La cle est confinee cote serveur par `command="..."` dans
+          # authorized_keys (voir .github/scripts/receive-ipa.sh) : elle ne sait
+          # QUE recevoir un IPA sur stdin. Rien a passer en argument, la commande
+          # demandee ici serait de toute facon ignoree.
+          OUT=$(ssh -i ~/.ssh/ipa_key -o BatchMode=yes "$VPS_IPA_HOST" < "$IPA")
+          echo "$OUT"
+
+          # Le serveur renvoie la taille reellement ecrite. C'est elle qui va
+          # dans apps.json : AltStore l'affiche avant le telechargement, et un
+          # chiffre faux se voit tout de suite.
+          SIZE="${OUT#IPA_SIZE=}"
+          if ! [ "$SIZE" -eq "$SIZE" ] 2>/dev/null; then
+            echo "::error::Reponse inattendue du VPS : $OUT"
+            exit 1
+          fi
+          echo "IPA_SIZE=$SIZE" >> "$GITHUB_ENV"
+
+      # buildVersion est ce qu'AltStore compare pour detecter une nouvelle
+      # version — il DOIT augmenter a chaque fois, "version" reste un simple
+      # libelle humain.
+      - name: Mettre a jour la source AltStore
         env:
           GIST_PUSH_TOKEN: ${{ secrets.GIST_PUSH_TOKEN }}
+          VPS_IPA_URL: ${{ secrets.VPS_IPA_URL }}
         run: |
           set -euo pipefail
           GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
-          IPA=$(ls ios/*.ipa | head -1)
 
-          # `gist-repo` a normalement ete clone par l'etape "Prepare la version
-          # publiee". Elle est best-effort : si elle a renonce, on reclone ici,
-          # ou l'echec est cette fois bloquant — publier est le but de l'etape.
-          if [ ! -d gist-repo ]; then
-            git clone -q "https://${GIST_PUSH_TOKEN}@gist.github.com/${GIST_ID}.git" gist-repo
-          fi
+          # Relecture juste avant d'ecrire : le numero calcule au debut du job
+          # date de ~15 minutes. Si un autre run a publie entre-temps, le
+          # garde-fou de update_gist.py le verra (numero <= deja publie).
+          curl -sfL --max-time 30 -o apps.json \
+            "https://gist.githubusercontent.com/gaslebossop/${GIST_ID}/raw/apps.json"
 
           # On republie le numero grave dans le bundle, pour que les deux
           # coincident. S'il manque (estampillage renonce plus haut), on retombe
@@ -280,36 +324,24 @@ jobs:
           # comparer au flux, mais AltStore, lui, voit bien la nouvelle version.
           BUILD_VERSION="${EXPO_PUBLIC_BUILD_VERSION:-}"
           if [ -z "$BUILD_VERSION" ]; then
-            CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])")
+            CURRENT=$(python3 -c "import json;print(json.load(open('apps.json'))['apps'][0]['versions'][0]['buildVersion'])")
             BUILD_VERSION=$((CURRENT + 1))
             echo "::warning::IPA non estampille — buildVersion incrementee a $BUILD_VERSION sans correspondance dans le bundle."
           fi
 
-          # Le clone date du debut du job, soit ~15 minutes plus tot. Si le gist
-          # a bouge entre-temps, le push serait rejete par un « fetch first »
-          # illisible apres un build complet. On le dit franchement ici — et le
-          # numero grave dans le bundle est de toute facon deja pris, donc il
-          # faut relancer le build, pas retenter la publication.
-          # `origin/main` explicitement : `origin/HEAD` n'est pas toujours
-          # renseigne apres un fetch, et son absence ferait echouer le test
-          # lui-meme sous `set -e`.
-          BRANCH=$(git -C gist-repo rev-parse --abbrev-ref HEAD)
-          git -C gist-repo fetch -q origin "$BRANCH"
-          if [ "$(git -C gist-repo rev-parse HEAD)" != "$(git -C gist-repo rev-parse FETCH_HEAD)" ]; then
-            echo "::error::Le gist a ete publie par un autre run pendant ce build. buildVersion $BUILD_VERSION est deja pris — relancer ce workflow."
-            exit 1
-          fi
+          python3 .github/scripts/update_gist.py apps.json "$BUILD_VERSION" "$IPA_SIZE" "$VPS_IPA_URL"
 
-          cp "$IPA" gist-repo/TwitNinf.ipa
-          python3 .github/scripts/update_gist.py gist-repo "$IPA" "$BUILD_VERSION"
+          python3 - <<'PY' > payload.json
+          import json
+          print(json.dumps({"files": {"apps.json": {"content": open("apps.json").read()}}}))
+          PY
 
-          cd gist-repo
-          git config user.name "twitninf-ci"
-          git config user.email "ci@gasleboss.local"
-          git add TwitNinf.ipa apps.json
-          if git diff --cached --quiet; then
-            echo "Rien a pousser sur le gist."
-          else
-            git commit -q -m "Mise a jour automatique (${GITHUB_SHA:0:7})"
-            git push -q
-          fi
+          # L'API, pas `git push` : le gist est au-dessus de son quota de taille
+          # a cause des IPA d'avant, et tout push y est refuse. L'API passe.
+          curl -sf -X PATCH \
+            -H "Authorization: Bearer ${GIST_PUSH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            --data @payload.json \
+            "https://api.github.com/gists/${GIST_ID}" > /dev/null
+
+          echo "Source AltStore mise a jour : buildVersion $BUILD_VERSION, $IPA_SIZE octets."
