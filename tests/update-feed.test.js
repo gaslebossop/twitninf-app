@@ -16,9 +16,8 @@ function loadTypeScriptModule(path) {
   return loaded.exports;
 }
 
-const { findNewerVersion, readPublishedVersion } = loadTypeScriptModule(
-  'src/services/updateFeed.ts',
-);
+const { findNewerVersion, readPublishedVersion, extractManifest, manifestRawUrl } =
+  loadTypeScriptModule('src/services/updateFeed.ts');
 
 /** Manifeste AltStore tel que le gist le contient. */
 const manifest = (buildVersion, version = '1.1.0') => ({
@@ -76,6 +75,40 @@ test('un flux illisible ne fait pas planter et ne propose rien', () => {
   ]) {
     assert.equal(findNewerVersion(payload, '1'), null);
   }
+});
+
+test("une reponse tronquee par l'API expose l'adresse de repli", () => {
+  // Ce n'est PAS un cas theorique : c'est ce que renvoie le gist de production.
+  // L'API tronque le contenu des fichiers parce que le gist heberge aussi
+  // l'IPA (~27 Mo), donc `content` arrive vide alors qu'apps.json fait 1,3 Ko.
+  // Sans le repli sur raw_url, la detection ne marcherait jamais en vrai — et
+  // en silence, un flux illisible etant traite comme « rien de neuf ».
+  const truncated = {
+    files: {
+      'apps.json': {
+        truncated: true,
+        content: '',
+        raw_url: 'https://gist.githubusercontent.com/u/id/raw/sha/apps.json',
+      },
+    },
+  };
+
+  assert.equal(extractManifest(truncated), null);
+  assert.equal(findNewerVersion(truncated, '1'), null);
+  assert.equal(
+    manifestRawUrl(truncated),
+    'https://gist.githubusercontent.com/u/id/raw/sha/apps.json',
+  );
+
+  // Et le contenu recupere a cette adresse se lit comme un apps.json ordinaire.
+  assert.equal(findNewerVersion(manifest(6), '5')?.buildVersion, 6);
+});
+
+test("pas d'adresse de repli quand il n'y en a pas a suivre", () => {
+  assert.equal(manifestRawUrl(null), null);
+  assert.equal(manifestRawUrl({}), null);
+  assert.equal(manifestRawUrl({ files: {} }), null);
+  assert.equal(manifestRawUrl(manifest(3)), null);
 });
 
 test('les champs decoratifs absents ne bloquent pas la detection', () => {

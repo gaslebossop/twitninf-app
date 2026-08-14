@@ -1,7 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-import { findNewerVersion, type PublishedVersion } from './updateFeed';
+import {
+  extractManifest,
+  findNewerVersion,
+  manifestRawUrl,
+  type PublishedVersion,
+} from './updateFeed';
 
 /**
  * Détection d'une nouvelle version disponible en sideload.
@@ -69,28 +74,46 @@ export const INSTALL_CHANNEL = Platform.OS === 'ios' ? 'Kospor Injection' : 'Kos
  * volontairement indistinguables d'un « rien de neuf » du point de vue de
  * l'appelant.
  */
+/**
+ * Le flux est un petit JSON servi par GitHub : 10 s suffisent largement, et
+ * au-delà il vaut mieux rendre la main que retarder le démarrage.
+ */
+async function fetchJson(url: string): Promise<any | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchAvailableUpdate(): Promise<UpdateInfo | null> {
   if (!FEED_URL || !BUILD_VERSION) return null;
 
   try {
-    // Le flux est un petit JSON servi par GitHub : 10 s suffisent largement, et
-    // au-delà il vaut mieux rendre la main que retarder le démarrage.
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const payload = await fetchJson(FEED_URL);
+    if (!payload) return null;
 
-    let response: Response;
-    try {
-      response = await fetch(FEED_URL, {
-        headers: { Accept: 'application/json' },
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
+    // Cas nominal en production : l'API GitHub renvoie `apps.json` TRONQUÉ
+    // (contenu vide) parce que le gist héberge aussi l'IPA. Il faut alors
+    // suivre `raw_url` — sans quoi le flux paraît illisible et l'app se croit
+    // à jour pour toujours. Voir `manifestRawUrl`.
+    if (extractManifest(payload)) {
+      return findNewerVersion(payload, BUILD_VERSION);
     }
 
-    if (!response.ok) return null;
+    const rawUrl = manifestRawUrl(payload);
+    if (!rawUrl) return null;
 
-    return findNewerVersion(await response.json(), BUILD_VERSION);
+    const raw = await fetchJson(rawUrl);
+    return raw ? findNewerVersion(raw, BUILD_VERSION) : null;
   } catch {
     // Réseau coupé, JSON malformé, gist supprimé : rien à signaler.
     return null;

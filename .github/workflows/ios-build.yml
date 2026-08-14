@@ -15,6 +15,20 @@ on:
   push:
     branches: [main]
 
+# Un seul build publiant a la fois, et surtout PAS d'annulation du run en cours.
+#
+# Ce workflow lit `buildVersion` dans le gist au demarrage, grave le numero
+# suivant dans le bundle, puis le republie ~15 minutes plus tard. Deux pushes
+# rapproches faisaient donc demarrer deux jobs qui lisaient la MEME valeur, et
+# le second se faisait rejeter son `git push` sur un clone devenu perime
+# (« ! [rejected] main -> main (fetch first) ») apres avoir builde pour rien.
+#
+# `cancel-in-progress: false` : chaque push doit publier sa propre version, a
+# la queue leu leu — annuler le run en cours sauterait une publication.
+concurrency:
+  group: ios-publish
+  cancel-in-progress: false
+
 jobs:
   build:
     # `react-native-nitro-rtmp-publisher` (remplace @api.video/react-native-
@@ -269,6 +283,21 @@ jobs:
             CURRENT=$(python3 -c "import json;print(json.load(open('gist-repo/apps.json'))['apps'][0]['versions'][0]['buildVersion'])")
             BUILD_VERSION=$((CURRENT + 1))
             echo "::warning::IPA non estampille — buildVersion incrementee a $BUILD_VERSION sans correspondance dans le bundle."
+          fi
+
+          # Le clone date du debut du job, soit ~15 minutes plus tot. Si le gist
+          # a bouge entre-temps, le push serait rejete par un « fetch first »
+          # illisible apres un build complet. On le dit franchement ici — et le
+          # numero grave dans le bundle est de toute facon deja pris, donc il
+          # faut relancer le build, pas retenter la publication.
+          # `origin/main` explicitement : `origin/HEAD` n'est pas toujours
+          # renseigne apres un fetch, et son absence ferait echouer le test
+          # lui-meme sous `set -e`.
+          BRANCH=$(git -C gist-repo rev-parse --abbrev-ref HEAD)
+          git -C gist-repo fetch -q origin "$BRANCH"
+          if [ "$(git -C gist-repo rev-parse HEAD)" != "$(git -C gist-repo rev-parse FETCH_HEAD)" ]; then
+            echo "::error::Le gist a ete publie par un autre run pendant ce build. buildVersion $BUILD_VERSION est deja pris — relancer ce workflow."
+            exit 1
           fi
 
           cp "$IPA" gist-repo/TwitNinf.ipa

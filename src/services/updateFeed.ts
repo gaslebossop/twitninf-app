@@ -25,13 +25,16 @@ export interface PublishedVersion {
  * GitHub qui l'enveloppe dans `files['apps.json'].content` sous forme de
  * chaîne. C'est cette seconde forme qu'utilise la CI, parce qu'elle fonctionne
  * sur un gist secret sans avoir à connaître le compte propriétaire.
+ *
+ * Renvoie `null` quand l'API a TRONQUÉ le contenu — voir `manifestRawUrl`,
+ * qui donne alors l'adresse à suivre.
  */
 export function extractManifest(payload: any): any | null {
   if (!payload || typeof payload !== 'object') return null;
   if (Array.isArray(payload.apps)) return payload;
 
   const content = payload.files?.['apps.json']?.content;
-  if (typeof content !== 'string') return null;
+  if (typeof content !== 'string' || content === '') return null;
 
   try {
     const parsed = JSON.parse(content);
@@ -39,6 +42,23 @@ export function extractManifest(payload: any): any | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Adresse de repli quand l'API GitHub n'a pas inclus le contenu du fichier.
+ *
+ * Ce n'est pas un cas exotique : c'est ce que le gist de production renvoie.
+ * L'API tronque le contenu des fichiers dès que le gist est volumineux — or
+ * celui-ci héberge l'IPA (~27 Mo) à côté d'`apps.json`. Le champ arrive donc
+ * avec `truncated: true` et une chaîne VIDE, alors même qu'`apps.json` ne pèse
+ * que 1,3 Ko. Sans ce repli, la détection de mise à jour ne fonctionnerait
+ * jamais en production — et échouerait silencieusement, puisqu'un flux
+ * illisible est traité comme « rien de neuf ».
+ */
+export function manifestRawUrl(payload: any): string | null {
+  const file = payload?.files?.['apps.json'];
+  const rawUrl = file?.raw_url;
+  return typeof rawUrl === 'string' && rawUrl ? rawUrl : null;
 }
 
 /** Version la plus récemment publiée, ou `null` si le flux est inexploitable. */
