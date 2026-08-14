@@ -7,40 +7,44 @@ import Animated, {
   useDerivedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { fonts, radius, withAlpha } from '../../theme';
+import { fonts, withAlpha } from '../../theme';
+import { icon as iconSize, round, space, touch, type } from '../../theme/eventScale';
 import type { EventArt } from '../../theme/eventArt';
 import { ease } from '../../utils/gesture';
 import Tappable from '../ui/Tappable';
-import RewardArt from './RewardArt';
+import RewardIcon from './RewardIcon';
 import type { QuestView } from '../../types/events';
 
 /**
  * Une quête.
  *
- * ── Ce que la première version ratait ─────────────────────────────────────
- * Elle empilait onze blocs strictement identiques : même taille, même poids
- * typographique pour le titre, la description, la récompense et l'état. Rien
- * ne disait lequel comptait, et on ne voyait que deux quêtes par écran — sur
- * onze. Le résultat se lisait comme un formulaire, pas comme une fête.
+ * ── Les règles appliquées ─────────────────────────────────────────────────
+ * Toutes les valeurs viennent de `theme/eventScale`, aucune n'est choisie à
+ * l'œil. Concrètement :
  *
- * Trois corrections structurelles :
+ *  - **Grille 8pt** : rembourrage de carte à 16, écarts internes à 8 et 12.
+ *    La version précédente avait des 9, 11 et 13, qui ne s'accordaient avec
+ *    rien — c'est ce qu'on ressent comme « pas professionnel » sans pouvoir
+ *    le nommer.
+ *  - **Rembourrage identique sur toutes les cartes** : c'est l'irrégularité
+ *    du rembourrage, plus que sa valeur, qui se voit.
+ *  - **Corps à 14 pt minimum.** Les 11,5 et 12,5 précédents étaient sous le
+ *    plancher de lisibilité mobile.
+ *  - **Bouton à 48 pt** de haut, recommandation Material pour une action
+ *    principale. Il était à 40, sous le minimum Apple de 44.
  *
- * 1. **La récompense est une pastille, pas une ligne.** C'est l'accroche : ce
- *    qu'on regarde en premier pour décider si ça vaut le coup. Elle est
- *    remontée sur la ligne du titre, à droite, où l'œil la trouve sans lire.
- * 2. **Le palier est une couleur, pas un mot.** « Bronze » écrit en toutes
- *    lettres sous chaque titre prenait une ligne pour ne rien dire de plus
- *    que la teinte de la pastille.
- * 3. **Une seule zone change selon l'état.** Réclamable : la carte se borde
- *    d'or et le bouton apparaît. Terminée : tout s'éteint. Le reste ne bouge
- *    jamais, donc l'œil apprend où regarder.
+ * ── La hiérarchie ─────────────────────────────────────────────────────────
+ * Trois niveaux, et un seul élément change selon l'état :
  *
- * ── Autonomie de la palette ───────────────────────────────────────────────
- * Toutes les couleurs viennent de `art.colors`, jamais des jetons du thème.
- * La version précédente mélangeait les deux : en thème clair, la page gardait
- * son fond sombre imposé et récupérait des cartes blanches à texte foncé.
+ * 1. L'icône de récompense et le titre — ce qu'on regarde en premier pour
+ *    décider si ça vaut le coup.
+ * 2. La description, en secondaire.
+ * 3. L'avancement, en tertiaire.
+ *
+ * Réclamable : la carte se borde et le bouton apparaît. Terminée : tout
+ * s'éteint. Le reste ne bouge jamais, donc l'œil apprend où regarder.
  */
 
 interface Props {
@@ -86,16 +90,13 @@ function QuestCardBase({ quest, art, claiming, onClaim }: Props) {
       style={[
         S.card,
         { backgroundColor: art.colors.surface, borderColor: art.colors.border },
-        // La bordure dorée est réservée au réclamable. C'est la seule chose de
-        // la liste qui appelle une action immédiate ; lui donner un traitement
-        // que rien d'autre ne porte est ce qui la rend trouvable d'un coup d'œil.
-        claimable && { borderColor: art.colors.festive, borderWidth: 1.5 },
+        claimable && { borderColor: withAlpha(art.colors.festive, 0.6) },
         (locked || done) && S.cardMuted,
       ]}
     >
       {claimable && (
         <LinearGradient
-          colors={[withAlpha(art.colors.festive, 0.14), 'transparent']}
+          colors={[withAlpha(art.colors.festive, 0.1), 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={StyleSheet.absoluteFill}
@@ -103,59 +104,42 @@ function QuestCardBase({ quest, art, claiming, onClaim }: Props) {
         />
       )}
 
-      {/* ── Ligne 1 : ce que c'est, et ce que ça rapporte ── */}
+      {/* ── Niveau 1 : ce que c'est, ce que ça rapporte ── */}
       <View style={S.head}>
-        {/* L'illustration de la récompense sert de vignette : on reconnaît ce
-            qu'il y a à gagner avant même d'avoir lu le titre. Vectorielle,
-            donc nette à toutes les densités (voir `RewardArt`). */}
-        <View style={S.icon}>
-          {locked || done ? (
-            <View style={[S.iconFallback, { backgroundColor: withAlpha(tint, 0.15) }]}>
-              <Ionicons name={(done ? 'checkmark' : 'lock-closed') as any} size={16} color={tint} />
-            </View>
-          ) : (
-            <RewardArt
-              kind={quest.reward.kind}
-              tint={tier.color}
-              accent={art.colors.ember}
-              size={34}
-            />
-          )}
-        </View>
+        <RewardIcon
+          kind={quest.reward.kind}
+          tint={tier.color}
+          size={touch.min}
+          dimmed={locked || done}
+        />
 
-        <Text
-          style={[S.title, { color: done ? art.colors.textMuted : art.colors.text }]}
-          numberOfLines={1}
-        >
-          {quest.title}
-        </Text>
-
-        <View
-          style={[
-            S.rewardChip,
-            {
-              backgroundColor: withAlpha(locked || done ? art.colors.textMuted : art.colors.festive, 0.14),
-            },
-          ]}
-        >
+        <View style={S.headText}>
           <Text
-            style={[
-              S.rewardText,
-              { color: locked || done ? art.colors.textMuted : art.colors.festive },
-            ]}
-            numberOfLines={1}
+            style={[S.title, { color: done ? art.colors.textMuted : art.colors.text }]}
+            numberOfLines={2}
           >
+            {quest.title}
+          </Text>
+          <Text style={[S.reward, { color: tint }]} numberOfLines={1}>
             {quest.reward.label}
           </Text>
         </View>
+
+        {(locked || done) && (
+          <MaterialCommunityIcons
+            name={done ? 'check-circle' : 'lock'}
+            size={iconSize.md}
+            color={done ? tier.color : art.colors.textMuted}
+          />
+        )}
       </View>
 
-      {/* ── Ligne 2 : pourquoi, en deux lignes maximum ── */}
+      {/* ── Niveau 2 : pourquoi ── */}
       <Text style={[S.description, { color: art.colors.textDim }]} numberOfLines={2}>
         {quest.description}
       </Text>
 
-      {/* ── Ligne 3 : où j'en suis ── */}
+      {/* ── Niveau 3 : où j'en suis ── */}
       <View style={S.footer}>
         <View style={[S.track, { backgroundColor: art.colors.surfaceAlt }]}>
           <Animated.View style={[S.fill, fillStyle, { backgroundColor: tint }]} />
@@ -178,6 +162,11 @@ function QuestCardBase({ quest, art, claiming, onClaim }: Props) {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
+          />
+          <MaterialCommunityIcons
+            name="gift-open"
+            size={iconSize.sm}
+            color={art.colors.onFestive}
           />
           <Text style={[S.claimLabel, { color: art.colors.onFestive }]}>
             {claiming ? 'Un instant…' : 'Récupérer'}
@@ -206,84 +195,66 @@ export default memo(QuestCardBase, (prev, next) => {
   );
 });
 
+/** Décalage du texte sous l'icône, pour que tout s'aligne sur une colonne. */
+const TEXT_INSET = touch.min + space.sm;
+
 const S = StyleSheet.create({
   card: {
-    // Rayon généreux : la rondeur est la signature de cette DA.
-    borderRadius: 20,
+    borderRadius: round.xl,
     overflow: 'hidden',
-    marginBottom: 10,
+    marginBottom: space.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    // Ombre douce plutôt que filet : c'est ce qui fait « flotter » une carte
-    // blanche sur un gris très clair. Une bordure, à cet écart de valeur, se
-    // verrait comme un trait sale.
+    // Rembourrage IDENTIQUE sur les quatre côtés et sur toutes les cartes.
+    padding: space.md,
+    // Ombre douce plutôt que filet marqué : c'est ce qui fait flotter une
+    // carte blanche sur un gris très clair.
     shadowColor: '#2A1240',
     shadowOpacity: 0.07,
     shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 3,
+  },
+  cardMuted: { opacity: 0.62 },
 
-    paddingHorizontal: 13,
-    paddingTop: 11,
-    paddingBottom: 12,
-  },
-  cardMuted: { opacity: 0.6 },
-
-  head: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  icon: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconFallback: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: { flex: 1, fontFamily: fonts.heading, fontSize: 15 },
-  rewardChip: {
-    maxWidth: '42%',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-  },
-  rewardText: { fontFamily: fonts.bold, fontSize: 11.5 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  headText: { flex: 1, gap: 2 },
+  title: { fontFamily: fonts.heading, ...type.h2 },
+  reward: { fontFamily: fonts.bold, ...type.bodySm },
 
   description: {
     fontFamily: fonts.regular,
-    fontSize: 12.5,
-    lineHeight: 17.5,
-    marginTop: 8,
-    // Aligné sur le titre, pas sur l'icône : le bloc de texte forme une
-    // colonne nette au lieu de repartir du bord à chaque carte.
-    marginLeft: 43,
+    ...type.bodySm,
+    marginTop: space.sm,
+    marginLeft: TEXT_INSET,
   },
 
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 10,
-    marginLeft: 43,
+    gap: space.sm,
+    marginTop: space.sm,
+    marginLeft: TEXT_INSET,
   },
   track: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 2 },
   progressLabel: {
     fontFamily: fonts.semibold,
-    fontSize: 11,
-    minWidth: 58,
+    ...type.caption,
+    minWidth: 64,
     textAlign: 'right',
   },
 
   claim: {
-    height: 40,
-    borderRadius: radius.md,
-    overflow: 'hidden',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 11,
+    gap: space.xs,
+    // 48 pt : recommandation Material pour une action principale. La version
+    // précédente était à 40, sous le minimum Apple de 44.
+    height: touch.comfortable,
+    borderRadius: round.md,
+    overflow: 'hidden',
+    marginTop: space.md,
   },
-  claimLabel: { fontFamily: fonts.bold, fontSize: 14 },
+  claimLabel: { fontFamily: fonts.bold, ...type.label },
 });

@@ -3,7 +3,8 @@ import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { fonts, radius, withAlpha } from '../theme';
+import { fonts, withAlpha } from '../theme';
+import { icon as iconSize, round, space, touch, type } from '../theme/eventScale';
 import { AppRefreshControl } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import { celebrateReward } from '../components/ui/RewardBurst';
@@ -235,7 +236,7 @@ export default function EventScreen() {
                 >
                   <Ionicons
                     name={item.icon as any}
-                    size={14}
+                    size={iconSize.sm}
                     color={active ? art.colors.onFestive : art.colors.textDim}
                   />
                   <Text
@@ -308,84 +309,83 @@ export default function EventScreen() {
 const S = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1 },
-  content: { paddingHorizontal: 16 },
+  // Marge d'ecran a 16 : la valeur de reference de la grille 8pt sur mobile.
+  content: { paddingHorizontal: space.md },
 
   headerWrap: {
-    marginHorizontal: -16,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 20,
+    marginHorizontal: -space.md,
+    paddingHorizontal: space.md,
+    paddingTop: space.md,
+    paddingBottom: space.lg,
     overflow: 'hidden',
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
+    borderBottomLeftRadius: round.xxl,
+    borderBottomRightRadius: round.xxl,
   },
-  headerBody: { gap: 5 },
-  eyebrow: { fontFamily: fonts.bold, fontSize: 10.5, letterSpacing: 1.6 },
-  title: { fontSize: 32, lineHeight: 35, letterSpacing: 0.2 },
+  headerBody: { gap: space.xxs },
+  eyebrow: { fontFamily: fonts.bold, ...type.caption, letterSpacing: 1.5 },
+  title: { ...type.display },
 
-  segments: { flexDirection: 'row', gap: 3, marginTop: 12 },
+  segments: { flexDirection: 'row', gap: 3, marginTop: space.md },
   segment: { flex: 1, height: 4, borderRadius: 2 },
 
-  metrics: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  metricValue: { fontSize: 19, letterSpacing: 0.3 },
-  metricLabel: { fontFamily: fonts.medium, fontSize: 12 },
-  dot: { width: 3, height: 3, borderRadius: 2, marginHorizontal: 4 },
+  metrics: { flexDirection: 'row', alignItems: 'center', gap: space.xs, marginTop: space.sm },
+  metricValue: { ...type.h1 },
+  metricLabel: { fontFamily: fonts.medium, ...type.bodySm },
+  dot: { width: 3, height: 3, borderRadius: 2, marginHorizontal: space.xxs },
 
   tabs: {
     flexDirection: 'row',
-    // Pilule pleine : le conteneur ET l'onglet actif sont entièrement
-    // arrondis, ce qui est la forme de bouton la plus reconnaissable de
-    // cette grammaire.
-    borderRadius: 999,
-    padding: 4,
-    gap: 3,
-    marginTop: 14,
-    marginBottom: 16,
+    borderRadius: round.pill,
+    padding: space.xxs,
+    gap: space.xxs,
+    marginTop: space.md,
+    marginBottom: space.lg,
   },
   tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    height: 38,
-    borderRadius: 999,
+    gap: space.xxs,
+    // 44 pt : minimum Apple pour une cible tactile. La version precedente
+    // etait a 38, sous la norme — et les onglets sont ce qu'on touche le plus.
+    height: touch.min,
+    borderRadius: round.pill,
   },
-  tabLabel: { fontFamily: fonts.semibold, fontSize: 12.5 },
+  tabLabel: { fontFamily: fonts.semibold, ...type.label },
   badge: {
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: space.xxs,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { fontFamily: fonts.bold, fontSize: 10 },
+  badgeText: { fontFamily: fonts.bold, ...type.caption },
 
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-    marginBottom: 9,
+    gap: space.xs,
+    marginTop: space.xxs,
+    marginBottom: space.sm,
   },
-  sectionTitle: { fontFamily: fonts.display, fontSize: 14.5, letterSpacing: 0.2 },
+  sectionTitle: { fontFamily: fonts.display, ...type.h1 },
   sectionCount: {
-    minWidth: 20,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: radius.sm,
+    minWidth: 24,
+    paddingHorizontal: space.xs,
+    paddingVertical: 2,
+    borderRadius: round.pill,
     alignItems: 'center',
   },
-  sectionCountText: { fontFamily: fonts.bold, fontSize: 11 },
+  sectionCountText: { fontFamily: fonts.bold, ...type.caption },
 
-  empty: { alignItems: 'center', paddingTop: 50, gap: 8 },
-  emptyTitle: { fontFamily: fonts.display, fontSize: 17 },
+  empty: { alignItems: 'center', paddingTop: space.xxl, gap: space.xs },
+  emptyTitle: { fontFamily: fonts.display, ...type.h1 },
   emptyText: {
     fontFamily: fonts.regular,
-    fontSize: 13,
-    lineHeight: 18,
+    ...type.bodySm,
     textAlign: 'center',
-    paddingHorizontal: 30,
+    paddingHorizontal: space.xl,
   },
 });

@@ -9,7 +9,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { fonts, radius, withAlpha } from '../../theme';
+import { fonts, withAlpha } from '../../theme';
+import { round, space, touch, type } from '../../theme/eventScale';
 import type { EventArt } from '../../theme/eventArt';
 import { ease } from '../../utils/gesture';
 import eventsApi, { type GuestbookPost } from '../../services/eventsApi';
@@ -267,83 +268,76 @@ export default function EventCelebration({ event, art, quests, onQuestsChanged }
 }
 
 const S = StyleSheet.create({
-  root: { gap: 12 },
+  root: { gap: space.sm },
 
+  // Meme rembourrage que les cartes de quete : c'est la regularite du
+  // rembourrage, plus que sa valeur, qui se voit.
   panel: {
-    borderRadius: 22,
+    borderRadius: round.xxl,
     borderWidth: StyleSheet.hairlineWidth,
-    // Ombre douce plutôt que filet : c'est ce qui fait « flotter » une carte
-    // blanche sur un gris très clair. Une bordure, à cet écart de valeur, se
-    // verrait comme un trait sale.
+    padding: space.md,
+    overflow: 'hidden',
     shadowColor: '#2A1240',
     shadowOpacity: 0.07,
     shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 3,
-    padding: 15,
-    overflow: 'hidden',
   },
-  panelHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  panelTitle: { fontFamily: fonts.bold, fontSize: 10.5, letterSpacing: 1.4 },
-  panelText: { fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 17.5, marginTop: 6 },
-  panelFoot: { fontFamily: fonts.semibold, fontSize: 12, marginTop: 9 },
+  panelHead: { flexDirection: 'row', alignItems: 'center', gap: space.xs, marginBottom: space.sm },
+  panelTitle: { fontFamily: fonts.bold, ...type.caption, letterSpacing: 1.3 },
+  panelText: { fontFamily: fonts.regular, ...type.bodySm, marginTop: space.xs },
+  panelFoot: { fontFamily: fonts.semibold, ...type.bodySm, marginTop: space.sm },
 
-  bigNumber: { fontSize: 34, letterSpacing: 0.3 },
-  bigNumberGoal: { fontSize: 17 },
-  bigTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 12 },
+  bigNumber: { ...type.display },
+  bigNumberGoal: { ...type.h2 },
+  bigTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: space.sm },
   bigFill: { height: '100%', borderRadius: 4, overflow: 'hidden' },
 
-  composer: { gap: 8 },
+  composer: { gap: space.xs },
   input: {
-    borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
-    minHeight: 72,
+    borderRadius: round.lg,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.sm,
+    minHeight: 80,
     fontFamily: fonts.regular,
-    fontSize: 13.5,
-    lineHeight: 19,
+    ...type.body,
     textAlignVertical: 'top',
   },
   composerFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  counter: { fontFamily: fonts.medium, fontSize: 11.5 },
+  counter: { fontFamily: fonts.medium, ...type.caption },
   send: {
-    paddingHorizontal: 18,
-    height: 34,
-    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
+    // 44 pt minimum, comme toute cible tactile.
+    height: touch.min,
+    borderRadius: round.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendLabel: { fontFamily: fonts.bold, fontSize: 13 },
+  sendLabel: { fontFamily: fonts.bold, ...type.label },
 
   mine: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    padding: 11,
-    borderRadius: radius.md,
+    gap: space.xs,
+    padding: space.sm,
+    borderRadius: round.lg,
   },
-  mineText: { flex: 1, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 17.5 },
+  mineText: { flex: 1, fontFamily: fonts.regular, ...type.bodySm },
 
-  loader: { marginTop: 16 },
-  empty: {
-    fontFamily: fonts.regular,
-    fontSize: 12.5,
-    textAlign: 'center',
-    marginTop: 16,
-  },
+  loader: { marginTop: space.md },
+  empty: { fontFamily: fonts.regular, ...type.bodySm, textAlign: 'center', marginTop: space.md },
 
-  posts: { marginTop: 6 },
+  posts: { marginTop: space.xs },
   post: {
     flexDirection: 'row',
-    gap: 10,
-    paddingTop: 12,
-    marginTop: 12,
+    gap: space.sm,
+    paddingTop: space.sm,
+    marginTop: space.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   postBody: { flex: 1 },
-  postHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  postAuthor: { fontFamily: fonts.semibold, fontSize: 13 },
-  postTime: { fontFamily: fonts.regular, fontSize: 11 },
-  postText: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18, marginTop: 3 },
+  postHead: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  postAuthor: { fontFamily: fonts.semibold, ...type.bodySm },
+  postTime: { fontFamily: fonts.regular, ...type.caption },
+  postText: { fontFamily: fonts.regular, ...type.body, marginTop: space.xxs },
 });

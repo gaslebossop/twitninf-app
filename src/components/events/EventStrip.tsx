@@ -3,7 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, withAlpha } from '../../theme';
+import { colors, fonts, withAlpha } from '../../theme';
+import { round, space, touch, type } from '../../theme/eventScale';
 import { useEvents } from '../../contexts/EventsContext';
 import Tappable from '../ui/Tappable';
 
@@ -96,14 +97,16 @@ const S = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 16,
-    marginTop: 6,
-    marginBottom: 2,
-    paddingLeft: 14,
-    paddingRight: 12,
-    paddingVertical: 9,
-    borderRadius: radius.md,
+    gap: space.sm,
+    marginHorizontal: space.md,
+    marginTop: space.xs,
+    marginBottom: space.xxs / 2,
+    paddingLeft: space.sm,
+    paddingRight: space.sm,
+    // 44 pt : le bandeau est tapable, il tient donc la meme regle de cible
+    // tactile que tout le reste.
+    minHeight: touch.min,
+    borderRadius: round.lg,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
@@ -114,13 +117,13 @@ const S = StyleSheet.create({
   },
   edge: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   icon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   text: { flex: 1 },
-  message: { color: colors.textPrimary, fontFamily: fonts.semibold, fontSize: 13.5 },
-  claimable: { fontFamily: fonts.semibold, fontSize: 11.5, marginTop: 1 },
+  message: { color: colors.textPrimary, fontFamily: fonts.semibold, ...type.bodySm },
+  claimable: { fontFamily: fonts.semibold, ...type.caption, marginTop: 2 },
 });

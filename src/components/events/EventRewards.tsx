@@ -2,10 +2,11 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { fonts, radius, withAlpha } from '../../theme';
+import { fonts, withAlpha } from '../../theme';
+import { round, space, type } from '../../theme/eventScale';
 import type { EventArt } from '../../theme/eventArt';
 import useResponsiveLayout from '../../hooks/useResponsiveLayout';
-import RewardArt from './RewardArt';
+import RewardIcon from './RewardIcon';
 import type { QuestRewardKind, QuestView } from '../../types/events';
 
 /**
@@ -63,7 +64,9 @@ export default function EventRewards({ art, quests }: Props) {
       cardWidth,
       // L'illustration occupe une part constante de la case : elle grandit
       // donc avec elle, du petit téléphone à la tablette.
-      artSize: Math.round(cardWidth * (isCompact ? 0.46 : 0.5)),
+      // Taille d'icone ramenee sur la grille : une pastille a 53,4 px casse
+      // l'alignement de tout ce qui l'entoure.
+      artSize: Math.round((cardWidth * (isCompact ? 0.46 : 0.5)) / 8) * 8,
     };
   }, [width, isTablet, isCompact]);
 
@@ -107,10 +110,9 @@ export default function EventRewards({ art, quests }: Props) {
         />
 
         <View style={S.artWrap}>
-          <RewardArt
+          <RewardIcon
             kind={kind}
             tint={tier.color}
-            accent={isOwned ? art.colors.festive : art.colors.ember}
             size={layout.artSize}
             dimmed={!isOwned}
           />
@@ -187,76 +189,69 @@ export default function EventRewards({ art, quests }: Props) {
 }
 
 const S = StyleSheet.create({
-  root: { gap: 4 },
+  root: { gap: 0 },
 
+  // Rembourrage identique a celui des cartes de quete : deux familles de
+  // cartes avec deux rembourrages differents se voient immediatement.
   summary: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    borderRadius: 22,
+    gap: space.md,
+    borderRadius: round.xxl,
     borderWidth: StyleSheet.hairlineWidth,
-    // Ombre douce plutôt que filet : c'est ce qui fait « flotter » une carte
-    // blanche sur un gris très clair. Une bordure, à cet écart de valeur, se
-    // verrait comme un trait sale.
+    padding: space.md,
+    marginBottom: space.xs,
+    overflow: 'hidden',
     shadowColor: '#2A1240',
     shadowOpacity: 0.07,
     shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 3,
-
-    padding: 15,
-    marginBottom: 6,
-    overflow: 'hidden',
   },
-  summaryValue: { fontSize: 30, letterSpacing: 0.3 },
-  summaryLabel: { flex: 1, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17 },
+  summaryValue: { ...type.numeric },
+  summaryLabel: { flex: 1, fontFamily: fonts.regular, ...type.bodySm },
 
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
-    marginBottom: 10,
+    gap: space.xs,
+    marginTop: space.lg,
+    marginBottom: space.sm,
   },
-  sectionTitle: { fontFamily: fonts.display, fontSize: 14.5, letterSpacing: 0.2 },
+  sectionTitle: { fontFamily: fonts.display, ...type.h1 },
   sectionCount: {
-    minWidth: 20,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: radius.sm,
+    minWidth: 24,
+    paddingHorizontal: space.xs,
+    paddingVertical: 2,
+    borderRadius: round.pill,
     alignItems: 'center',
   },
-  sectionCountText: { fontFamily: fonts.bold, fontSize: 11 },
+  sectionCountText: { fontFamily: fonts.bold, ...type.caption },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   card: {
-    borderRadius: 20,
+    borderRadius: round.xl,
     borderWidth: StyleSheet.hairlineWidth,
-    // Ombre douce plutôt que filet : c'est ce qui fait « flotter » une carte
-    // blanche sur un gris très clair. Une bordure, à cet écart de valeur, se
-    // verrait comme un trait sale.
+    padding: space.sm,
+    overflow: 'hidden',
     shadowColor: '#2A1240',
     shadowOpacity: 0.07,
     shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 3,
-    paddingHorizontal: 11,
-    paddingTop: 12,
-    paddingBottom: 13,
-    overflow: 'hidden',
   },
-  artWrap: { alignItems: 'center', justifyContent: 'center', marginBottom: 9 },
+  artWrap: { alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   check: {
     position: 'absolute',
-    right: 2,
-    bottom: 2,
-    width: 19,
-    height: 19,
+    right: 0,
+    bottom: 0,
+    width: 20,
+    height: 20,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  kind: { fontFamily: fonts.bold, fontSize: 9.5, letterSpacing: 1.1 },
-  label: { fontFamily: fonts.semibold, fontSize: 12.5, lineHeight: 16.5, marginTop: 3 },
-  from: { fontFamily: fonts.regular, fontSize: 10.5, marginTop: 5 },
+  kind: { fontFamily: fonts.bold, ...type.caption, letterSpacing: 1 },
+  label: { fontFamily: fonts.semibold, ...type.bodySm, marginTop: 2 },
+  from: { fontFamily: fonts.regular, ...type.caption, marginTop: space.xxs },
 });
