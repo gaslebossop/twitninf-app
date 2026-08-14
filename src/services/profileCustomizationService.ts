@@ -63,6 +63,51 @@ export interface ProfileCustomization {
    * « qu'on ne reverra pas » — sinon elle n'est qu'un essai gratuit.
    */
   unlocked?: string[];
+
+  /**
+   * Titres POSSÉDÉS, gagnés en récompense. Écrits par le serveur seul.
+   *
+   * Le champ Titre est du texte libre, donc sans réservation n'importe quel
+   * compte payant taperait « Invité d'honneur » et l'obtiendrait sans rien
+   * faire — ce qui ne dévalue pas seulement la récompense, mais celle de ceux
+   * qui l'ont réellement gagnée. Le serveur refuse un titre réservé qui ne
+   * figure pas ici (voir `RESERVED_TITLES` côté API).
+   */
+  titles?: string[];
+}
+
+/**
+ * Titres qui se gagnent et ne s'écrivent pas.
+ *
+ * Doublon assumé de la liste serveur : celle-ci sert UNIQUEMENT à prévenir
+ * avant la sauvegarde. L'autorité reste au serveur, qui refuse de toute façon.
+ * Prévenir après coup — « votre titre n'a pas été enregistré » — serait une
+ * mauvaise façon de l'apprendre.
+ */
+export const RESERVED_TITLES = [
+  "Invité d'honneur",
+  'Généreux',
+  'Là depuis la première bougie',
+];
+
+function normalizeTitle(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Ce titre est-il réservé à quelqu'un d'autre que ce compte ? */
+export function isTitleLocked(
+  customization: ProfileCustomization | null | undefined,
+  title: string,
+): boolean {
+  const normalized = normalizeTitle(title);
+  if (!RESERVED_TITLES.some((t) => normalizeTitle(t) === normalized)) return false;
+  const owned = customization?.titles ?? [];
+  return !owned.some((t) => normalizeTitle(t) === normalized);
 }
 
 /**

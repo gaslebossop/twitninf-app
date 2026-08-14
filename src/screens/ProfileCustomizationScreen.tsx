@@ -32,6 +32,7 @@ import profileCustomizationService, {
   ACCENT_PRESETS,
   AVATAR_DECORATIONS,
   ownsCosmetic,
+  isTitleLocked,
   NAME_EFFECTS,
   NAME_FONTS,
   NAME_SIZES,
@@ -512,6 +513,37 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
             {(draft.profile_title || '').length}/{PROFILE_TITLE_MAX}
           </Text>
 
+          {/* Certains titres se GAGNENT et ne s'écrivent pas. On le dit
+              pendant la saisie, jamais après : découvrir au moment de
+              l'enregistrement que son titre a été refusé est la mauvaise
+              façon de l'apprendre. Le serveur reste seul juge. */}
+          {isTitleLocked(draft, draft.profile_title || '') && (
+            <Text style={styles.titleLocked}>
+              Ce titre se gagne pendant un événement — il ne peut pas être écrit.
+            </Text>
+          )}
+
+          {/* Les titres gagnés, posables en un tap. */}
+          {(draft.titles ?? []).length > 0 && (
+            <View style={styles.titleChips}>
+              {(draft.titles ?? []).map((title) => (
+                <TouchableOpacity
+                  key={title}
+                  style={[
+                    styles.chip,
+                    draft.profile_title === title && {
+                      borderColor: accent,
+                      backgroundColor: withAlpha(accent, 0.14),
+                    },
+                  ]}
+                  onPress={() => update({ profile_title: title })}
+                >
+                  <Text style={styles.chipText}>{title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {/* ── À propos ── */}
           <Text style={styles.sectionTitle}>À propos de moi</Text>
           <TextInput
@@ -546,6 +578,14 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
+  titleLocked: {
+    color: colors.red,
+    fontFamily: fonts.medium,
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  titleChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
