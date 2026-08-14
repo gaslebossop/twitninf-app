@@ -69,7 +69,7 @@ export const INSTALL_CHANNEL = Platform.OS === 'ios' ? 'Kospor Injection' : 'Kos
  * volontairement indistinguables d'un « rien de neuf » du point de vue de
  * l'appelant.
  */
-export async function fetchAvailableUpdate(): Promise<UpdateInfo | null> {
+async function fetchAvailableUpdate(): Promise<UpdateInfo | null> {
   if (!FEED_URL || !BUILD_VERSION) return null;
 
   try {
@@ -145,6 +145,3 @@ export async function dismissUpdate(buildVersion: number): Promise<void> {
     // La proposition reviendra au prochain lancement : acceptable.
   }
 }
-
-/** Exposé pour l'écran « À propos » et le diagnostic. */
-export const installedBuildVersion = BUILD_VERSION || null;
