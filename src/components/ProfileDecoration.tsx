@@ -18,10 +18,11 @@ import Svg, {
   LinearGradient as SvgGradient,
   Path,
   RadialGradient as SvgRadialGradient,
-  Rect,
   Stop,
 } from 'react-native-svg';
-import { colors, fonts, towardWhite, withAlpha } from '../theme';
+import { colors, fonts, isDarkTheme, towardWhite, withAlpha } from '../theme';
+import AvatarMaterial, { type MaterialCharacter } from './profile/AvatarMaterial';
+import ThemeMaterial from './profile/ThemeMaterial';
 import {
   AvatarDecoration,
   NameEffect,
@@ -47,106 +48,6 @@ import { litPulse } from '../utils/litPulse';
 /** Même hauteur que le calque desktop : la couleur reste vivante jusqu'aux
  * onglets puis s'éteint sans rupture. */
 const PROFILE_THEME_HEIGHT = 780;
-
-type RadialStop = { offset: number; color: string; opacity?: number };
-
-function RadialWash({
-  id,
-  cx,
-  cy,
-  rx,
-  ry,
-  stops,
-}: {
-  id: string;
-  cx: number;
-  cy: number;
-  rx: number;
-  ry: number;
-  stops: RadialStop[];
-}) {
-  return (
-    <Svg
-      width="100%"
-      height="100%"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-      style={StyleSheet.absoluteFill}
-    >
-      <Defs>
-        <SvgRadialGradient
-          id={id}
-          cx={cx}
-          cy={cy}
-          fx={cx}
-          fy={cy}
-          rx={rx}
-          ry={ry}
-          gradientUnits="userSpaceOnUse"
-        >
-          {stops.map((stop) => (
-            <Stop
-              key={`${stop.offset}:${stop.color}`}
-              offset={stop.offset}
-              stopColor={stop.color}
-              stopOpacity={stop.opacity ?? 1}
-            />
-          ))}
-        </SvgRadialGradient>
-      </Defs>
-      <Rect x={0} y={0} width={100} height={100} fill={`url(#${id})`} />
-    </Svg>
-  );
-}
-
-/**
- * Opacité d'un calque de thème pondérée par l'intensité choisie. Toutes les
- * couches passent par ici : « Discret » et « Intense » ne changent donc pas la
- * FORME du dégradé, seulement sa présence — un même thème reste reconnaissable
- * d'un réglage à l'autre.
- */
-const tint = (color: string, alpha: number, factor: number) =>
-  withAlpha(color, Math.min(alpha * factor, 0.95));
-
-function ThemeBloom({
-  accent,
-  secondary,
-  factor,
-}: {
-  accent: string;
-  secondary: string;
-  factor: number;
-}) {
-  const pulse = usePingPong(4500);
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.themeBloom,
-        {
-          opacity: pulse.interpolate({
-            inputRange: [0, 1],
-            outputRange: [Math.min(0.55 * factor, 1), Math.min(0.82 * factor, 1)],
-          }),
-          transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) }],
-        },
-      ]}
-    >
-      <RadialWash
-        id="profile-theme-bloom"
-        cx={50}
-        cy={0}
-        rx={72}
-        ry={100}
-        stops={[
-          { offset: 0, color: accent, opacity: Math.min(0.38 * factor, 0.95) },
-          { offset: 0.55, color: secondary, opacity: Math.min(0.18 * factor, 0.9) },
-          { offset: 0.74, color: secondary, opacity: 0 },
-        ]}
-      />
-    </Animated.View>
-  );
-}
 
 export function ProfileThemeBackdrop({
   customization,
@@ -185,101 +86,17 @@ export function ProfileThemeBackdrop({
       ]}
       pointerEvents="none"
     >
-      {theme === 'gradient' && (
-        <LinearGradient
-          colors={[
-            tint(accent, 0.46, factor),
-            tint(accent, 0.46, factor),
-            tint(secondary, 0.42, factor),
-            tint(secondary, 0.22, factor),
-            tint(secondary, 0.08, factor),
-            'transparent',
-            'transparent',
-          ]}
-          locations={[0, 0.23, 0.33, 0.44, 0.58, 0.74, 1]}
-          start={{ x: 0.48, y: 0 }}
-          end={{ x: 0.52, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      )}
-
-      {theme === 'glow' && (
-        <>
-          <LinearGradient
-            colors={[
-              tint(accent, 0.62, factor),
-              tint(accent, 0.58, factor),
-              tint(secondary, 0.3, factor),
-              tint(secondary, 0.1, factor),
-              'transparent',
-              'transparent',
-            ]}
-            locations={[0, 0.23, 0.38, 0.54, 0.72, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-          <RadialWash
-            id="profile-theme-glow"
-            cx={50}
-            cy={6}
-            rx={82}
-            ry={34}
-            stops={[
-              { offset: 0, color: accent, opacity: Math.min(0.32 * factor, 0.95) },
-              { offset: 0.76, color: accent, opacity: 0 },
-            ]}
-          />
-        </>
-      )}
-
-      {theme === 'mesh' && (
-        <>
-          <LinearGradient
-            colors={[
-              tint(secondary, 0.48, factor),
-              tint(accent, 0.28, factor),
-              'transparent',
-              'transparent',
-            ]}
-            locations={[0, 0.46, 0.86, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-          <RadialWash
-            id="profile-theme-mesh-center"
-            cx={50}
-            cy={40}
-            rx={58}
-            ry={34}
-            stops={[
-              { offset: 0, color: accent, opacity: Math.min(0.36 * factor, 0.95) },
-              { offset: 0.74, color: accent, opacity: 0 },
-            ]}
-          />
-          <RadialWash
-            id="profile-theme-mesh-right"
-            cx={100}
-            cy={10}
-            rx={58}
-            ry={38}
-            stops={[
-              { offset: 0, color: secondary, opacity: Math.min(0.55 * factor, 0.95) },
-              { offset: 0.66, color: secondary, opacity: 0 },
-            ]}
-          />
-          <RadialWash
-            id="profile-theme-mesh-left"
-            cx={4}
-            cy={2}
-            rx={60}
-            ry={40}
-            stops={[
-              { offset: 0, color: accent, opacity: Math.min(0.55 * factor, 0.95) },
-              { offset: 0.68, color: accent, opacity: 0 },
-            ]}
-          />
-        </>
-      )}
-
-      <ThemeBloom accent={accent} secondary={secondary} factor={factor} />
+      {/* Toute la matière du thème tient dans une seule couche : « Dégradé »,
+          « Halo » et « Nébuleuse » ne diffèrent plus que par la géométrie de
+          leurs foyers et leur mouvement. Voir `profile/ThemeMaterial`. */}
+      <ThemeMaterial
+        kind={theme === 'glow' || theme === 'mesh' ? theme : 'gradient'}
+        accent={accent}
+        secondary={secondary}
+        factor={factor}
+        bannerHeight={bannerHeight}
+        height={total}
+      />
       <ProfileAmbience customization={customization} height={total} />
     </Animated.View>
   );
@@ -307,14 +124,38 @@ type AmbienceSpec = {
   /** Amplitude du balancement latéral, en px. */
   sway: number;
   duration: [number, number];
+  /**
+   * Part de la couleur gardée au cœur de la particule (1 = intacte, 0 = blanc).
+   *
+   * C'est le même virage par le blanc que la parure, et à cette échelle il se
+   * dose comme la parure — franc. Une particule de 6 px en couleur pleine est
+   * un point de peinture ; la même avec un cœur presque blanc est une source
+   * de lumière. C'est toute la différence entre du confetti et une braise.
+   *
+   * (À l'opposé exact du fond de page, où le même réglage poussé aussi loin
+   * délave tout — voir `ThemeMaterial`. Même intention, dose inverse, et c'est
+   * l'échelle qui décide.)
+   */
+  keep: number;
+  /** Opacité du bloom déposé autour. Ce qui brûle rayonne plus que ce qui flotte. */
+  bloom: number;
 };
 
 const AMBIENCE: Record<Exclude<ProfileEffect, 'none'>, AmbienceSpec> = {
-  sparkles: { rise: true, min: 7, max: 14, sway: 10, duration: [5200, 9000] },
-  embers: { rise: true, min: 3, max: 7, sway: 14, duration: [4200, 7600] },
-  bubbles: { rise: true, min: 9, max: 20, sway: 18, duration: [6800, 12000] },
-  snow: { rise: false, min: 3, max: 7, sway: 16, duration: [7200, 13000] },
+  sparkles: { rise: true, min: 7, max: 14, sway: 10, duration: [5200, 9000], keep: 0.3, bloom: 0.36 },
+  embers: { rise: true, min: 3, max: 7, sway: 14, duration: [4200, 7600], keep: 0.42, bloom: 0.5 },
+  bubbles: { rise: true, min: 9, max: 20, sway: 18, duration: [6800, 12000], keep: 0.62, bloom: 0.16 },
+  snow: { rise: false, min: 3, max: 7, sway: 16, duration: [7200, 13000], keep: 0.16, bloom: 0.24 },
 };
+
+/**
+ * Diamètre du canvas d'une particule, en multiples de sa taille.
+ *
+ * Le bloom a besoin de place autour du cœur : sans marge, la lumière déposée
+ * serait coupée au ras du grain et on retomberait sur un point découpé au
+ * cutter — le défaut que le bloom existe précisément pour corriger.
+ */
+const PARTICLE_CANVAS = 2.6;
 
 /**
  * Suite déterministe dérivée de l'index : deux montages du même profil
@@ -379,26 +220,34 @@ function AmbienceParticle({
   index,
   height,
   color,
+  bloomId,
 }: {
   effect: Exclude<ProfileEffect, 'none'>;
   spec: AmbienceSpec;
   index: number;
   height: number;
   color: string;
+  /** Identifiant du dégradé de bloom — global au document, donc unique par
+      particule ET par champ (deux profils peuvent être montés ensemble). */
+  bloomId: string;
 }) {
   const rx = scatter(index, 1);
   const rs = scatter(index, 2);
   const rd = scatter(index, 3);
   const size = spec.min + rs * (spec.max - spec.min);
+  const canvas = size * PARTICLE_CANVAS;
   const duration = spec.duration[0] + rd * (spec.duration[1] - spec.duration[0]);
   const travel = height * (0.72 + scatter(index, 4) * 0.28);
   const drift = useDrift(duration, Math.round(rd * duration));
   const sway = spec.sway * (rx > 0.5 ? 1 : -1);
 
+  // Le cœur : la couleur virée vers le blanc, dosée par l'ambiance.
+  const core = towardWhite(color, spec.keep);
+
   const shape =
     effect === 'sparkles' ? (
       <Svg viewBox="0 0 24 24" width="100%" height="100%">
-        <Path d={STAR_PATH} fill={color} />
+        <Path d={STAR_PATH} fill={core} />
       </Svg>
     ) : effect === 'bubbles' ? (
       <View
@@ -407,16 +256,31 @@ function AmbienceParticle({
           height: '100%',
           borderRadius: size / 2,
           borderWidth: 1.5,
-          borderColor: withAlpha(color, 0.75),
+          borderColor: withAlpha(core, 0.8),
         }}
-      />
+      >
+        {/* Le point spéculaire. Une bulle sans reflet n'est qu'un rond vide ;
+            c'est ce point unique, décentré vers la source de lumière, qui la
+            fait lire comme du verre. */}
+        <View
+          style={{
+            position: 'absolute',
+            top: size * 0.16,
+            left: size * 0.2,
+            width: Math.max(1.5, size * 0.2),
+            height: Math.max(1.5, size * 0.2),
+            borderRadius: size,
+            backgroundColor: withAlpha('#FFFFFF', 0.9),
+          }}
+        />
+      </View>
     ) : (
       <View
         style={{
           width: '100%',
           height: '100%',
           borderRadius: size / 2,
-          backgroundColor: color,
+          backgroundColor: core,
         }}
       />
     );
@@ -426,12 +290,16 @@ function AmbienceParticle({
       pointerEvents="none"
       style={{
         position: 'absolute',
-        left: `${rx * 96}%`,
+        // 86 % et non 96 % : depuis que le grain porte un bloom, sa boîte fait
+        // 2,6 fois sa taille. Collée au bord, elle se ferait trancher par
+        // l'`overflow: hidden` du champ — et un bloom coupé, c'est une arête
+        // franche en pleine lueur. On garde la marge nécessaire.
+        left: `${rx * 86}%`,
         // Point de départ : en bas pour ce qui monte, au-dessus du cadre pour
         // ce qui tombe.
-        top: spec.rise ? travel : -size,
-        width: size,
-        height: size,
+        top: spec.rise ? travel : -canvas,
+        width: canvas,
+        height: canvas,
         opacity: drift.interpolate({
           inputRange: [0, 0.12, 0.72, 1],
           outputRange: [0, 0.85, 0.7, 0],
@@ -458,7 +326,33 @@ function AmbienceParticle({
         ],
       }}
     >
-      {shape}
+      {/* Le bloom : la lumière déposée autour du grain. C'est lui qui fait la
+          différence entre une particule POSÉE sur le fond et une particule qui
+          éclaire le fond. Il ne porte jamais le cœur — sinon on retombe sur
+          une tache floue au lieu d'un grain net dans une lueur. */}
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <SvgRadialGradient id={bloomId} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={color} stopOpacity={spec.bloom} />
+            <Stop offset="0.45" stopColor={color} stopOpacity={spec.bloom * 0.42} />
+            <Stop offset="1" stopColor={color} stopOpacity={0} />
+          </SvgRadialGradient>
+        </Defs>
+        <Circle cx={canvas / 2} cy={canvas / 2} r={canvas / 2} fill={`url(#${bloomId})`} />
+      </Svg>
+
+      {/* Le grain lui-même, centré dans son canvas. */}
+      <View
+        style={{
+          position: 'absolute',
+          top: (canvas - size) / 2,
+          left: (canvas - size) / 2,
+          width: size,
+          height: size,
+        }}
+      >
+        {shape}
+      </View>
     </Animated.View>
   );
 }
@@ -480,6 +374,11 @@ export function ProfileAmbience({
   const effect = profileEffectOf(customization);
   const [accent, secondary] = decorationColors(customization);
   const fade = useFadeIn(1100, 220);
+  // Sel par champ : les identifiants de dégradé SVG sont globaux au document,
+  // et deux ambiances peuvent être montées ensemble (l'aperçu de l'écran de
+  // personnalisation par-dessus le profil). Sans lui, la seconde repeint la
+  // première.
+  const salt = useMemo(() => Math.random().toString(36).slice(2, 8), []);
 
   if (effect === 'none') return null;
   const spec = AMBIENCE[effect];
@@ -501,6 +400,7 @@ export function ProfileAmbience({
           index={index}
           height={height}
           color={index % 2 === 0 ? accent : secondary}
+          bloomId={`amb-${salt}-${index}`}
         />
       ))}
     </Animated.View>
@@ -522,6 +422,38 @@ export function ProfileAmbience({
 const SWEEP_SPAN = 220;
 
 /**
+ * Nombre de périodes du motif sous le nom. La nappe fait `SWEEP_SPAN * 4` de
+ * large, donc quatre périodes font une période par `SWEEP_SPAN` — soit
+ * exactement la distance dont la nappe est translatée.
+ */
+const NAME_WASH_PERIODS = 4;
+
+/**
+ * Le motif de couleur du nom.
+ *
+ * Une période vaut `secondary → accent → presque-blanc → accent` : la recette
+ * du corps irisé de la parure. Deux teintes saturées qui alternent restent une
+ * alternance de couleurs ; c'est le POINT DE LUMIÈRE au sommet qui fait lire
+ * du métal plutôt que du plastique.
+ *
+ * Le compte d'arrêts n'est pas décoratif : 4 par période × 4 périodes + 1
+ * arrêt de fermeture = 17, donc 16 intervalles répartis sur 4 périodes. La
+ * période retombe pile sur `SWEEP_SPAN`. Ajouter ou retirer un arrêt sans
+ * refaire ce calcul fait sauter le motif à chaque rebouclage de la boucle.
+ */
+function nameWashColors(accent: string, secondary: string): [string, string, ...string[]] {
+  const light = towardWhite(accent, 0.42);
+  const out: string[] = [];
+  for (let i = 0; i < NAME_WASH_PERIODS; i += 1) {
+    out.push(secondary, accent, light, accent);
+  }
+  // Fermeture : le dernier arrêt doit répéter le premier, sinon la dernière
+  // période est tronquée et la couture se voit.
+  out.push(secondary);
+  return out as [string, string, ...string[]];
+}
+
+/**
  * Couches du halo de l'effet « Néon », du plus large au plus serré.
  * Transposition des rayons CSS de `name-glow` (feuille Windows) : c'est la
  * DENSITÉ qui fait le néon, pas le texte. Une couche unique à 14 px laissait
@@ -541,19 +473,64 @@ const SWEEP_SPAN = 220;
  * Rayons exprimés en RATIO du corps de texte, jamais en pixels fixes : le même
  * halo sert un nom de 21 px sur le profil et de 13 px dans un fil.
  *
- * Les rayons précédents (28/16/7 px) valaient jusqu'à 1,33× le corps du texte.
- * À cette échelle, les ombres de lettres voisines se recouvrent et saturent :
- * au lieu d'un tube néon on obtient un aplat qui remplit toute la boîte du
- * texte — le « rectangle » derrière le nom. C'est d'autant plus visible que la
- * couleur choisie est claire (un accent quasi blanc sature bien avant un rouge).
- * Un vrai halo tient sous ~0,75× le corps, et seule la couche de cœur reste
- * dense ; les couches larges doivent rester discrètes.
+ * Le plafond a été serré à 22 px après un premier essai à 28/16/7 : les ombres
+ * de lettres voisines se recouvraient et saturaient, et au lieu d'un tube on
+ * obtenait un aplat remplissant toute la boîte du texte.
+ *
+ * **Le diagnostic était juste, le remède non.** Le recouvrement ne vient pas
+ * du rayon, il vient de l'absence d'air entre les lettres — c'est
+ * `neonSpacing` qui le corrige. Serrer le rayon corrigeait le symptôme en
+ * supprimant la lueur, c'est-à-dire en supprimant le néon. Une fois les
+ * lettres espacées, la couche atmosphérique peut de nouveau être large, ce
+ * qu'un néon exige.
+ *
+ * Le plafond reste nécessaire pour les tailles « Géant » (×2) : iOS restitue
+ * un rayon très large comme un nuage diffus qui déborde de l'écran plutôt que
+ * comme un tube.
  */
-const NAME_GLOW_HALO_RATIOS: ReadonlyArray<{ ratio: number; min: number; max: number }> = [
-  { ratio: 0.72, min: 0.22, max: 0.4 },
-  { ratio: 0.42, min: 0.38, max: 0.58 },
-  { ratio: 0.2, min: 0.62, max: 0.85 },
+/**
+ * La pile du néon, de la plus large à la plus serrée.
+ *
+ * Recette classique du néon en CSS, transposée : **un cœur blanc-chaud en flou
+ * très serré, la couleur en flou moyen, la couleur en flou large, et une
+ * TEINTE DIFFÉRENTE sur la couche atmosphérique.** Cette dernière est ce qui
+ * imite l'aberration chromatique d'un vrai tube — un tube ne rayonne pas
+ * exactement la même couleur au centre et en périphérie. Trois couches de la
+ * même teinte, comme ici avant, donnent une brume plate : il n'y a rien à
+ * distinguer, donc rien qui fasse relief.
+ *
+ * La lueur s'éteint par l'OPACITÉ (`min`/`max`), jamais en s'éclaircissant.
+ * Une rampe continue du saturé vers le blanc a été essayée et annulée : le gaz
+ * d'un tube s'allume en couleur pure dès la paroi du verre, et c'est la MARCHE
+ * entre le filament clair et la lueur saturée qui fait tout l'effet.
+ */
+type GlowHue = 'edge' | 'core' | 'hot';
+
+const NAME_GLOW_HALO_RATIOS: ReadonlyArray<{
+  ratio: number;
+  min: number;
+  max: number;
+  hue: GlowHue;
+}> = [
+  { ratio: 1.15, min: 0.16, max: 0.3, hue: 'edge' },
+  { ratio: 0.62, min: 0.3, max: 0.48, hue: 'core' },
+  { ratio: 0.3, min: 0.52, max: 0.72, hue: 'core' },
+  { ratio: 0.12, min: 0.7, max: 0.92, hue: 'hot' },
 ];
+
+/**
+ * Part de couleur gardée par le cœur du glyphe — et elle dépend du THÈME.
+ *
+ * En sombre : le cœur est blanc-chaud (0,22), la lueur colorée l'entoure, on
+ * a un vrai tube.
+ *
+ * En clair : **un cœur blanc sur une page blanche n'est rien.** Le nom
+ * disparaîtrait et il ne resterait que la brume — c'est le « nom délavé »
+ * qu'une session précédente avait constaté puis corrigé en remontant le cœur,
+ * sans voir que le problème n'était pas la valeur mais le thème. Le cœur
+ * reste donc saturé (0,9) et c'est la lueur qui fait le travail autour.
+ */
+const nameGlowCoreKeep = () => (isDarkTheme() ? 0.22 : 0.9);
 
 const DEFAULT_NAME_FONT_SIZE = 21;
 
@@ -566,7 +543,7 @@ const DEFAULT_NAME_FONT_SIZE = 21;
  * aussi large comme un nuage diffus qui déborde sur toute la largeur de
  * l'écran plutôt qu'un tube net autour des lettres.
  */
-const NAME_GLOW_MAX_RADIUS = 22;
+const NAME_GLOW_MAX_RADIUS = 36;
 
 function nameGlowHaloFor(style?: StyleProp<TextStyle>) {
   const flat = StyleSheet.flatten(style) as TextStyle | undefined;
@@ -575,6 +552,7 @@ function nameGlowHaloFor(style?: StyleProp<TextStyle>) {
     radius: Math.min(layer.ratio * fontSize, NAME_GLOW_MAX_RADIUS * layer.ratio / NAME_GLOW_HALO_RATIOS[0].ratio),
     min: layer.min,
     max: layer.max,
+    hue: layer.hue,
   }));
 }
 
@@ -585,17 +563,31 @@ function nameGlowHaloFor(style?: StyleProp<TextStyle>) {
  */
 function NameHalo({
   color,
+  edge,
   name,
   style,
+  extraStyle,
   numberOfLines,
   pulse,
 }: {
   color: string;
+  /** Teinte de la couche atmosphérique. Différente de `color`, c'est elle qui
+      donne la profondeur ; à défaut on retombe sur une brume plate. */
+  edge?: string;
   name: string;
   style?: StyleProp<TextStyle>;
+  /** Appliqué APRÈS `style`, et identiquement au glyphe de cœur : la pile est
+      en absolu, le moindre écart de crénage la décalerait du texte. */
+  extraStyle?: StyleProp<TextStyle>;
   numberOfLines: number;
   pulse: Animated.AnimatedInterpolation<number>;
 }) {
+  // Le filament. En clair, un blanc-chaud sur une page blanche ne rayonne
+  // pas : on garde alors bien plus de couleur pour qu'il reste quelque chose.
+  const hot = towardWhite(color, isDarkTheme() ? 0.25 : 0.6);
+  const hueOf = (hue: GlowHue) =>
+    hue === 'hot' ? hot : hue === 'edge' ? edge || color : color;
+
   return (
     <>
       {nameGlowHaloFor(style).map((layer) => (
@@ -605,9 +597,10 @@ function NameHalo({
           style={[
             style,
             styles.nameGlowLayer,
+            extraStyle,
             {
-              color,
-              textShadowColor: color,
+              color: hueOf(layer.hue),
+              textShadowColor: hueOf(layer.hue),
               textShadowRadius: layer.radius,
               opacity: pulse.interpolate({
                 inputRange: [0, 1],
@@ -675,8 +668,10 @@ export function AnimatedNameFill({
       <View style={styles.nameWrap}>
         <NameHalo
           color={accent}
+          edge={secondary}
           name={name}
           style={style}
+          extraStyle={styles.neonSpacing}
           numberOfLines={numberOfLines}
           pulse={pulse}
         />
@@ -684,7 +679,10 @@ export function AnimatedNameFill({
             il restait blanc et l'accent ne se lisait que dans la brume — un
             nom délavé, pas un néon. Éclairci vers le blanc comme un vrai tube,
             mais assez saturé pour rester reconnaissable. */}
-        <Text style={[style, { color: towardWhite(accent, 0.55) }]} numberOfLines={numberOfLines}>
+        <Text
+          style={[style, styles.neonSpacing, { color: towardWhite(accent, nameGlowCoreKeep()) }]}
+          numberOfLines={numberOfLines}
+        >
           {name}
         </Text>
       </View>
@@ -706,6 +704,7 @@ export function AnimatedNameFill({
       {effect === 'certified' && (
         <NameHalo
           color={certif.glow}
+          edge={certif.to}
           name={name}
           style={style}
           numberOfLines={numberOfLines}
@@ -749,10 +748,7 @@ export function AnimatedNameFill({
           ]}
         >
           <LinearGradient
-            colors={[
-              accent, secondary, accent, secondary,
-              accent, secondary, accent, secondary, accent,
-            ]}
+            colors={nameWashColors(accent, secondary)}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -828,8 +824,20 @@ export function ProfileTitleChip({
           },
         ]}
       >
+        {/* Même correction que la nappe du nom : le liseré passait d'un accent
+            à un secondaire à opacité égale, donc il traversait sans jamais
+            briller. Il a maintenant un sommet — presque blanc, et plus opaque
+            que ses flancs. C'est ce sommet qu'on lit comme un reflet qui
+            parcourt la pastille, plutôt qu'une bande colorée qui glisse. */}
         <LinearGradient
-          colors={['transparent', withAlpha(accent, 0.34), withAlpha(secondary, 0.34), 'transparent']}
+          colors={[
+            'transparent',
+            withAlpha(accent, 0.22),
+            withAlpha(towardWhite(accent, 0.4), 0.5),
+            withAlpha(secondary, 0.22),
+            'transparent',
+          ]}
+          locations={[0, 0.32, 0.5, 0.68, 1]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={StyleSheet.absoluteFill}
@@ -906,6 +914,22 @@ function ThemedProfileBannerImage({ uri }: { uri: string }) {
  * nom et le pseudo, qu'elle recouvre puisqu'elle est au-dessus d'eux.
  */
 const PAD_RATIO = 0.16;
+
+/**
+ * Le mouvement propre à chaque parure.
+ *
+ * La couronne est « still » à dessein : ce qui doit paraître lourd et précieux
+ * ne tourne pas vite. Le circuit et les flammes sont « turbulent » — corps et
+ * reflet à contresens, la surface paraît instable. Le reste orbite.
+ */
+const MATERIAL_CHARACTER: Record<Exclude<AvatarDecoration, 'none'>, MaterialCharacter> = {
+  ring: 'orbit',
+  crown: 'still',
+  petals: 'orbit',
+  circuit: 'turbulent',
+  flames: 'turbulent',
+  stars: 'orbit',
+};
 
 /**
  * Écart entre le bord de la photo et les motifs posés autour. Serré : au
@@ -1063,81 +1087,6 @@ function polar(center: number, angleDeg: number, radius: number, size: number) {
 }
 
 type DecoProps = { outer: number; size: number; accent: string; secondary: string };
-
-/**
- * Halo qui respire — socle commun de plusieurs parures. Volontairement fin :
- * l'avatar porte déjà sa bordure, un halo épais faisait un deuxième contour
- * massif autour de la photo.
- */
-function Halo({ outer, size, accent, strength = 1 }: Omit<DecoProps, 'secondary'> & { strength?: number }) {
-  const pulse = usePingPong(1800);
-  const inset = (outer - size) / 2 - 3;
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        {
-          position: 'absolute',
-          top: inset,
-          left: inset,
-          right: inset,
-          bottom: inset,
-          borderRadius: outer / 2,
-          borderWidth: 2 * strength,
-          borderColor: withAlpha(accent, 0.2 * strength),
-        },
-        {
-          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.85] }),
-          transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] }) }],
-        },
-      ]}
-    />
-  );
-}
-
-/**
- * Aurore : deux comètes tournent en sens contraire derrière l'avatar, qui
- * n'en laisse voir que la couronne extérieure. Les disques sont calés sur la
- * photo + quelques pixels, PAS sur le canvas : c'est la seule façon d'avoir
- * un liseré qui tourne plutôt qu'un bandeau large autour de la tête.
- */
-function AuroraDeco({ size, outer, accent, secondary }: DecoProps) {
-  const fast = useLoop(4600);
-  const slow = useLoop(9500);
-
-  const disc = (diameter: number) => ({
-    position: 'absolute' as const,
-    top: (outer - diameter) / 2,
-    left: (outer - diameter) / 2,
-    width: diameter,
-    height: diameter,
-    borderRadius: diameter / 2,
-    overflow: 'hidden' as const,
-  });
-
-  return (
-    <>
-      <Animated.View style={[disc(size + 11), spinStyle(slow, true), { opacity: 0.55 }]}>
-        <LinearGradient
-          colors={['transparent', 'transparent', withAlpha(secondary, 0.9), 'transparent']}
-          locations={[0, 0.42, 0.78, 1]}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.85, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-      <Animated.View style={[disc(size + 18), spinStyle(fast)]}>
-        <LinearGradient
-          colors={['transparent', 'transparent', withAlpha(secondary, 0.75), accent, 'transparent']}
-          locations={[0, 0.3, 0.62, 0.9, 1]}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-    </>
-  );
-}
 
 /** Couronne : posée sur le haut de l'anneau, elle oscille et scintille. */
 function CrownDeco({ outer, size, accent, secondary }: DecoProps) {
@@ -1454,26 +1403,26 @@ export function AvatarDecorationLayer({
       pointerEvents="none"
       style={[{ position: 'absolute', top: offset, left: offset, width: outer, height: outer }, entrance, style]}
     >
-      {decoration === 'ring' && <AuroraDeco {...props} />}
+      {/*
+        La matière est COMMUNE aux six parures : c'est elle la signature, et
+        c'est ce qui les empêche de ressembler à six thèmes de couleur sans
+        rapport entre eux. Chaque parure ne se distingue que par la façon dont
+        cette matière bouge, puis par ses motifs propres, posés au-dessus par
+        `AvatarDecorationOrnament`.
+
+        Elle remplace l'ancien empilement anneau coloré + halo + liseré : le
+        bloom et l'occlusion de la matière font ce travail, en une seule couche
+        au lieu de trois qui se marchaient dessus.
+      */}
+      <AvatarMaterial
+        outer={outer}
+        size={size}
+        accent={accent}
+        secondary={secondary}
+        character={MATERIAL_CHARACTER[decoration]}
+        weight={decoration === 'crown' ? 0.062 : 0.05}
+      />
       {decoration === 'circuit' && <CircuitRings {...props} />}
-      {(decoration === 'ring' || decoration === 'crown' || decoration === 'stars') && (
-        <Halo outer={outer} size={size} accent={accent} />
-      )}
-      {decoration === 'flames' && <Halo outer={outer} size={size} accent={accent} strength={1.4} />}
-      {decoration === 'petals' && (
-        <View
-          style={{
-            position: 'absolute',
-            top: (outer - size) / 2 - 4,
-            left: (outer - size) / 2 - 4,
-            right: (outer - size) / 2 - 4,
-            bottom: (outer - size) / 2 - 4,
-            borderRadius: outer / 2,
-            borderWidth: 2,
-            borderColor: withAlpha(secondary, 0.32),
-          }}
-        />
-      )}
     </Animated.View>
   );
 }
@@ -1516,13 +1465,6 @@ export function AvatarDecorationOrnament({
 
 const styles = StyleSheet.create({
   center: { position: 'absolute', top: 0, left: 0 },
-  themeBloom: {
-    position: 'absolute',
-    top: '-12%',
-    left: '-18%',
-    width: '136%',
-    height: '52%',
-  },
 
   /** `flex-start` : le bloc doit se serrer sur le texte, pas sur la colonne. */
   nameWrap: { alignSelf: 'flex-start', position: 'relative' },
@@ -1550,6 +1492,19 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 14,
   },
+
+  /**
+   * L'air entre les lettres du néon.
+   *
+   * Sans lui, les lueurs de deux lettres voisines se recouvrent et saturent :
+   * au lieu de tubes distincts on obtient un pâté qui remplit la boîte du
+   * texte. C'est le défaut le plus visible du néon, et il ne se corrige pas en
+   * baissant la lueur — baisser la lueur, c'est supprimer le néon. Il faut de
+   * l'espace.
+   *
+   * Appliqué à la pile ET au glyphe de cœur, sinon les deux se décalent.
+   */
+  neonSpacing: { letterSpacing: 1.2 },
 
   titleChip: {
     alignSelf: 'flex-start',

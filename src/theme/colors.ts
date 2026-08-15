@@ -236,6 +236,12 @@ export const withAlpha = (hex: string, alpha: number): string => {
  * `color-mix(in srgb, <hex> <keep>%, #fff)` côté CSS, pour que les deux apps
  * puissent partager une même recette lisible des deux côtés.
  * `keep` est la part de la couleur d'origine (1 = intacte, 0 = blanc).
+ *
+ * Renvoie du HEX, et pas du `rgb()`, pour rester composable avec `withAlpha` :
+ * celui-ci laisse passer tel quel tout ce qui ne commence pas par `#`, donc un
+ * `withAlpha(towardWhite(c, .5), .06)` rendait la couleur PLEINE au lieu de la
+ * rendre à 6 %. Silencieux, et faux. Une nappe censée être un reflet est
+ * ressortie en dalle opaque sur le profil.
  */
 export const towardWhite = (hex: string, keep: number): string => {
   if (!hex || hex[0] !== '#') return hex;
@@ -252,7 +258,8 @@ export const towardWhite = (hex: string, keep: number): string => {
   const r = mix((num >> 16) & 255);
   const g = mix((num >> 8) & 255);
   const b = mix(num & 255);
-  return `rgb(${r}, ${g}, ${b})`;
+  const pair = (channel: number) => channel.toString(16).padStart(2, '0');
+  return `#${pair(r)}${pair(g)}${pair(b)}`;
 };
 
 export default colors;

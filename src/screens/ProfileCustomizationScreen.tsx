@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -8,7 +7,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 // La version de react-native (core) ne pose aucun inset sur Android — seule
@@ -17,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts, withAlpha , statusBarStyle} from '../theme';
-import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
+import { ScreenBackground, BackButton, ScreenSkeleton, Tappable } from '../components/ui';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -55,8 +53,109 @@ import profileCustomizationService, {
 import type { VerificationStyle } from '../services/verificationStyleService';
 import { toast } from '../components/ui/Toast';
 
-const PREVIEW_AVATAR = 72;
-const PREVIEW_BANNER = 96;
+const PREVIEW_AVATAR = 64;
+const PREVIEW_BANNER = 72;
+
+/**
+ * Les trois familles de réglages.
+ *
+ * Il y en avait neuf, empilées, chacune sous un titre de 15 px : la page
+ * ressemblait à un écran de réglages système, pas à l'endroit où on fabrique
+ * son profil. Neuf titres, c'est neuf décisions annoncées d'emblée, et aucune
+ * hiérarchie entre « Couleur d'accent » et « À propos de moi ».
+ *
+ * Le regroupement n'est pas cosmétique, il suit l'ordre dans lequel on
+ * fabrique réellement quelque chose : on choisit d'abord SA COULEUR, puis ce
+ * qu'elle HABILLE, puis ce qu'on DIT. Les couleurs viennent en premier parce
+ * que tout le reste s'en sert.
+ */
+const FAMILIES = [
+  { key: 'colors', label: 'Couleurs', icon: 'color-palette-outline' },
+  { key: 'dressing', label: 'Habillage', icon: 'sparkles-outline' },
+  { key: 'identity', label: 'Identité', icon: 'person-outline' },
+] as const;
+
+type FamilyKey = (typeof FAMILIES)[number]['key'];
+
+/**
+ * Une pastille de choix. Six blocs quasi identiques la réécrivaient chacun de
+ * leur côté ; ils divergeaient déjà (l'un gérait une police, l'autre une
+ * teinte propre, un troisième ni l'un ni l'autre).
+ */
+function Choice({
+  label,
+  icon,
+  active,
+  locked,
+  tint,
+  fontFamily,
+  onPress,
+}: {
+  label: string;
+  icon?: string;
+  active: boolean;
+  locked?: boolean;
+  tint: string;
+  fontFamily?: string | null;
+  onPress: () => void;
+}) {
+  return (
+    <Tappable
+      haptic="select"
+      onPress={onPress}
+      style={[
+        styles.chip,
+        icon ? styles.chipIcon : null,
+        active && { borderColor: tint, backgroundColor: withAlpha(tint, 0.14) },
+        locked && styles.chipDisabled,
+      ]}
+    >
+      {icon ? (
+        <Ionicons name={icon as any} size={15} color={active ? tint : colors.textSecondary} />
+      ) : null}
+      <Text
+        style={[
+          styles.chipText,
+          fontFamily ? { fontFamily } : null,
+          active && { color: colors.textPrimary },
+        ]}
+      >
+        {label}
+      </Text>
+    </Tappable>
+  );
+}
+
+/** Un bloc de réglage : titre, éventuelle explication, éventuel palier. */
+function Section({
+  title,
+  hint,
+  pro,
+  first,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  pro?: boolean;
+  /** Le premier bloc d'une famille ne prend pas la marge haute. */
+  first?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={first ? undefined : styles.section}>
+      <View style={styles.sectionTitleRow}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {pro && (
+          <View style={styles.proBadge}>
+            <Text style={styles.proBadgeText}>PRO</Text>
+          </View>
+        )}
+      </View>
+      {!!hint && <Text style={styles.sectionHint}>{hint}</Text>}
+      {children}
+    </View>
+  );
+}
 
 export default function ProfileCustomizationScreen({ navigation }: any) {
   const { user, refreshCurrentUser } = useAuth() as any;
@@ -68,6 +167,7 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   const [verificationStyle, setVerificationStyle] = useState<VerificationStyle>('default');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [family, setFamily] = useState<FamilyKey>('colors');
 
   useEffect(() => {
     let active = true;
@@ -168,26 +268,28 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
         <View style={styles.header}>
           <BackButton navigation={navigation} />
           <Text style={styles.headerTitle}>Personnalisation</Text>
-          <TouchableOpacity onPress={reset} hitSlop={hitSlop} style={styles.headerBtn}>
+          <Tappable onPress={reset} hitSlop={10} style={styles.headerBtn}>
             <Text style={styles.resetText}>Réinit.</Text>
-          </TouchableOpacity>
+          </Tappable>
         </View>
 
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {!canCustomize && (
-            <View style={styles.lockBanner}>
-              <Ionicons name="lock-closed" size={16} color={colors.gold} />
-              <Text style={styles.lockText}>
-                Réservé aux abonnements Plus et Pro. Tu peux tout essayer ici, l'enregistrement demandera un abonnement.
-              </Text>
-            </View>
-          )}
+        {!canCustomize && (
+          <View style={styles.lockBanner}>
+            <Ionicons name="lock-closed" size={15} color={colors.gold} />
+            <Text style={styles.lockText}>
+              Essaie tout librement — l'enregistrement demandera un abonnement Plus ou Pro.
+            </Text>
+          </View>
+        )}
 
-          {/* ── Aperçu en direct ──
-              Une vraie carte de profil miniature : le thème passe DERRIÈRE
-              toute la carte, la bannière garde ses couleurs. C'est exactement
-              ce que verront les visiteurs. */}
+        {/* ── L'aperçu, COLLÉ ──
+            C'est l'objet qu'on fabrique : il ne doit jamais quitter l'écran.
+            Il est donc hors du défilement, et pas en tête de contenu comme
+            avant — dès la deuxième section, on réglait à l'aveugle.
+
+            Le thème passe DERRIÈRE toute la carte et la bannière garde ses
+            couleurs, exactement comme sur un vrai profil. */}
+        <View style={styles.previewDock}>
           <View style={styles.previewCard}>
             <ProfileThemeBackdrop customization={preview} bannerHeight={PREVIEW_BANNER} />
             <View style={styles.previewBanner}>
@@ -218,364 +320,342 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
               />
               <Text style={[styles.previewHandle, { color: accent }]}>@{user?.username || 'pseudo'}</Text>
               <ProfileTitleChip customization={preview} />
-              {!!draft.about_me && (
-                <View style={[styles.previewAbout, { borderLeftColor: accent }]}>
-                  <Text style={styles.previewAboutText}>{draft.about_me}</Text>
-                </View>
-              )}
-              <View style={[styles.previewBtn, { backgroundColor: accent }]}>
-                <Text style={styles.previewBtnText}>Suivre</Text>
-              </View>
             </View>
           </View>
+        </View>
 
-          {/* ── Couleur d'accent ── */}
-          <Text style={styles.sectionTitle}>Couleur d'accent</Text>
-          <View style={styles.swatchGrid}>
-            {ACCENT_PRESETS.map((color) => (
-              <TouchableOpacity
-                key={`accent-${color}`}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: color },
-                  draft.accent_color === color && styles.swatchActive,
-                ]}
-                onPress={() => update({ accent_color: color })}
-                activeOpacity={0.85}
+        {/* ── Les trois familles ── */}
+        <View style={styles.familyBar}>
+          {FAMILIES.map((item) => {
+            const active = family === item.key;
+            return (
+              <Tappable
+                key={item.key}
+                haptic="select"
+                onPress={() => setFamily(item.key)}
+                style={[styles.familyTab, active && { backgroundColor: withAlpha(accent, 0.16) }]}
               >
-                {draft.accent_color === color && <Ionicons name="checkmark" size={16} color="#000" />}
-              </TouchableOpacity>
-            ))}
-          </View>
+                <Ionicons
+                  name={item.icon as any}
+                  size={15}
+                  color={active ? accent : colors.textSecondary}
+                />
+                <Text style={[styles.familyText, active && { color: colors.textPrimary }]}>
+                  {item.label}
+                </Text>
+              </Tappable>
+            );
+          })}
+        </View>
 
-          {/* ── Couleur secondaire ── */}
-          <Text style={styles.sectionTitle}>Couleur secondaire</Text>
-          <Text style={styles.sectionHint}>Utilisée pour les dégradés du thème et des décorations.</Text>
-          <View style={styles.swatchGrid}>
-            {ACCENT_PRESETS.map((color) => (
-              <TouchableOpacity
-                key={`secondary-${color}`}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: color },
-                  draft.secondary_color === color && styles.swatchActive,
-                ]}
-                onPress={() => update({ secondary_color: color })}
-                activeOpacity={0.85}
-              >
-                {draft.secondary_color === color && <Ionicons name="checkmark" size={16} color="#000" />}
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── Thème de profil ── */}
-          <Text style={styles.sectionTitle}>Thème de profil</Text>
-          <Text style={styles.sectionHint}>
-            Le dégradé habille tout le profil. Ta bannière reste intacte.
-          </Text>
-          <View style={styles.chipRow}>
-            {PROFILE_THEMES.map((option) => {
-              const active = (draft.banner_style || 'none') === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[styles.chip, active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) }]}
-                  onPress={() => update({ banner_style: option.key as BannerStyle })}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.chipText, active && { color: colors.textPrimary }]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── Intensité du thème ── */}
-          <Text style={styles.sectionTitle}>Intensité</Text>
-          <Text style={styles.sectionHint}>Le même thème, plus ou moins présent.</Text>
-          <View style={styles.chipRow}>
-            {THEME_INTENSITIES.map((option) => {
-              const active = (draft.theme_intensity || 'normal') === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[styles.chip, active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) }]}
-                  onPress={() => update({ theme_intensity: option.key as ThemeIntensity })}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.chipText, active && { color: colors.textPrimary }]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── Ambiance de profil (Pro) ── */}
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Ambiance</Text>
-            {!canUseDecorations && (
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.sectionHint}>
-            Des particules qui traversent le fond du profil, en continu.
-          </Text>
-          <View style={styles.chipRow}>
-            {PROFILE_EFFECTS.map((option) => {
-              const active = (draft.profile_effect || 'none') === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.chip,
-                    styles.chipIcon,
-                    active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !allows('profile_effect', option.key) && option.key !== 'none' && styles.chipDisabled,
-                  ]}
-                  onPress={() =>
-                    option.key === 'none'
-                      ? update({ profile_effect: 'none' })
-                      : requireAccess('profile_effect', option.key, () => update({ profile_effect: option.key as ProfileEffect }))
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name={option.icon as any} size={15} color={active ? accent : colors.textSecondary} />
-                  <Text style={[styles.chipText, active && { color: colors.textPrimary }]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── Nom affiché (Pro) ── */}
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Nom affiché</Text>
-            {!canUseDecorations && (
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.sectionHint}>Police et traitement lumineux de ton nom.</Text>
-          <View style={styles.chipRow}>
-            {NAME_FONTS.map((option) => {
-              const active = (draft.name_font || 'system') === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.chip,
-                    active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !allows('name_font', option.key) && option.key !== 'system' && styles.chipDisabled,
-                  ]}
-                  onPress={() =>
-                    option.key === 'system'
-                      ? update({ name_font: 'system' })
-                      : requireAccess('name_font', option.key, () => update({ name_font: option.key as NameFont }))
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      { fontFamily: resolveDisplayNameFontFamily(option.key) || undefined },
-                      active && { color: colors.textPrimary },
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <View style={[styles.chipRow, { marginTop: 8 }]}>
-            {NAME_EFFECTS.map((option) => {
-              const active = (draft.name_effect || 'none') === option.key;
-              // « Certifié » ne suit pas le palier payant : c'est le badge qui
-              // l'ouvre. Un compte Pro non certifié ne l'a donc pas.
-              const certifOption = option.key === 'certified';
-              const unlocked =
-                option.key === 'none' || (certifOption ? canUseCertified : canUseDecorations);
-              // La pastille prend la couleur du badge : elle montre ce qu'on achète.
-              const tint = certifOption ? certifColors.from : accent;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.chip,
-                    styles.chipIcon,
-                    active && { borderColor: tint, backgroundColor: withAlpha(tint, 0.14) },
-                    !unlocked && styles.chipDisabled,
-                  ]}
-                  onPress={() => {
-                    if (option.key === 'none') return update({ name_effect: 'none' });
-                    if (certifOption) {
-                      if (!canUseCertified) {
-                        toast.error('Compte certifié requis', {
-                          description: 'Cet effet reprend la couleur de ton badge de certification : il faut être certifié pour l\'utiliser.',
-                        });
-                        return;
-                      }
-                      return update({ name_effect: 'certified' });
-                    }
-                    requirePro(() => update({ name_effect: option.key as NameEffect }));
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name={option.icon as any} size={15} color={active ? tint : colors.textSecondary} />
-                  <Text style={[styles.chipText, active && { color: colors.textPrimary }]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── Taille du pseudo (Pro) ── */}
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Taille du pseudo</Text>
-            {!canUseDecorations && (
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.sectionHint}>Agrandit ton pseudo sur ton profil.</Text>
-          <View style={styles.chipRow}>
-            {NAME_SIZES.map((option) => {
-              const active = (draft.name_size || 'normal') === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.chip,
-                    active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !canUseDecorations && option.key !== 'normal' && styles.chipDisabled,
-                  ]}
-                  onPress={() =>
-                    option.key === 'normal'
-                      ? update({ name_size: 'normal' })
-                      : requirePro(() => update({ name_size: option.key as NameSize }))
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.chipText, active && { color: colors.textPrimary }]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── Décoration d'avatar (Pro) ── */}
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Décoration d'avatar</Text>
-            {!canUseDecorations && (
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.sectionHint}>Animées en continu, aux couleurs choisies plus haut.</Text>
-          <View style={styles.chipRow}>
-            {AVATAR_DECORATIONS.map((option) => {
-              const active = (draft.avatar_decoration || 'none') === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.chip,
-                    styles.chipIcon,
-                    active && { borderColor: accent, backgroundColor: withAlpha(accent, 0.14) },
-                    !allows('avatar_decoration', option.key) && option.key !== 'none' && styles.chipDisabled,
-                  ]}
-                  onPress={() =>
-                    option.key === 'none'
-                      ? update({ avatar_decoration: 'none' })
-                      : requireAccess('avatar_decoration', option.key, () => update({ avatar_decoration: option.key as AvatarDecoration }))
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name={option.icon as any} size={15} color={active ? accent : colors.textSecondary} />
-                  <Text style={[styles.chipText, active && { color: colors.textPrimary }]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── Titre ── */}
-          <Text style={styles.sectionTitle}>Titre</Text>
-          <Text style={styles.sectionHint}>Une ligne affichée juste sous ton pseudo.</Text>
-          <TextInput
-            style={styles.titleInput}
-            value={draft.profile_title || ''}
-            onChangeText={(value) => update({ profile_title: value })}
-            placeholder="Ex. Dev · Kinshasa"
-            placeholderTextColor={colors.textMuted}
-            maxLength={PROFILE_TITLE_MAX}
-          />
-          <Text style={styles.counter}>
-            {(draft.profile_title || '').length}/{PROFILE_TITLE_MAX}
-          </Text>
-
-          {/* Certains titres se GAGNENT et ne s'écrivent pas. On le dit
-              pendant la saisie, jamais après : découvrir au moment de
-              l'enregistrement que son titre a été refusé est la mauvaise
-              façon de l'apprendre. Le serveur reste seul juge. */}
-          {isTitleLocked(draft, draft.profile_title || '') && (
-            <Text style={styles.titleLocked}>
-              Ce titre se gagne pendant un événement — il ne peut pas être écrit.
-            </Text>
-          )}
-
-          {/* Les titres gagnés, posables en un tap. */}
-          {(draft.titles ?? []).length > 0 && (
-            <View style={styles.titleChips}>
-              {(draft.titles ?? []).map((title) => (
-                <TouchableOpacity
-                  key={title}
-                  style={[
-                    styles.chip,
-                    draft.profile_title === title && {
-                      borderColor: accent,
-                      backgroundColor: withAlpha(accent, 0.14),
-                    },
-                  ]}
-                  onPress={() => update({ profile_title: title })}
-                >
-                  <Text style={styles.chipText}>{title}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* ── À propos ── */}
-          <Text style={styles.sectionTitle}>À propos de moi</Text>
-          <TextInput
-            style={styles.aboutInput}
-            value={draft.about_me || ''}
-            onChangeText={(value) => update({ about_me: value })}
-            placeholder="Quelques lignes affichées sur ton profil"
-            placeholderTextColor={colors.textMuted}
-            multiline
-            maxLength={300}
-          />
-          <Text style={styles.counter}>{(draft.about_me || '').length}/300</Text>
-
-          <TouchableOpacity
-            style={[styles.saveBtn, { backgroundColor: accent }, saving && styles.saveBtnDisabled]}
-            onPress={save}
-            disabled={saving}
-            activeOpacity={0.85}
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          {/* `style={flex}` et non seulement `contentContainerStyle` : sans
+              lui, la liste se dimensionne sur son contenu et pousse la barre
+              d'engagement hors de l'écran dès que la famille est longue. */}
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.saveBtnText}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Text>
-          </TouchableOpacity>
-          <Text style={styles.tierNote}>
-            Palier actuel : {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Gratuit'}
-          </Text>
-        </ScrollView>
+            {family === 'colors' && (
+              <>
+                <Section
+                  first
+                  title="Couleur d'accent"
+                  hint="La couleur principale : nom, boutons, parures, thème."
+                >
+                  <View style={styles.swatchGrid}>
+                    {ACCENT_PRESETS.map((color) => (
+                      <Tappable
+                        key={`accent-${color}`}
+                        haptic="select"
+                        onPress={() => update({ accent_color: color })}
+                        style={[
+                          styles.swatch,
+                          { backgroundColor: color },
+                          draft.accent_color === color && styles.swatchActive,
+                        ]}
+                      >
+                        {draft.accent_color === color ? (
+                          <Ionicons name="checkmark" size={16} color="#000" />
+                        ) : null}
+                      </Tappable>
+                    ))}
+                  </View>
+                </Section>
+
+                <Section
+                  title="Couleur secondaire"
+                  hint="Le second ton des dégradés. Laissée de côté, elle reprend l'accent."
+                >
+                  <View style={styles.swatchGrid}>
+                    {ACCENT_PRESETS.map((color) => (
+                      <Tappable
+                        key={`secondary-${color}`}
+                        haptic="select"
+                        onPress={() => update({ secondary_color: color })}
+                        style={[
+                          styles.swatch,
+                          { backgroundColor: color },
+                          draft.secondary_color === color && styles.swatchActive,
+                        ]}
+                      >
+                        {draft.secondary_color === color ? (
+                          <Ionicons name="checkmark" size={16} color="#000" />
+                        ) : null}
+                      </Tappable>
+                    ))}
+                  </View>
+                </Section>
+              </>
+            )}
+
+            {family === 'dressing' && (
+              <>
+                <Section
+                  first
+                  title="Thème de profil"
+                  hint="Le fond habille toute la page. Ta bannière reste intacte."
+                >
+                  <View style={styles.chipRow}>
+                    {PROFILE_THEMES.map((option) => (
+                      <Choice
+                        key={option.key}
+                        label={option.label}
+                        tint={accent}
+                        active={(draft.banner_style || 'none') === option.key}
+                        onPress={() => update({ banner_style: option.key as BannerStyle })}
+                      />
+                    ))}
+                  </View>
+                </Section>
+
+                <Section title="Intensité" hint="Le même thème, plus ou moins présent.">
+                  <View style={styles.chipRow}>
+                    {THEME_INTENSITIES.map((option) => (
+                      <Choice
+                        key={option.key}
+                        label={option.label}
+                        tint={accent}
+                        active={(draft.theme_intensity || 'normal') === option.key}
+                        onPress={() => update({ theme_intensity: option.key as ThemeIntensity })}
+                      />
+                    ))}
+                  </View>
+                </Section>
+
+                <Section
+                  title="Ambiance"
+                  pro={!canUseDecorations}
+                  hint="Des particules qui traversent le fond, en continu."
+                >
+                  <View style={styles.chipRow}>
+                    {PROFILE_EFFECTS.map((option) => (
+                      <Choice
+                        key={option.key}
+                        label={option.label}
+                        icon={option.icon}
+                        tint={accent}
+                        active={(draft.profile_effect || 'none') === option.key}
+                        locked={!allows('profile_effect', option.key) && option.key !== 'none'}
+                        onPress={() =>
+                          option.key === 'none'
+                            ? update({ profile_effect: 'none' })
+                            : requireAccess('profile_effect', option.key, () =>
+                                update({ profile_effect: option.key as ProfileEffect }),
+                              )
+                        }
+                      />
+                    ))}
+                  </View>
+                </Section>
+
+                <Section
+                  title="Parure d'avatar"
+                  pro={!canUseDecorations}
+                  hint="Animée en continu, aux couleurs choisies plus haut."
+                >
+                  <View style={styles.chipRow}>
+                    {AVATAR_DECORATIONS.map((option) => (
+                      <Choice
+                        key={option.key}
+                        label={option.label}
+                        icon={option.icon}
+                        tint={accent}
+                        active={(draft.avatar_decoration || 'none') === option.key}
+                        locked={!allows('avatar_decoration', option.key) && option.key !== 'none'}
+                        onPress={() =>
+                          option.key === 'none'
+                            ? update({ avatar_decoration: 'none' })
+                            : requireAccess('avatar_decoration', option.key, () =>
+                                update({ avatar_decoration: option.key as AvatarDecoration }),
+                              )
+                        }
+                      />
+                    ))}
+                  </View>
+                </Section>
+              </>
+            )}
+
+            {family === 'identity' && (
+              <>
+                <Section first title="Police du nom" pro={!canUseDecorations}>
+                  <View style={styles.chipRow}>
+                    {NAME_FONTS.map((option) => (
+                      <Choice
+                        key={option.key}
+                        label={option.label}
+                        tint={accent}
+                        fontFamily={resolveDisplayNameFontFamily(option.key)}
+                        active={(draft.name_font || 'system') === option.key}
+                        locked={!allows('name_font', option.key) && option.key !== 'system'}
+                        onPress={() =>
+                          option.key === 'system'
+                            ? update({ name_font: 'system' })
+                            : requireAccess('name_font', option.key, () =>
+                                update({ name_font: option.key as NameFont }),
+                              )
+                        }
+                      />
+                    ))}
+                  </View>
+                </Section>
+
+                <Section title="Lumière du nom" pro={!canUseDecorations}>
+                  <View style={styles.chipRow}>
+                    {NAME_EFFECTS.map((option) => {
+                      // « Certifié » ne suit pas le palier payant : c'est le
+                      // badge qui l'ouvre. Un compte Pro non certifié ne l'a donc pas.
+                      const certifOption = option.key === 'certified';
+                      const unlocked =
+                        option.key === 'none' ||
+                        (certifOption ? canUseCertified : canUseDecorations);
+                      // La pastille prend la couleur du badge : elle montre ce qu'on achète.
+                      const tint = certifOption ? certifColors.from : accent;
+                      return (
+                        <Choice
+                          key={option.key}
+                          label={option.label}
+                          icon={option.icon}
+                          tint={tint}
+                          active={(draft.name_effect || 'none') === option.key}
+                          locked={!unlocked}
+                          onPress={() => {
+                            if (option.key === 'none') return update({ name_effect: 'none' });
+                            if (certifOption) {
+                              if (!canUseCertified) {
+                                toast.error('Compte certifié requis', {
+                                  description:
+                                    "Cet effet reprend la couleur de ton badge de certification : il faut être certifié pour l'utiliser.",
+                                });
+                                return;
+                              }
+                              return update({ name_effect: 'certified' });
+                            }
+                            requirePro(() => update({ name_effect: option.key as NameEffect }));
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
+                </Section>
+
+                <Section title="Taille du pseudo" pro={!canUseDecorations}>
+                  <View style={styles.chipRow}>
+                    {NAME_SIZES.map((option) => (
+                      <Choice
+                        key={option.key}
+                        label={option.label}
+                        tint={accent}
+                        active={(draft.name_size || 'normal') === option.key}
+                        locked={!canUseDecorations && option.key !== 'normal'}
+                        onPress={() =>
+                          option.key === 'normal'
+                            ? update({ name_size: 'normal' })
+                            : requirePro(() => update({ name_size: option.key as NameSize }))
+                        }
+                      />
+                    ))}
+                  </View>
+                </Section>
+
+                <Section title="Titre" hint="Une ligne affichée juste sous ton pseudo.">
+                  <TextInput
+                    style={styles.titleInput}
+                    value={draft.profile_title || ''}
+                    onChangeText={(value) => update({ profile_title: value })}
+                    placeholder="Ex. Dev · Kinshasa"
+                    placeholderTextColor={colors.textMuted}
+                    maxLength={PROFILE_TITLE_MAX}
+                  />
+                  <Text style={styles.counter}>
+                    {(draft.profile_title || '').length}/{PROFILE_TITLE_MAX}
+                  </Text>
+
+                  {/* Certains titres se GAGNENT et ne s'écrivent pas. On le dit
+                      pendant la saisie, jamais après : découvrir au moment de
+                      l'enregistrement que son titre a été refusé est la mauvaise
+                      façon de l'apprendre. Le serveur reste seul juge. */}
+                  {isTitleLocked(draft, draft.profile_title || '') && (
+                    <Text style={styles.titleLocked}>
+                      Ce titre se gagne pendant un événement — il ne peut pas être écrit.
+                    </Text>
+                  )}
+
+                  {/* Les titres gagnés, posables en un tap. */}
+                  {(draft.titles ?? []).length > 0 && (
+                    <View style={styles.titleChips}>
+                      {(draft.titles ?? []).map((title) => (
+                        <Choice
+                          key={title}
+                          label={title}
+                          tint={accent}
+                          active={draft.profile_title === title}
+                          onPress={() => update({ profile_title: title })}
+                        />
+                      ))}
+                    </View>
+                  )}
+                </Section>
+
+                <Section title="À propos de moi">
+                  <TextInput
+                    style={styles.aboutInput}
+                    value={draft.about_me || ''}
+                    onChangeText={(value) => update({ about_me: value })}
+                    placeholder="Quelques lignes affichées sur ton profil"
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    maxLength={300}
+                  />
+                  <Text style={styles.counter}>{(draft.about_me || '').length}/300</Text>
+                </Section>
+              </>
+            )}
+          </ScrollView>
+
+          {/* ── L'engagement, collé en bas ──
+              Il était au pied d'un défilement de neuf sections : il fallait
+              parcourir tout l'écran pour valider un changement de couleur. */}
+          <View style={styles.actionBar}>
+            <Text style={styles.tierNote}>
+              Palier {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Gratuit'}
+            </Text>
+            <Tappable
+              onPress={save}
+              disabled={saving}
+              style={[styles.saveBtn, { backgroundColor: accent }, saving && styles.saveBtnDisabled]}
+            >
+              <Text style={styles.saveBtnText}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Text>
+            </Tappable>
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </ScreenBackground>
   );
 }
-
-const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
   titleLocked: {
@@ -588,7 +668,6 @@ const styles = StyleSheet.create({
   titleChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
   flex: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row',
@@ -603,53 +682,71 @@ const styles = StyleSheet.create({
   headerTitle: { color: colors.textPrimary, fontSize: 17, fontFamily: fonts.display },
   resetText: { color: colors.textSecondary, fontSize: 14, fontFamily: fonts.semibold, textAlign: 'right' },
 
-  content: { padding: 16, paddingBottom: 120 },
+  content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 28 },
 
   lockBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
     borderRadius: 12,
     backgroundColor: withAlpha(colors.gold, 0.12),
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: withAlpha(colors.gold, 0.4),
-    marginBottom: 16,
   },
   lockText: { flex: 1, color: colors.textSecondary, fontSize: 12.5, lineHeight: 18 },
 
+  /** Le quai de l'aperçu : hors du défilement, donc toujours à l'écran. */
+  previewDock: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
   previewCard: {
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    marginBottom: 22,
   },
   previewBanner: { height: PREVIEW_BANNER, backgroundColor: colors.surfaceAlt },
-  previewBody: { padding: 16, paddingTop: 0, alignItems: 'center' },
+  previewBody: { paddingHorizontal: 16, paddingBottom: 14, alignItems: 'center' },
   /** `relative` : les calques de parure se posent en absolu autour. */
-  previewAvatarWrap: { position: 'relative', marginTop: -36, marginBottom: 10 },
+  previewAvatarWrap: { position: 'relative', marginTop: -32, marginBottom: 8 },
   previewName: { color: colors.textPrimary, fontSize: 18, fontFamily: fonts.display },
   previewHandle: { fontSize: 14, marginTop: 2, fontFamily: fonts.semibold },
-  previewAbout: {
-    marginTop: 12,
-    alignSelf: 'stretch',
-    paddingLeft: 10,
-    borderLeftWidth: 3,
-  },
-  previewAboutText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  previewBtn: {
-    marginTop: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  previewBtnText: { color: '#fff', fontSize: 14, fontFamily: fonts.bold },
 
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 15, fontFamily: fonts.semibold, marginTop: 18, marginBottom: 8 },
-  sectionHint: { color: colors.textMuted, fontSize: 12, marginTop: -4, marginBottom: 10 },
+  /**
+   * La barre des familles. Posée entre l'aperçu et les réglages : c'est la
+   * seule navigation de l'écran, et elle doit rester lisible en un coup d'œil
+   * — d'où trois onglets et pas quatre.
+   */
+  familyBar: {
+    flexDirection: 'row',
+    gap: 6,
+    marginHorizontal: 16,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  familyTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 9,
+  },
+  familyText: { color: colors.textSecondary, fontSize: 13, fontFamily: fonts.semibold },
+
+  section: { marginTop: 20 },
+  /** L'espacement est porté par la RANGÉE, pas par le titre : sinon la
+      pastille PRO, alignée au centre, se décale de la marge du titre. */
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  sectionTitle: { color: colors.textPrimary, fontSize: 15, fontFamily: fonts.semibold },
+  sectionHint: { color: colors.textMuted, fontSize: 12, marginTop: -2, marginBottom: 10 },
 
   swatchGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   swatch: {
@@ -677,7 +774,6 @@ const styles = StyleSheet.create({
   chipText: { color: colors.textSecondary, fontSize: 13, fontFamily: fonts.medium },
 
   proBadge: {
-    marginTop: 10,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
@@ -708,8 +804,24 @@ const styles = StyleSheet.create({
   },
   counter: { color: colors.textMuted, fontSize: 11, textAlign: 'right', marginTop: 6 },
 
-  saveBtn: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  /**
+   * La barre d'engagement. Posée sur un liseré plutôt que sur un fond opaque :
+   * le contenu doit se voir passer dessous quand on fait défiler, sinon la
+   * barre a l'air d'être une autre page collée en bas.
+   */
+  actionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  saveBtn: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: '#fff', fontSize: 15, fontFamily: fonts.bold },
-  tierNote: { color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 10 },
+  tierNote: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.medium },
 });
