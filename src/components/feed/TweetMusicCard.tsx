@@ -36,6 +36,15 @@ function TweetMusicCard({ track, onBeforeOpen }: TweetMusicCardProps) {
     try {
       if (!soundRef.current) {
         setIsLoading(true);
+        // Même config que les vocaux (ConversationThreadScreen) : sans ça,
+        // iOS respecte le switch silencieux et l'extrait ne s'entend pas.
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        }).catch(() => {});
         const { sound } = await Audio.Sound.createAsync(
           { uri: track.previewUrl },
           { shouldPlay: true },
