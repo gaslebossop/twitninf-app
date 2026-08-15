@@ -15,6 +15,8 @@ interface User {
   phone?: string;
   avatar?: string;
   bio?: string | null;
+  /** Ville affichée sur le profil (déclarative, distincte du consentement géoloc) */
+  city?: string | null;
   created_at?: string;
   verified?: boolean;
   premium?: boolean;
