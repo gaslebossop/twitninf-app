@@ -396,16 +396,21 @@ const TwitNinfVideo: React.FC = () => {
   const videosLengthRef = useRef(0);
 
   const insets = useSafeAreaInsets();
-  // `BottomTabBarHeightContext` vaut `undefined` hors navigateur d'onglets,
-  // contrairement à `useBottomTabBarHeight` qui lève une erreur (voir CasinoScreen).
-  // C'est la hauteur RÉELLEMENT rendue par la tab bar (83 iOS / 85 Android,
-  // safe area déjà incluse) — un ancien iPhone/Android sans zone de sécurité
-  // basse (insets.bottom === 0) a quand même une tab bar de cette hauteur.
-  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
+  // `BottomTabBarHeightContext` vaut `undefined` hors navigateur d'onglets
+  // (voir CasinoScreen) — et TwitNinfVideo est AUSSI poussé hors des onglets,
+  // en écran plein depuis Réglages > Vidéos (MainNavigator.tsx, route
+  // "Video" du MainStack, distincte de l'onglet du même nom). Dans ce cas
+  // il n'y a pas de tab bar du tout : le seul espace à réserver en bas est
+  // la zone de sécurité de l'appareil (encoche/gestures), via insets.bottom.
+  // Dans l'onglet, `tabBarHeight` (83 iOS / 85 Android, safe area incluse)
+  // est la valeur RÉELLEMENT rendue par la tab bar, contrairement à l'ancien
+  // `TAB_BAR_HEIGHT = 49` codé en dur qui ne correspondait à aucune des deux.
+  const tabBarHeight = useContext(BottomTabBarHeightContext);
+  const bottomReserve = tabBarHeight ?? insets.bottom;
 
-  // ✅ Hauteur responsive : écran - tab bar (déjà safe-area-aware)
+  // ✅ Hauteur responsive : écran - (tab bar ou safe area, selon le contexte)
   // Fonctionne sur tous les devices iOS & Android (encoche, Dynamic Island, barre Android...)
-  const cardHeight = height - tabBarHeight;
+  const cardHeight = height - bottomReserve;
 
   useEffect(() => {
     videosLengthRef.current = videos.length;
@@ -548,8 +553,9 @@ const TwitNinfVideo: React.FC = () => {
           disableIntervalMomentum
           onRefresh={() => fetchVideos(true)}
           refreshing={refreshing}
-          // ✅ padding dynamique = ce qui est "caché" sous la tab bar
-          contentContainerStyle={{ paddingBottom: tabBarHeight }}
+          // ✅ padding dynamique = ce qui est "caché" sous la tab bar (ou,
+          // hors onglets, la zone de sécurité basse de l'appareil)
+          contentContainerStyle={{ paddingBottom: bottomReserve }}
         />
       )}
 
