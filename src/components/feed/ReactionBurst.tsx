@@ -151,12 +151,32 @@ function ReactionBurst({ progress, palette, iconSize = 16, particleCount = PARTI
   const ringSize = iconSize * 2.1;
   const distance = iconSize * 1.15;
   const dotSize = Math.max(3, iconSize * 0.22);
-  const haloSize = iconSize * 3.4;
 
-  const haloStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 0.2, 0.55, 1], [0, 0.5, 0.3, 0], Extrapolation.CLAMP),
+  // Trois anneaux CONTOUR (jamais remplis) à trois teintes franches et
+  // écartées de la palette — trois disques pleins qui se recouvrent, même à
+  // faible opacité, se moyennent optiquement en une tache brune : un contour
+  // fin garde chaque couleur lisible pour elle-même. C'est ce qui fait
+  // vraiment « arc-en-ciel » à grande échelle, pas les particules seules
+  // (trop petites, trop loin du centre, pour porter l'effet à elles seules).
+  const rainbowRing = (size: number) => ({
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+    marginLeft: -size / 2,
+    marginTop: -size / 2,
+  });
+
+  const auraOuterStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.16, 0.5, 0.85], [0, 0.9, 0.55, 0], Extrapolation.CLAMP),
     transform: [
-      { scale: interpolate(progress.value, [0, 1], [0.5, 1.25], Extrapolation.CLAMP) },
+      { scale: interpolate(progress.value, [0, 0.85], [0.4, 1.9], Extrapolation.CLAMP) },
+    ],
+  }));
+
+  const auraMidStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.08, 0.26, 0.62, 0.95], [0, 0.9, 0.5, 0], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(progress.value, [0.08, 0.95], [0.4, 1.55], Extrapolation.CLAMP) },
     ],
   }));
 
@@ -192,6 +212,13 @@ function ReactionBurst({ progress, palette, iconSize = 16, particleCount = PARTI
     marginTop: -ringSize / 2,
   };
 
+  // Deux teintes franches, écartées dans la palette (index 0 et 4 d'un
+  // dégradé à 5 tons) pour que les deux anneaux se distinguent nettement
+  // l'un de l'autre plutôt que de dégrader vers un ton voisin.
+  const auraColorA = palette.rainbowParticles?.[0] ?? palette.ring;
+  const auraColorB = palette.rainbowParticles?.[palette.rainbowParticles.length - 1] ?? palette.ring;
+  const auraColorC = palette.rainbowParticles?.[Math.floor((palette.rainbowParticles.length - 1) / 2)] ?? palette.ring;
+
   return (
     <Animated.View pointerEvents="none" style={[S.anchor, { top: iconSize / 2, left: iconSize / 2 }]}>
       {halo && (
@@ -199,15 +226,20 @@ function ReactionBurst({ progress, palette, iconSize = 16, particleCount = PARTI
           pointerEvents="none"
           style={[
             S.layer,
-            {
-              width: haloSize,
-              height: haloSize,
-              borderRadius: haloSize / 2,
-              marginLeft: -haloSize / 2,
-              marginTop: -haloSize / 2,
-              backgroundColor: palette.ring,
-            },
-            haloStyle,
+            rainbowRing(iconSize * 3.2),
+            { borderWidth: Math.max(3, iconSize * 0.13), borderColor: auraColorA },
+            auraOuterStyle,
+          ]}
+        />
+      )}
+      {halo && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            S.layer,
+            rainbowRing(iconSize * 2.6),
+            { borderWidth: Math.max(3, iconSize * 0.15), borderColor: auraColorB },
+            auraMidStyle,
           ]}
         />
       )}
@@ -221,7 +253,7 @@ function ReactionBurst({ progress, palette, iconSize = 16, particleCount = PARTI
           style={[
             S.layer,
             box,
-            { borderWidth: Math.max(2, iconSize * 0.16), borderColor: palette.ring },
+            { borderWidth: Math.max(2, iconSize * 0.16), borderColor: auraColorC },
             echoRingStyle,
           ]}
         />
