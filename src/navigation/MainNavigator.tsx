@@ -33,6 +33,7 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 import AccountManagerScreen from '../screens/AccountManagerScreen';
 import ThemeScreen from '../screens/ThemeScreen';
 import PrivacyDataScreen from '../screens/PrivacyDataScreen';
+import SuperHeartsScreen from '../screens/SuperHeartsScreen';
 import AddAccountScreen from '../screens/AddAccountScreen';
 import ModerationScreen from '../screens/ModerationScreen';
 import UserManagementScreen from '../screens/UserManagementScreen';
@@ -136,6 +137,7 @@ export type MainStackParamList = {
   AccountManager: undefined;
   Theme: undefined;
   PrivacyData: undefined;
+  SuperHearts: undefined;
   AddAccount: undefined;
   Moderation: undefined;
   UserManagement: undefined;
@@ -405,6 +407,15 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="PrivacyData"
         component={PrivacyDataScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_right',
+          headerShown: false,
+        }}
+      />
+      <MainStack.Screen
+        name="SuperHearts"
+        component={SuperHeartsScreen}
         options={{
           presentation: 'card',
           animation: 'slide_from_right',

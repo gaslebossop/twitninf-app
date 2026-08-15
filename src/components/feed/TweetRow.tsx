@@ -35,6 +35,7 @@ import ReactionBurst, {
   useReactionAnimation,
   LIKE_PALETTE,
   RETWEET_PALETTE,
+  SUPER_HEART_PALETTE,
 } from './ReactionBurst';
 import type { Tweet } from '../../types/api';
 import { toast } from '../ui/Toast';
@@ -50,6 +51,7 @@ const C = {
   accent: colors.accent,
   green: colors.success,
   like: colors.like,
+  gold: colors.gold,
   textPrimary: colors.textPrimary,
   textSecondary: colors.textSecondary,
   textMuted: colors.textMuted,
@@ -59,7 +61,7 @@ const C = {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface TweetRowAction {
-  type: 'like' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report' | 'openContest';
+  type: 'like' | 'superlike' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report' | 'openContest';
   tweetId: string;
   payload?: any;
 }
@@ -129,9 +131,17 @@ function TweetRow({
    * À retirer avec le bouton plus bas quand l'essai sera tranché.
    */
   const showQuickReport = useFlag(FLAGS.QUICK_REPORT);
+  // Conditionne tout le geste, comme NF_MAP : rien à proposer à qui n'est
+  // pas encore dans le palier de déploiement.
+  const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
 
   // ── Valeurs d'animation : thread UI, jamais dans le state React ────────────
   const like = useReactionAnimation();
+  // Éclat séparé du like normal : les deux gestes peuvent viser la même
+  // icône sans se marcher dessus, chacun avec sa propre palette. Plus long
+  // (850 vs 620 ms) : un Super Cœur est un geste payant et rare (palier
+  // Pro/Plus, solde limité), il doit se sentir au-dessus d'un like ordinaire.
+  const superLike = useReactionAnimation(false, 850);
   const retweet = useReactionAnimation(true);
   const bigHeart = useSharedValue(0);
   const pressed = useSharedValue(0);
@@ -225,6 +235,7 @@ function TweetRow({
 
   const isLiked = !!tweet.user_interaction?.is_liked;
   const isRetweeted = !!tweet.user_interaction?.is_retweeted;
+  const isSuperLiked = !!tweet.user_interaction?.is_super_liked;
 
   // ── Animations ────────────────────────────────────────────────────────────
   /** @param wasLiked état AVANT le geste. */
@@ -292,6 +303,24 @@ function TweetRow({
     playLike(isLiked);
     onAction({ type: 'like', tweetId: tweet.id });
   }, [isContentLocked, refuseLocked, blockRowPress, playLike, isLiked, onAction, tweet.id]);
+
+  /**
+   * Super Cœur — pression longue sur le like. Réservé au palier Pro côté
+   * serveur : la ligne ne pré-vérifie rien, elle joue l'éclat arc-en-ciel et
+   * laisse l'écran défaire l'état optimiste (toast) si le serveur refuse.
+   */
+  const handleSuperLikeLongPress = useCallback(() => {
+    if (!superHeartEnabled) return;
+    if (isContentLocked) return refuseLocked();
+    if (isSuperLiked) return; // déjà posé : rien à rejouer, la route est idempotente
+    blockRowPress();
+    // `.reward()` et pas `.select()` : un Super Cœur est un geste payant et
+    // rare, il doit se sentir différent d'un appui ordinaire.
+    feedback.reward();
+    like.play(true);
+    superLike.play(true);
+    onAction({ type: 'superlike', tweetId: tweet.id });
+  }, [superHeartEnabled, isContentLocked, refuseLocked, isSuperLiked, blockRowPress, like, superLike, onAction, tweet.id]);
 
   const handleRetweetPress = useCallback(() => {
     if (isContentLocked) return refuseLocked();
@@ -619,16 +648,29 @@ function TweetRow({
               <TouchableOpacity
                 style={[S.actionChip, S.burstAnchorBtn, isLiked && S.actionChipLikeActive]}
                 onPress={handleLikePress}
+                onLongPress={handleSuperLikeLongPress}
+                delayLongPress={420}
                 disabled={isAd}
                 activeOpacity={0.7}
               >
                 <View style={S.burstHost}>
                   <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={16} />
+                  {/* Nettement plus grand que le like normal (38 vs 16), avec
+                      halo + double anneau + deux fois plus de particules :
+                      un geste payant et rare doit se voir depuis plus loin
+                      que l'icône de 16px qui le déclenche. */}
+                  <ReactionBurst
+                    progress={superLike.progress}
+                    palette={SUPER_HEART_PALETTE}
+                    iconSize={38}
+                    particleCount={16}
+                    halo
+                  />
                   <Animated.View style={like.iconStyle}>
                     <Ionicons
                       name={isLiked ? 'heart' : 'heart-outline'}
                       size={16}
-                      color={isLiked ? C.like : C.textMuted}
+                      color={isSuperLiked ? C.gold : (isLiked ? C.like : C.textMuted)}
                     />
                   </Animated.View>
                 </View>
@@ -701,6 +743,7 @@ function areEqual(prev: TweetRowProps, next: TweetRowProps) {
     a.stats?.views === b.stats?.views &&
     a.user_interaction?.is_liked === b.user_interaction?.is_liked &&
     a.user_interaction?.is_retweeted === b.user_interaction?.is_retweeted &&
+    a.user_interaction?.is_super_liked === b.user_interaction?.is_super_liked &&
     a.content === b.content &&
     prev.index === next.index &&
     prev.isThreadParent === next.isThreadParent &&

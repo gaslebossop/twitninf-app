@@ -194,6 +194,7 @@ export default function TweetsScreen() {
   // l'affichage et provoquaient deux rendus complets du fil par like.
   const likeLockRef = useRef<{ [key: string]: boolean }>({});
   const retweetLockRef = useRef<{ [key: string]: boolean }>({});
+  const superLikeLockRef = useRef<{ [key: string]: boolean }>({});
 
   // Numéro de génération de la requête en cours pour l'onglet actif.
   // Un rafraîchissement l'incrémente ; une pagination lancée avant lui capture
@@ -804,8 +805,12 @@ export default function TweetsScreen() {
     if (!currentTweet) { likeLockRef.current[tweetId] = false; return; }
 
     const wasLiked = currentTweet.user_interaction?.is_liked || false;
+    // Un like retiré perd son éventuel Super Cœur (jamais rendu — voir
+    // `handleSuperLike`) : sans ce nettoyage, l'icône restait dorée et le
+    // garde-fou de `TweetRow` bloquait toute nouvelle pose après un unlike.
+    const wasSuperLiked = currentTweet.user_interaction?.is_super_liked || false;
     const currentLikes = currentTweet.stats?.likes || 0;
-    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, likes: wasLiked ? currentLikes - 1 : currentLikes + 1 }, user_interaction: { ...tweet.user_interaction, is_liked: !wasLiked } }));
+    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, likes: wasLiked ? currentLikes - 1 : currentLikes + 1 }, user_interaction: { ...tweet.user_interaction, is_liked: !wasLiked, is_super_liked: wasLiked ? false : wasSuperLiked } }));
 
     // Hors ligne : on met en file et on GARDE l'état optimiste. Annuler le like
     // sous les yeux de l'utilisateur alors qu'on sait le réseau coupé lui ferait
@@ -819,7 +824,7 @@ export default function TweetsScreen() {
     try {
       const response = await apiService.likeTweet(tweetId);
       if (!response.success) {
-        setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked } } : tweet));
+        setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: wasSuperLiked } } : tweet));
       } else {
         trackTweetInteraction(tweetId, wasLiked ? 'unlike' : 'like', { tab: activeTab, previous_likes: currentLikes, algorithm: currentAlgorithm });
         if (activeTab === 'forYou') {
@@ -828,9 +833,57 @@ export default function TweetsScreen() {
         }
       }
     } catch {
-      setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked } } : tweet));
+      setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: wasSuperLiked } } : tweet));
     } finally { likeLockRef.current[tweetId] = false; }
   }, [activeTab, currentAlgorithm, trackTweetInteraction, offlineEnabled, online, queueAction]);
+
+  /**
+   * Super Cœur — pression longue sur le like, réservé au palier Pro (voir
+   * `superHeartHelpers` côté API). Contrairement au like, il ne se retire
+   * pas d'ici : le retirer passe par le like normal, et le cœur consommé
+   * n'est alors jamais rendu — c'est la route serveur qui porte cette règle.
+   */
+  const handleSuperLike = useCallback(async (tweetId: string) => {
+    if (superLikeLockRef.current[tweetId]) return;
+    superLikeLockRef.current[tweetId] = true;
+
+    const currentTweet = tweetsRef.current.find(t => t.id === tweetId);
+    if (!currentTweet || currentTweet.user_interaction?.is_super_liked) {
+      superLikeLockRef.current[tweetId] = false;
+      return;
+    }
+
+    const wasLiked = currentTweet.user_interaction?.is_liked || false;
+    const currentLikes = currentTweet.stats?.likes || 0;
+    const revert = () => setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : {
+      ...tweet,
+      stats: { ...tweet.stats, likes: currentLikes },
+      user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: false },
+    }));
+
+    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : {
+      ...tweet,
+      stats: { ...tweet.stats, likes: wasLiked ? currentLikes : currentLikes + 1 },
+      user_interaction: { ...tweet.user_interaction, is_liked: true, is_super_liked: true },
+    }));
+
+    if (offlineEnabled && !online) {
+      revert();
+      toast.info('Hors ligne', { description: 'Le Super Cœur demande une connexion.' });
+      superLikeLockRef.current[tweetId] = false;
+      return;
+    }
+
+    try {
+      const response = await apiService.superLikeTweet(tweetId);
+      if (!response.success) {
+        revert();
+        toast.info('Super Cœur', { description: response.message || 'Impossible de poser le Super Cœur.' });
+      }
+    } catch {
+      revert();
+    } finally { superLikeLockRef.current[tweetId] = false; }
+  }, [offlineEnabled, online]);
 
   const handleRetweet = useCallback(async (tweetId: string) => {
     if (retweetLockRef.current[tweetId]) return;
@@ -1057,6 +1110,10 @@ export default function TweetsScreen() {
         handleLike(tweetId);
         break;
 
+      case 'superlike':
+        handleSuperLike(tweetId);
+        break;
+
       case 'retweet':
         handleRetweet(tweetId);
         break;
@@ -1128,7 +1185,7 @@ export default function TweetsScreen() {
         break;
       }
     }
-  }, [handleLike, handleRetweet, navigation, activeTab, trackProfileInteraction]);
+  }, [handleLike, handleSuperLike, handleRetweet, navigation, activeTab, trackProfileInteraction]);
 
   /**
    * Comptabilisation des vues via la visibilité réelle de la liste.

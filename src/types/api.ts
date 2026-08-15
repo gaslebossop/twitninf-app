@@ -378,6 +378,8 @@ export interface Tweet {
   user_interaction?: {
     is_liked: boolean;
     is_retweeted: boolean;
+    /** Super Cœur posé (pression longue, palier Pro) — distinct d'un like classique. */
+    is_super_liked?: boolean;
   };
   parentTweet?: Tweet;
   /** Chaine de conversation ordonnee de la racine au parent direct. */
