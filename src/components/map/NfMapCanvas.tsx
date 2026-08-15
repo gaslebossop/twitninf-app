@@ -13,31 +13,29 @@
  *
  * ── Deux règles que ce fichier fait respecter, apprises en tombant ──
  *
- * 1. UN `<Marker>` N'A JAMAIS D'ENFANT. Jamais une vue, jamais un composant
- *    tactile, jamais rien : uniquement une image, par la prop `image`.
+ * 1. LE MAPVIEW A UN NOMBRE FIXE D'ENFANTS, et un `<Marker>` n'a jamais
+ *    d'enfant à lui.
  *
- *    C'est la règle la plus chèrement payée du projet. Un marqueur qui portait
- *    un arbre de vues React passait par la couche d'interopérabilité de Fabric,
- *    dont les mainteneurs de la bibliothèque écrivent qu'elle « ne fonctionne
- *    pas pour les composants personnalisés ayant des composants enfants
- *    personnalisés » (MapView → Marker → enfants). L'app tombait dans
- *    `insertReactSubview:` / `removeReactSubview:`, côté natif, sans une ligne
- *    de log JS — à chaque zoom, à chaque arrivée de quelqu'un, en ouvrant un
- *    profil. Aucun contournement côté JS n'y change quoi que ce soit : ordre
- *    stable, montage par paquets, mémoïsation ont réduit la fréquence sans
- *    jamais supprimer la cause.
+ *    C'est la règle la plus chèrement payée du projet, et il a fallu un journal
+ *    de plantage pour la formuler juste. `AIRMap insertReactSubview:atIndex:`
+ *    termine par `[_reactSubviews insertObject:… atIndex:atIndex]` sans borner
+ *    l'index : dès que la transaction de montage de Fabric en demande un
+ *    au-delà du tableau, `NSMutableArray` lève
+ *    `NSRangeException: index 10 beyond bounds [0 .. 8]`. C'est exactement ce
+ *    qu'on a lu dans le rapport de l'appareil.
  *
- *    La correction officielle — désactiver la Nouvelle Architecture — est
- *    fermée ici : `react-native-reanimated@4` et les modules Nitro l'exigent,
- *    et Expo Go SDK 54 ne connaît qu'elle. Le dessin des épingles est donc
- *    parti sur le serveur (`api/src/services/nfMapPinService.js`), qui rend un
- *    PNG. `shouldUsePinView` de la bibliothèque le dit d'ailleurs lui-même :
- *    `reactSubviews.count == 0 && !imageSrc`. Sans enfant et avec une image, on
- *    quitte définitivement le chemin qui plante.
+ *    On a d'abord cru que le fautif était le CONTENU des marqueurs — la couche
+ *    d'interopérabilité de Fabric ne supporte effectivement pas les composants
+ *    à enfants personnalisés, et les épingles sont pour cette raison devenues
+ *    des images rendues par le serveur (`api/src/services/nfMapPinService.js`).
+ *    Mais ça ne suffisait pas : ce sont les `<Marker>` EUX-MÊMES, en tant
+ *    qu'enfants du `MapView`, qui font dériver l'index. Le montage par paquets
+ *    et le vidage à la perte du focus, ajoutés pour « ménager » le natif,
+ *    fabriquaient même précisément les retraits qui cassent.
  *
- *    Conséquence heureuse : plus rien à photographier, donc plus de
- *    `tracksViewChanges`, plus de `contentKey`, plus de marqueur qui se rearme.
- *    Changer l'apparence d'une épingle est devenu un changement d'URL.
+ *    D'où le pool : `MARKER_POOL_SIZE` emplacements posés une fois, clés par
+ *    index, jamais un de plus ni un de moins. Tout le reste — apparaître,
+ *    disparaître, changer de personne — est devenu un changement de props.
  *
  * 2. La caméra ne se pilote QUE par sauts explicites (`camera.nonce`). Ce
  *    composant ne renvoie jamais la carte là où elle est déjà : un doigt qui
@@ -217,80 +215,88 @@ interface NfMapCanvasProps<T> {
    * exactement ce qu'elle affiche.
    */
   onRegionChange: (center: MapCoordinate, zoom: number, bounds: MapBounds) => void;
-  /**
-   * La carte est-elle à l'écran ?
-   *
-   * À `false`, elle se VIDE de ses marqueurs, par paquets — voir `mountedIds`.
-   * C'est la réponse au crash en touchant « Profil » depuis la fiche de
-   * quelqu'un : la pile est réglée en `freezeOnBlur`, si bien que quitter la
-   * carte gèle puis détache un `MapView` qui porte encore ses deux cents vues
-   * natives de marqueur, et qu'y revenir recommet d'un coup tout le sous-arbre
-   * différé. Une carte déjà vide au moment où le navigateur l'escamote ne donne
-   * prise ni à l'un ni à l'autre.
-   *
-   * La carte elle-même reste montée : c'est ce qui évite de repayer son
-   * installation, et de rejouer la course au démarrage que `ready` couvre.
-   */
-  active?: boolean;
   style?: any;
 }
 
 /**
- * Combien de marqueurs entrent d'un coup, et à quel rythme — voir `mountedIds`.
+ * Nombre de marqueurs posés sur la carte. FIXE, pour toute la session.
  *
- * Vingt tient largement dans une image, et deux cents personnes finissent
- * posées en moins d'un tiers de seconde : assez pour qu'un saut vers une autre
- * ville reste instantané à l'œil, assez peu pour que le natif n'ait jamais à
- * avaler une fournée entière.
+ * ── Ce que ce nombre empêche ──
+ * `AIRMap insertReactSubview:atIndex:` finit par
+ * `[_reactSubviews insertObject:… atIndex:atIndex]`, sans borner l'index. Dès
+ * que la transaction de montage de Fabric demande un index au-delà du tableau,
+ * `NSMutableArray` lève `NSRangeException: index 10 beyond bounds [0 .. 8]` —
+ * le crash, tel quel, dans le journal de l'appareil. Et l'index dérive parce
+ * que `removeReactSubview:` retire par identité pendant que les insertions,
+ * elles, arrivent par index.
+ *
+ * Ce n'était donc PAS le contenu des marqueurs, comme on l'a cru : ce sont les
+ * marqueurs eux-mêmes, en tant qu'enfants du `MapView`. Les rendre sans enfants
+ * n'y changeait rien, et le vidage par paquets qu'on avait ajouté fabriquait
+ * précisément les retraits qui font dériver l'index.
+ *
+ * La parade tient en une phrase : le `MapView` reçoit `MARKER_POOL_SIZE`
+ * enfants au premier rendu, et plus jamais un de plus ni un de moins. Une
+ * épingle qui apparaît, disparaît ou change de place n'est plus qu'un
+ * changement de props sur un emplacement déjà posé.
+ *
+ * ── Pourquoi 64 ──
+ * Le regroupement fusionne tout ce qui tient dans 72 px : un écran de
+ * téléphone n'expose donc jamais plus d'une soixantaine de cases. Les
+ * emplacements inutilisés portent un pixel transparent et ne coûtent rien.
  */
-const MOUNT_BATCH = 20;
-const MOUNT_INTERVAL_MS = 32;
+const MARKER_POOL_SIZE = 64;
+
+/** Un pixel transparent : l'emplacement est là, mais ne montre rien. */
+const PARKED_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 /**
- * Et le vidage, quand la carte n'est plus à l'écran — voir la prop `active`.
+ * Où dorment les emplacements inutilisés.
  *
- * Plus gros paquets et plus serrés qu'à l'entrée : ici on court contre la
- * transition de navigation, qui dure environ 350 ms. Trois cents marqueurs
- * partent en une centaine de millisecondes, donc bien avant que le navigateur
- * ne gèle ou ne détache l'écran — et personne ne le voit, puisque la carte est
- * déjà en train de sortir du champ.
+ * Un point fixe, et non le centre courant : une coordonnée qui suivrait la
+ * carte réécrirait soixante marqueurs à chaque déplacement du doigt, pour des
+ * vues que personne ne voit.
  */
-const DRAIN_BATCH = 50;
-const DRAIN_INTERVAL_MS = 16;
+const PARKED_COORDINATE = { latitude: 0, longitude: 0 };
 
 /**
- * Le marqueur, réduit à ce que la bibliothèque sait porter sans tomber.
+ * Un EMPLACEMENT de marqueur, pas un marqueur.
  *
- * Il n'a plus d'enfant, donc plus rien à photographier : tout l'appareillage
- * qui vivait ici — `tracksViewChanges`, le `contentKey`, la temporisation qui
- * rallumait la capture le temps qu'un avatar distant arrive — a disparu avec
- * la vue qu'il servait à figer. Une épingle est désormais une URL.
+ * Il est monté une fois et ne repart jamais. Quand il porte quelqu'un, il
+ * affiche son épingle ; sinon il se gare hors de vue avec un pixel transparent.
+ * Voir `MARKER_POOL_SIZE` pour ce que cette permanence évite.
  *
- * Mémoïsé quand même : sans cette barrière, tout rendu de l'écran — une lettre
- * tapée dans la recherche d'amis, une image de l'animation de la feuille —
- * renvoie une mise à jour à chaque marqueur natif. Les props sont un objet
- * `marker` (mémoïsé en amont) et un rappel stable, donc la comparaison tient.
+ * Mémoïsé : sans cette barrière, tout rendu de l'écran — une lettre tapée dans
+ * la recherche d'amis, une image de l'animation de la feuille — renvoie une
+ * mise à jour aux soixante-quatre emplacements.
  */
-function MapImageMarkerView<T>({
+function MarkerSlotView<T>({
   marker,
   onMarkerPress,
 }: {
-  marker: MapMarker<T>;
+  /** `null` = emplacement libre. */
+  marker: MapMarker<T> | null;
   onMarkerPress?: (marker: MapMarker<T>) => void;
 }) {
   return (
     <Marker
-      coordinate={{ latitude: marker.latitude, longitude: marker.longitude }}
+      coordinate={
+        marker ? { latitude: marker.latitude, longitude: marker.longitude } : PARKED_COORDINATE
+      }
       // Le point désigné n'est pas au centre de l'image : une épingle pointe
       // par sa pointe, sous laquelle il reste encore l'étiquette du pseudo.
-      anchor={{ x: 0.5, y: marker.anchorY }}
-      zIndex={marker.zIndex}
-      image={{ uri: marker.image }}
+      //
+      // ⚠️ Sans effet sur Apple Maps : `anchor` n'existe que dans
+      // `AirGoogleMaps`. Sur iOS l'image est donc centrée sur la coordonnée.
+      anchor={{ x: 0.5, y: marker ? marker.anchorY : 0.5 }}
+      zIndex={marker?.zIndex ?? 0}
+      image={{ uri: marker ? marker.image : PARKED_IMAGE }}
       // Aucune vue à suivre : la carte n'a rien à re-photographier. Laisser la
       // valeur par défaut (vrai) ferait redessiner le marqueur à chaque image
       // pour un contenu qui ne bouge jamais.
       tracksViewChanges={false}
-      onPress={onMarkerPress ? () => onMarkerPress(marker) : undefined}
+      onPress={marker && onMarkerPress ? () => onMarkerPress(marker) : undefined}
       /*
        * Sans ça, l'épingle est inutilisable sur iOS.
        *
@@ -305,7 +311,7 @@ function MapImageMarkerView<T>({
   );
 }
 
-const MapImageMarker = React.memo(MapImageMarkerView) as typeof MapImageMarkerView;
+const MarkerSlot = React.memo(MarkerSlotView) as typeof MarkerSlotView;
 
 export default function NfMapCanvas<T>({
   camera,
@@ -313,7 +319,6 @@ export default function NfMapCanvas<T>({
   onMarkerPress,
   onPressMap,
   onRegionChange,
-  active = true,
   style,
 }: NfMapCanvasProps<T>) {
   const mapRef = useRef<MapView | null>(null);
@@ -394,35 +399,9 @@ export default function NfMapCanvas<T>({
   const [ready, setReady] = useState(false);
 
   /**
-   * Les marqueurs entrent par PAQUETS, jamais tous d'un coup.
-   *
-   * ── Le geste qui faisait tomber l'app ──
-   * Toucher « Voir » sur un ami d'une autre ville. La caméra saute, la nouvelle
-   * fenêtre est interrogée, et le serveur rend d'un coup jusqu'à deux cents
-   * personnes qu'on ne connaissait pas. React insère alors deux cents vues
-   * natives de marqueur dans UNE SEULE mise à jour — et une insertion en masse
-   * est très exactement ce que `react-native-maps` 1.20.1 ne supporte pas sous
-   * la Nouvelle Architecture : `insertObject:atIndex: object cannot be nil`
-   * côté iOS, index hors bornes côté Android, sans une ligne de log JS. Rester
-   * dans sa ville ne déclenchait rien, parce que les gens y arrivaient un à un.
-   *
-   * ── Pourquoi un ensemble d'identifiants, et pas un simple compteur ──
-   * Un compteur qui tronquerait la liste serait pire que le mal. La liste est
-   * triée par identifiant : quelqu'un dont l'identifiant est petit s'insère en
-   * TÊTE et pousse le dernier hors de la troncature — c'est-à-dire le démonte,
-   * sans que personne l'ait demandé. Un ensemble nommé ne se laisse pas décaler.
-   *
-   * Tant que la carte est à l'écran, cet ensemble ne fait que GRANDIR : un
-   * marqueur entré n'en sort pas. Le seul retrait est le vidage volontaire de
-   * la prop `active`, quand la carte s'en va — lui aussi par paquets.
-   */
-  const [mountedIds, setMountedIds] = useState<ReadonlySet<string>>(() => new Set());
-
-  /**
    * Le point de passage OBLIGÉ de tout ce qui remonte vers l'écran.
    *
-   * Ce qui sortait d'ici sans contrôle a produit les deux pannes les plus
-   * visibles de la carte :
+   * Ce qui sortait d'ici sans contrôle a produit deux pannes visibles :
    *
    *   - `north` à 97°, `west` à -214°. Un rectangle qui déborde du globe part
    *     tel quel dans la requête, que le serveur refuse — et `nearby` rend une
@@ -431,8 +410,7 @@ export default function NfMapCanvas<T>({
    *   - une fenêtre à cheval sur l'antiméridien. `getMapBoundaries` rend alors
    *     un coin nord-est à -170° et un sud-ouest à 170° : trier ces deux
    *     nombres donne le rectangle COMPLÉMENTAIRE, c'est-à-dire tout le globe
-   *     sauf ce qu'on regarde. Le zoom qu'on en déduisait était bon pour la
-   *     planète entière, et il redescendait dans `animateToRegion`.
+   *     sauf ce qu'on regarde.
    *
    * On rabat donc sur le globe, on garantit `north > south` (le serveur le
    * refuse à l'identique) et on rejette tout ce qui n'est pas fini.
@@ -458,49 +436,24 @@ export default function NfMapCanvas<T>({
     [onRegionChange]
   );
 
-  useEffect(() => {
-    if (!ready) return undefined;
-
-    // ── Sortie : la carte quitte l'écran, on la vide ──
-    if (!active) {
-      if (mountedIds.size === 0) return undefined;
-      const timer = setTimeout(() => {
-        setMountedIds((current) => {
-          const next = new Set(current);
-          let removed = 0;
-          for (const id of current) {
-            if (removed >= DRAIN_BATCH) break;
-            next.delete(id);
-            removed += 1;
-          }
-          return next;
-        });
-      }, DRAIN_INTERVAL_MS);
-      return () => clearTimeout(timer);
-    }
-
-    // ── Entrée : par paquets, jamais tous d'un coup ──
-    const pending = safeMarkers.filter((marker) => !mountedIds.has(marker.id));
-    if (pending.length === 0) return undefined;
-
-    // Un tour de boucle d'événements entre deux paquets : le natif a le temps
-    // de poser ce qu'on vient de lui donner avant d'en recevoir d'autres.
-    const timer = setTimeout(() => {
-      setMountedIds((current) => {
-        const next = new Set(current);
-        for (const marker of pending.slice(0, MOUNT_BATCH)) next.add(marker.id);
-        return next;
-      });
-    }, MOUNT_INTERVAL_MS);
-
-    return () => clearTimeout(timer);
-  }, [ready, active, safeMarkers, mountedIds]);
-
-  /** Ce qui est réellement posé sur la carte : les marqueurs déjà entrés. */
-  const visibleMarkers = useMemo(
-    () => safeMarkers.filter((marker) => mountedIds.has(marker.id)),
-    [safeMarkers, mountedIds]
-  );
+  /**
+   * Les emplacements, dans leur ordre définitif.
+   *
+   * Toujours `MARKER_POOL_SIZE` entrées : les premières portent les marqueurs à
+   * montrer, les suivantes valent `null` et se garent. C'est ce tableau de
+   * longueur constante qui garantit que le `MapView` ne voit jamais un enfant
+   * apparaître ni disparaître — la seule chose qui faisait tomber l'app.
+   *
+   * Un débordement se coupe ici plutôt que de se répandre : au-delà de la
+   * soixantaine de cases qu'un écran peut montrer, une épingle de plus ne serait
+   * de toute façon pas lisible.
+   */
+  const slots = useMemo(() => {
+    const out: Array<MapMarker<T> | null> = new Array(MARKER_POOL_SIZE).fill(null);
+    const count = Math.min(safeMarkers.length, MARKER_POOL_SIZE);
+    for (let index = 0; index < count; index += 1) out[index] = safeMarkers[index];
+    return out;
+  }, [safeMarkers]);
 
   /**
    * Première fenêtre, dès que la carte est posée.
@@ -608,9 +561,14 @@ export default function NfMapCanvas<T>({
          */
         moveOnMarkerPress={false}
       >
-        {visibleMarkers.map((marker) => (
-          <MapImageMarker key={marker.id} marker={marker} onMarkerPress={onMarkerPress} />
-        ))}
+        {/* La clé est l'INDEX de l'emplacement, jamais l'identité de la
+            personne : c'est ce qui interdit à React de réordonner, d'insérer ou
+            de retirer un enfant du MapView. Une épingle qui change de main
+            n'est plus qu'un changement de props. */}
+        {ready &&
+          slots.map((marker, index) => (
+            <MarkerSlot key={index} marker={marker} onMarkerPress={onMarkerPress} />
+          ))}
       </MapView>
     </View>
   );

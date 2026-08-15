@@ -1,16 +1,20 @@
 /**
  * Liste de marqueurs de la Carte NF.
  *
- * Ce fichier ne teste pas une apparence, il teste les deux invariants dont la
- * violation faisait TOMBER l'app, côté natif, sans une ligne de log JS :
+ * Ce fichier ne teste pas une apparence : il teste la FORME de la liste, parce
+ * que c'est elle qui faisait tomber l'app. `AIRMap insertReactSubview:atIndex:`
+ * insère dans son tableau sans borner l'index, et une liste qui change de
+ * taille ou d'ordre finit en `NSRangeException: index 10 beyond bounds`.
  *
- *   1. un marqueur par personne, la même identité quel que soit le zoom — un
- *      marqueur démonté fait tomber `react-native-maps` 1.20.1 sous la Nouvelle
- *      Architecture ;
- *   2. un ORDRE de liste indépendant du zoom — réordonner les enfants natifs de
- *      la carte emprunte le même chemin que les insérer ou les retirer.
+ * La carte pose donc un nombre FIXE d'emplacements (`MARKER_POOL_SIZE`) et ne
+ * fait plus que changer leurs props. Ce que ce fichier verrouille est ce dont
+ * ce pool a besoin pour tenir :
  *
- * Le second manquait, et c'est lui qui explique le « ça crash quand on zoome ».
+ *   1. une liste TRIÉE, dont l'ordre ne dépend ni du zoom, ni de la composition
+ *      des groupes, ni de l'ordre d'arrivée des réponses ;
+ *   2. une liste BORNÉE à ce que la fenêtre montre — sans quoi les
+ *      emplacements partent à des gens hors champ et la vue reste vide ;
+ *   3. aucune épingle fantôme : un membre de groupe ne produit rien.
  */
 
 const test = require('node:test');
@@ -107,26 +111,35 @@ function construire(people, largeur, extra = {}) {
   });
 }
 
-// ── Invariant 1 : jamais un marqueur de plus ni de moins ────────────────────
+// ── Ce que la carte peut réellement porter ─────────────────────────────────
+//
+// La carte n'expose qu'un nombre FIXE d'emplacements (MARKER_POOL_SIZE). Ce
+// que ce fichier vérifie, c'est que la liste reste bornée, ordonnée, et
+// limitée à ce qu'on regarde.
 
-test('le nombre de marqueurs ne dépend pas du zoom', () => {
+test('un groupe ne produit qu’UN marqueur, sa tête', () => {
   const gens = foule();
-  const largeurs = [0.004, 0.05, 0.2, 0.6, 1.2, 4];
-  for (const largeur of largeurs) {
-    assert.equal(
-      construire(gens, largeur).length,
-      gens.length,
-      `zoom ${largeur}° : monter ou démonter un marqueur fait tomber le natif`
-    );
-  }
+  const large = construire(gens, 1.2);
+  const tetes = large.filter((m) => m.data.kind === 'head');
+
+  // Les membres n'ont plus d'épingle fantôme sous la tête : le nombre de
+  // marqueurs suit le nombre de groupes, pas le nombre de personnes.
+  assert.ok(large.length < gens.length, `${large.length} marqueurs pour ${gens.length} personnes`);
+  assert.equal(large.length, tetes.length + large.filter((m) => m.data.kind === 'solo').length);
+
+  const rassembles = tetes.reduce((sum, m) => sum + m.data.faces.length, 0);
+  const isoles = large.filter((m) => m.data.kind === 'solo').length;
+  assert.equal(rassembles + isoles, gens.length, 'personne n’est perdu en route');
 });
 
-test('l’ensemble des identifiants ne dépend pas du zoom', () => {
+test('zoomé, chacun retrouve son épingle ; dézoomé, il y en a moins', () => {
   const gens = foule();
-  const attendus = gens.map((person) => person.id).sort();
-  for (const largeur of [0.004, 0.2, 1.2, 4]) {
-    assert.deepEqual(construire(gens, largeur).map((marker) => marker.id).sort(), attendus);
-  }
+  const serre = construire(gens, 0.004);
+  const large = construire(gens, 1.2);
+
+  assert.equal(serre.length, gens.length);
+  assert.ok(serre.every((m) => m.data.kind === 'solo'));
+  assert.ok(large.length < serre.length);
 });
 
 test('aucun identifiant de marqueur n’est celui d’un groupe', () => {
@@ -136,22 +149,16 @@ test('aucun identifiant de marqueur n’est celui d’un groupe', () => {
   }
 });
 
-// ── Invariant 2 : l'ORDRE, celui qui manquait ───────────────────────────────
+// ── L'ordre, qui ne doit dépendre de rien ──────────────────────────────────
 
-test('l’ORDRE de la liste est identique à tous les zooms', () => {
-  const gens = foule();
-  const reference = construire(gens, 0.004).map((marker) => marker.id);
-
-  for (const largeur of [0.05, 0.2, 0.6, 1.2, 4]) {
-    assert.deepEqual(
-      construire(gens, largeur).map((marker) => marker.id),
-      reference,
-      `zoom ${largeur}° : réordonner les enfants natifs de la carte la fait tomber`
-    );
+test('la liste est TOUJOURS triée par identifiant', () => {
+  for (const largeur of [0.004, 0.05, 0.2, 0.6, 1.2, 4]) {
+    const ids = construire(foule(), largeur).map((m) => m.id);
+    assert.deepEqual(ids, [...ids].sort(), `zoom ${largeur}° : ordre non trié`);
   }
 });
 
-test('l’ordre ne dépend pas non plus de l’ordre d’arrivée des réponses', () => {
+test('l’ordre ne dépend pas de l’ordre d’arrivée des réponses', () => {
   const gens = foule();
   const direct = construire(gens, 0.6).map((marker) => marker.id);
   const inverse = construire([...gens].reverse(), 0.6).map((marker) => marker.id);
@@ -167,8 +174,6 @@ test('l’épingle « moi » n’insère personne au milieu de la liste', () => 
 
   assert.equal(avecMoi.length, sansMoi.length + 1);
   assert.ok(avecMoi.includes(SELF_MARKER_ID));
-  // Retirer « moi » doit redonner EXACTEMENT la liste précédente, dans l'ordre :
-  // sinon apparaître sur la carte déplacerait les marqueurs de tout le monde.
   assert.deepEqual(avecMoi.filter((id) => id !== SELF_MARKER_ID), sansMoi);
 });
 
@@ -179,36 +184,39 @@ test('sélectionner quelqu’un ne réordonne rien', () => {
   assert.deepEqual(apres, avant);
 });
 
-// ── Les rôles, eux, changent bien avec le zoom ──────────────────────────────
+// ── Le filtre de fenêtre, qui borne ce que la carte doit porter ────────────
 
-test('dézoomé, les gens deviennent des groupes ; zoomé, des épingles isolées', () => {
+test('hors de la fenêtre, personne ne produit de marqueur', () => {
   const gens = foule();
+  // Une fenêtre sur Marseille, alors que tout le monde est à Paris.
+  const marseille = { north: 43.4, south: 43.2, east: 5.5, west: 5.2 };
+  assert.equal(construire(gens, 0.05, { visibleBounds: marseille }).length, 0);
 
-  const serre = construire(gens, 0.004);
-  assert.ok(
-    serre.every((marker) => marker.data.kind === 'solo'),
-    'de près, chacun a son épingle'
-  );
-
-  const large = construire(gens, 1.2);
-  const tetes = large.filter((marker) => marker.data.kind === 'head');
-  const membres = large.filter((marker) => marker.data.kind === 'member');
-  assert.ok(tetes.length > 0, 'de loin, des groupes se forment');
-  assert.ok(membres.length > 0, 'et leurs membres se rangent dessous');
-  // Une tête porte les visages de TOUT son groupe, elle comprise.
-  const totalRegroupe = tetes.reduce((sum, marker) => sum + marker.data.faces.length, 0);
-  assert.equal(totalRegroupe, tetes.length + membres.length, 'personne n’est perdu en route');
+  // La même foule, regardée depuis Paris : tout le monde est là.
+  const paris = { north: 49.0, south: 48.7, east: 2.5, west: 2.2 };
+  assert.ok(construire(gens, 0.05, { visibleBounds: paris }).length > 0);
 });
 
-test('un membre de groupe se pose exactement sur sa tête', () => {
-  const large = construire(foule(), 1.2);
-  const tetes = large.filter((marker) => marker.data.kind === 'head');
-  for (const membre of large.filter((marker) => marker.data.kind === 'member')) {
-    const sousUneTete = tetes.some(
-      (tete) => tete.latitude === membre.latitude && tete.longitude === membre.longitude
-    );
-    assert.ok(sousUneTete, 'un membre visible à côté de son groupe est un tas, pas un groupe');
-  }
+test('l’épingle « moi » et la fiche ouverte survivent au filtre', () => {
+  const gens = foule();
+  const marseille = { north: 43.4, south: 43.2, east: 5.5, west: 5.2 };
+
+  const markers = construire(gens, 0.004, {
+    visibleBounds: marseille,
+    myPosition: { latitude: 48.86, longitude: 2.34 },
+    selectedId: gens[3].id,
+  });
+
+  const ids = markers.map((m) => m.id);
+  // Les faire disparaître pendant qu'on les lit serait absurde.
+  assert.ok(ids.includes(SELF_MARKER_ID), 'ma propre épingle ne se cache pas');
+  assert.ok(ids.includes(gens[3].id), 'la personne dont la fiche est ouverte reste');
+  assert.equal(ids.length, 2, 'et personne d’autre');
+});
+
+test('sans fenêtre connue, rien n’est filtré', () => {
+  const gens = foule();
+  assert.equal(construire(gens, 0.004, { visibleBounds: null }).length, gens.length);
 });
 
 test('l’image d’un marqueur change quand son rôle change', () => {

@@ -2,40 +2,30 @@
  * Construction de la liste de marqueurs de la Carte NF.
  *
  * ── Pourquoi ce calcul vit ici, et pas dans l'écran ──
- * Il porte les deux invariants qui empêchent l'app de tomber, et aucun des deux
- * n'est vérifiable depuis un écran React : ils portent sur la FORME de la liste
- * produite, pas sur ce qu'on voit. Les tests de `tests/map-markers.test.js`
- * s'appuient dessus.
+ * Il porte des invariants qui portent sur la FORME de la liste produite, pas
+ * sur ce qu'on voit : rien de tout cela n'est vérifiable depuis un écran React.
+ * Les tests de `tests/map-markers.test.js` s'appuient dessus.
  *
- *   1. **Un marqueur par personne, la session entière.** L'identifiant d'un
- *      marqueur est celui de la personne, jamais celui d'un groupe. Regrouper
- *      naïvement fabrique des marqueurs dont l'identité dépend du zoom — trois
- *      personnes forment un marqueur au loin, trois marqueurs de près — et tout
- *      zoom démonte alors des marqueurs. Démonter un marqueur fait tomber
- *      `react-native-maps` 1.20.1 sous la Nouvelle Architecture, côté natif,
- *      sans une ligne de log JS.
+ *   1. **L'ordre ne dépend de rien.** Ni du zoom, ni de la composition des
+ *      groupes, ni de l'ordre d'arrivée des réponses du serveur. La liste était
+ *      produite en parcourant les groupes — tête, puis membres, groupe après
+ *      groupe : pour trois personnes A, B, C dont A et C se regroupent, elle
+ *      donnait `[A, C, B]` de loin et `[A, B, C]` de près. Le tri final par
+ *      identifiant rend cet ordre invariant, ce qui évite à la carte de voir
+ *      ses épingles permuter sans raison.
  *
- *      D'où le détour : la liste ne change pas de contenu, c'est le RÔLE de
- *      chacun qui change. Une personne est tour à tour épingle isolée, tête de
- *      groupe (elle porte alors les visages de tout le groupe), ou membre —
- *      auquel cas elle glisse au centre du groupe et se réduit à un point,
- *      invisible derrière la tête. Rien n'est monté ni démonté : seules des
- *      coordonnées et des props changent.
+ *   2. **Rien hors de l'écran.** La carte n'expose qu'un nombre FIXE
+ *      d'emplacements (`MARKER_POOL_SIZE` dans `NfMapCanvas`), alors que les
+ *      positions s'accumulent sur toute la session. Sans le filtre de
+ *      `visibleBounds`, ces emplacements pouvaient partir en entier à des gens
+ *      hors champ, laissant la vue vide au milieu d'une foule.
  *
- *   2. **L'ordre ne dépend de rien.** C'est l'invariant qui manquait, et c'est
- *      lui qui faisait encore tomber l'app au zoom. La liste était produite en
- *      parcourant les groupes — tête, puis membres, groupe après groupe. Pour
- *      trois personnes A, B, C dont A et C se regroupent, elle donne `[A, C, B]`
- *      de loin et `[A, B, C]` de près : le même ensemble, dans un ordre
- *      différent.
- *
- *      React réordonne alors les vues natives enfants de la carte, et déplacer
- *      un marqueur emprunte le même chemin natif que l'insérer ou le retirer —
- *      `insertObject:atIndex: object cannot be nil` sur iOS, index hors bornes
- *      sur Android. Tout le travail sur l'identité stable était annulé par un
- *      simple changement d'ordre. Le tri final par identifiant rend cet ordre
- *      indépendant du zoom, de la composition des groupes et de l'ordre
- *      d'arrivée des réponses du serveur.
+ * ── Ce que ce fichier ne fait PLUS ──
+ * Il fabriquait un marqueur par personne, y compris pour les membres d'un
+ * groupe — des pixels transparents cachés sous la tête — afin qu'aucun marqueur
+ * ne soit jamais démonté. Cette contorsion existait parce que retirer un enfant
+ * du `MapView` faisait tomber l'app. Le pool à taille fixe règle ce problème à
+ * la racine ; les épingles fantômes ont disparu avec lui.
  */
 
 import { clusterize } from './mapCluster';
@@ -47,7 +37,7 @@ import {
   personPinUrl,
   type PinOrigin,
 } from './mapPinUrl';
-import type { MapCoordinate, MapMarker } from '../components/map/NfMapCanvas';
+import type { MapBounds, MapCoordinate, MapMarker } from '../components/map/NfMapCanvas';
 import type { NfMapPerson } from '../services/nfMapService';
 
 /**
@@ -58,30 +48,11 @@ import type { NfMapPerson } from '../services/nfMapService';
  */
 export type MarkerRole =
   | { kind: 'self'; ghost: boolean }
-  /** `selected` voyage DANS le rôle, pas en `prop` de l'écran : c'est ce qui
-   *  permet à `renderMarker` de rester la même fonction d'un rendu à l'autre,
-   *  donc à la barrière de mémoïsation des marqueurs de tenir. */
   | { kind: 'solo'; person: NfMapPerson; selected: boolean }
-  | { kind: 'head'; person: NfMapPerson; faces: NfMapPerson[] }
-  | { kind: 'member' };
+  | { kind: 'head'; person: NfMapPerson; faces: NfMapPerson[] };
 
 /** Identifiant du marqueur « moi ». Local : il ne publie rien. */
 export const SELF_MARKER_ID = '__moi__';
-
-/**
- * Image d'un membre de groupe : un pixel transparent.
- *
- * Un membre se tient exactement sous la tête de son groupe, qui le recouvre.
- * Il n'a donc rien à montrer — mais il lui faut quand même une image, parce
- * qu'un marqueur sans image ET sans enfant retombe sur l'épingle rouge par
- * défaut de la carte : on verrait dépasser des piques de sous chaque groupe.
- *
- * Une donnée en ligne plutôt qu'une requête : ce serait sinon un aller-retour
- * réseau par membre caché, pour un pixel qu'on ne voit jamais. Les deux
- * plateformes acceptent les URI `data:` pour l'image d'un marqueur.
- */
-const MEMBER_DOT =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 /**
  * Une position exploitable, ou rien.
@@ -132,6 +103,39 @@ export interface BuildMarkersInput {
   clusterLatitudeCosine: number;
   /** Où demander les images d'épingle, et à quelle densité — voir `mapPinUrl`. */
   pin: PinOrigin;
+  /**
+   * Fenêtre affichée. Ce qui tombe en dehors ne produit AUCUN marqueur.
+   *
+   * Ce n'est pas une optimisation, c'est une condition de correction. Les
+   * positions s'accumulent sur toute la session, à travers toutes les villes
+   * traversées, alors que la carte n'expose qu'un nombre fixe d'emplacements
+   * (voir `MARKER_POOL_SIZE`). Sans ce filtre, les emplacements partaient aux
+   * premiers identifiants du tri — c'est-à-dire à des gens potentiellement tous
+   * hors de l'écran, laissant la vue vide au milieu d'une foule.
+   *
+   * `null` tant que la carte n'a pas dit ce qu'elle affiche : on montre alors
+   * tout, ce qui est le comportement d'avant la première fenêtre.
+   */
+  visibleBounds?: MapBounds | null;
+}
+
+/**
+ * Marge autour de la fenêtre, en fraction de sa taille.
+ *
+ * Une épingle qui entre par le bord doit déjà être posée quand elle devient
+ * visible, sinon elle apparaît en retard, après le déplacement.
+ */
+const VIEWPORT_MARGIN = 0.3;
+
+function isWithin(bounds: MapBounds, latitude: number, longitude: number): boolean {
+  const latitudeMargin = (bounds.north - bounds.south) * VIEWPORT_MARGIN;
+  const longitudeMargin = (bounds.east - bounds.west) * VIEWPORT_MARGIN;
+  return (
+    latitude >= bounds.south - latitudeMargin &&
+    latitude <= bounds.north + latitudeMargin &&
+    longitude >= bounds.west - longitudeMargin &&
+    longitude <= bounds.east + longitudeMargin
+  );
 }
 
 export function buildMapMarkers({
@@ -143,6 +147,7 @@ export function buildMapMarkers({
   clusterScale,
   clusterLatitudeCosine,
   pin,
+  visibleBounds,
 }: BuildMarkersInput): Array<MapMarker<MarkerRole>> {
   const points: Array<{ id: string; latitude: number; longitude: number; person: NfMapPerson }> = [];
   for (const person of people) {
@@ -200,22 +205,16 @@ export function buildMapMarkers({
       data: { kind: 'head', person: head.person, faces },
     });
 
-    for (const member of rest) {
-      list.push({
-        id: member.person.id,
-        // Rassemblés sur la tête : c'est ce qui fait disparaître le tas.
-        latitude: cluster.latitude,
-        longitude: cluster.longitude,
-        // Le membre est entièrement recouvert par la tête. Il garde malgré tout
-        // une image, et c'est délibéré : un marqueur sans image ni enfant
-        // retombe sur l'épingle rouge par défaut de la carte, et on verrait
-        // dépasser des piques de sous chaque groupe.
-        image: MEMBER_DOT,
-        anchorY: 0.5,
-        zIndex: 1,
-        data: { kind: 'member' },
-      });
-    }
+    // Les membres ne produisent AUCUN marqueur.
+    //
+    // Ils en avaient un — un pixel transparent posé sous la tête — pour
+    // satisfaire une règle devenue caduque : « un marqueur par personne, jamais
+    // démonté ». Cette règle existait parce que retirer un enfant du `MapView`
+    // faisait tomber l'app. Le pool de marqueurs à taille fixe (voir
+    // `NfMapCanvas`) règle ce problème à la racine, et ces épingles fantômes
+    // n'ont plus aucune raison d'exister : elles coûtaient une vue native
+    // chacune pour ne rien montrer.
+    void rest;
   }
 
   // Se voir soi-même est le seul moyen de vérifier ce que les autres voient.
@@ -240,6 +239,18 @@ export function buildMapMarkers({
     });
   }
 
-  list.sort(byId);
-  return list;
+  // Hors champ, aucun marqueur — voir `visibleBounds`. L'épingle « moi » et
+  // celle dont la fiche est ouverte échappent au filtre : les faire disparaître
+  // pendant qu'on les lit serait absurde.
+  const onScreen = visibleBounds
+    ? list.filter(
+        (marker) =>
+          marker.id === SELF_MARKER_ID ||
+          (marker.data.kind === 'solo' && marker.data.selected) ||
+          isWithin(visibleBounds, marker.latitude, marker.longitude)
+      )
+    : list;
+
+  onScreen.sort(byId);
+  return onScreen;
 }

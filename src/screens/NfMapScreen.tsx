@@ -454,10 +454,9 @@ export default function NfMapScreen() {
       // ne suffit souvent pas à séparer des gens d'un même quartier, et on
       // aurait à retoucher plusieurs fois le même tas.
       //
-      // Les membres réagissent comme la tête : ils sont réduits à un point
-      // sous elle, mais restent tactiles sur quelques pixels. Un appui un peu
-      // bas tomberait sinon dans le vide alors qu'on visait le groupe.
-      if (role.kind === 'head' || role.kind === 'member') {
+      // Les membres n'ont plus de marqueur du tout : la tête porte le groupe à
+      // elle seule, et c'est elle qu'on touche.
+      if (role.kind === 'head') {
         jumpTo(
           { latitude: marker.latitude, longitude: marker.longitude },
           Math.min(liveZoom.current + 2, MAX_ZOOM)
@@ -642,7 +641,6 @@ export default function NfMapScreen() {
           // essaie d'abord, avant de chercher une croix.
           onPressMap={handlePressMap}
           onRegionChange={handleRegionChange}
-          active={isFocused}
         />
       </View>
 
