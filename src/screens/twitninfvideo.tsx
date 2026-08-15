@@ -1,5 +1,5 @@
 import { fonts, colors , statusBarStyle} from '../theme';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { apiService } from '../services';
 import { Tweet } from '../types/api';
 import Avatar from '../components/Avatar';
@@ -380,9 +381,6 @@ const VideoCard: React.FC<VideoCardProps> = ({ tweet, isActive, onSheetToggle, c
 const PAGE_SIZE = 2;
 const PREFETCH_THRESHOLD = 1;
 
-// ✅ Hauteur intrinsèque de la tab bar React Navigation (identique iOS/Android)
-const TAB_BAR_HEIGHT = 49;
-
 const TwitNinfVideo: React.FC = () => {
   const [videos, setVideos] = useState<Tweet[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -398,10 +396,16 @@ const TwitNinfVideo: React.FC = () => {
   const videosLengthRef = useRef(0);
 
   const insets = useSafeAreaInsets();
+  // `BottomTabBarHeightContext` vaut `undefined` hors navigateur d'onglets,
+  // contrairement à `useBottomTabBarHeight` qui lève une erreur (voir CasinoScreen).
+  // C'est la hauteur RÉELLEMENT rendue par la tab bar (83 iOS / 85 Android,
+  // safe area déjà incluse) — un ancien iPhone/Android sans zone de sécurité
+  // basse (insets.bottom === 0) a quand même une tab bar de cette hauteur.
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
 
-  // ✅ Hauteur responsive : écran - tab bar - safe area bottom
+  // ✅ Hauteur responsive : écran - tab bar (déjà safe-area-aware)
   // Fonctionne sur tous les devices iOS & Android (encoche, Dynamic Island, barre Android...)
-  const cardHeight = height - insets.bottom - TAB_BAR_HEIGHT;
+  const cardHeight = height - tabBarHeight;
 
   useEffect(() => {
     videosLengthRef.current = videos.length;
@@ -545,7 +549,7 @@ const TwitNinfVideo: React.FC = () => {
           onRefresh={() => fetchVideos(true)}
           refreshing={refreshing}
           // ✅ padding dynamique = ce qui est "caché" sous la tab bar
-          contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}
+          contentContainerStyle={{ paddingBottom: tabBarHeight }}
         />
       )}
 
