@@ -52,6 +52,7 @@ interface SettingsScreenProps {
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const nfMapEnabled = useFlag(FLAGS.NF_MAP);
+  const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
   const { user, refreshCurrentUser } = useAuth();
   const { isAdmin, isSuperAdmin } = useAdminPermissions();
   const { activeEvent, hasActiveEvent } = useEvents();
@@ -238,7 +239,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               handleLinkGAuth
             )}
 
-            {renderActionButton(
+            {superHeartEnabled && renderActionButton(
               'Super Cœur',
               'Le like arc-en-ciel du palier Pro — ton solde restant, ta prochaine recharge',
               'heart-circle-outline',

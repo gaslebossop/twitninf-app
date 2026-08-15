@@ -131,6 +131,9 @@ function TweetRow({
    * À retirer avec le bouton plus bas quand l'essai sera tranché.
    */
   const showQuickReport = useFlag(FLAGS.QUICK_REPORT);
+  // Conditionne tout le geste, comme NF_MAP : rien à proposer à qui n'est
+  // pas encore dans le palier de déploiement.
+  const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
 
   // ── Valeurs d'animation : thread UI, jamais dans le state React ────────────
   const like = useReactionAnimation();
@@ -307,6 +310,7 @@ function TweetRow({
    * laisse l'écran défaire l'état optimiste (toast) si le serveur refuse.
    */
   const handleSuperLikeLongPress = useCallback(() => {
+    if (!superHeartEnabled) return;
     if (isContentLocked) return refuseLocked();
     if (isSuperLiked) return; // déjà posé : rien à rejouer, la route est idempotente
     blockRowPress();
@@ -316,7 +320,7 @@ function TweetRow({
     like.play(true);
     superLike.play(true);
     onAction({ type: 'superlike', tweetId: tweet.id });
-  }, [isContentLocked, refuseLocked, isSuperLiked, blockRowPress, like, superLike, onAction, tweet.id]);
+  }, [superHeartEnabled, isContentLocked, refuseLocked, isSuperLiked, blockRowPress, like, superLike, onAction, tweet.id]);
 
   const handleRetweetPress = useCallback(() => {
     if (isContentLocked) return refuseLocked();

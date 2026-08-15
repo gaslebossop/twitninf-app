@@ -41,6 +41,16 @@ export const FLAGS = {
    * `TWEET_IMAGES`, il n'y a rien à afficher à qui n'y a pas accès.
    */
   NF_MAP: 'fil.cartenf',
+
+  /**
+   * Super Cœur : like arc-en-ciel en pression longue, réservé aux paliers
+   * Plus/Pro.
+   *
+   * Posé le 2026-08-15, montée automatique sur ~6 jours (100 % le
+   * 2026-08-21). Conditionne TOUTE la fonctionnalité comme `NF_MAP` — rien à
+   * afficher à qui n'y a pas accès, pas juste la pose.
+   */
+  SUPER_HEART: 'fil.supercoeur',
 } as const;
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS];
