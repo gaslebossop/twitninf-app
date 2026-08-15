@@ -44,6 +44,7 @@ import AccountStatsScreen from '../screens/AccountStatsScreen';
 import PredictiveAnalyticsScreen from '../screens/PredictiveAnalyticsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import SupportTicketScreen from '../screens/SupportTicketScreen';
+import ReportBugScreen from '../screens/ReportBugScreen';
 import CreatorStudioScreen from '../screens/CreatorStudioScreen';
 import PaidContentSalesScreen from '../screens/PaidContentSalesScreen';
 import ScheduledPostsScreen from '../screens/ScheduledPostsScreen';
@@ -220,6 +221,7 @@ export type MainStackParamList = {
   PredictiveAnalytics: { draft?: string } | undefined;
   Support: undefined;
   SupportTicket: { ticketId: string };
+  ReportBug: undefined;
 
   // Offre créateur
   CreatorStudio: undefined;
@@ -975,6 +977,12 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="SupportTicket"
         component={SupportTicketScreen}
+        options={{ headerShown: false }}
+      />
+      {/* Signalement de bug — ouvre un ticket de catégorie « bug ». */}
+      <MainStack.Screen
+        name="ReportBug"
+        component={ReportBugScreen}
         options={{ headerShown: false }}
       />
 

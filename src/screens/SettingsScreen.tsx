@@ -367,6 +367,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             )}
 
             {renderActionButton(
+              'Signaler un bug',
+              'Pointe l\'écran qui a cassé, l\'app joint le contexte toute seule',
+              'bug-outline',
+              () => navigation.navigate('ReportBug')
+            )}
+
+            {renderActionButton(
               'Debug notifs locales',
               'Voir les rappels 12h/16h/20h planifiés',
               'notifications-outline',

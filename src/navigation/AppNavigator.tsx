@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { navigationRef } from './NavigationService';
+import { recordScreen } from '../services/breadcrumbs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Platform } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,7 +46,17 @@ export default function AppNavigator() {
     <View style={styles.root}>
       {/* Fond signature « Encre Glass » — rendu UNE fois derrière toute l'app */}
       <ScreenBackground style={StyleSheet.absoluteFill} />
-      <NavigationContainer ref={navigationRef} theme={TransparentTheme}>
+      {/*
+        Le fil des écrans traversés se remplit ICI et nulle part ailleurs :
+        un seul point d'écoute, donc aucun écran n'a à penser à se déclarer et
+        aucun ne peut être oublié. Voir `services/breadcrumbs`.
+      */}
+      <NavigationContainer
+        ref={navigationRef}
+        theme={TransparentTheme}
+        onReady={() => recordScreen(navigationRef.getCurrentRoute()?.name)}
+        onStateChange={() => recordScreen(navigationRef.getCurrentRoute()?.name)}
+      >
         <RootStack.Navigator
           id={undefined}
           screenOptions={{
