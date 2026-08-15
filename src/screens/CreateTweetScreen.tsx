@@ -1707,6 +1707,7 @@ const styles = StyleSheet.create({
 
   tweetOptions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginTop: 18,
     paddingTop: 18,
@@ -1714,7 +1715,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderSubtle,
   },
   optionChip: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '30%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
