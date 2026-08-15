@@ -374,6 +374,10 @@ export interface Tweet {
   translation_enabled?: boolean;
   /** Morceau Spotify attaché, s'il y en a un */
   spotify_track?: SpotifyTrack | null;
+  /** Message vocal attaché, s'il y en a un (voir `POST /api/tweets/audio`) */
+  audio_url?: string | null;
+  /** Durée du message vocal en secondes, pour l'affichage */
+  audio_duration?: number | null;
   metadata?: any;
   createdAt: string;
   updatedAt: string;
@@ -411,6 +415,8 @@ export interface CreateTweetRequest {
   /** Réservé aux abonnés Pro : l'API refuse la publication (403) sinon */
   translation_enabled?: boolean;
   spotify_track?: SpotifyTrack | null;
+  audio_url?: string;
+  audio_duration?: number;
 }
 
 /** Une version traduite d'un tweet, générée à la publication. */

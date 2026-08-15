@@ -26,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ClickableMentions from '../components/ClickableMentions';
 import TweetImages from '../components/feed/TweetImages';
 import TweetVideo from '../components/feed/TweetVideo';
+import TweetVoiceMessage from '../components/feed/TweetVoiceMessage';
 import TweetMusicCard from '../components/feed/TweetMusicCard';
 import PaidContentLock from '../components/PaidContentLock';
 import LockedText from '../components/LockedText';
@@ -1020,6 +1021,13 @@ export default function TweetDetailScreen() {
                 }
                 return <TweetImages urls={urls} />;
               })()}
+
+              {!isContentLocked && !!(tweet as any).audio_url && (
+                <TweetVoiceMessage
+                  audioUrl={(tweet as any).audio_url}
+                  durationSeconds={(tweet as any).audio_duration}
+                />
+              )}
 
               {!isContentLocked && !!tweet.spotify_track && (
                 <TweetMusicCard track={tweet.spotify_track} />

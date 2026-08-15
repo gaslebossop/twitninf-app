@@ -20,6 +20,7 @@ import Avatar from '../Avatar';
 import ClickableMentions from '../ClickableMentions';
 import TweetImages from './TweetImages';
 import TweetVideo from './TweetVideo';
+import TweetVoiceMessage from './TweetVoiceMessage';
 import TweetMusicCard from './TweetMusicCard';
 import TweetLanguageSwitcher from '../TweetLanguageSwitcher';
 import TranslationReveal from '../TranslationReveal';
@@ -184,17 +185,19 @@ function TweetRow({
    * de laisser passer la miniature dans la grille comme une photo ordinaire
    * — elle perdrait son bouton play et tout moyen de lancer la lecture.
    */
-  const { displayMediaUrls, videoUrl, videoThumbnailUrl, displaySpotifyTrack } = React.useMemo(() => {
+  const { displayMediaUrls, videoUrl, videoThumbnailUrl, displaySpotifyTrack, displayAudioUrl, displayAudioDuration } = React.useMemo(() => {
     const source = isRetweet && originalTweet ? originalTweet : tweet;
     const urls = Array.isArray((source as any)?.media_urls) ? (source as any).media_urls : [];
     const strings = urls.filter((url: unknown): url is string => typeof url === 'string');
     const spotifyTrack = (source as any)?.spotify_track || null;
+    const audioUrl = typeof (source as any)?.audio_url === 'string' ? (source as any).audio_url : null;
+    const audioDuration = typeof (source as any)?.audio_duration === 'number' ? (source as any).audio_duration : null;
     const video = strings.find((url) => VIDEO_URL_RE.test(url));
     if (!video) {
-      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined, displaySpotifyTrack: spotifyTrack };
+      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined, displaySpotifyTrack: spotifyTrack, displayAudioUrl: audioUrl, displayAudioDuration: audioDuration };
     }
     const rest = strings.filter((url) => url !== video);
-    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0], displaySpotifyTrack: spotifyTrack };
+    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0], displaySpotifyTrack: spotifyTrack, displayAudioUrl: audioUrl, displayAudioDuration: audioDuration };
   }, [isRetweet, originalTweet, tweet]);
 
   /**
@@ -534,6 +537,10 @@ function TweetRow({
 
             {!isContentLocked && videoUrl && (
               <TweetVideo videoUrl={videoUrl} thumbnailUrl={videoThumbnailUrl} onBeforeOpen={blockRowPress} />
+            )}
+
+            {!isContentLocked && !!displayAudioUrl && (
+              <TweetVoiceMessage audioUrl={displayAudioUrl} durationSeconds={displayAudioDuration} onBeforeOpen={blockRowPress} />
             )}
 
             {!isContentLocked && !!displaySpotifyTrack && (

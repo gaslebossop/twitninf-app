@@ -929,6 +929,43 @@ class ApiService {
     }
   }
 
+  /**
+   * Envoie un message vocal enregistré (`expo-av`) et renvoie son URL
+   * publique — même découpage en deux temps que `uploadTweetImage`.
+   */
+  async uploadTweetAudio(fileUri: string, durationSeconds: number): Promise<ApiResponse<{ url: string; duration: number }>> {
+    try {
+      const formData = new FormData();
+      const fileName = fileUri.split('/').pop() || `voice_${Date.now()}.m4a`;
+      formData.append('audio', { uri: fileUri, name: fileName, type: 'audio/m4a' } as any);
+      formData.append('duration', String(Math.round(durationSeconds)));
+
+      if (!this.token) {
+        this.token = await tokenStore.getAccessToken();
+      }
+
+      const res = await fetch(`${API_CONFIG.BASE_URL}/api/tweets/audio`, {
+        method: 'POST',
+        headers: {
+          ...(await buildClientHeaders()),
+          Authorization: this.token ? `Bearer ${this.token}` : '',
+        } as any,
+        body: formData as any,
+      });
+
+      const text = await res.text();
+      let json: any;
+      try { json = JSON.parse(text); } catch { json = { success: res.ok, message: text }; }
+      if (!res.ok) {
+        return { success: false, message: json?.message || `HTTP ${res.status}` } as any;
+      }
+      return json;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Envoi du message vocal impossible';
+      return { success: false, message, errors: [] } as any;
+    }
+  }
+
   async uploadUserBanner(fileUri: string): Promise<ApiResponse<{ url: string }>> {
     try {
       const formData = new FormData();
