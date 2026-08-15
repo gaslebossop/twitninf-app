@@ -29,6 +29,7 @@ const {
   degreesPerPixel,
   quantizedDegreesPerPixel,
   quantizedLatitudeCosine,
+  CLUSTER_RADIUS_PX,
 } = loadTypeScriptModule(require.resolve('../src/utils/mapCluster.ts'));
 
 const SCREEN = 390;
@@ -71,7 +72,8 @@ test('un groupe se pose au barycentre de ses membres', () => {
       { id: 'a', latitude: 48.80, longitude: 2.30 },
       { id: 'b', latitude: 48.90, longitude: 2.40 },
     ],
-    degreesPerPixel(1, SCREEN)
+    // Assez large pour que ces deux points soient à un jet de pierre à l'écran.
+    degreesPerPixel(2, SCREEN)
   );
 
   assert.equal(clusters.length, 1);
@@ -155,13 +157,65 @@ test('à zoom constant, un déplacement ne recompose aucun groupe', () => {
   );
 });
 
-test('sans l’arrondi, le même déplacement recompose des groupes', () => {
-  // Le test précédent ne vaut que si l'échelle brute, elle, échoue vraiment :
-  // sinon il passerait aussi bien sans le correctif.
-  assert.ok(
-    compositionsPendantUnDeplacement(degreesPerPixel) > 1,
-    'sans cette différence, le test ci-dessus ne prouverait rien'
-  );
+test('le semis par distance est stable même SANS arrondi', () => {
+  // Ce test disait l'INVERSE du temps de la grille : sans arrondi, les
+  // frontières de cases se décalaient et recomposaient les groupes. Le semis
+  // par distance n'a pas de frontière — il ne dépend que des positions
+  // relatives — donc une dérive de ±1 % ne change plus rien.
+  //
+  // L'arrondi n'a donc plus la stabilité pour raison d'être : il sert désormais
+  // à BORNER l'erreur sur le rayon, ce que vérifient les deux tests suivants.
+  assert.equal(compositionsPendantUnDeplacement(degreesPerPixel), 1);
+});
+
+test('l’arrondi ne gonfle jamais le rayon de plus de 10 %', () => {
+  // Par paliers ENTIERS l'erreur atteignait 41 %, ce qui donnait des groupes de
+  // 204 px de large pour un rayon demandé de 72.
+  let pire = 0;
+  for (let zoom = 8; zoom <= 18; zoom += 0.001) {
+    const largeur = 360 / Math.pow(2, zoom);
+    pire = Math.max(
+      pire,
+      quantizedDegreesPerPixel(largeur, SCREEN) / degreesPerPixel(largeur, SCREEN)
+    );
+  }
+  assert.ok(pire < 1.1, `rayon gonflé de ${((pire - 1) * 100).toFixed(0)} %`);
+});
+
+test('un groupe n’est jamais plus large que deux fois son rayon', () => {
+  // Le piège de cette famille d'algorithmes : tous les membres sont à portée de
+  // la GRAINE, donc deux membres opposés sont à DEUX rayons l'un de l'autre.
+  // C'est ce qui a produit les groupes absurdes, et c'est pour ça que
+  // CLUSTER_RADIUS_PX est documenté comme une demi-largeur.
+  const cosine = quantizedLatitudeCosine(48.85);
+  let pire = 0;
+
+  for (let zoom = 11; zoom <= 16; zoom += 0.05) {
+    const largeur = 360 / Math.pow(2, zoom);
+    const exacte = degreesPerPixel(largeur, SCREEN);
+    const echelle = quantizedDegreesPerPixel(largeur, SCREEN);
+
+    const points = [];
+    for (let i = 0; i < 60; i += 1) {
+      points.push({
+        id: `u${String(i).padStart(2, '0')}`,
+        latitude: 48.85 + Math.sin(i * 2.7) * 0.02,
+        longitude: 2.35 + Math.cos(i * 1.9) * 0.03,
+      });
+    }
+
+    for (const groupe of clusterize(points, echelle, undefined, cosine)) {
+      for (const a of groupe.items) {
+        for (const b of groupe.items) {
+          const dx = (a.longitude - b.longitude) / exacte;
+          const dy = (a.latitude - b.latitude) / (exacte * cosine);
+          pire = Math.max(pire, Math.hypot(dx, dy));
+        }
+      }
+    }
+  }
+
+  assert.ok(pire <= 2 * CLUSTER_RADIUS_PX * 1.1, `groupe large de ${pire.toFixed(0)} px`);
 });
 
 test('un vrai changement de zoom, lui, regroupe autrement', () => {

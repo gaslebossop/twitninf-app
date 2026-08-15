@@ -7,15 +7,26 @@
  * ce qui fait ramer puis tomber une carte quand on dézoome vite, parce que
  * dézoomer rapproche tout le monde sans réduire le nombre de vues.
  *
- * ── La méthode ──
- * Découpage en grille, dans l'unité qui compte : le PIXEL. Un regroupement
- * défini en degrés serait trop serré à Paris et trop lâche à Oslo — un degré
- * de longitude ne mesure pas la même distance à l'écran selon la latitude et
- * le zoom. On convertit donc le rayon voulu (en pixels) en degrés à ce
- * zoom-là, et on regroupe dessus.
+ * ── La méthode, et pourquoi ce n'est plus une grille ──
+ * Le regroupement se fait par DISTANCE réelle à l'écran, en pixels : chaque
+ * groupe est semé sur un point, puis absorbe ceux qui tiennent dans son rayon.
+ *
+ * La version précédente découpait le plan en cases. C'était plus simple et
+ * c'était faux : deux personnes aux coins opposés d'une case de 72 px sont à
+ * 102 px l'une de l'autre, et l'arrondi du zoom par paliers entiers pouvait
+ * encore gonfler la case de 41 % — on a mesuré des groupes réunissant des gens
+ * séparés de 143 px, soit plus du tiers de la largeur d'un téléphone. Vu de
+ * l'écran, ça donne des groupes aberrants, et les absorbés disparaissent
+ * derrière une tête qui n'est pas près d'eux.
+ *
+ * Une grille a aussi des FRONTIÈRES : deux points à un pixel l'un de l'autre,
+ * mais de part et d'autre d'une bordure, ne se regroupent jamais, et la
+ * composition change dès que la bordure bouge. C'est ce défaut-là que
+ * l'arrondi du zoom cherchait à masquer. Le semis par distance n'a pas de
+ * frontière : il ne dépend que des positions relatives.
  *
  * Volontairement sans dépendance ni index spatial : quelques centaines de
- * points au maximum, un passage linéaire suffit largement.
+ * points au maximum, une comparaison deux à deux reste immédiate.
  */
 
 export interface Clusterable {
@@ -33,43 +44,58 @@ export interface Cluster<T extends Clusterable> {
 }
 
 /**
- * @param items          points à regrouper
+ * Distance maximale à la GRAINE d'un groupe, en pixels d'écran.
+ *
+ * ⚠️ C'est une DEMI-largeur, pas une largeur. Deux membres diamétralement
+ * opposés sont à `2 × CLUSTER_RADIUS_PX` l'un de l'autre : c'est le piège de
+ * cette famille d'algorithmes, et c'est ce qui a produit des groupes de 204 px
+ * de large alors qu'on croyait en demander 72.
+ *
+ * 36 px donne donc des groupes de 72 px au plus — 79 px en tenant compte de
+ * l'arrondi de l'échelle. Une épingle mesurant 46 px, deux personnes ainsi
+ * réunies sont bien à un jet de pierre l'une de l'autre à l'écran, ce qui est
+ * exactement ce que « regrouper » doit vouloir dire.
+ */
+export const CLUSTER_RADIUS_PX = 36;
+
+/**
+/**
+ * @param items            points à regrouper
  * @param degreesPerPixel  largeur d'un pixel écran, en degrés de longitude
- * @param radiusPx       distance en deçà de laquelle deux points fusionnent
- * @param latitudeCosine cosinus de la latitude de la fenêtre — voir plus bas
+ * @param radiusPx         DEMI-largeur d'un groupe, en pixels — voir plus bas
+ * @param latitudeCosine   cosinus de la latitude de la fenêtre — voir plus bas
  */
 export function clusterize<T extends Clusterable>(
   items: T[],
   degreesPerPixel: number,
-  radiusPx = 72,
+  radiusPx = CLUSTER_RADIUS_PX,
   latitudeCosine = 1
 ): Array<Cluster<T>> {
   if (items.length === 0) return [];
 
-  const cellLongitude = degreesPerPixel * radiusPx;
   /*
-   * La case doit être CARRÉE à l'écran, pas en degrés.
+   * Un degré de latitude ne vaut pas un degré de longitude à l'écran.
    *
    * En projection Mercator, un degré de latitude occupe `1 / cos(latitude)`
-   * fois plus de pixels qu'un degré de longitude. Une case carrée en degrés
-   * est donc, à l'écran, un rectangle d'autant plus HAUT qu'on s'éloigne de
-   * l'équateur : à Paris (cos 48,85° ≈ 0,66), elle mesurait 72 px de large
-   * pour 110 px de haut. Deux personnes séparées de 100 px verticalement
-   * fusionnaient — l'une d'elles étant alors réduite à un point sous la tête
-   * du groupe, elle avait purement et simplement disparu de la carte.
+   * fois plus de pixels : à Paris (cos 48,85° ≈ 0,66), il est une fois et demie
+   * plus « long » qu'un degré de longitude. Sans cette correction, le rayon de
+   * regroupement serait un ovale couché, et des gens séparés de cent pixels
+   * verticalement fusionneraient — l'un d'eux disparaissant alors derrière la
+   * tête du groupe.
    *
-   * Le garde-fou à 0,05 évite une case nulle près des pôles.
+   * Le garde-fou à 0,05 évite une division explosive près des pôles.
    */
-  const cellLatitude = cellLongitude * Math.min(1, Math.max(0.05, latitudeCosine));
+  const cosine = Math.min(1, Math.max(0.05, latitudeCosine));
+  const degreesPerPixelY = degreesPerPixel * cosine;
 
-  // Grille dégénérée (zoom non encore connu) : chacun reste seul, ce qui est
-  // le comportement sûr — on préfère afficher trop de monde que d'agréger au
+  // Échelle inconnue (zoom pas encore connu) : chacun reste seul, ce qui est le
+  // comportement sûr — on préfère afficher trop de monde que d'agréger au
   // hasard.
   if (
-    !Number.isFinite(cellLongitude) ||
-    cellLongitude <= 0 ||
-    !Number.isFinite(cellLatitude) ||
-    cellLatitude <= 0
+    !Number.isFinite(degreesPerPixel) ||
+    degreesPerPixel <= 0 ||
+    !Number.isFinite(degreesPerPixelY) ||
+    degreesPerPixelY <= 0
   ) {
     return items.map((item) => ({
       id: item.id,
@@ -79,25 +105,47 @@ export function clusterize<T extends Clusterable>(
     }));
   }
 
-  const buckets = new Map<string, T[]>();
-  for (const item of items) {
-    const key = `${Math.floor(item.longitude / cellLongitude)}:${Math.floor(item.latitude / cellLatitude)}`;
-    const bucket = buckets.get(key);
-    if (bucket) bucket.push(item);
-    else buckets.set(key, [item]);
-  }
-
+  /*
+   * Semis dans l'ordre des identifiants, et non dans l'ordre d'arrivée.
+   *
+   * C'est ce qui rend le résultat reproductible : deux calculs successifs sur
+   * le même ensemble sèment les mêmes groupes, donc désignent les mêmes têtes
+   * et demandent les mêmes images. Semer dans l'ordre du serveur ferait changer
+   * la composition à chaque réponse, pour des gens qui n'ont pas bougé.
+   */
+  const ordered = [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const taken = new Set<string>();
   const clusters: Array<Cluster<T>> = [];
-  for (const bucket of buckets.values()) {
+  const radiusSquared = radiusPx * radiusPx;
+
+  for (const seed of ordered) {
+    if (taken.has(seed.id)) continue;
+    taken.add(seed.id);
+
+    const bucket: T[] = [seed];
+    for (const other of ordered) {
+      if (taken.has(other.id)) continue;
+
+      const dx = (other.longitude - seed.longitude) / degreesPerPixel;
+      const dy = (other.latitude - seed.latitude) / degreesPerPixelY;
+      if (dx * dx + dy * dy > radiusSquared) continue;
+
+      bucket.push(other);
+      taken.add(other.id);
+    }
+
     if (bucket.length === 1) {
-      const [only] = bucket;
-      clusters.push({ id: only.id, latitude: only.latitude, longitude: only.longitude, items: bucket });
+      clusters.push({
+        id: seed.id,
+        latitude: seed.latitude,
+        longitude: seed.longitude,
+        items: bucket,
+      });
       continue;
     }
 
-    // Le groupe se pose au barycentre de ses membres, pas au centre de la
-    // case : sur une case à cheval entre une ville et le vide, le centre de
-    // case tomberait à côté de tout le monde.
+    // Le groupe se pose au barycentre de ses membres, pas sur sa graine : une
+    // graine excentrée désignerait un point où le groupe n'est pas.
     let latitude = 0;
     let longitude = 0;
     for (const item of bucket) {
@@ -137,9 +185,20 @@ export function degreesPerPixel(longitudeDelta: number, screenWidth: number): nu
  * pas RIGOUREUSEMENT identique : mêmes cases, mêmes groupes, rien à redessiner.
  * Seul un zoom change quelque chose — et c'est un geste rare et délibéré.
  */
+/**
+ * Par QUARTS de palier, et plus par paliers entiers.
+ *
+ * L'arrondi grossit l'échelle, donc le rayon, donc ce que la carte considère
+ * comme « proche ». Par paliers entiers l'erreur atteint 2^0,5 — 41 % — et on a
+ * mesuré des groupes de 204 px de large. Par quarts elle plafonne à 2^0,125,
+ * soit 9 %. La stabilité tient toujours : la dérive de ±1 % que produit un
+ * déplacement nord-sud ne franchit presque jamais un quart de palier.
+ */
+const ZOOM_SUBDIVISIONS = 4;
+
 export function quantizedDegreesPerPixel(longitudeDelta: number, screenWidth: number): number {
   if (!Number.isFinite(longitudeDelta) || longitudeDelta <= 0 || screenWidth <= 0) return 0;
-  const step = Math.round(Math.log2(360 / longitudeDelta));
+  const step = Math.round(Math.log2(360 / longitudeDelta) * ZOOM_SUBDIVISIONS) / ZOOM_SUBDIVISIONS;
   return 360 / Math.pow(2, step) / screenWidth;
 }
 
