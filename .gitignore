@@ -37,6 +37,11 @@ content/
 *.zip
 App.tsx
 currentprice-error-final-fix.md
+# Reference des conventions du projet, lue par la routine Claude automatisee
+# (voir gaslebossop/twitninf-app .github/workflows/agent-task-trigger.yml) :
+# sans cette exception, la regle *.md ci-dessus l'exclurait silencieusement,
+# exactement le piege que ce fichier documente lui-meme.
+!CLAUDE.md
 
 # Cache d'outillage local (~21 Mo) : ne doit jamais partir dans le depot.
 .task-cache/
