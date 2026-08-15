@@ -24,6 +24,29 @@ déjà réintégrés explicitement : `app.config.js`, `babel.config.js`,
 `metro.config.js`, `App.tsx`, `plugins/*.js`, `CLAUDE.md`). Vérifier avec
 `git show --stat HEAD` avant de push que le fichier y figure vraiment.
 
+## Carte des écrans — domaine → fichier
+
+Pour situer vite un écran existant à modifier ou à prendre en référence,
+sans Glob/Grep à l'aveugle :
+
+| Domaine | Écran(s) |
+|---|---|
+| Fil / tweets | `TweetsScreen.tsx` (accueil), `CreateTweetScreen.tsx`, `TweetDetailScreen.tsx`, `EditTweetScreen.tsx` |
+| Profil (soi) | `ProfileScreen.tsx`, `EditProfileScreen.tsx` |
+| Profil (un autre compte) | `UserProfileScreen.tsx` |
+| Réglages | `SettingsScreen.tsx` — c'est le point d'entrée de la plupart des sous-écrans (voir `renderActionButton`) |
+| Messages | `MessagesScreen.tsx`, `ConversationThreadScreen.tsx` |
+| Notifications | `NotificationsScreen.tsx` |
+| Recherche | `SearchScreen.tsx` |
+| La Forge | `ForgeScreen.tsx` (proposer/suivre), `ForgeReviewScreen.tsx` (staff), service `src/services/forgeService.ts` |
+| Économie / NF | `WalletScreen.tsx`, `NewEconomyScreen.tsx`, `TradingScreen.tsx`, `CasinoScreen.tsx` |
+| Modération / admin | `ModerationScreen.tsx` — point d'entrée vers `UserManagementScreen`, `AnalyticsScreen`, `ContentModerationScreen`, `EconomyManagementScreen`, `EventManagementScreen` |
+| Auth | `src/contexts/AuthContext.tsx` (état utilisateur courant, PAS un écran) |
+| Appel réseau | `src/services/api.ts` (méthodes `apiService.*`, un service par domaine ailleurs dans `src/services/`) |
+
+Pas dans ce tableau → `ls src/screens` puis grep sur le nom probable ; les
+fichiers sont un-écran-un-fichier, pas de sous-dossiers.
+
 ## Structure
 
 - `src/screens/*.tsx` — un écran par fichier, pas de sous-dossiers.
