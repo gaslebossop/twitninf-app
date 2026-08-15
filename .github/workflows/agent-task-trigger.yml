@@ -1,0 +1,18 @@
+name: agent-task-trigger
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  fire-routine:
+    # Only fire when the "agent-task" label is the one being added
+    # (avoids re-firing on every unrelated label change)
+    if: github.event.label.name == 'agent-task'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fire Claude Code routine
+        run: |
+          curl -sf -X POST "https://api.anthropic.com/v1/claude_code/routines/trig_01HtbcpU8LZUJvD4H5qnedba/fire" \
+            -H "Authorization: Bearer ${{ secrets.CLAUDE_ROUTINE_TOKEN }}" \
+            -H "anthropic-version: 2023-06-01"
