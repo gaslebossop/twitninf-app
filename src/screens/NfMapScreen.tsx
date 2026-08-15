@@ -28,6 +28,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -176,8 +177,19 @@ const GROUP_ROW_HEIGHT = 38;
 /** Cinq lignes ENTIÈRES. Une sixième coupée se lirait comme un défaut. */
 const GROUP_VISIBLE_ROWS = 5;
 
-/** Hauteur de la feuille repliée — juste de quoi lire le résumé. */
+/**
+ * Les trois crans de la feuille, à la façon de Snap Map.
+ *
+ * Snap n'a pas de « fiche flottante » : il a UNE feuille en bas dont le
+ * contenu change, et qu'on tire au doigt. Toucher quelqu'un la fait monter au
+ * cran du milieu ; la tirer plus haut donne la liste complète. C'est ce qui
+ * évite d'avoir deux objets — une carte flottante et une feuille — qui se
+ * disputent le bas de l'écran et se recouvrent.
+ */
+/** Repliée : juste de quoi lire le résumé. */
 const PEEK_HEIGHT = 112;
+/** Cran du milieu : une fiche de personne, ou les premières lignes d'un groupe. */
+const CARD_HEIGHT = 312;
 /** Hauteur réelle de la feuille, constante : c'est la translation qui bouge. */
 const SHEET_HEIGHT = Math.round(Dimensions.get('window').height * 0.72);
 /** Ouverture un peu plus lente que la fermeture : on suit ce qui se révèle. */
@@ -185,6 +197,12 @@ const OPEN_MS = 260;
 const CLOSE_MS = 200;
 
 type SheetMode = 'peek' | 'list' | 'settings';
+
+/**
+ * Les crans de la feuille. Snap en a trois, et c'est ce qui rend le geste
+ * lisible : un pour le résumé, un pour une fiche, un pour la liste entière.
+ */
+type SheetDetent = 'peek' | 'card' | 'full';
 
 const MODES: Array<{ id: SharingMode; label: string; hint: string; icon: string }> = [
   {
@@ -213,6 +231,21 @@ function freshness(iso: string): string {
   if (minutes < 2) return 'à l’instant';
   if (minutes < 60) return `il y a ${minutes} min`;
   return `il y a ${Math.round(minutes / 60)} h`;
+}
+
+/**
+ * La durée de vie d'une position, écrite comme on la dirait.
+ *
+ * Le serveur la donne en heures. « au bout de 72 h » est juste mais ne se lit
+ * pas : personne ne compte en heures au-delà d'une journée. Au-dessus de
+ * 48 heures on passe en jours.
+ */
+function ttlLabel(hours: number | undefined): string {
+  const value = Number(hours);
+  if (!Number.isFinite(value) || value <= 0) return 'un moment';
+  if (value < 48) return `${Math.round(value)} h`;
+  const days = Math.round(value / 24);
+  return `${days} jour${days > 1 ? 's' : ''}`;
 }
 
 /**
@@ -314,6 +347,7 @@ export default function NfMapScreen() {
   } | null>(null);
   const [search, setSearch] = useState('');
   const [sheet, setSheet] = useState<SheetMode>('peek');
+  const [detent, setDetent] = useState<SheetDetent>('peek');
   /**
    * Le lieu qu'on survole, à la façon de Snap Map.
    *
@@ -333,7 +367,7 @@ export default function NfMapScreen() {
       const loaded = await nfMapService.getSettings();
       setSettings(loaded);
       // Premier passage, aucun choix fait : on explique avant de montrer.
-      if (loaded && loaded.sharing_mode === 'ghost' && !loaded.shared_at) setSheet('settings');
+      if (loaded && loaded.sharing_mode === 'ghost' && !loaded.shared_at) { setSheet('settings'); setDetent('full'); }
     } catch {
       /* La carte reste lisible sans ses réglages. */
     }
@@ -532,7 +566,7 @@ export default function NfMapScreen() {
         await locateMe({ silent: true });
         setSheet('peek');
         toast.success(mode === 'city' ? 'Ta ville est partagée' : 'Ta position est partagée', {
-          description: `Elle disparaît seule au bout de ${updated.policy?.ttl_hours ?? 8} h.`,
+          description: `Elle disparaît seule au bout de ${ttlLabel(updated.policy?.ttl_hours)}.`,
         });
       } catch (error: any) {
         toast.error(error?.message || 'Réglage impossible');
@@ -562,6 +596,7 @@ export default function NfMapScreen() {
       setGroup(null);
       setSelected(person);
       setSheet('peek');
+      setDetent('card');
     },
     [jumpTo]
   );
@@ -598,12 +633,14 @@ export default function NfMapScreen() {
         });
         setSelected(null);
         setSheet('peek');
+        setDetent('card');
         return;
       }
 
       setGroup(null);
       setSelected(role.person);
       setSheet('peek');
+      setDetent('card');
     },
     []
   );
@@ -682,7 +719,8 @@ export default function NfMapScreen() {
   const handlePressMap = useCallback(() => {
     setSelected(null);
     setGroup(null);
-    setSheet((current) => (current === 'peek' ? current : 'peek'));
+    setDetent('peek');
+    setSheet('peek');
   }, []);
 
   const handleRegionChange = useCallback(
@@ -731,33 +769,158 @@ export default function NfMapScreen() {
    * dessous, visibles nulle part et impossibles à fermer. C'est le « on ne
    * peut pas fermer les popups ».
    */
-  const isSheetOpen = sheet !== 'peek';
+  /**
+   * Ce que la feuille MONTRE, déduit de la sélection.
+   *
+   * Une seule feuille, un seul endroit où regarder. Avant, une fiche flottante
+   * se posait par-dessus la feuille : deux objets pour le bas de l'écran, qui
+   * se recouvraient dès que la feuille montait.
+   */
+  const content: 'person' | 'group' | 'settings' | 'list' =
+    group ? 'group' : selected ? 'person' : sheet === 'settings' ? 'settings' : 'list';
+
+  /** Hauteur visible de chaque cran, marge système comprise. */
+  const detentHeight = useCallback(
+    (name: SheetDetent) =>
+      (name === 'peek' ? PEEK_HEIGHT : name === 'card' ? CARD_HEIGHT : SHEET_HEIGHT - insets.bottom) +
+      insets.bottom,
+    [insets.bottom]
+  );
+  /** Translation correspondante : 0 = entièrement dépliée. */
+  const offsetFor = useCallback(
+    (name: SheetDetent) => Math.max(0, SHEET_HEIGHT - detentHeight(name)),
+    [detentHeight]
+  );
+
+  const isSheetOpen = detent !== 'peek';
   const floatingBottom = PEEK_HEIGHT + insets.bottom + 16;
 
   /**
-   * Glissement de la feuille, piloté en natif.
+   * Position de la feuille, EN PIXELS.
    *
-   * `0` = dépliée. Repliée, on la descend juste assez pour ne laisser dépasser
-   * que l'en-tête : le corps sort de l'écran au lieu d'être démonté, donc rien
-   * ne se recompose pendant l'animation.
+   * Une valeur en pixels et non une progression de 0 à 1 : le doigt déplace des
+   * pixels, et convertir dans les deux sens à chaque image pour un geste
+   * continu n'apporte rien.
    */
-  const progress = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: isSheetOpen ? 1 : 0,
-      duration: isSheetOpen ? OPEN_MS : CLOSE_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [isSheetOpen, progress]);
+  const sheetY = useRef(new Animated.Value(offsetFor('peek'))).current;
+  /** D'où partait la feuille quand le doigt s'est posé. */
+  const dragOrigin = useRef(offsetFor('peek'));
 
-  const slide = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SHEET_HEIGHT - PEEK_HEIGHT - insets.bottom, 0],
+  const settle = useCallback(
+    (name: SheetDetent) => {
+      Animated.spring(sheetY, {
+        toValue: offsetFor(name),
+        useNativeDriver: true,
+        damping: 26,
+        stiffness: 260,
+        mass: 0.9,
+      }).start();
+    },
+    [offsetFor, sheetY]
+  );
+
+  // Un changement de cran décidé par l'app (toucher quelqu'un, refermer) :
+  // le geste, lui, pilote `sheetY` directement et ne repasse pas par ici.
+  useEffect(() => { settle(detent); }, [detent, settle]);
+
+  /**
+   * Le geste de la feuille — la contrainte principale de Snap.
+   *
+   * Trois règles, chacune pour une raison :
+   *
+   *   1. **Seul l'en-tête est saisissable.** Le corps défile ; s'il tirait
+   *      aussi la feuille, on ne pourrait plus lire une longue liste sans la
+   *      refermer par accident.
+   *   2. **La feuille ne dépasse jamais ses bornes** — pas de rebond
+   *      élastique au-delà du cran haut, c'est ce qui trahit une feuille faite
+   *      à la main.
+   *   3. **La vitesse décide, pas seulement la position.** Un geste bref et
+   *      vif doit changer de cran même sur trente pixels ; sans ça, il faut
+   *      traîner le doigt jusqu'à mi-chemin et la feuille paraît collante.
+   *
+   * `PanResponder` plutôt que Reanimated : la valeur animée existante est déjà
+   * une `Animated.Value`, et un worklet qui appellerait une fonction JS
+   * ordinaire tuerait l'app sans laisser un seul log.
+   */
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        /*
+         * `…Capture` et pas `onMoveShouldSetPanResponder`.
+         *
+         * L'en-tête contient des zones tactiles (la poignée, la rangée du
+         * résumé). Sans la variante capturante, c'est l'enfant qui garde le
+         * geste dès que le doigt s'est posé sur lui : le glissement ne partait
+         * qu'en visant les quelques pixels de marge entre eux, et paraissait
+         * marcher une fois sur trois. La capture laisse le parent reprendre la
+         * main dès que le mouvement devient franchement vertical — le simple
+         * appui, lui, continue d'atteindre l'enfant.
+         */
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          Math.abs(gesture.dy) > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
+        onPanResponderGrant: () => {
+          sheetY.stopAnimation((value: number) => { dragOrigin.current = value; });
+        },
+        onPanResponderMove: (_event, gesture) => {
+          const low = offsetFor('full');
+          const high = offsetFor('peek');
+          sheetY.setValue(Math.min(high, Math.max(low, dragOrigin.current + gesture.dy)));
+        },
+        onPanResponderRelease: (_event, gesture) => {
+          const landed = dragOrigin.current + gesture.dy;
+          const order: SheetDetent[] = ['full', 'card', 'peek'];
+
+          // Un geste vif l'emporte sur la distance parcourue.
+          if (Math.abs(gesture.vy) > 0.7) {
+            const current = order.reduce((best, name) =>
+              Math.abs(offsetFor(name) - dragOrigin.current) < Math.abs(offsetFor(best) - dragOrigin.current)
+                ? name
+                : best
+            );
+            const index = order.indexOf(current);
+            const next = order[Math.min(order.length - 1, Math.max(0, index + (gesture.vy > 0 ? 1 : -1)))];
+            setDetent(next);
+            settle(next);
+            return;
+          }
+
+          // Sinon, le cran le plus proche de là où le doigt s'est levé.
+          const nearest = order.reduce((best, name) =>
+            Math.abs(offsetFor(name) - landed) < Math.abs(offsetFor(best) - landed) ? name : best
+          );
+          setDetent(nearest);
+          settle(nearest);
+        },
+      }),
+    [offsetFor, settle, sheetY]
+  );
+
+  const chevronTurn = sheetY.interpolate({
+    inputRange: [offsetFor('full'), offsetFor('peek')],
+    outputRange: ['180deg', '0deg'],
+    extrapolate: 'clamp',
   });
-  const chevronTurn = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
+
+  /**
+   * Le voile SUIT la feuille, il n'apparaît pas d'un coup.
+   *
+   * Il était monté et démonté sur une condition booléenne : un aplat noir à
+   * 45 % surgissait en une image puis disparaissait de même, pendant que la
+   * feuille, elle, glissait. C'est ça, « le fond qui arrive d'un coup ».
+   * Interpolé sur la position de la feuille, il ne peut plus se désynchroniser
+   * d'elle — même tiré au doigt, à mi-course.
+   */
+  /** Ce qui flotte au-dessus de la carte s estompe quand la feuille monte. */
+  const floatingFade = sheetY.interpolate({
+    inputRange: [offsetFor('card'), offsetFor('peek')],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const backdropOpacity = sheetY.interpolate({
+    inputRange: [offsetFor('full'), offsetFor('card'), offsetFor('peek')],
+    outputRange: [0.5, 0.18, 0],
+    extrapolate: 'clamp',
   });
 
   if (loading) {
@@ -783,208 +946,131 @@ export default function NfMapScreen() {
         />
       </View>
 
-      {/* ── Barre du haut : retour, recherche, partage ── */}
+      {/* ── Barre du haut, disposée comme celle de Snap ──
+          Des boutons ronds aux extrémités, et le NOM DU LIEU au centre, sur la
+          même ligne. Il occupait auparavant une bande à part sous une pastille
+          de recherche pleine largeur : trois choses empilées en haut d'un écran
+          dont le sujet est la carte. Le lieu est le titre de cet écran, le
+          reste est de la commande — d'où la recherche réduite à une icône. */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <Tappable style={styles.round} onPress={() => navigation.goBack()} accessibilityLabel="Retour">
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </Tappable>
 
         <Tappable
-          style={styles.searchPill}
-          onPress={() => setSheet('list')}
+          style={styles.round}
+          onPress={() => { setSheet('list'); setDetent('full'); }}
           accessibilityLabel="Chercher un ami"
         >
-          {/* Rangée dans une vue interne : `Tappable` pose le style sur sa vue
-              externe, alors que ses enfants vivent dans un `Pressable` sans
-              style — la loupe se retrouvait au-dessus du texte. */}
-          <View style={styles.pillRow}>
-            <Ionicons name="search" size={17} color={colors.textMuted} />
-            <Text style={styles.searchPlaceholder} numberOfLines={1}>
-              {sharingFriends.length > 0
-                ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
-                : 'Chercher un ami'}
-            </Text>
-          </View>
+          <Ionicons name="search" size={20} color={colors.textPrimary} />
         </Tappable>
+
+        {/* L'écart qui renvoie le bouton suivant à DROITE.
+            Il était tenu par la pastille de recherche en pleine largeur ; en la
+            réduisant à une icône, les trois boutons se sont tassés à gauche et
+            le titre centré leur passait dessus. */}
+        <View style={styles.topSpacer} pointerEvents="none" />
 
         <Tappable
           style={[styles.round, !isGhost && styles.roundLive]}
-          onPress={() => setSheet(sheet === 'settings' ? 'peek' : 'settings')}
+          onPress={() => { const next = sheet === 'settings' ? 'peek' : 'settings'; setSheet(next); setDetent(next === 'settings' ? 'full' : 'peek'); }}
           accessibilityLabel="Réglages de partage"
         >
+          {/* Un crayon : ce bouton sert à MODIFIER ce qu'on partage. L'œil
+              barré et l'onde décrivaient l'état actuel, pas l'action — et un
+              état ne se touche pas, il se lit. L'état reste dit, mais par la
+              couleur et l'anneau d'accent quand le partage est actif. */}
           <Ionicons
-            name={isGhost ? 'eye-off-outline' : 'radio'}
+            name="create-outline"
             size={19}
             color={isGhost ? colors.textPrimary : colors.accent}
           />
         </Tappable>
       </View>
 
-      {/* ── Le lieu survolé ──
-          Sous la barre du haut et centré, comme Snap Map. `pointerEvents` à
-          `none` sur toute la bande : c'est une étiquette, pas un bouton, et
-          elle traverse toute la largeur — sans ça elle intercepterait les
-          gestes sur une bonne partie du haut de la carte. */}
-      {place && !isSheetOpen && (
-        <View style={[styles.placeBar, { top: insets.top + 62 }]} pointerEvents="none">
+      {/* ── Le nom du lieu ──
+          Posé en couche à part, ABSOLUE, et pas dans la rangée des boutons.
+          La barre porte un bouton à gauche et deux à droite : un titre en
+          `flex: 1` entre les deux occupe l'espace restant, qui n'est pas
+          centré — il était décalé vers la gauche de la largeur d'un bouton.
+          Une couche absolue se centre sur l'écran, quel que soit le nombre de
+          boutons de chaque côté.
+
+          Les marges latérales valent la place prise par les deux boutons de
+          droite : un nom long s'abrège plutôt que de passer dessous. */}
+      {place ? (
+        <View style={[styles.topTitle, { top: insets.top + 8 }]} pointerEvents="none">
           <Text style={styles.placeText} numberOfLines={1}>
             {place}
           </Text>
         </View>
-      )}
+      ) : null}
 
-      {!isSheetOpen && (
-        <Tappable
-          style={[styles.locate, { bottom: floatingBottom }]}
-          onPress={() => locateMe()}
-          accessibilityLabel="Me localiser"
-        >
+
+      {/* Ces deux-là s'ESTOMPENT avec la feuille au lieu d'être démontés.
+          Montés sur condition, ils disparaissaient en une image — ombre
+          comprise, ce qui se voit d'autant plus qu'elle est portée. Leur
+          opacité suit la même valeur que le voile, donc ils ne peuvent pas se
+          désynchroniser du glissement, même tiré au doigt. */}
+      <Animated.View
+        style={[styles.locate, { bottom: floatingBottom, opacity: floatingFade }]}
+        pointerEvents={isSheetOpen ? 'none' : 'auto'}
+      >
+        <Tappable onPress={() => locateMe()} accessibilityLabel="Me localiser" style={styles.locateHit}>
           <Ionicons name="locate" size={20} color={colors.textPrimary} />
         </Tappable>
-      )}
+      </Animated.View>
 
       {/* ── Vue trop large ──
           Sans ce mot, la carte semble perdre du monde à mesure qu'on dézoome. */}
-      {viewTooWide && !isSheetOpen && (
-        <View style={[styles.notice, { bottom: floatingBottom }]} pointerEvents="none">
+      {viewTooWide && (
+        <Animated.View
+          style={[styles.notice, { bottom: floatingBottom, opacity: floatingFade }]}
+          pointerEvents="none"
+        >
           <Ionicons name="search-outline" size={14} color={colors.textMuted} />
           <Text style={styles.noticeText} numberOfLines={1}>
             Zoome pour charger tout le monde
           </Text>
-        </View>
+        </Animated.View>
       )}
 
       {/* ── Voile : referme la feuille dépliée en touchant la carte ──
           Une feuille qui occupe les trois quarts de l'écran sans rien derrière
           qui la referme se lit comme un cul-de-sac. */}
-      {isSheetOpen && (
+      {/* Toujours monté, jamais conditionné : c'est son OPACITÉ qui suit la
+          feuille. Monté sur condition, il surgissait en une image.
+          `pointerEvents` le rend traversant tant qu'il est invisible, sinon il
+          intercepterait les gestes sur la carte alors qu'on ne le voit pas. */}
+      <Animated.View
+        style={[styles.backdrop, { opacity: backdropOpacity }]}
+        pointerEvents={isSheetOpen ? 'auto' : 'none'}
+      >
         <Pressable
-          style={styles.backdrop}
-          onPress={() => setSheet('peek')}
+          style={StyleSheet.absoluteFill}
+          onPress={() => { setSheet('peek'); setSelected(null); setGroup(null); setDetent('peek'); }}
           accessibilityLabel="Refermer"
         />
-      )}
+      </Animated.View>
 
-      {/* ── Liste d'un groupe ──
-          Un groupe rassemble exactement les gens qu'on n'arrive pas à
-          distinguer à ce zoom : le toucher doit dire QUI est là et depuis
-          quand, pas seulement rapprocher la carte. Le zoom reste à portée dans
-          l'en-tête, pour qui veut quand même les séparer sur le fond. */}
-      {group && !isSheetOpen && (
-        <View style={[styles.card, styles.group, { bottom: floatingBottom + 58 }]}>
-          <View style={styles.groupHead}>
-            <View style={styles.cardText}>
-              <Text style={styles.groupTitle} numberOfLines={1}>
-                {group.people.length + (group.includesSelf ? 1 : 0)} personnes ici
-              </Text>
-              {/* Le lieu est sorti des lignes et posé ICI.
-                  Il était répété à l'identique sur chacune — « Challerange ·
-                  approximatif », treize fois — ce qui noyait la seule
-                  information qui change d'une ligne à l'autre : depuis quand.
-                  Un groupe rassemble par définition des gens au même endroit,
-                  donc l'endroit se dit une fois. */}
-              {(group.commonPlace || group.includesSelf) && (
-                <Text style={styles.groupWhere} numberOfLines={1}>
-                  {[group.commonPlace, group.includesSelf ? 'dont toi' : null]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-              )}
-            </View>
-
-            <Tappable
-              style={styles.groupZoom}
-              onPress={() => {
-                jumpTo(group.center, Math.min(liveZoom.current + 2, MAX_ZOOM));
-                setGroup(null);
-              }}
-              haptic="select"
-              accessibilityLabel="Zoomer sur le groupe"
-            >
-              <Ionicons name="scan-outline" size={15} color={colors.textSecondary} />
-            </Tappable>
-            <Tappable onPress={() => setGroup(null)} style={styles.cardClose} accessibilityLabel="Fermer">
-              <Ionicons name="close" size={18} color={colors.textMuted} />
-            </Tappable>
-          </View>
-
-          {/* Hauteur bornée à un nombre ENTIER de lignes : une dernière ligne
-              coupée en deux se lit comme un défaut d'affichage, pas comme
-              « ça continue ». */}
-          <ScrollView
-            style={{ maxHeight: GROUP_ROW_HEIGHT * GROUP_VISIBLE_ROWS }}
-            nestedScrollEnabled
-            showsVerticalScrollIndicator={false}
-          >
-            {group.people.map((person) => (
-              <Tappable
-                key={person.id}
-                style={styles.groupRow}
-                onPress={() => focusOn(person)}
-                haptic="select"
-              >
-                <View style={styles.groupRowInner}>
-                  <Avatar size={28} username={person.username} uri={person.avatar || undefined} />
-                  <Text style={styles.groupName} numberOfLines={1}>
-                    {person.full_name || person.username}
-                  </Text>
-                  {/* Alignée à droite, et abrégée : « 38 h » plutôt que « il y
-                      a 38 h ». Mises en colonne, ces durées se comparent d'un
-                      coup d'œil — c'est tout ce qu'on vient y chercher. */}
-                  <Text style={styles.groupWhen}>{shortFreshness(person.shared_at)}</Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-                </View>
-              </Tappable>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* ── Fiche de la personne touchée ── */}
-      {selected && !group && !isSheetOpen && (
-        <View style={[styles.card, { bottom: floatingBottom + 58 }]}>
-          <Avatar size={44} username={selected.username} uri={selected.avatar || undefined} />
-          <View style={styles.cardText}>
-            <Text style={styles.cardName} numberOfLines={1}>
-              {selected.full_name || selected.username}
-            </Text>
-            <Text style={styles.cardMeta} numberOfLines={1}>
-              {freshness(selected.shared_at)}
-              {selected.place_label ? ` · ${selected.place_label}` : ''}
-              {selected.sharing_mode === 'city' ? ' · approximatif' : ''}
-            </Text>
-          </View>
-          <Tappable
-            style={styles.cardAction}
-            onPress={() =>
-              (navigation as any).navigate('UserProfile', {
-                userId: selected.id,
-                username: selected.username,
-              })
-            }
-            haptic="select"
-          >
-            <Text style={styles.cardActionText}>Profil</Text>
-          </Tappable>
-          <Tappable onPress={() => setSelected(null)} style={styles.cardClose}>
-            <Ionicons name="close" size={18} color={colors.textMuted} />
-          </Tappable>
-        </View>
-      )}
 
       {/* ── Feuille du bas ──
-          Hauteur FIXE, translation animée. Changer la hauteur d'une vue ne
-          peut pas passer par le pilote natif : la feuille sautait d'un état à
-          l'autre en une image, ce qui se lit comme un défaut d'affichage
-          plutôt que comme une ouverture. En glissant une feuille de taille
-          constante, l'animation tourne côté natif et ne dépend plus du fil JS.
-          C'est le même patron que `ConfirmSheet`. */}
+          Hauteur FIXE, translation animée : changer la hauteur d'une vue ne
+          peut pas passer par le pilote natif, et la feuille sautait d'un état à
+          l'autre en une image. En glissant une feuille de taille constante,
+          l'animation tourne côté natif.
+
+          L'EN-TÊTE porte le geste, pas le corps : une longue liste doit
+          pouvoir défiler sans qu'on referme la feuille par accident. C'est la
+          contrainte de Snap, et c'est aussi la seule qui se remarque quand
+          elle manque. */}
       <Animated.View
-        style={[styles.sheet, { height: SHEET_HEIGHT, transform: [{ translateY: slide }] }]}
+        style={[styles.sheet, { height: SHEET_HEIGHT, transform: [{ translateY: sheetY }] }]}
       >
+        <View {...pan.panHandlers}>
         <Tappable
           style={styles.handleZone}
-          onPress={() => setSheet(sheet === 'peek' ? 'list' : 'peek')}
+          onPress={() => setDetent(detent === 'peek' ? 'full' : 'peek')}
           haptic="tap"
           scaleTo={1}
         >
@@ -997,45 +1083,149 @@ export default function NfMapScreen() {
             vient de cliquer pour entrer. */}
         <Tappable
           style={styles.peekTouch}
-          onPress={() => setSheet(isSheetOpen ? 'peek' : 'list')}
+          onPress={() => setDetent(isSheetOpen ? 'peek' : 'full')}
           haptic="tap"
           scaleTo={1}
         >
+          {/* L'en-tête DIT CE QU'ON REGARDE.
+              Toucher quelqu'un sur la carte le fait apparaître ici plutôt que
+              dans une fiche flottante posée par-dessus : un seul objet occupe
+              le bas de l'écran, comme chez Snap. */}
           <View style={styles.peek}>
-            <View style={styles.peekAvatars}>
-              {sharingFriends.slice(0, 5).map((friend, index) => (
-                <View
-                  key={friend.id}
-                  style={[styles.peekAvatar, index > 0 && styles.peekAvatarStacked]}
-                >
-                  <Avatar size={30} username={friend.username} uri={friend.avatar || undefined} />
-                </View>
-              ))}
-            </View>
+            {content === 'person' && selected ? (
+              <Avatar size={40} username={selected.username} uri={selected.avatar || undefined} />
+            ) : content === 'group' && group ? (
+              <View style={styles.peekAvatars}>
+                {group.people.slice(0, 4).map((person, index) => (
+                  <View
+                    key={person.id}
+                    style={[styles.peekAvatar, index > 0 && styles.peekAvatarStacked]}
+                  >
+                    <Avatar size={30} username={person.username} uri={person.avatar || undefined} />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.peekAvatars}>
+                {sharingFriends.slice(0, 5).map((friend, index) => (
+                  <View
+                    key={friend.id}
+                    style={[styles.peekAvatar, index > 0 && styles.peekAvatarStacked]}
+                  >
+                    <Avatar size={30} username={friend.username} uri={friend.avatar || undefined} />
+                  </View>
+                ))}
+              </View>
+            )}
 
             <View style={styles.peekText}>
               <Text style={styles.peekTitle} numberOfLines={1}>
-                {sheet === 'settings'
-                  ? 'Ce que tu partages'
-                  : sharingFriends.length > 0
-                    ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
-                    : 'Personne sur la carte'}
+                {content === 'person' && selected
+                  ? selected.full_name || selected.username
+                  : content === 'group' && group
+                    ? `${group.people.length + (group.includesSelf ? 1 : 0)} personnes ici`
+                    : content === 'settings'
+                      ? 'Ce que tu partages'
+                      : sharingFriends.length > 0
+                        ? `${sharingFriends.length} ami${sharingFriends.length > 1 ? 's' : ''} sur la carte`
+                        : 'Personne sur la carte'}
               </Text>
               <Text style={styles.peekHint} numberOfLines={1}>
-                {isGhost ? 'Tu es en mode fantôme' : 'Ta position est partagée'}
+                {content === 'person' && selected
+                  ? `Dernière activité : ${freshness(selected.shared_at)}`
+                  : content === 'group' && group
+                    ? [group.commonPlace, group.includesSelf ? 'dont toi' : null].filter(Boolean).join(' · ') ||
+                      'Touche quelqu’un pour le suivre'
+                    : isGhost
+                      ? 'Tu es en mode fantôme'
+                      : 'Ta position est partagée'}
               </Text>
             </View>
 
-            <Animated.View style={{ transform: [{ rotate: chevronTurn }] }}>
-              <Ionicons name="chevron-up" size={20} color={colors.textMuted} />
-            </Animated.View>
+            {content === 'person' || content === 'group' ? (
+              <Tappable
+                onPress={() => { setSelected(null); setGroup(null); setDetent('peek'); }}
+                style={styles.cardClose}
+                accessibilityLabel="Fermer"
+              >
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </Tappable>
+            ) : (
+              <Animated.View style={{ transform: [{ rotate: chevronTurn }] }}>
+                <Ionicons name="chevron-up" size={20} color={colors.textMuted} />
+              </Animated.View>
+            )}
           </View>
         </Tappable>
+        </View>
 
         {/* Corps : ce qui n'est révélé qu'en dépliant. Hors de l'écran tant
             que la feuille est repliée, donc jamais à cacher à la main. */}
         <View style={[styles.sheetBody, { paddingBottom: insets.bottom }]}>
-        {sheet === 'list' && (
+        {/* ── Une personne ──
+            L'en-tête porte déjà son nom et sa dernière activité ; ici ne
+            restent que les actions, en pastilles, comme la rangée de Snap. */}
+        {content === 'person' && selected && (
+          <View style={styles.personBody}>
+            <Text style={styles.personWhere} numberOfLines={2}>
+              {selected.place_label
+                ? `${selected.place_label}${selected.sharing_mode === 'city' ? ' · position approximative' : ''}`
+                : selected.sharing_mode === 'city'
+                  ? 'Position approximative'
+                  : 'Position précise'}
+            </Text>
+            <View style={styles.personActions}>
+              <Tappable
+                style={styles.personAction}
+                onPress={() =>
+                  (navigation as any).navigate('UserProfile', {
+                    userId: selected.id,
+                    username: selected.username,
+                  })
+                }
+                haptic="select"
+              >
+                <View style={styles.pillRow}>
+                  <Ionicons name="person-outline" size={16} color={colors.accent} />
+                  <Text style={styles.personActionText}>Profil</Text>
+                </View>
+              </Tappable>
+              <Tappable style={styles.personAction} onPress={() => focusOn(selected)} haptic="select">
+                <View style={styles.pillRow}>
+                  <Ionicons name="locate-outline" size={16} color={colors.accent} />
+                  <Text style={styles.personActionText}>Centrer</Text>
+                </View>
+              </Tappable>
+            </View>
+          </View>
+        )}
+
+        {/* ── Un groupe ──
+            Le lieu est dans l'en-tête, donc chaque ligne ne porte que ce qui
+            la distingue : qui, et depuis quand. */}
+        {content === 'group' && group && (
+          <ScrollView contentContainerStyle={styles.listContent} nestedScrollEnabled>
+            {group.people.map((person) => (
+              <Tappable
+                key={person.id}
+                style={styles.groupRow}
+                onPress={() => focusOn(person)}
+                haptic="select"
+              >
+                <View style={styles.groupRowInner}>
+                  <Avatar size={34} username={person.username} uri={person.avatar || undefined} />
+                  <Text style={styles.groupName} numberOfLines={1}>
+                    {person.full_name || person.username}
+                  </Text>
+                  <Text style={styles.groupWhen}>{shortFreshness(person.shared_at)}</Text>
+                  <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+                </View>
+              </Tappable>
+            ))}
+          </ScrollView>
+        )}
+
+        {content === 'list' && (
           <>
             <View style={styles.searchRow}>
               <Ionicons name="search" size={16} color={colors.textMuted} />
@@ -1127,7 +1317,7 @@ export default function NfMapScreen() {
           </>
         )}
 
-        {sheet === 'settings' && (
+        {content === 'settings' && (
           <ScrollView contentContainerStyle={styles.sheetContent}>
             <HowItWorks
               id="nf-map-sharing"
@@ -1135,7 +1325,7 @@ export default function NfMapScreen() {
               points={[
                 { icon: 'eye-off-outline', text: 'Par défaut, rien : tu es fantôme tant que tu n’as pas choisi.' },
                 { icon: 'people-outline', text: 'Seuls les comptes liés à toi peuvent te voir.' },
-                { icon: 'time-outline', text: `Ta position s’efface seule au bout de ${settings?.policy?.ttl_hours ?? 8} h.` },
+                { icon: 'time-outline', text: `Ta position s’efface seule au bout de ${ttlLabel(settings?.policy?.ttl_hours)}.` },
               ]}
             />
 
@@ -1226,39 +1416,50 @@ const styles = StyleSheet.create({
     ...floating,
   },
   roundLive: { borderWidth: 1.5, borderColor: colors.accentMuted },
+  /** Renvoie le bouton de partage a droite. Voir le commentaire au point d usage. */
+  topSpacer: { flex: 1 },
 
-  searchPill: {
-    flex: 1,
-    height: 42,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 21,
-    backgroundColor: colors.surface,
-    ...floating,
-  },
   /** Rangée interne — voir le commentaire au point d'usage. */
   pillRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  searchPlaceholder: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.textSecondary },
 
-  placeBar: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   /**
-   * Posé à même la carte, sans pastille ni fond.
+   * Couche du titre : absolue, donc reellement centree sur l ecran.
    *
-   * Un fond ajouterait une quatrième surface flottante en haut de l'écran, à
-   * côté du retour, de la recherche et du partage — c'est déjà chargé. Le halo
-   * sombre suffit à le décoller du fond quel que soit ce qu'il y a dessous,
-   * et c'est exactement ce que fait Snap.
+   * 108 px de marge de chaque cote = les deux boutons ronds de droite et
+   * leurs ecarts. Symetrique des deux cotes pour que le centre reste le
+   * centre, meme si un nom long doit s abreger.
+   */
+  topTitle: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 104,
+  },
+  /**
+   * Le nom du lieu : le TITRE de l'écran, pas une légende.
+   *
+   * `fonts.heading` — la police des en-têtes de l'app (voir `AppHeader`), pas
+   * `display`. Le titre d'un écran doit se lire comme tous les autres titres de
+   * l'app ; une graisse à part pour cette seule page se remarque tout de suite,
+   * et pas en bien.
+   *
+   * Ni ombre portée ni pastille. L'ombre était censée le décoller du fond,
+   * mais elle empâtait le dessin des lettres — c'est elle qu'on prenait pour
+   * une mauvaise police. Elle n'a plus lieu d'être depuis que la carte suit
+   * le thème : le texte et le fond de carte viennent désormais de la même
+   * palette, ils contrastent par construction.
    */
   placeText: {
-    maxWidth: '80%',
-    fontFamily: fonts.display,
-    fontSize: 17,
+    fontFamily: fonts.heading,
+    fontSize: 20,
+    lineHeight: 25,
     color: colors.textPrimary,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
 
+  locateHit: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   locate: {
     position: 'absolute',
     right: 16,
@@ -1333,6 +1534,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.bgElevated,
   },
+  // ── Corps « une personne » ──
+  personBody: { paddingHorizontal: 18, paddingTop: 14, gap: 14 },
+  personWhere: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, color: colors.textSecondary },
+  personActions: { flexDirection: 'row', gap: 10 },
+  personAction: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 999,
+    backgroundColor: colors.accentSoft,
+  },
+  personActionText: { fontFamily: fonts.semibold, fontSize: 14, color: colors.accent },
+
   groupRow: { height: GROUP_ROW_HEIGHT, justifyContent: 'center' },
   groupRowInner: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   groupName: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.textPrimary },
