@@ -26,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ClickableMentions from '../components/ClickableMentions';
 import TweetImages from '../components/feed/TweetImages';
 import TweetVideo from '../components/feed/TweetVideo';
+import TweetMusicCard from '../components/feed/TweetMusicCard';
 import PaidContentLock from '../components/PaidContentLock';
 import LockedText from '../components/LockedText';
 import TweetLanguageSwitcher from '../components/TweetLanguageSwitcher';
@@ -1019,6 +1020,10 @@ export default function TweetDetailScreen() {
                 }
                 return <TweetImages urls={urls} />;
               })()}
+
+              {!isContentLocked && !!tweet.spotify_track && (
+                <TweetMusicCard track={tweet.spotify_track} />
+              )}
 
               {/* Sélecteur de langue — seulement si l'auteur a publié avec l'option */}
               {tweet.translation_enabled && (

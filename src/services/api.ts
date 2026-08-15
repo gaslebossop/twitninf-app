@@ -28,6 +28,7 @@ import {
   PaginationInfo,
   NotificationsResponse,
   SearchResponse,
+  SpotifyTrack,
   TrendingResponse,
   RecommendationRequest,
   RecommendationResponse,
@@ -1118,6 +1119,28 @@ class ApiService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la création du tweet';
       console.error('❌ Erreur de création du tweet:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
+  /**
+   * Recherche de morceaux Spotify, pour le sélecteur de musique du composeur
+   * de tweet. Le backend proxie la recherche (voir `spotifyService` côté
+   * API) — aucun identifiant Spotify ne transite côté client.
+   */
+  async searchSpotifyTracks(query: string): Promise<ApiResponse<{ tracks: SpotifyTrack[] }>> {
+    try {
+      const params = new URLSearchParams({ q: query });
+      const response = await this.makeRequest(`/api/spotify/search?${params.toString()}`, {
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la recherche Spotify';
       return {
         success: false,
         message: errorMessage,

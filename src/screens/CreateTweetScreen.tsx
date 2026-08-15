@@ -22,7 +22,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { apiService } from '../services';
 import { publishVideoTweet, type VideoUploadPhase } from '../services/videoTweetService';
 import { neuralRankService } from '../services/neuralRankService';
-import { CreateTweetRequest, Tweet } from '../types/api';
+import { CreateTweetRequest, SpotifyTrack, Tweet } from '../types/api';
 import TweetCard from '../components/TweetCard';
 import { useEvents } from '../contexts/EventContext';
 import { getEventTheme } from '../themes/eventThemes';
@@ -106,6 +106,13 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   } | null>(null);
   const [videoPhase, setVideoPhase] = useState<VideoUploadPhase | null>(null);
   const [videoPercent, setVideoPercent] = useState(0);
+
+  // ── Morceau Spotify joint ──
+  const [selectedTrack, setSelectedTrack] = useState<SpotifyTrack | null>(null);
+  const [spotifySearchOpen, setSpotifySearchOpen] = useState(false);
+  const [spotifyQuery, setSpotifyQuery] = useState('');
+  const [spotifyResults, setSpotifyResults] = useState<SpotifyTrack[]>([]);
+  const [spotifySearching, setSpotifySearching] = useState(false);
 
   // Lu ici et pas plus bas : le brouillon en cours a besoin de son contexte
   // (réponse / citation) pour être réenregistré au bon endroit.
@@ -339,6 +346,50 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   }, []);
 
   /**
+   * Recherche Spotify, avec un léger délai pour ne pas déclencher un appel
+   * réseau à chaque frappe — même logique que la recherche globale du fil.
+   */
+  useEffect(() => {
+    if (!spotifySearchOpen) return;
+    const query = spotifyQuery.trim();
+    if (query.length < 2) {
+      setSpotifyResults([]);
+      setSpotifySearching(false);
+      return;
+    }
+
+    setSpotifySearching(true);
+    const timer = setTimeout(async () => {
+      const response = await apiService.searchSpotifyTracks(query);
+      if (response.success && response.data?.tracks) {
+        setSpotifyResults(response.data.tracks);
+      } else {
+        setSpotifyResults([]);
+      }
+      setSpotifySearching(false);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [spotifyQuery, spotifySearchOpen]);
+
+  const openSpotifySearch = useCallback(() => {
+    setSpotifyQuery('');
+    setSpotifyResults([]);
+    setSpotifySearchOpen(true);
+  }, []);
+
+  const selectSpotifyTrack = useCallback((track: SpotifyTrack) => {
+    setSelectedTrack(track);
+    setSpotifySearchOpen(false);
+    setSpotifyQuery('');
+    setSpotifyResults([]);
+  }, []);
+
+  const removeSpotifyTrack = useCallback(() => {
+    setSelectedTrack(null);
+  }, []);
+
+  /**
    * Envoie les images choisies et renvoie leurs URLs publiques.
    *
    * En série et non en parallèle : sur un réseau mobile, quatre envois
@@ -563,6 +614,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         translation_enabled: translationEnabled,
         language: 'fr',
         ...(mediaUrls.length > 0 ? { media_urls: mediaUrls } : {}),
+        ...(selectedTrack ? { spotify_track: selectedTrack } : {}),
       };
 
       // Si c'est une citation, utiliser la route retweet avec commentaire
@@ -989,6 +1041,35 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                   </View>
                 )}
 
+                {/* Morceau Spotify joint — aperçu + retrait */}
+                {!!selectedTrack && (
+                  <View style={styles.musicAttachment}>
+                    {selectedTrack.albumArt ? (
+                      <Image source={{ uri: selectedTrack.albumArt }} style={styles.musicAttachmentArt} />
+                    ) : (
+                      <View style={[styles.musicAttachmentArt, styles.spotifyResultArtPlaceholder]}>
+                        <Ionicons name="musical-note" size={18} color={colors.textMuted} />
+                      </View>
+                    )}
+                    <View style={styles.musicAttachmentMeta}>
+                      <Text style={styles.musicAttachmentTitle} numberOfLines={1}>{selectedTrack.name}</Text>
+                      {!!selectedTrack.artist && (
+                        <Text style={styles.musicAttachmentArtist} numberOfLines={1}>{selectedTrack.artist}</Text>
+                      )}
+                    </View>
+                    {!loading && (
+                      <TouchableOpacity
+                        style={styles.musicAttachmentRemove}
+                        onPress={removeSpotifyTrack}
+                        accessibilityLabel="Retirer le morceau"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="close" size={16} color={colors.white} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
                 {/* Options du tweet — chips pleins style segmented */}
                 <View style={styles.tweetOptions}>
                   {canAttachImages && imageUris.length < MAX_TWEET_IMAGES && (
@@ -1012,6 +1093,18 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     >
                       <Ionicons name="videocam-outline" size={17} color={colors.textMuted} />
                       <Text style={styles.optionText}>VIDÉO</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {!selectedTrack && (
+                    <TouchableOpacity
+                      style={styles.optionChip}
+                      onPress={openSpotifySearch}
+                      activeOpacity={0.8}
+                      accessibilityLabel="Ajouter un morceau"
+                    >
+                      <Ionicons name="musical-notes-outline" size={17} color={colors.textMuted} />
+                      <Text style={styles.optionText}>MUSIQUE</Text>
                     </TouchableOpacity>
                   )}
 
@@ -1070,6 +1163,64 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Recherche Spotify — panneau en ligne, pas de <Modal> (les
+                    hôtes toast/confirm ne s'affichent pas sous une fenêtre
+                    native séparée, voir CLAUDE.md). */}
+                {spotifySearchOpen && (
+                  <View style={styles.spotifyPanel}>
+                    <View style={styles.spotifySearchRow}>
+                      <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+                      <TextInput
+                        style={styles.spotifySearchInput}
+                        placeholder="Chercher un morceau ou un artiste"
+                        placeholderTextColor={colors.textMuted}
+                        value={spotifyQuery}
+                        onChangeText={setSpotifyQuery}
+                        autoFocus
+                        returnKeyType="search"
+                      />
+                      <TouchableOpacity
+                        onPress={() => setSpotifySearchOpen(false)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel="Fermer la recherche Spotify"
+                      >
+                        <Ionicons name="close" size={18} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+
+                    {spotifySearching && (
+                      <Text style={styles.spotifyHint}>Recherche…</Text>
+                    )}
+
+                    {!spotifySearching && spotifyQuery.trim().length >= 2 && spotifyResults.length === 0 && (
+                      <Text style={styles.spotifyHint}>Aucun résultat.</Text>
+                    )}
+
+                    {spotifyResults.map((track) => (
+                      <TouchableOpacity
+                        key={track.id}
+                        style={styles.spotifyResultRow}
+                        onPress={() => selectSpotifyTrack(track)}
+                        activeOpacity={0.8}
+                      >
+                        {track.albumArt ? (
+                          <Image source={{ uri: track.albumArt }} style={styles.spotifyResultArt} />
+                        ) : (
+                          <View style={[styles.spotifyResultArt, styles.spotifyResultArtPlaceholder]}>
+                            <Ionicons name="musical-note" size={16} color={colors.textMuted} />
+                          </View>
+                        )}
+                        <View style={styles.spotifyResultMeta}>
+                          <Text style={styles.spotifyResultTitle} numberOfLines={1}>{track.name}</Text>
+                          {!!track.artist && (
+                            <Text style={styles.spotifyResultArtist} numberOfLines={1}>{track.artist}</Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
 
                 {/* Traduction automatique — visible seulement pour les Pro */}
                 {canUseTranslation && (
@@ -1462,6 +1613,96 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: withAlpha(colors.bg, 0.7),
+  },
+
+  musicAttachment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 18,
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+  },
+  musicAttachmentArt: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceAlt,
+  },
+  musicAttachmentMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  musicAttachmentTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontFamily: fonts.bold,
+  },
+  musicAttachmentArtist: {
+    color: colors.textMuted,
+    fontSize: 12.5,
+  },
+  musicAttachmentRemove: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: withAlpha(colors.bg, 0.7),
+  },
+
+  spotifyPanel: {
+    marginTop: 18,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    gap: 10,
+  },
+  spotifySearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  spotifySearchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    paddingVertical: 4,
+  },
+  spotifyHint: {
+    color: colors.textMuted,
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+  },
+  spotifyResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  spotifyResultArt: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    backgroundColor: colors.surfaceAlt,
+  },
+  spotifyResultArtPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spotifyResultMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  spotifyResultTitle: {
+    color: colors.textPrimary,
+    fontSize: 13.5,
+    fontFamily: fonts.bold,
+  },
+  spotifyResultArtist: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
 
   tweetOptions: {

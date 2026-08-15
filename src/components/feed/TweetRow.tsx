@@ -20,6 +20,7 @@ import Avatar from '../Avatar';
 import ClickableMentions from '../ClickableMentions';
 import TweetImages from './TweetImages';
 import TweetVideo from './TweetVideo';
+import TweetMusicCard from './TweetMusicCard';
 import TweetLanguageSwitcher from '../TweetLanguageSwitcher';
 import TranslationReveal from '../TranslationReveal';
 import { useTweetAutoTranslation } from '../../contexts/ReadingLanguageContext';
@@ -183,16 +184,17 @@ function TweetRow({
    * de laisser passer la miniature dans la grille comme une photo ordinaire
    * — elle perdrait son bouton play et tout moyen de lancer la lecture.
    */
-  const { displayMediaUrls, videoUrl, videoThumbnailUrl } = React.useMemo(() => {
+  const { displayMediaUrls, videoUrl, videoThumbnailUrl, displaySpotifyTrack } = React.useMemo(() => {
     const source = isRetweet && originalTweet ? originalTweet : tweet;
     const urls = Array.isArray((source as any)?.media_urls) ? (source as any).media_urls : [];
     const strings = urls.filter((url: unknown): url is string => typeof url === 'string');
+    const spotifyTrack = (source as any)?.spotify_track || null;
     const video = strings.find((url) => VIDEO_URL_RE.test(url));
     if (!video) {
-      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined };
+      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined, displaySpotifyTrack: spotifyTrack };
     }
     const rest = strings.filter((url) => url !== video);
-    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0] };
+    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0], displaySpotifyTrack: spotifyTrack };
   }, [isRetweet, originalTweet, tweet]);
 
   /**
@@ -532,6 +534,10 @@ function TweetRow({
 
             {!isContentLocked && videoUrl && (
               <TweetVideo videoUrl={videoUrl} thumbnailUrl={videoThumbnailUrl} onBeforeOpen={blockRowPress} />
+            )}
+
+            {!isContentLocked && !!displaySpotifyTrack && (
+              <TweetMusicCard track={displaySpotifyTrack} onBeforeOpen={blockRowPress} />
             )}
 
             {/* Sélecteur de langue — uniquement sur les tweets publiés avec l'option */}
