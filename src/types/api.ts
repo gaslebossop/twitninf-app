@@ -333,6 +333,18 @@ export interface Event {
   updated_at: string;
 }
 
+/** Morceau Spotify attaché à un tweet (recherche via `GET /api/spotify/search`). */
+export interface SpotifyTrack {
+  id: string;
+  name: string;
+  artist: string | null;
+  albumName: string | null;
+  albumArt: string | null;
+  previewUrl: string | null;
+  externalUrl: string;
+  durationMs: number | null;
+}
+
 // Types pour les tweets
 export interface Tweet {
   id: string;
@@ -360,6 +372,8 @@ export interface Tweet {
   moderation_reason?: string;
   /** « Traduction (bêta) » activée à la publication (option Pro) */
   translation_enabled?: boolean;
+  /** Morceau Spotify attaché, s'il y en a un */
+  spotify_track?: SpotifyTrack | null;
   metadata?: any;
   createdAt: string;
   updatedAt: string;
@@ -396,6 +410,7 @@ export interface CreateTweetRequest {
   language?: string;
   /** Réservé aux abonnés Pro : l'API refuse la publication (403) sinon */
   translation_enabled?: boolean;
+  spotify_track?: SpotifyTrack | null;
 }
 
 /** Une version traduite d'un tweet, générée à la publication. */
