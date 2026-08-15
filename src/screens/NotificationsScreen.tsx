@@ -385,6 +385,19 @@ export default function NotificationsScreen() {
       return;
     }
 
+    // Résultat d'un concours (gagné, terminé sans tirage pour ce
+    // participant, ou récap pour l'organisateur) : direct vers la page du
+    // concours plutôt que le tweet, pour être sûr que le résultat s'affiche
+    // même si le tweet a défilé hors du fil depuis.
+    const contestId = notification.metadata?.contest_id || content.contest_id;
+    if (
+      (kind === 'contest_won' || kind === 'contest_ended' || kind === 'contest_closed') &&
+      contestId
+    ) {
+      navigation.navigate('Contest', { contestId: String(contestId) });
+      return;
+    }
+
     if (content.conversation_id) {
       navigation.navigate('ConversationThread', {
         conversationId: String(content.conversation_id),
