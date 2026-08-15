@@ -374,6 +374,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             )}
 
             {renderActionButton(
+              'Proposer une fonctionnalité',
+              'La Forge : si on la construit, tu es récompensé en NF',
+              'hammer-outline',
+              () => navigation.navigate('Forge')
+            )}
+
+            {renderActionButton(
               'Debug notifs locales',
               'Voir les rappels 12h/16h/20h planifiés',
               'notifications-outline',

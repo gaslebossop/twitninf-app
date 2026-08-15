@@ -49,6 +49,18 @@ export const fonts = {
   medium: 'Inter-Medium',
   semibold: 'Inter-SemiBold',
   bold: 'Inter-Bold',
+
+  /**
+   * Chiffres et valeurs — Space Mono.
+   *
+   * Une somme n'est pas une phrase : en chasse fixe, les chiffres s'alignent
+   * d'une ligne a l'autre et se lisent comme une valeur frappee plutot que
+   * comme du texte. La famille etait deja embarquee, mais seulement declaree
+   * dans `displayNameFonts` — le catalogue des polices de NOM de profil. La
+   * reprendre depuis la faisait dependre un montant d'un reglage cosmetique
+   * qui n'a rien a voir.
+   */
+  mono: 'SpaceMono-Bold',
 } as const;
 
 /**

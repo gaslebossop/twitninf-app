@@ -189,6 +189,7 @@ export default function ModerationScreen() {
     if (isAdmin || isSuperAdmin) {
       list.push({ action: 'events', title: 'Evenements', subtitle: 'Themes Halloween, Noel, etc.', icon: 'calendar-outline', group: 'Traçabilite', tone: 'neutral', available: true });
       list.push({ action: 'functional-events', title: 'Evenements fonctionnels', subtitle: 'Double XP, messages illimites, etc.', icon: 'flash-outline', group: 'Traçabilite', tone: 'neutral', available: true });
+      list.push({ action: 'forge-review', title: 'File de la Forge', subtitle: 'Idees proposees par les utilisateurs, et leur recompense', icon: 'hammer-outline', group: 'Traçabilite', tone: 'neutral', available: true });
       list.push({ action: 'feature-flags', title: 'Fonctionnalites en test', subtitle: 'Ouvrir une nouveaute a un groupe, puis a tout le monde', icon: 'flag-outline', group: 'Traçabilite', tone: 'neutral', available: true });
     }
     if (!isClasseur) {
@@ -301,6 +302,14 @@ export default function ModerationScreen() {
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('FunctionalEventManagement');
         else toast.error('Permission refusee', {
           description: 'Vous devez etre administrateur pour gerer les evenements fonctionnels',
+        });
+        break;
+      case 'forge-review':
+        // Cet ecran VERSE de l'argent : il suit la meme porte que les autres
+        // actions d'administration, relue en base cote serveur de toute facon.
+        if (isAdmin || isSuperAdmin) (navigation as any).navigate('ForgeReview');
+        else toast.error('Permission refusee', {
+          description: 'Reserve aux administrateurs',
         });
         break;
       case 'feature-flags':

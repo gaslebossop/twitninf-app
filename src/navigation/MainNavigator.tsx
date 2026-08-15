@@ -45,6 +45,8 @@ import PredictiveAnalyticsScreen from '../screens/PredictiveAnalyticsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import SupportTicketScreen from '../screens/SupportTicketScreen';
 import ReportBugScreen from '../screens/ReportBugScreen';
+import ForgeScreen from '../screens/ForgeScreen';
+import ForgeReviewScreen from '../screens/ForgeReviewScreen';
 import CreatorStudioScreen from '../screens/CreatorStudioScreen';
 import PaidContentSalesScreen from '../screens/PaidContentSalesScreen';
 import ScheduledPostsScreen from '../screens/ScheduledPostsScreen';
@@ -222,6 +224,8 @@ export type MainStackParamList = {
   Support: undefined;
   SupportTicket: { ticketId: string };
   ReportBug: undefined;
+  Forge: undefined;
+  ForgeReview: undefined;
 
   // Offre créateur
   CreatorStudio: undefined;
@@ -983,6 +987,20 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="ReportBug"
         component={ReportBugScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* La Forge — proposer une fonctionnalite, et suivre sa recompense. */}
+      <MainStack.Screen
+        name="Forge"
+        component={ForgeScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* File de la Forge — cote staff : decider et verser. */}
+      <MainStack.Screen
+        name="ForgeReview"
+        component={ForgeReviewScreen}
         options={{ headerShown: false }}
       />
 
