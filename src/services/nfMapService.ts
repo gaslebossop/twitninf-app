@@ -60,6 +60,7 @@ export interface NfMapPerson {
 
 const BASE = '/api/nf-map';
 
+
 export const nfMapService = {
   async getSettings(): Promise<NfMapSettings | null> {
     const response = await apiService.get(`${BASE}/me`);

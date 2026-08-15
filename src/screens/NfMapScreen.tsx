@@ -36,21 +36,23 @@ import {
   TextInput,
   View,
   Dimensions,
+  PixelRatio,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
+import { API_CONFIG } from '../config/api';
 import { colors, fonts } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { Tappable, HowItWorks } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
-import MapPin from '../components/map/MapPin';
-import MapCluster from '../components/map/MapCluster';
-import { clusterize, quantizedDegreesPerPixel } from '../utils/mapCluster';
+import { quantizedDegreesPerPixel, quantizedLatitudeCosine } from '../utils/mapCluster';
+import { buildMapMarkers, coordinatesOf, type MarkerRole } from '../utils/mapMarkers';
 import NfMapCanvas, {
+  MAX_ZOOM,
   type MapBounds,
   type MapCamera,
   type MapCoordinate,
@@ -68,6 +70,42 @@ const FALLBACK_CENTER: MapCoordinate = { latitude: 48.8566, longitude: 2.3522 };
 const DEFAULT_ZOOM = 11;
 /** Zoom appliqué quand on saute sur quelqu'un depuis la liste. */
 const FOCUS_ZOOM = 14;
+
+/**
+ * Côté du plus grand rectangle que le serveur accepte de servir.
+ *
+ * ⚠️ Doit rester égal à `MAX_VIEWPORT_DEGREES` dans `api/src/services/
+ * nfMapService.js`. Au-delà, la route lève « Zone trop large » et répond 400 —
+ * que `nfMapService.nearby` traduit en liste vide, indistinguable de « personne
+ * ici ». La carte cessait donc silencieusement de charger qui que ce soit dès
+ * qu'on dézoomait au-delà d'un pays, ce qui est très exactement le « quand on
+ * dézoome, elle n'affiche pas tout ».
+ *
+ * On garde une marge : la carte native arrondit son cadrage, et une fenêtre
+ * pile à 12,0° repartait parfois en 400 pour un centième de degré.
+ */
+const MAX_QUERY_DEGREES = 11.4;
+
+/**
+ * Plafond de comptes suivis en mémoire.
+ *
+ * Les positions s'accumulent volontairement (voir `loadNearby`), mais
+ * « borné par tes liens » n'est pas une borne : un compte à huit cents abonnés,
+ * ce sont huit cents vues natives de marqueur, à vie. Le serveur n'en rend
+ * jamais plus de 200 par requête ; 300 laisse de la place pour plusieurs
+ * fenêtres voisines sans jamais approcher le seuil où la carte devient lourde.
+ */
+const MAX_TRACKED_PEOPLE = 300;
+
+/**
+ * Où demander les images d'épingle, et à quelle densité.
+ *
+ * Constant pour toute la session : ni l'adresse de l'API ni la densité de
+ * l'écran ne changent en cours de route. Le calculer une fois évite de faire
+ * dépendre la liste des marqueurs d'un objet recréé à chaque rendu — ce qui
+ * renverrait une nouvelle URL, donc un rechargement d'image, à chaque frappe.
+ */
+const PIN_ORIGIN = { origin: API_CONFIG.BASE_URL, density: PixelRatio.get() };
 
 /** Hauteur de la feuille repliée — juste de quoi lire le résumé. */
 const PEEK_HEIGHT = 112;
@@ -109,22 +147,43 @@ function freshness(iso: string): string {
 }
 
 /**
- * Ce qu'un marqueur MONTRE à un instant donné.
+ * Rectangle RÉELLEMENT interrogeable, ramené autour du centre de la vue.
  *
- * Le rôle change avec le zoom ; l'identité du marqueur, elle, ne change
- * jamais — c'est toute la raison d'être de ce type. Voir le commentaire de
- * `markers` plus bas.
+ * Plutôt que d'envoyer une fenêtre que le serveur va refuser — donc de ne rien
+ * recevoir — on demande le plus grand carré autorisé, centré sur ce qu'on
+ * regarde. Dézoomé au-delà de la limite, on charge donc les gens du milieu de
+ * l'écran au lieu de personne, et les positions déjà connues restent affichées.
  */
-type MarkerRole =
-  | { kind: 'self' }
-  | { kind: 'solo'; person: NfMapPerson }
-  | { kind: 'head'; person: NfMapPerson; faces: NfMapPerson[] }
-  | { kind: 'member' };
+function queryableBounds(bounds: MapBounds): MapBounds {
+  const centerLatitude = (bounds.north + bounds.south) / 2;
+  const centerLongitude = (bounds.east + bounds.west) / 2;
+  const halfLatitude = Math.min((bounds.north - bounds.south) / 2, MAX_QUERY_DEGREES / 2);
+  const halfLongitude = Math.min((bounds.east - bounds.west) / 2, MAX_QUERY_DEGREES / 2);
+
+  return {
+    north: Math.min(90, centerLatitude + halfLatitude),
+    south: Math.max(-90, centerLatitude - halfLatitude),
+    east: Math.min(180, centerLongitude + halfLongitude),
+    west: Math.max(-180, centerLongitude - halfLongitude),
+  };
+}
 
 export default function NfMapScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+
+  /**
+   * La carte est-elle encore à l'écran ?
+   *
+   * Elle ne l'est plus dès qu'on ouvre un profil depuis la fiche de quelqu'un.
+   * La pile est réglée en `freezeOnBlur` (voir `MainNavigator`), donc l'écran
+   * est gelé puis escamoté — avec ses deux cents marqueurs natifs encore posés,
+   * ce que `react-native-maps` 1.20.1 ne supporte pas sous la Nouvelle
+   * Architecture. Perdre le focus vide la carte par paquets, et deux requêtes
+   * en vol cessent d'alimenter un écran que plus personne ne regarde.
+   */
+  const isFocused = useIsFocused();
 
   /**
    * Cible de caméra — uniquement les sauts VOULUS.
@@ -197,8 +256,24 @@ export default function NfMapScreen() {
    * L'ensemble est naturellement borné — seuls les comptes liés à toi peuvent
    * apparaître — et repart à zéro en quittant l'écran.
    */
+  /**
+   * Numéro de la dernière requête lancée.
+   *
+   * Deux réponses `nearby` peuvent revenir dans le désordre — c'est la norme
+   * quand on traverse la carte, la fenêtre d'avant mettant plus longtemps que
+   * celle d'après. La réponse en retard réécrivait alors des positions par des
+   * plus anciennes : quelqu'un sautait en arrière, ou revenait à un endroit
+   * qu'il avait quitté. On ignore purement et simplement ce qui n'est plus la
+   * requête en cours.
+   */
+  const nearbyRequest = useRef(0);
+
   const loadNearby = useCallback(async (window: MapBounds) => {
-    const fresh = await nfMapService.nearby(window);
+    const request = nearbyRequest.current + 1;
+    nearbyRequest.current = request;
+
+    const fresh = await nfMapService.nearby(queryableBounds(window));
+    if (request !== nearbyRequest.current) return;
     if (fresh.length === 0) return;
 
     setPeople((current) => {
@@ -206,7 +281,17 @@ export default function NfMapScreen() {
       let changed = false;
 
       for (const person of fresh) {
+        // Une ligne sans position exploitable ne doit jamais entrer : filtrée
+        // plus loin, elle formerait un marqueur qui apparaît puis disparaît —
+        // or c'est le DÉMONTAGE d'un marqueur qui fait tomber le natif.
+        if (!coordinatesOf(person)) continue;
+
         const known = byId.get(person.id);
+        // Plafond atteint : on continue de mettre à jour ceux qu'on suit déjà,
+        // on cesse seulement d'en ajouter. Retirer quelqu'un serait démonter
+        // son marqueur, ce qu'on ne fait jamais en cours de session.
+        if (!known && byId.size >= MAX_TRACKED_PEOPLE) continue;
+
         const moved =
           !known ||
           known.shared_at !== person.shared_at ||
@@ -232,10 +317,19 @@ export default function NfMapScreen() {
    * un seul comptait.
    */
   useEffect(() => {
-    if (!bounds) return undefined;
-    const timer = setTimeout(() => loadNearby(bounds), 280);
+    if (!bounds || !isFocused) return undefined;
+    const timer = setTimeout(() => {
+      // Le `catch` n'est pas décoratif : `apiService` LÈVE sur expiration de
+      // délai, et un rejet non capté dans un `setTimeout` remonte en écran
+      // rouge sous Expo Go. Un réseau lent au milieu d'un déplacement suffisait
+      // à le déclencher — vu de l'utilisateur, la carte « plante ».
+      loadNearby(bounds).catch(() => {
+        /* Fenêtre non chargée : le prochain déplacement réessaiera. Les
+           positions déjà connues restent affichées. */
+      });
+    }, 280);
     return () => clearTimeout(timer);
-  }, [bounds, loadNearby]);
+  }, [bounds, isFocused, loadNearby]);
 
   /**
    * Position de l'appareil : demandée pour CENTRER la carte, ce qui ne suppose
@@ -300,7 +394,10 @@ export default function NfMapScreen() {
         setSettings(updated);
 
         if (mode === 'ghost') {
-          setMyPosition(null);
+          // L'épingle « moi » RESTE, en trait discontinu : elle est locale et
+          // ne publie rien (voir son commentaire dans `markers`). L'effacer
+          // ici contredisait cette intention — et surtout, c'était démonter un
+          // marqueur, l'unique geste que ce fichier passe son temps à éviter.
           toast.success('Tu es invisible', { description: 'Ta position a été effacée.' });
           return;
         }
@@ -334,10 +431,9 @@ export default function NfMapScreen() {
 
   const focusOn = useCallback(
     (person: NfMapPerson) => {
-      jumpTo(
-        { latitude: Number(person.latitude), longitude: Number(person.longitude) },
-        FOCUS_ZOOM
-      );
+      const here = coordinatesOf(person);
+      if (!here) return;
+      jumpTo(here, FOCUS_ZOOM);
       setSelected(person);
       setSheet('peek');
     },
@@ -364,7 +460,7 @@ export default function NfMapScreen() {
       if (role.kind === 'head' || role.kind === 'member') {
         jumpTo(
           { latitude: marker.latitude, longitude: marker.longitude },
-          Math.min(liveZoom.current + 2, 17)
+          Math.min(liveZoom.current + 2, MAX_ZOOM)
         );
         setSelected(null);
         return;
@@ -391,96 +487,74 @@ export default function NfMapScreen() {
   );
 
   /**
-   * UN marqueur par personne, pour toute la session — et son identifiant est
-   * celui de la personne, JAMAIS celui d'un groupe.
+   * Correction de latitude de la grille, arrondie elle aussi par paliers.
    *
-   * ── Le regroupement sans démontage ──
-   * Regrouper naïvement fabrique des marqueurs dont l'identité dépend du zoom :
-   * trois personnes forment un marqueur au loin, trois marqueurs de près. Tout
-   * zoom démonte alors des marqueurs — et démonter un marqueur fait tomber
-   * l'app sur la version de `react-native-maps` que fige Expo Go, côté natif,
-   * sans une ligne de log.
-   *
-   * D'où ce détour : la liste des marqueurs ne bouge jamais, c'est leur RÔLE
-   * qui change. Une personne est tour à tour épingle isolée, tête de groupe
-   * (elle porte alors les visages de tout le groupe), ou membre — auquel cas
-   * elle glisse au centre du groupe et se réduit à un point, invisible
-   * derrière la tête. Rien n'est monté ni démonté : seules des coordonnées et
-   * des enfants changent, c'est-à-dire des props.
+   * Sans elle, les cases de regroupement sont carrées en DEGRÉS, donc
+   * rectangulaires à l'écran — 52 % trop hautes à la latitude de Paris. Deux
+   * personnes distantes de cent pixels verticalement fusionnaient en un groupe,
+   * et celle qui n'en était pas la tête se réduisait à un point de huit pixels
+   * caché dessous : elle avait disparu de la carte sans que rien ne le dise.
    */
-  const markers: Array<MapMarker<MarkerRole>> = useMemo(() => {
-    const clusters = clusterize(
-      people.map((person) => ({
-        id: person.id,
-        latitude: Number(person.latitude),
-        longitude: Number(person.longitude),
-        person,
-      })),
-      clusterScale
-    );
+  const clusterLatitudeCosine = useMemo(
+    () => (bounds ? quantizedLatitudeCosine((bounds.north + bounds.south) / 2) : 1),
+    [bounds]
+  );
 
-    const list: Array<MapMarker<MarkerRole>> = [];
+  /**
+   * Les marqueurs. Tout le calcul — et surtout les deux invariants qui
+   * empêchent l'app de tomber — vit dans `utils/mapMarkers`, où il est
+   * testable : un marqueur par personne pour toute la session, dans un ordre
+   * qui ne dépend jamais du zoom.
+   */
+  const markers = useMemo(
+    () =>
+      buildMapMarkers({
+        people,
+        myPosition,
+        me: user?.id ? { id: String(user.id), avatar: user.avatar ?? null } : null,
+        isGhost,
+        selectedId: selected?.id ?? null,
+        clusterScale,
+        clusterLatitudeCosine,
+        pin: PIN_ORIGIN,
+      }),
+    [
+      people,
+      myPosition,
+      user?.id,
+      user?.avatar,
+      isGhost,
+      clusterScale,
+      clusterLatitudeCosine,
+      selected,
+    ]
+  );
 
-    for (const cluster of clusters) {
-      if (cluster.items.length === 1) {
-        const { person } = cluster.items[0];
-        list.push({
-          id: person.id,
-          latitude: cluster.latitude,
-          longitude: cluster.longitude,
-          contentKey: `solo${selected?.id === person.id ? ':sel' : ''}`,
-          zIndex: 2,
-          data: { kind: 'solo', person },
-        });
-        continue;
-      }
+  /**
+   * Les trois rappels passés à la carte, STABLES d'un rendu à l'autre.
+   *
+   * Ils étaient écrits en fonctions fléchées dans le JSX. Chaque rendu de
+   * l'écran — une lettre tapée dans la recherche d'amis, une image de
+   * l'animation de la feuille, l'arrivée de la liste d'amis — en fabriquait de
+   * nouvelles, et la carte renvoyait une mise à jour à CHACUN de ses marqueurs
+   * natifs. Sur `react-native-maps` 1.20.1 sous la Nouvelle Architecture, c'est
+   * du travail natif inutile à chaque frappe au clavier.
+   *
+   * `renderMarker` ne dépend volontairement pas de `selected` : la sélection
+   * voyage dans le rôle du marqueur (voir `MarkerRole`), donc dans ses props.
+   */
+  const handlePressMap = useCallback(() => {
+    setSelected(null);
+    setSheet((current) => (current === 'peek' ? current : 'peek'));
+  }, []);
 
-      // Tête choisie par identifiant, pas par ordre d'arrivée : le même groupe
-      // doit désigner la même tête à chaque calcul, sinon deux marqueurs
-      // échangent leur apparence pour rien.
-      const members = [...cluster.items].sort((a, b) => a.id.localeCompare(b.id));
-      const [head, ...rest] = members;
-      const faces = members.map(({ person }) => person);
-
-      list.push({
-        id: head.person.id,
-        latitude: cluster.latitude,
-        longitude: cluster.longitude,
-        contentKey: `head:${faces.length}:${faces.slice(0, 3).map((p) => p.id).join(',')}`,
-        zIndex: 3,
-        data: { kind: 'head', person: head.person, faces },
-      });
-
-      for (const member of rest) {
-        list.push({
-          id: member.person.id,
-          // Rassemblés sur la tête : c'est ce qui fait disparaître le tas.
-          latitude: cluster.latitude,
-          longitude: cluster.longitude,
-          contentKey: 'member',
-          zIndex: 1,
-          data: { kind: 'member' },
-        });
-      }
-    }
-
-    // Se voir soi-même est le seul moyen de vérifier ce que les autres voient.
-    // Y COMPRIS en mode fantôme : cette épingle est locale, elle ne publie
-    // rien. La cacher tant qu'on ne partage pas — donc par défaut, donc à la
-    // toute première ouverture — donnait une carte où on ne se trouve pas.
-    // L'épingle dit alors explicitement que personne d'autre ne la voit.
-    if (myPosition) {
-      list.push({
-        id: '__moi__',
-        latitude: myPosition.latitude,
-        longitude: myPosition.longitude,
-        contentKey: `self:${isGhost ? 'ghost' : 'live'}`,
-        zIndex: 4,
-        data: { kind: 'self' },
-      });
-    }
-    return list;
-  }, [people, myPosition, isGhost, clusterScale, selected]);
+  const handleRegionChange = useCallback(
+    (_center: MapCoordinate, nextZoom: number, nextBounds: MapBounds) => {
+      liveZoom.current = nextZoom;
+      setBounds(nextBounds);
+    },
+    []
+  );
 
   const visibleFriends = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -493,6 +567,22 @@ export default function NfMapScreen() {
   }, [friends, search]);
 
   const sharingFriends = useMemo(() => friends.filter((friend) => friend.is_sharing), [friends]);
+
+  /**
+   * La vue est plus large que ce que le serveur sert en une fois.
+   *
+   * Le dire est la moitié du correctif. Techniquement, `queryableBounds` charge
+   * déjà le centre de l'écran ; mais sans un mot, une carte qui montre moins de
+   * monde à mesure qu'on dézoome se lit comme une panne — c'est le « elle
+   * n'affiche pas tout » — alors que c'est une limite assumée.
+   */
+  const viewTooWide = useMemo(
+    () =>
+      !!bounds &&
+      (bounds.north - bounds.south > MAX_QUERY_DEGREES ||
+        bounds.east - bounds.west > MAX_QUERY_DEGREES),
+    [bounds]
+  );
 
   /**
    * Feuille dépliée : elle couvre les trois quarts bas de l'écran.
@@ -550,58 +640,9 @@ export default function NfMapScreen() {
           onMarkerPress={onMarkerPress}
           // Toucher le fond referme ce qui est ouvert : c'est le geste qu'on
           // essaie d'abord, avant de chercher une croix.
-          onPressMap={() => {
-            setSelected(null);
-            if (sheet !== 'peek') setSheet('peek');
-          }}
-          onRegionChange={(_nextCenter, nextZoom, nextBounds) => {
-            liveZoom.current = nextZoom;
-            setBounds(nextBounds);
-          }}
-          renderMarker={(marker) => {
-            const role = marker.data;
-
-            if (role.kind === 'self') {
-              return (
-                <MapPin
-                  username={user?.username || 'moi'}
-                  avatar={user?.avatar}
-                  label={isGhost ? 'Toi · invisible' : 'Toi'}
-                  self
-                  hidden={isGhost}
-                />
-              );
-            }
-
-            // Membre d'un groupe : posé au centre du groupe, sous la tête qui
-            // le recouvre. Un point plutôt que rien du tout — un marqueur sans
-            // contenu retombe sur l'épingle rouge par défaut de la carte.
-            if (role.kind === 'member') return <MapPin username="" collapsed />;
-
-            if (role.kind === 'head') {
-              return (
-                <MapCluster
-                  count={role.faces.length}
-                  faces={role.faces.map((person) => ({
-                    id: person.id,
-                    username: person.username,
-                    avatar: person.avatar,
-                  }))}
-                />
-              );
-            }
-
-            const { person } = role;
-            return (
-              <MapPin
-                username={person.username}
-                avatar={person.avatar}
-                label={person.username}
-                approximate={person.sharing_mode === 'city'}
-                selected={selected?.id === person.id}
-              />
-            );
-          }}
+          onPressMap={handlePressMap}
+          onRegionChange={handleRegionChange}
+          active={isFocused}
         />
       </View>
 
@@ -650,6 +691,17 @@ export default function NfMapScreen() {
         >
           <Ionicons name="locate" size={20} color={colors.textPrimary} />
         </Tappable>
+      )}
+
+      {/* ── Vue trop large ──
+          Sans ce mot, la carte semble perdre du monde à mesure qu'on dézoome. */}
+      {viewTooWide && !isSheetOpen && (
+        <View style={[styles.notice, { bottom: floatingBottom }]} pointerEvents="none">
+          <Ionicons name="search-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.noticeText} numberOfLines={1}>
+            Zoome pour charger tout le monde
+          </Text>
+        </View>
       )}
 
       {/* ── Voile : referme la feuille dépliée en touchant la carte ──
@@ -891,10 +943,15 @@ export default function NfMapScreen() {
               <Tappable
                 style={styles.disappear}
                 onPress={async () => {
-                  await nfMapService.clearPosition();
-                  setMyPosition(null);
-                  await loadSettings();
-                  toast.success('Position effacée');
+                  try {
+                    await nfMapService.clearPosition();
+                    // L'épingle « moi » reste, en fantôme : elle est locale.
+                    // Voir `changeMode`.
+                    await loadSettings();
+                    toast.success('Position effacée');
+                  } catch (error: any) {
+                    toast.error(error?.message || 'Effacement impossible');
+                  }
                 }}
               >
                 <View style={styles.pillRow}>
@@ -969,6 +1026,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     ...floating,
   },
+
+  // Posée à gauche, à la même hauteur que le bouton « me localiser » qui occupe
+  // la droite : les deux ne se recouvrent jamais.
+  notice: {
+    position: 'absolute',
+    left: 16,
+    maxWidth: '68%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    ...floating,
+  },
+  noticeText: { flexShrink: 1, fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary },
 
   card: {
     position: 'absolute',

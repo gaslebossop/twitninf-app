@@ -36,19 +36,41 @@ export interface Cluster<T extends Clusterable> {
  * @param items          points à regrouper
  * @param degreesPerPixel  largeur d'un pixel écran, en degrés de longitude
  * @param radiusPx       distance en deçà de laquelle deux points fusionnent
+ * @param latitudeCosine cosinus de la latitude de la fenêtre — voir plus bas
  */
 export function clusterize<T extends Clusterable>(
   items: T[],
   degreesPerPixel: number,
-  radiusPx = 72
+  radiusPx = 72,
+  latitudeCosine = 1
 ): Array<Cluster<T>> {
   if (items.length === 0) return [];
 
-  const cell = degreesPerPixel * radiusPx;
+  const cellLongitude = degreesPerPixel * radiusPx;
+  /*
+   * La case doit être CARRÉE à l'écran, pas en degrés.
+   *
+   * En projection Mercator, un degré de latitude occupe `1 / cos(latitude)`
+   * fois plus de pixels qu'un degré de longitude. Une case carrée en degrés
+   * est donc, à l'écran, un rectangle d'autant plus HAUT qu'on s'éloigne de
+   * l'équateur : à Paris (cos 48,85° ≈ 0,66), elle mesurait 72 px de large
+   * pour 110 px de haut. Deux personnes séparées de 100 px verticalement
+   * fusionnaient — l'une d'elles étant alors réduite à un point sous la tête
+   * du groupe, elle avait purement et simplement disparu de la carte.
+   *
+   * Le garde-fou à 0,05 évite une case nulle près des pôles.
+   */
+  const cellLatitude = cellLongitude * Math.min(1, Math.max(0.05, latitudeCosine));
+
   // Grille dégénérée (zoom non encore connu) : chacun reste seul, ce qui est
   // le comportement sûr — on préfère afficher trop de monde que d'agréger au
   // hasard.
-  if (!Number.isFinite(cell) || cell <= 0) {
+  if (
+    !Number.isFinite(cellLongitude) ||
+    cellLongitude <= 0 ||
+    !Number.isFinite(cellLatitude) ||
+    cellLatitude <= 0
+  ) {
     return items.map((item) => ({
       id: item.id,
       latitude: item.latitude,
@@ -59,7 +81,7 @@ export function clusterize<T extends Clusterable>(
 
   const buckets = new Map<string, T[]>();
   for (const item of items) {
-    const key = `${Math.floor(item.longitude / cell)}:${Math.floor(item.latitude / cell)}`;
+    const key = `${Math.floor(item.longitude / cellLongitude)}:${Math.floor(item.latitude / cellLatitude)}`;
     const bucket = buckets.get(key);
     if (bucket) bucket.push(item);
     else buckets.set(key, [item]);
@@ -119,4 +141,20 @@ export function quantizedDegreesPerPixel(longitudeDelta: number, screenWidth: nu
   if (!Number.isFinite(longitudeDelta) || longitudeDelta <= 0 || screenWidth <= 0) return 0;
   const step = Math.round(Math.log2(360 / longitudeDelta));
   return 360 / Math.pow(2, step) / screenWidth;
+}
+
+/**
+ * Le cosinus de la latitude, lui aussi ARRONDI — pour la même raison que le pas
+ * de grille au-dessus.
+ *
+ * Pris sur la latitude exacte du centre, il changerait à chaque déplacement du
+ * doigt, donc la hauteur des cases aussi, donc la composition des groupes :
+ * exactement ce que `quantizedDegreesPerPixel` existe pour empêcher. Par
+ * paliers de 5°, remonter la France entière ne franchit qu'une poignée de
+ * marches, et deux fenêtres du même palier donnent une grille identique.
+ */
+export function quantizedLatitudeCosine(latitude: number): number {
+  if (!Number.isFinite(latitude)) return 1;
+  const step = Math.round(Math.min(85, Math.max(-85, latitude)) / 5) * 5;
+  return Math.cos((step * Math.PI) / 180);
 }

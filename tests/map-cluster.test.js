@@ -24,9 +24,12 @@ function loadTypeScriptModule(path) {
   return loaded.exports;
 }
 
-const { clusterize, degreesPerPixel, quantizedDegreesPerPixel } = loadTypeScriptModule(
-  require.resolve('../src/utils/mapCluster.ts')
-);
+const {
+  clusterize,
+  degreesPerPixel,
+  quantizedDegreesPerPixel,
+  quantizedLatitudeCosine,
+} = loadTypeScriptModule(require.resolve('../src/utils/mapCluster.ts'));
 
 const SCREEN = 390;
 
@@ -175,4 +178,73 @@ test('une largeur inutilisable ne fabrique pas d’échelle', () => {
   assert.equal(quantizedDegreesPerPixel(-1, SCREEN), 0);
   assert.equal(quantizedDegreesPerPixel(NaN, SCREEN), 0);
   assert.equal(quantizedDegreesPerPixel(1, 0), 0);
+});
+
+/**
+ * ── La case doit être carrée À L'ÉCRAN, pas en degrés ─────────────────────
+ *
+ * Le défaut cherché ici est celui qu'on voyait : quelqu'un absorbé dans un
+ * groupe auquel il n'appartenait pas visuellement, donc réduit à un point caché
+ * sous la tête — autrement dit, disparu de la carte.
+ */
+test('deux voisins en LATITUDE ne fusionnent pas s’ils sont loin à l’écran', () => {
+  const scale = degreesPerPixel(0.6, SCREEN); // ≈ 0,00154°/px
+  const cosine = quantizedLatitudeCosine(48.85); // Paris
+
+  // Écart choisi pour valoir ~95 px à l'écran, donc AU-DELÀ du rayon de 72 px :
+  // ces deux-là doivent rester deux épingles.
+  const ecartEnPixels = 95;
+  const ecartEnDegres = scale * ecartEnPixels * cosine;
+
+  const points = [
+    { id: 'a', latitude: 48.85, longitude: 2.35 },
+    { id: 'b', latitude: 48.85 + ecartEnDegres, longitude: 2.35 },
+  ];
+
+  // Sans la correction de latitude, la case fait 72 px de large mais 110 px de
+  // haut : les deux tombaient dans la même, et l'un des deux disparaissait.
+  const sansCorrection = clusterize(points, scale, 72, 1);
+  assert.equal(sansCorrection.length, 1, 'sans la correction, le défaut doit être reproductible');
+
+  const avecCorrection = clusterize(points, scale, 72, cosine);
+  assert.equal(avecCorrection.length, 2, 'personne ne doit être absorbé dans un groupe fantôme');
+});
+
+test('la correction de latitude ne sépare pas ce qui est réellement proche', () => {
+  const scale = degreesPerPixel(0.6, SCREEN);
+  const cosine = quantizedLatitudeCosine(48.85);
+  // ~10 px : indiscutablement le même point à l'écran.
+  const ecart = scale * 10 * cosine;
+
+  const clusters = clusterize(
+    [
+      { id: 'a', latitude: 48.85, longitude: 2.35 },
+      { id: 'b', latitude: 48.85 + ecart, longitude: 2.35 + scale * 10 },
+    ],
+    scale,
+    72,
+    cosine
+  );
+  assert.equal(clusters.length, 1);
+});
+
+test('à l’équateur, la correction ne change rien', () => {
+  assert.equal(quantizedLatitudeCosine(0), 1);
+  assert.equal(quantizedLatitudeCosine(2), 1, 'arrondi au palier de 5°');
+});
+
+test('le cosinus est arrondi, donc stable pendant un déplacement', () => {
+  // Remonter de 48,6° à 49,2° à zoom constant ne doit pas redessiner la grille.
+  const valeurs = new Set();
+  for (let i = 0; i <= 20; i += 1) valeurs.add(quantizedLatitudeCosine(48.6 + i * 0.03));
+  assert.equal(valeurs.size, 1);
+});
+
+test('une latitude inutilisable retombe sur un facteur neutre', () => {
+  assert.equal(quantizedLatitudeCosine(NaN), 1);
+  assert.equal(quantizedLatitudeCosine(Infinity), 1);
+  // Près des pôles, le facteur reste strictement positif : une case de hauteur
+  // nulle ferait une grille où plus personne ne se regroupe jamais.
+  assert.ok(quantizedLatitudeCosine(89) > 0);
+  assert.ok(quantizedLatitudeCosine(-89) > 0);
 });
