@@ -13,7 +13,6 @@ import {
   Platform,
   Vibration,
   useWindowDimensions,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,12 +20,11 @@ import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { colors, fonts, glow, radius } from '../theme';
-import { ScreenBackground, HowItWorks, celebrateReward } from '../components/ui';
+import { ScreenBackground, HowItWorks, celebrateReward, AppHeader } from '../components/ui';
 import SlotReel3D, { cellForSymbol } from '../components/casino/SlotReel3D';
 import CasinoService, { CasinoConfig, CasinoResult, CasinoHistoryRow, WheelMode } from '../services/casinoService';
 import NewEconomyService from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
-import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 
 type Game = 'wheel' | 'coinflip' | 'slots';
 
@@ -391,12 +389,7 @@ function HistorySheet({ visible, rows, onClose }: { visible: boolean; rows: Casi
 
 export default function CasinoScreen() {
   const navigation = useNavigation();
-  // `canGoBack()` seul remonte jusqu'à un navigateur PARENT et peut renvoyer
-  // vrai à tort quand cet écran est affiché comme onglet — seul le type du
-  // navigateur qui le possède fait foi (voir components/ui/BackButton).
-  const isTabScreen = (navigation as any)?.getState?.()?.type === 'tab';
   const { width } = useWindowDimensions();
-  const { top: headerTopInset } = useHeaderMetrics();
   // `BottomTabBarHeightContext` vaut `undefined` hors navigateur d'onglets
   // (l'écran est aussi poussé depuis `MainNavigator`) — pas d'exception,
   // contrairement au hook `useBottomTabBarHeight`.
@@ -715,35 +708,23 @@ export default function CasinoScreen() {
   return (
     <ScreenBackground>
       <View style={styles.container}>
-        <View style={[styles.header, { paddingTop: headerTopInset }]}>
-          {!isTabScreen && navigation.canGoBack() ? (
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} hitSlop={8}>
-              <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.titleMark}>
-              <Image source={require('../../assets/icon.png')} style={styles.titleMarkIcon} resizeMode="contain" />
+        <AppHeader
+          navigation={navigation}
+          title="Casino"
+          subtitle={`Jackpot ${jackpotMultiplier}`}
+          badge={streak >= 2 ? `🔥 ${streak}` : undefined}
+          right={(
+            <View style={styles.headerActions}>
+              <TouchableOpacity style={styles.historyButton} onPress={() => setHistoryOpen(true)} hitSlop={8}>
+                <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <View style={styles.balancePill}>
+                <Ionicons name="wallet-outline" size={12} color={colors.gold} />
+                <Text style={styles.balancePillText}>{displayBalance !== null ? money(displayBalance) : '···'}</Text>
+              </View>
             </View>
           )}
-          <View style={styles.headerTitleWrap}>
-            <View style={styles.headerTitleRow}>
-              <Text style={styles.headerTitle}>Casino</Text>
-              {streak >= 2 && (
-                <View style={styles.streakBadge}>
-                  <Text style={styles.streakText}>🔥 {streak}</Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.headerSubtitle}>Jackpot {jackpotMultiplier}</Text>
-          </View>
-          <TouchableOpacity style={styles.historyButton} onPress={() => setHistoryOpen(true)} hitSlop={8}>
-            <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-          <View style={styles.balancePill}>
-            <Ionicons name="wallet-outline" size={12} color={colors.gold} />
-            <Text style={styles.balancePillText}>{displayBalance !== null ? money(displayBalance) : '···'}</Text>
-          </View>
-        </View>
+        />
 
         <View style={styles.gameTabs}>
           {GAME_TABS.map(tab => (
@@ -1073,21 +1054,7 @@ const CHIP_COLORS = [
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    // paddingTop réel posé à l'appel (useHeaderMetrics) : dépend de
-    // l'encoche/Dynamic Island de l'appareil, jamais une valeur devinée.
-    paddingHorizontal: 20, paddingBottom: 10,
-  },
-  backButton: { padding: 4, marginLeft: -4 },
-  titleMark: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  titleMarkIcon: { width: 26, height: 26 },
-  headerTitleWrap: { flex: 1 },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  headerTitle: { fontSize: 16, fontFamily: fonts.heading, color: colors.textPrimary },
-  streakBadge: { backgroundColor: colors.warningMuted, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
-  streakText: { color: colors.gold, fontFamily: fonts.bold, fontSize: 10.5 },
-  headerSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   historyButton: {
     width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.surface,
