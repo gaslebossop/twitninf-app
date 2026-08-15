@@ -39,6 +39,7 @@ import {
   PixelRatio,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -68,6 +69,51 @@ import {
 
 const FALLBACK_CENTER: MapCoordinate = { latitude: 48.8566, longitude: 2.3522 };
 const DEFAULT_ZOOM = 11;
+
+/**
+ * Où la carte s'était ouverte la dernière fois.
+ *
+ * ── Le défaut que ça corrige ──
+ * Sans mémoire, la carte s'ouvre sur `FALLBACK_CENTER` — Paris — le temps que
+ * le GPS réponde, puis saute à la position réelle. À chaque ouverture on
+ * assistait donc à un survol de plusieurs centaines de kilomètres avant que la
+ * carte ne se pose. C'est le « ça se téléporte au lancement ».
+ *
+ * ── Ce qui est écrit, et à quelle précision ──
+ * UNIQUEMENT un cadrage de carte, arrondi à trois décimales (~100 m). C'est
+ * amplement assez pour rouvrir au bon endroit, et ça évite de laisser traîner
+ * la position exacte d'un domicile dans un stockage en clair. Rien ne part au
+ * serveur : la publication d'une position reste conditionnée au mode de
+ * partage, et elle passe par `nfMapService.pushPosition`.
+ */
+const LAST_CENTER_KEY = 'nf-map:last-center';
+const CENTER_PRECISION = 1000;
+
+async function readLastCenter(): Promise<MapCoordinate | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_CENTER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const latitude = Number(parsed?.latitude);
+    const longitude = Number(parsed?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+  } catch {
+    // Stockage illisible : le repli fait son travail, il n'y a rien à dire.
+    return null;
+  }
+}
+
+function writeLastCenter(center: MapCoordinate): void {
+  const rounded = {
+    latitude: Math.round(center.latitude * CENTER_PRECISION) / CENTER_PRECISION,
+    longitude: Math.round(center.longitude * CENTER_PRECISION) / CENTER_PRECISION,
+  };
+  AsyncStorage.setItem(LAST_CENTER_KEY, JSON.stringify(rounded)).catch(() => {
+    /* Un cadrage non retenu ne coûte qu'une ouverture sur le repli. */
+  });
+}
 /** Zoom appliqué quand on saute sur quelqu'un depuis la liste. */
 const FOCUS_ZOOM = 14;
 
@@ -107,6 +153,29 @@ const MAX_TRACKED_PEOPLE = 300;
  */
 const PIN_ORIGIN = { origin: API_CONFIG.BASE_URL, density: PixelRatio.get() };
 
+/**
+ * Le lieu d'un groupe, s'il en a UN seul.
+ *
+ * Rend `null` dès que ses membres ne s'accordent pas — auquel cas il n'y a rien
+ * de vrai à écrire en en-tête. « approximatif » n'est ajouté que si TOUT le
+ * monde partage sa ville plutôt que sa position exacte : le dire alors qu'une
+ * partie du groupe est précise serait faux.
+ */
+function describePlace(people: NfMapPerson[]): string | null {
+  if (people.length === 0) return null;
+
+  const place = people[0].place_label || null;
+  if (!place || people.some((person) => (person.place_label || null) !== place)) return null;
+
+  const allApproximate = people.every((person) => person.sharing_mode === 'city');
+  return allApproximate ? `${place} · approximatif` : place;
+}
+
+/** Hauteur d'une ligne de groupe : avatar 28 + 5 px de marge haut et bas. */
+const GROUP_ROW_HEIGHT = 38;
+/** Cinq lignes ENTIÈRES. Une sixième coupée se lirait comme un défaut. */
+const GROUP_VISIBLE_ROWS = 5;
+
 /** Hauteur de la feuille repliée — juste de quoi lire le résumé. */
 const PEEK_HEIGHT = 112;
 /** Hauteur réelle de la feuille, constante : c'est la translation qui bouge. */
@@ -144,6 +213,21 @@ function freshness(iso: string): string {
   if (minutes < 2) return 'à l’instant';
   if (minutes < 60) return `il y a ${minutes} min`;
   return `il y a ${Math.round(minutes / 60)} h`;
+}
+
+/**
+ * La même chose, en colonne.
+ *
+ * Dans la liste d'un groupe, treize lignes qui commencent toutes par « il y
+ * a » n'apprennent rien : ce qui distingue les lignes, c'est le nombre. Réduite
+ * à « 38 h » et alignée à droite, la durée se compare d'un coup d'œil.
+ */
+function shortFreshness(iso: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutes < 2) return 'maintenant';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours} h` : `${Math.round(hours / 24)} j`;
 }
 
 /**
@@ -214,8 +298,31 @@ export default function NfMapScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<NfMapPerson | null>(null);
+  /**
+   * Le groupe ouvert, s'il y en a un.
+   *
+   * `people` ne contient QUE les autres : quand le groupe te réunit à tes
+   * voisins, ta propre ligne n'y figure pas — on ne s'annonce pas à soi-même sa
+   * dernière position connue. `includesSelf` sert seulement à le dire en titre.
+   */
+  const [group, setGroup] = useState<{
+    people: NfMapPerson[];
+    includesSelf: boolean;
+    center: MapCoordinate;
+    /** Le lieu, s'il est le MÊME pour tout le monde — voir `describePlace`. */
+    commonPlace: string | null;
+  } | null>(null);
   const [search, setSearch] = useState('');
   const [sheet, setSheet] = useState<SheetMode>('peek');
+  /**
+   * Le lieu qu'on survole, à la façon de Snap Map.
+   *
+   * Il change pendant le geste, pas seulement à la fin : c'est ce défilement
+   * sous le doigt qui dit « tu regardes ici ». La valeur vient des étiquettes
+   * déjà dessinées par la carte (voir `onPlaceChange` dans `NfMapCanvas`),
+   * donc aucune requête et aucun décalage avec ce qui est à l'écran.
+   */
+  const [place, setPlace] = useState<string | null>(null);
   const [inviting, setInviting] = useState<string | null>(null);
 
   const isGhost = !settings || settings.sharing_mode === 'ghost';
@@ -307,8 +414,24 @@ export default function NfMapScreen() {
     });
   }, []);
 
+  /**
+   * Le cadrage de départ est lu AVANT que la carte n'existe.
+   *
+   * `NfMapCanvas` fige sa caméra initiale au montage — elle part dans le script
+   * d'amorçage de la page, évalué une seule fois. Lire la dernière position
+   * après coup ne servirait donc à rien : la carte se serait déjà ouverte sur
+   * Paris. C'est pour ça que cette lecture partage le même `loading` que les
+   * réglages, et que la carte n'est montée qu'une fois les trois terminées.
+   */
   useEffect(() => {
-    Promise.all([loadSettings(), loadFriends()]).finally(() => setLoading(false));
+    Promise.all([
+      loadSettings(),
+      loadFriends(),
+      readLastCenter().then((center) => {
+        // `nonce` ne bouge pas : ce n'est pas un saut, c'est le point de départ.
+        if (center) setCamera((current) => ({ ...current, center, zoom: FOCUS_ZOOM }));
+      }),
+    ]).finally(() => setLoading(false));
   }, [loadSettings, loadFriends]);
 
   /**
@@ -356,6 +479,8 @@ export default function NfMapScreen() {
       };
       setMyPosition(here);
       jumpTo(here, FOCUS_ZOOM);
+      // La prochaine ouverture partira d'ici plutôt que du repli.
+      writeLastCenter(here);
 
       if (settings && settings.sharing_mode !== 'ghost') {
         try {
@@ -434,6 +559,7 @@ export default function NfMapScreen() {
       const here = coordinatesOf(person);
       if (!here) return;
       jumpTo(here, FOCUS_ZOOM);
+      setGroup(null);
       setSelected(person);
       setSheet('peek');
     },
@@ -450,25 +576,36 @@ export default function NfMapScreen() {
       const role = marker.data;
       if (role.kind === 'self') return;
 
-      // Un groupe s'ouvre en zoomant dessus. Deux paliers d'un coup : un seul
-      // ne suffit souvent pas à séparer des gens d'un même quartier, et on
-      // aurait à retoucher plusieurs fois le même tas.
-      //
-      // Les membres n'ont plus de marqueur du tout : la tête porte le groupe à
-      // elle seule, et c'est elle qu'on touche.
+      /*
+       * Un groupe OUVRE SA LISTE, il ne fait plus que zoomer.
+       *
+       * Zoomer de deux paliers était la seule réponse possible du temps où un
+       * marqueur ne pouvait rien porter : on ne savait pas qui était dans le
+       * tas, il fallait aller voir. Mais un groupe rassemble justement les gens
+       * qu'on n'arrive pas à distinguer — et zoomer les sépare sans dire
+       * lesquels c'étaient, ni depuis quand ils sont là. La liste répond aux
+       * deux d'un coup, et le zoom reste disponible depuis son en-tête.
+       *
+       * Les membres n'ont aucun marqueur à eux : la tête porte le groupe, et
+       * c'est elle qu'on touche.
+       */
       if (role.kind === 'head') {
-        jumpTo(
-          { latitude: marker.latitude, longitude: marker.longitude },
-          Math.min(liveZoom.current + 2, MAX_ZOOM)
-        );
+        setGroup({
+          people: role.faces,
+          includesSelf: role.includesSelf,
+          center: { latitude: marker.latitude, longitude: marker.longitude },
+          commonPlace: describePlace(role.faces),
+        });
         setSelected(null);
+        setSheet('peek');
         return;
       }
 
+      setGroup(null);
       setSelected(role.person);
       setSheet('peek');
     },
-    [jumpTo]
+    []
   );
 
   /**
@@ -544,6 +681,7 @@ export default function NfMapScreen() {
    */
   const handlePressMap = useCallback(() => {
     setSelected(null);
+    setGroup(null);
     setSheet((current) => (current === 'peek' ? current : 'peek'));
   }, []);
 
@@ -641,6 +779,7 @@ export default function NfMapScreen() {
           // essaie d'abord, avant de chercher une croix.
           onPressMap={handlePressMap}
           onRegionChange={handleRegionChange}
+          onPlaceChange={setPlace}
         />
       </View>
 
@@ -681,6 +820,19 @@ export default function NfMapScreen() {
         </Tappable>
       </View>
 
+      {/* ── Le lieu survolé ──
+          Sous la barre du haut et centré, comme Snap Map. `pointerEvents` à
+          `none` sur toute la bande : c'est une étiquette, pas un bouton, et
+          elle traverse toute la largeur — sans ça elle intercepterait les
+          gestes sur une bonne partie du haut de la carte. */}
+      {place && !isSheetOpen && (
+        <View style={[styles.placeBar, { top: insets.top + 62 }]} pointerEvents="none">
+          <Text style={styles.placeText} numberOfLines={1}>
+            {place}
+          </Text>
+        </View>
+      )}
+
       {!isSheetOpen && (
         <Tappable
           style={[styles.locate, { bottom: floatingBottom }]}
@@ -713,8 +865,83 @@ export default function NfMapScreen() {
         />
       )}
 
+      {/* ── Liste d'un groupe ──
+          Un groupe rassemble exactement les gens qu'on n'arrive pas à
+          distinguer à ce zoom : le toucher doit dire QUI est là et depuis
+          quand, pas seulement rapprocher la carte. Le zoom reste à portée dans
+          l'en-tête, pour qui veut quand même les séparer sur le fond. */}
+      {group && !isSheetOpen && (
+        <View style={[styles.card, styles.group, { bottom: floatingBottom + 58 }]}>
+          <View style={styles.groupHead}>
+            <View style={styles.cardText}>
+              <Text style={styles.groupTitle} numberOfLines={1}>
+                {group.people.length + (group.includesSelf ? 1 : 0)} personnes ici
+              </Text>
+              {/* Le lieu est sorti des lignes et posé ICI.
+                  Il était répété à l'identique sur chacune — « Challerange ·
+                  approximatif », treize fois — ce qui noyait la seule
+                  information qui change d'une ligne à l'autre : depuis quand.
+                  Un groupe rassemble par définition des gens au même endroit,
+                  donc l'endroit se dit une fois. */}
+              {(group.commonPlace || group.includesSelf) && (
+                <Text style={styles.groupWhere} numberOfLines={1}>
+                  {[group.commonPlace, group.includesSelf ? 'dont toi' : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              )}
+            </View>
+
+            <Tappable
+              style={styles.groupZoom}
+              onPress={() => {
+                jumpTo(group.center, Math.min(liveZoom.current + 2, MAX_ZOOM));
+                setGroup(null);
+              }}
+              haptic="select"
+              accessibilityLabel="Zoomer sur le groupe"
+            >
+              <Ionicons name="scan-outline" size={15} color={colors.textSecondary} />
+            </Tappable>
+            <Tappable onPress={() => setGroup(null)} style={styles.cardClose} accessibilityLabel="Fermer">
+              <Ionicons name="close" size={18} color={colors.textMuted} />
+            </Tappable>
+          </View>
+
+          {/* Hauteur bornée à un nombre ENTIER de lignes : une dernière ligne
+              coupée en deux se lit comme un défaut d'affichage, pas comme
+              « ça continue ». */}
+          <ScrollView
+            style={{ maxHeight: GROUP_ROW_HEIGHT * GROUP_VISIBLE_ROWS }}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+          >
+            {group.people.map((person) => (
+              <Tappable
+                key={person.id}
+                style={styles.groupRow}
+                onPress={() => focusOn(person)}
+                haptic="select"
+              >
+                <View style={styles.groupRowInner}>
+                  <Avatar size={28} username={person.username} uri={person.avatar || undefined} />
+                  <Text style={styles.groupName} numberOfLines={1}>
+                    {person.full_name || person.username}
+                  </Text>
+                  {/* Alignée à droite, et abrégée : « 38 h » plutôt que « il y
+                      a 38 h ». Mises en colonne, ces durées se comparent d'un
+                      coup d'œil — c'est tout ce qu'on vient y chercher. */}
+                  <Text style={styles.groupWhen}>{shortFreshness(person.shared_at)}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                </View>
+              </Tappable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* ── Fiche de la personne touchée ── */}
-      {selected && !isSheetOpen && (
+      {selected && !group && !isSheetOpen && (
         <View style={[styles.card, { bottom: floatingBottom + 58 }]}>
           <Avatar size={44} username={selected.username} uri={selected.avatar || undefined} />
           <View style={styles.cardText}>
@@ -1013,6 +1240,25 @@ const styles = StyleSheet.create({
   pillRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchPlaceholder: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.textSecondary },
 
+  placeBar: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  /**
+   * Posé à même la carte, sans pastille ni fond.
+   *
+   * Un fond ajouterait une quatrième surface flottante en haut de l'écran, à
+   * côté du retour, de la recherche et du partage — c'est déjà chargé. Le halo
+   * sombre suffit à le décoller du fond quel que soit ce qu'il y a dessous,
+   * et c'est exactement ce que fait Snap.
+   */
+  placeText: {
+    maxWidth: '80%',
+    fontFamily: fonts.display,
+    fontSize: 17,
+    color: colors.textPrimary,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+
   locate: {
     position: 'absolute',
     right: 16,
@@ -1069,6 +1315,35 @@ const styles = StyleSheet.create({
   },
   cardActionText: { fontFamily: fonts.semibold, fontSize: 13, color: colors.accent },
   cardClose: { padding: 4 },
+
+  // La fiche d'un groupe empile ses lignes au lieu de les aligner : c'est la
+  // seule différence de fond avec la fiche d'une personne, dont elle reprend
+  // le fond, le rayon et l'ombre pour rester le même objet aux yeux du lecteur.
+  group: { flexDirection: 'column', alignItems: 'stretch', gap: 6, paddingVertical: 10 },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  groupTitle: { fontFamily: fonts.display, fontSize: 15, color: colors.textPrimary },
+  groupWhere: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
+  // Discret : c'est une commodité, pas l'action principale de cette fiche —
+  // celle-là, c'est de toucher quelqu'un dans la liste.
+  groupZoom: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+  },
+  groupRow: { height: GROUP_ROW_HEIGHT, justifyContent: 'center' },
+  groupRowInner: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  groupName: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.textPrimary },
+  // Tabulaires : sans ça les chiffres n'ont pas la même largeur et la colonne
+  // de durées tremble d'une ligne à l'autre.
+  groupWhen: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
 
   sheet: {
     position: 'absolute',

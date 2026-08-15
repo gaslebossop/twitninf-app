@@ -26,7 +26,10 @@ import TradingScreen from '../screens/TradingScreen';
 import WalletDetailScreen from '../screens/WalletDetailScreen';
 import AccountStatsScreen from '../screens/AccountStatsScreen';
 import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
+import NfMapScreen from '../screens/NfMapScreen';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
+import { useFlag } from '../contexts/FeatureFlagContext';
+import { FLAGS } from '../config/featureFlagKeys';
 
 const Tab = createBottomTabNavigator();
 
@@ -47,6 +50,17 @@ export default function BottomTabNavigator() {
   const showWalletTab = selectedOptionalTabs.includes('wallet');
   const showAnalyticsTab = selectedOptionalTabs.includes('analytics');
   const showMonetizationTab = selectedOptionalTabs.includes('monetization');
+  /*
+   * La Carte NF demande DEUX conditions, pas une.
+   *
+   * Le choix de l'utilisateur ne suffit pas : le drapeau peut se refermer
+   * (retrait de la fonctionnalité, palier redescendu) alors que la préférence,
+   * elle, reste écrite sur l'appareil. Sans ce second test, l'onglet
+   * survivrait à la fonctionnalité et ouvrirait un écran que l'API refuse de
+   * servir — elle répond 404 hors du palier.
+   */
+  const nfMapEnabled = useFlag(FLAGS.NF_MAP);
+  const showNfMapTab = nfMapEnabled && selectedOptionalTabs.includes('nfmap');
 
   // Vérifier si l'événement Kospor Birthday est actif
   const { isEventActive } = useKosporBirthdayEvent();
@@ -155,6 +169,8 @@ export default function BottomTabNavigator() {
             iconName = focused ? 'stats-chart' : 'stats-chart-outline';
           } else if (route.name === 'TweetMonetization') {
             iconName = focused ? 'cash' : 'cash-outline';
+          } else if (route.name === 'NfMapTab') {
+            iconName = focused ? 'map' : 'map-outline';
           } else if (route.name === 'KosporBirthday') {
             iconName = focused ? 'gift' : 'gift-outline';
           } else {
@@ -277,6 +293,17 @@ export default function BottomTabNavigator() {
             <Tab.Screen
               name="Revue"
               component={CommunityReviewScreen}
+            />
+          )}
+          {/* Carte NF. Le nom de route diffère du `NfMap` de `MainNavigator`
+              volontairement : deux routes du même nom dans deux navigateurs
+              imbriqués rendent `navigate('NfMap')` ambigu, et c'est la pile
+              qui l'emporterait — l'écran s'ouvrirait alors PAR-DESSUS la barre
+              au lieu d'être l'onglet qu'on vient de toucher. */}
+          {showNfMapTab && (
+            <Tab.Screen
+              name="NfMapTab"
+              component={NfMapScreen}
             />
           )}
           {/* Trading, Portefeuille, Analytiques, Monétisation : même double

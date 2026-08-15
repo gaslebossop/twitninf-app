@@ -165,16 +165,56 @@ test('l’ordre ne dépend pas de l’ordre d’arrivée des réponses', () => {
   assert.deepEqual(inverse, direct);
 });
 
-test('l’épingle « moi » n’insère personne au milieu de la liste', () => {
+test('l’épingle « moi » est toujours là, et n’est jamais absorbée', () => {
   const gens = foule();
-  const sansMoi = construire(gens, 0.6).map((marker) => marker.id);
-  const avecMoi = construire(gens, 0.6, {
-    myPosition: { latitude: 48.86, longitude: 2.34 },
-  }).map((marker) => marker.id);
 
-  assert.equal(avecMoi.length, sansMoi.length + 1);
-  assert.ok(avecMoi.includes(SELF_MARKER_ID));
-  assert.deepEqual(avecMoi.filter((id) => id !== SELF_MARKER_ID), sansMoi);
+  // Loin de tout le monde : « moi » est alors un marqueur de plus, et ne change
+  // rien à ce que porte le reste de la carte.
+  const isole = construire(gens, 0.6, {
+    myPosition: { latitude: 49.4, longitude: 3.4 },
+  });
+  const sansMoi = construire(gens, 0.6).map((marker) => marker.id);
+  assert.deepEqual(
+    isole.map((marker) => marker.id).filter((id) => id !== SELF_MARKER_ID),
+    sansMoi
+  );
+  assert.equal(isole.find((marker) => marker.id === SELF_MARKER_ID).data.kind, 'self');
+
+  // Au milieu de la foule : « moi » est semée en priorité, donc TOUJOURS graine.
+  // Elle reste dans la liste, et devient la tête de son groupe au lieu de
+  // disparaître dessous — c'était le défaut : une épingle « Toi » posée après
+  // le regroupement ne fusionnait avec personne et se superposait à ses voisins.
+  const dedans = construire(gens, 0.6, {
+    myPosition: { latitude: 48.8566, longitude: 2.3522 },
+  });
+  const moi = dedans.find((marker) => marker.id === SELF_MARKER_ID);
+  assert.ok(moi, '« moi » ne doit jamais être absorbée par un groupe');
+  assert.ok(
+    moi.data.kind === 'self' || (moi.data.kind === 'head' && moi.data.includesSelf),
+    'au milieu de la foule, « moi » porte son groupe'
+  );
+});
+
+test('un groupe qui me contient me compte, et ne me liste pas parmi les autres', () => {
+  // Une seule autre personne, posée juste à côté de moi.
+  const voisin = foule(1);
+  voisin[0].latitude = 48.8566;
+  voisin[0].longitude = 2.3522;
+
+  const markers = construire(voisin, 0.6, {
+    myPosition: { latitude: 48.85662, longitude: 2.35222 },
+  });
+
+  assert.equal(markers.length, 1, 'collés l’un à l’autre, nous ne faisons qu’une épingle');
+  const groupe = markers[0];
+  assert.equal(groupe.id, SELF_MARKER_ID);
+  assert.equal(groupe.data.kind, 'head');
+  assert.equal(groupe.data.includesSelf, true);
+  // `faces` alimente la liste ouverte au toucher : ma propre dernière connexion
+  // n'y a rien à faire.
+  assert.deepEqual(groupe.data.faces.map((person) => person.id), [voisin[0].id]);
+  // L'épingle annonce DEUX personnes : le voisin, et moi.
+  assert.match(decodeURIComponent(groupe.image), /count=2/);
 });
 
 test('sélectionner quelqu’un ne réordonne rien', () => {
@@ -248,7 +288,14 @@ test('chaque marqueur demande une image et sait où il pointe', () => {
   const moi = markers.find((marker) => marker.id === SELF_MARKER_ID);
   if (solo) assert.equal(solo.anchorY, PIN_ANCHOR_Y);
   if (tete) assert.equal(tete.anchorY, CLUSTER_ANCHOR_Y);
-  assert.equal(moi.anchorY, PIN_ANCHOR_Y);
+  // « moi » n'a plus un ancrage fixe : seule, c'est une épingle qui pointe par
+  // sa pointe ; en tête d'un groupe, c'est une pastille de groupe, qui se
+  // centre sur ses membres. Les deux ancrages diffèrent, et prendre le mauvais
+  // décalerait tout le groupe vers le nord.
+  assert.equal(
+    moi.anchorY,
+    moi.data.kind === 'head' ? CLUSTER_ANCHOR_Y : PIN_ANCHOR_Y
+  );
 });
 
 test('une épingle de groupe ne nomme que les visages montrés', () => {

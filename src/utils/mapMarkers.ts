@@ -49,10 +49,26 @@ import type { NfMapPerson } from '../services/nfMapService';
 export type MarkerRole =
   | { kind: 'self'; ghost: boolean }
   | { kind: 'solo'; person: NfMapPerson; selected: boolean }
-  | { kind: 'head'; person: NfMapPerson; faces: NfMapPerson[] };
+  | {
+      kind: 'head';
+      person: NfMapPerson;
+      /**
+       * Les membres du groupe, TOI EXCLU.
+       *
+       * C'est cette liste que l'écran affiche quand on touche un groupe, avec
+       * la dernière position connue de chacun. Ta propre épingle n'y a rien à
+       * faire : on ne s'annonce pas à soi-même sa dernière connexion.
+       */
+      faces: NfMapPerson[];
+      /** Le groupe te contient : son épingle porte ton avatar en premier. */
+      includesSelf: boolean;
+    };
 
 /** Identifiant du marqueur « moi ». Local : il ne publie rien. */
 export const SELF_MARKER_ID = '__moi__';
+
+/** Toi, et personne d'autre — voir `prioritySeeds` dans `clusterize`. */
+const SELF_SEED: ReadonlySet<string> = new Set([SELF_MARKER_ID]);
 
 /**
  * Une position exploitable, ou rien.
@@ -149,19 +165,76 @@ export function buildMapMarkers({
   pin,
   visibleBounds,
 }: BuildMarkersInput): Array<MapMarker<MarkerRole>> {
-  const points: Array<{ id: string; latitude: number; longitude: number; person: NfMapPerson }> = [];
+  /** `person` vaut `null` pour le seul point qui n'est pas quelqu'un d'autre : toi. */
+  type Point = { id: string; latitude: number; longitude: number; person: NfMapPerson | null };
+
+  const points: Point[] = [];
   for (const person of people) {
     const here = coordinatesOf(person);
     if (!here) continue;
     points.push({ id: person.id, ...here, person });
   }
 
-  const clusters = clusterize(points, clusterScale, undefined, clusterLatitudeCosine);
+  /*
+   * Tu es un point du regroupement, pas une épingle posée par-dessus.
+   *
+   * Avant, l'épingle « Toi » était ajoutée APRÈS le calcul : elle ne fusionnait
+   * donc jamais avec personne. Un compte situé à côté de toi restait une
+   * épingle distincte à tous les zooms, et les deux étiquettes se
+   * chevauchaient sans que dézoomer n'y change rien — c'est précisément ce
+   * qu'on voyait avec `policiercongo`.
+   *
+   * Semée en PRIORITÉ, elle est toujours graine, donc jamais absorbée : on
+   * reste visible sur sa propre carte même au milieu d'une foule.
+   */
+  const showSelf = Boolean(myPosition && me);
+  if (showSelf && myPosition) {
+    points.push({ id: SELF_MARKER_ID, ...myPosition, person: null });
+  }
+
+  const clusters = clusterize(
+    points,
+    clusterScale,
+    undefined,
+    clusterLatitudeCosine,
+    showSelf ? SELF_SEED : undefined
+  );
+
   const list: Array<MapMarker<MarkerRole>> = [];
 
   for (const cluster of clusters) {
-    if (cluster.items.length === 1) {
-      const { person } = cluster.items[0];
+    const withSelf = cluster.items.some((item) => item.id === SELF_MARKER_ID);
+    // Tête et membres choisis par identifiant, pas par ordre d'arrivée : le
+    // même groupe doit désigner la même tête à chaque calcul, sinon deux
+    // marqueurs échangent leur apparence pour rien — et l'URL de l'épingle de
+    // groupe, donc son entrée de cache, changerait à chaque recalcul.
+    const others = cluster.items.filter((item) => item.id !== SELF_MARKER_ID).sort(byId);
+
+    // ── Toi, seul ──
+    // Y COMPRIS en mode fantôme : cette épingle est locale, elle ne publie
+    // rien. La cacher tant qu'on ne partage pas — donc par défaut, donc à la
+    // toute première ouverture — donnait une carte où on ne se trouve pas.
+    if (withSelf && others.length === 0 && me) {
+      list.push({
+        id: SELF_MARKER_ID,
+        latitude: cluster.latitude,
+        longitude: cluster.longitude,
+        image: personPinUrl(pin, {
+          id: me.id,
+          avatar: me.avatar,
+          variant: isGhost ? 'ghost' : 'self',
+          label: isGhost ? 'Toi · invisible' : 'Toi',
+        }),
+        anchorY: PIN_ANCHOR_Y,
+        zIndex: 4,
+        data: { kind: 'self', ghost: isGhost },
+      });
+      continue;
+    }
+
+    // ── Quelqu'un, seul ──
+    if (!withSelf && others.length === 1) {
+      const person = others[0].person as NfMapPerson;
       const selected = selectedId === person.id;
       list.push({
         id: person.id,
@@ -180,62 +253,31 @@ export function buildMapMarkers({
       continue;
     }
 
-    // Tête choisie par identifiant, pas par ordre d'arrivée : le même groupe
-    // doit désigner la même tête à chaque calcul, sinon deux marqueurs
-    // échangent leur apparence pour rien — et l'URL de l'épingle de groupe,
-    // donc son entrée de cache, changerait à chaque recalcul.
-    const members = [...cluster.items].sort(byId);
-    const [head, ...rest] = members;
-    const faces = members.map(({ person }) => person);
+    // ── Un groupe ──
+    const faces = others.map((item) => item.person as NfMapPerson);
+    if (faces.length === 0) continue;
+
+    // Ton avatar passe DEVANT quand le groupe te contient : sans lui, un groupe
+    // te réunissant à tes voisins ne montrerait que des inconnus, et tu aurais
+    // simplement disparu de la carte.
+    const shown = withSelf && me
+      ? [{ id: me.id, avatar: me.avatar }, ...faces.slice(0, MAX_CLUSTER_FACES - 1)]
+      : faces.slice(0, MAX_CLUSTER_FACES);
 
     list.push({
-      id: head.person.id,
+      // Un groupe qui te contient garde TON identifiant : c'est ce qui le fait
+      // échapper au filtre de fenêtre plus bas, comme l'épingle « Toi » seule.
+      id: withSelf ? SELF_MARKER_ID : faces[0].id,
       latitude: cluster.latitude,
       longitude: cluster.longitude,
       image: clusterPinUrl(
         pin,
-        faces.slice(0, MAX_CLUSTER_FACES).map((person) => ({
-          id: person.id,
-          avatar: person.avatar,
-        })),
-        faces.length
+        shown.map((face) => ({ id: face.id, avatar: face.avatar })),
+        cluster.items.length
       ),
       anchorY: CLUSTER_ANCHOR_Y,
-      zIndex: 3,
-      data: { kind: 'head', person: head.person, faces },
-    });
-
-    // Les membres ne produisent AUCUN marqueur.
-    //
-    // Ils en avaient un — un pixel transparent posé sous la tête — pour
-    // satisfaire une règle devenue caduque : « un marqueur par personne, jamais
-    // démonté ». Cette règle existait parce que retirer un enfant du `MapView`
-    // faisait tomber l'app. Le pool de marqueurs à taille fixe (voir
-    // `NfMapCanvas`) règle ce problème à la racine, et ces épingles fantômes
-    // n'ont plus aucune raison d'exister : elles coûtaient une vue native
-    // chacune pour ne rien montrer.
-    void rest;
-  }
-
-  // Se voir soi-même est le seul moyen de vérifier ce que les autres voient.
-  // Y COMPRIS en mode fantôme : cette épingle est locale, elle ne publie rien.
-  // La cacher tant qu'on ne partage pas — donc par défaut, donc à la toute
-  // première ouverture — donnait une carte où on ne se trouve pas. L'épingle
-  // dit alors explicitement que personne d'autre ne la voit.
-  if (myPosition && me) {
-    list.push({
-      id: SELF_MARKER_ID,
-      latitude: myPosition.latitude,
-      longitude: myPosition.longitude,
-      image: personPinUrl(pin, {
-        id: me.id,
-        avatar: me.avatar,
-        variant: isGhost ? 'ghost' : 'self',
-        label: isGhost ? 'Toi · invisible' : 'Toi',
-      }),
-      anchorY: PIN_ANCHOR_Y,
-      zIndex: 4,
-      data: { kind: 'self', ghost: isGhost },
+      zIndex: withSelf ? 4 : 3,
+      data: { kind: 'head', person: faces[0], faces, includesSelf: withSelf },
     });
   }
 

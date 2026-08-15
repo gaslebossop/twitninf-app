@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { FLAGS } from '../config/featureFlagKeys';
+
 /**
  * Onglets optionnels de la navbar : Accueil, Recherche, Notifications et
  * Profil restent fixes (navigation de base) — seuls ceux-ci se choisissent.
@@ -14,13 +16,25 @@ export type OptionalTabKey =
   | 'trading'
   | 'wallet'
   | 'analytics'
-  | 'monetization';
+  | 'monetization'
+  | 'nfmap';
 
 export interface OptionalTabInfo {
   key: OptionalTabKey;
   label: string;
   description: string;
   icon: string;
+  /**
+   * Drapeau qui conditionne l'existence de l'onglet, s'il y en a un.
+   *
+   * Déclaré ici plutôt que testé au cas par cas dans l'écran de
+   * personnalisation : sans ça, chaque fonctionnalité derrière un drapeau
+   * ajouterait sa propre exception dans un composant qui n'a pas à les
+   * connaître. Un onglet dont le drapeau est fermé ne se propose pas — et,
+   * même s'il a été choisi avant sa fermeture, ne se monte pas non plus (voir
+   * `BottomTabNavigator`).
+   */
+  flag?: string;
 }
 
 export const OPTIONAL_TABS: OptionalTabInfo[] = [
@@ -32,6 +46,13 @@ export const OPTIONAL_TABS: OptionalTabInfo[] = [
   { key: 'wallet', label: 'Portefeuille', description: 'Solde et historique de tes TwitCoins', icon: 'wallet-outline' },
   { key: 'analytics', label: 'Analytiques', description: 'Statistiques et performance de ton compte', icon: 'stats-chart-outline' },
   { key: 'monetization', label: 'Monétisation', description: 'Suivi de tes gains sur tes tweets', icon: 'cash-outline' },
+  {
+    key: 'nfmap',
+    label: 'Carte NF',
+    description: 'Où sont les comptes liés à toi',
+    icon: 'map-outline',
+    flag: FLAGS.NF_MAP,
+  },
 ];
 
 /** Nombre maximum d'onglets optionnels affichables en même temps dans la navbar. */

@@ -14,6 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts, withAlpha, gradients, glow } from '../theme';
 import { displayNameFonts } from '../theme/fonts';
 import { OPTIONAL_TABS, MAX_OPTIONAL_TABS, OptionalTabKey } from '../services/navbarPreferences';
+import { useFlag } from '../contexts/FeatureFlagContext';
+import { FLAGS } from '../config/featureFlagKeys';
 
 /**
  * Onboarding « Compose ta barre ».
@@ -342,15 +344,29 @@ export default function NavbarOnboardingModal({
     return () => loops.stop();
   }, [visible, halo, livePulse]);
 
+  /**
+   * Les onglets réellement proposables à CE compte.
+   *
+   * Un onglet peut dépendre d'un drapeau (voir `flag` dans
+   * `navbarPreferences`). Proposer une Carte NF à qui n'y a pas encore droit
+   * donnerait un onglet qui ouvre un écran vide : le drapeau ferme la
+   * fonctionnalité côté API, qui répond 404.
+   */
+  const nfMapEnabled = useFlag(FLAGS.NF_MAP);
+  const availableTabs = useMemo(
+    () => OPTIONAL_TABS.filter((tab) => !tab.flag || (tab.flag === FLAGS.NF_MAP && nfMapEnabled)),
+    [nfMapEnabled],
+  );
+
   const selectedTabs = useMemo(
     () =>
       selected
-        .map((key) => OPTIONAL_TABS.find((t) => t.key === key))
+        .map((key) => availableTabs.find((t) => t.key === key))
         .filter(Boolean) as Array<(typeof OPTIONAL_TABS)[number]>,
-    [selected],
+    [selected, availableTabs],
   );
 
-  const hiddenTabs = OPTIONAL_TABS.filter((tab) => !selected.includes(tab.key));
+  const hiddenTabs = availableTabs.filter((tab) => !selected.includes(tab.key));
   const atCap = selected.length >= MAX_OPTIONAL_TABS;
 
   /** Refuser en silence est un cul-de-sac : on montre pourquoi ça ne prend pas. */
@@ -522,7 +538,7 @@ export default function NavbarOnboardingModal({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.optionsContent}
               >
-                {OPTIONAL_TABS.map((tab) => {
+                {availableTabs.map((tab) => {
                   const rank = selected.indexOf(tab.key);
                   return (
                     <OptionCard

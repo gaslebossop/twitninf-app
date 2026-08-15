@@ -1,51 +1,45 @@
 /**
- * 🗺️ Carte de la Carte NF, sur `react-native-maps`.
+ * 🗺️ Carte de la Carte NF, rendue par MapLibre dans une `WebView`.
  *
- * ── Pourquoi cette bibliothèque, après une version écrite à la main ──
- * La première version posait ses propres tuiles pour éviter une dépendance
- * native, donc une recompilation. Le calcul était mauvais : l'app doit de
- * toute façon être recompilée pour livrer quoi que ce soit, et ce fichier a
- * produit deux régressions visibles — la carte qui se téléporte au
- * relâchement, puis la carte entièrement vide (une couche sans dimensions
- * rogne tout son contenu). Zoom continu, inertie, gestion mémoire des tuiles
- * et rognage sont des problèmes déjà résolus ; les réécrire coûtait plus que
- * la dépendance.
+ * ── Pourquoi la carte n'est plus native ──
+ * `react-native-maps` est figé à 1.20.1 par Expo Go (voir `app.config.js`), une
+ * version antérieure au support Fabric alors que la Nouvelle Architecture est
+ * obligatoire ici. Monter ou démonter un `<Marker>` y fait tomber le natif sur
+ * `insertReactSubview:` / `insertObject:atIndex:`, **sans une ligne de log JS**.
+ * Toute la version précédente de ce fichier était une architecture de
+ * contournement autour de ce seul fait : un pool de 64 emplacements posés une
+ * fois pour toutes, jamais un enfant de plus ni de moins, des personnes
+ * accumulées à vie pour n'avoir jamais à en retirer une.
  *
- * ── Deux règles que ce fichier fait respecter, apprises en tombant ──
+ * Changer de bibliothèque native aurait réglé la cause, mais Expo Go doit
+ * rester complet — décision prise, et elle ferme cette porte. Reste un moteur
+ * de carte qui ne demande AUCUN module natif nouveau : MapLibre GL JS dans une
+ * `WebView`. `react-native-webview` est en 13.15.0, exactement la version du
+ * binaire d'Expo Go : rien à installer, rien à recompiler.
  *
- * 1. LE MAPVIEW A UN NOMBRE FIXE D'ENFANTS, et un `<Marker>` n'a jamais
- *    d'enfant à lui.
+ * Ce n'est pas « du HTML » au sens où on l'entend d'habitude : MapLibre dessine
+ * en WebGL sur un canvas, composité par le GPU. C'est le moteur des cartes web
+ * modernes, pas une page de texte.
  *
- *    C'est la règle la plus chèrement payée du projet, et il a fallu un journal
- *    de plantage pour la formuler juste. `AIRMap insertReactSubview:atIndex:`
- *    termine par `[_reactSubviews insertObject:… atIndex:atIndex]` sans borner
- *    l'index : dès que la transaction de montage de Fabric en demande un
- *    au-delà du tableau, `NSMutableArray` lève
- *    `NSRangeException: index 10 beyond bounds [0 .. 8]`. C'est exactement ce
- *    qu'on a lu dans le rapport de l'appareil.
+ * ── Ce que ce changement supprime ──
+ * Le pool de marqueurs, la règle « aucun marqueur ne doit jamais être démonté »,
+ * et les épingles fantômes. Retirer un nœud du DOM ne fait rien tomber : les
+ * épingles redeviennent une liste ordinaire. Le contrat de ce composant, lui,
+ * n'a pas bougé d'une prop — `NfMapScreen` ne sait pas que la carte a changé.
  *
- *    On a d'abord cru que le fautif était le CONTENU des marqueurs — la couche
- *    d'interopérabilité de Fabric ne supporte effectivement pas les composants
- *    à enfants personnalisés, et les épingles sont pour cette raison devenues
- *    des images rendues par le serveur (`api/src/services/nfMapPinService.js`).
- *    Mais ça ne suffisait pas : ce sont les `<Marker>` EUX-MÊMES, en tant
- *    qu'enfants du `MapView`, qui font dériver l'index. Le montage par paquets
- *    et le vidage à la perte du focus, ajoutés pour « ménager » le natif,
- *    fabriquaient même précisément les retraits qui cassent.
- *
- *    D'où le pool : `MARKER_POOL_SIZE` emplacements posés une fois, clés par
- *    index, jamais un de plus ni un de moins. Tout le reste — apparaître,
- *    disparaître, changer de personne — est devenu un changement de props.
- *
- * 2. La caméra ne se pilote QUE par sauts explicites (`camera.nonce`). Ce
- *    composant ne renvoie jamais la carte là où elle est déjà : un doigt qui
- *    déplace la carte ne doit produire aucun recadrage, sinon on retrouve le
- *    sursaut au relâchement qu'on a passé deux versions à supprimer.
+ * ── Ce qui, dans une WebView, trahirait une page web ──
+ * Quatre choses, neutralisées ici et dans la page (voir
+ * `api/src/services/nfMapWebView.js`) : le rebond élastique en fin de geste, la
+ * sélection de texte à l'appui long, le flash blanc avant le premier rendu, et
+ * le canvas qui s'assemble à vue.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
+import { Linking, Platform, StyleSheet, View } from 'react-native';
+import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+
+import { API_CONFIG } from '../../config/api';
+import { colors, isDarkTheme } from '../../theme';
 
 export interface MapCoordinate {
   latitude: number;
@@ -67,17 +61,21 @@ export interface MapMarker<T = unknown> {
   /**
    * URL de l'image de l'épingle, dessinée par le serveur.
    *
-   * C'est la SEULE façon de peupler un marqueur ici : voir la règle 1 en
-   * en-tête. Changer cette URL est un changement de prop, que la carte encaisse
-   * sans risque — contrairement à un changement d'enfants.
+   * Le serveur les dessinait parce qu'un `<Marker>` natif à enfants faisait
+   * tomber l'app. Cette raison a disparu avec la carte native — mais le rendu
+   * reste le bon choix : une même épingle est calculée une fois pour tous les
+   * téléphones qui la regardent, et le CDN la sert ensuite. Voir
+   * `api/src/services/nfMapPinService.js`.
    */
   image: string;
   /**
    * Où, dans l'image, se trouve le point désigné (0 = haut, 1 = bas).
    *
-   * Il diffère d'une sorte d'épingle à l'autre : une épingle de personne pointe
-   * par sa pointe, un groupe se centre sur ses membres. Les valeurs viennent du
-   * service de rendu — voir `PIN_ANCHOR_Y` dans `nfMapService`.
+   * Contrairement à la carte native — où cette valeur était SANS EFFET sur
+   * Apple Maps, `anchor` n'existant que dans `AirGoogleMaps` — elle est
+   * respectée sur les deux plateformes ici : c'est le même moteur des deux
+   * côtés. Les épingles iOS étaient jusque-là centrées sur leur coordonnée au
+   * lieu de pointer dessus.
    */
   anchorY: number;
   /** Ordre de superposition — la tête d'un groupe passe devant ses membres. */
@@ -100,32 +98,14 @@ export interface MapCamera {
 }
 
 /**
- * Conversion entre le niveau de zoom « tuiles » (celui que manipule l'écran) et
- * l'étendue en degrés attendue par `react-native-maps`.
+ * Zoom « tuiles » : la vue fait `360 / 2^zoom` degrés de large.
  *
- * Le monde fait 360° de large sur `2^zoom` tuiles : une fenêtre couvre donc
- * `360 / 2^zoom` degrés de longitude, à peu près. Rester dans l'unité « zoom »
- * côté écran évite d'avoir à raisonner en deltas dans le reste du code.
+ * C'est l'unité de l'écran, conservée telle quelle par ce changement de moteur.
+ * MapLibre compte autrement (en tuiles de 512 px) ; la conversion vit dans la
+ * page, en un seul endroit — voir `toMapLibreZoom` dans `bridge.js`.
  */
-const deltaForZoom = (zoom: number) => 360 / Math.pow(2, zoom);
 const zoomForDelta = (delta: number) => Math.log2(360 / Math.max(delta, 1e-6));
 
-/**
- * Bornes des SAUTS de caméra — pas du zoom que fait le doigt.
- *
- * La distinction est le fruit d'une régression : passées à la carte native via
- * `minZoomLevel` / `maxZoomLevel`, ces bornes font planter le pincement (voir
- * le commentaire au point d'usage, dans le JSX). Le zoom affiché reste donc
- * libre ; ce qui est borné, c'est ce que NOUS demandons à la caméra.
- *
- * Elles servent de filet : `regionForCamera` est le seul chemin par lequel un
- * cadrage descend au natif, et il garantit ainsi qu'aucun delta absurde n'y
- * arrive — un `MKCoordinateRegion` dont le `latitudeDelta` dépasse 180 lève une
- * exception Objective-C, sans une ligne de log JS.
- *
- * Le plancher ne protège PAS la requête réseau : c'est `queryableBounds`, côté
- * écran, qui ramène la fenêtre interrogée aux 12° que le serveur accepte.
- */
 export const MIN_ZOOM = 4;
 export const MAX_ZOOM = 18;
 
@@ -135,75 +115,65 @@ const clampZoom = (zoom: number) =>
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 /**
- * Région VALIDE pour un centre et un zoom.
+ * La page, servie par l'API.
  *
- * Deux corrections par rapport à la version précédente, qui posait
- * `latitudeDelta = longitudeDelta` :
+ * Le thème part dans l'URL : le fond de carte DOIT suivre celui de l'app.
+ * Forcé en sombre, il transformait chaque élément flottant — barre de
+ * recherche, bouton de localisation, fiche d'un groupe, feuille du bas — en
+ * dalle blanche posée sur du noir. Le défaut n'était pas dans ces éléments,
+ * c'était le fond qui ne suivait personne.
  *
- *   - le format de l'écran. Sur un téléphone deux fois plus haut que large,
- *     demander deux deltas égaux fait cadrer la carte sur le plus contraignant
- *     des deux : on obtenait systématiquement plus large que demandé, et
- *     « ouvrir un groupe » ne séparait pas ses membres ;
- *   - la latitude. En Mercator, un degré de latitude occupe `1 / cos(lat)`
- *     fois plus de pixels qu'un degré de longitude.
- *
- * Tout ce qui sort d'ici est fini et dans les bornes du globe, quoi qu'on
- * reçoive en entrée.
+ * Lu à la construction de l'URL et pas figé au chargement du module : le thème
+ * peut changer entre deux ouvertures de l'écran.
  */
-function regionForCamera(
-  center: MapCoordinate,
-  zoom: number,
-  aspectRatio: number
-): Region {
-  const latitude = clamp(Number.isFinite(center.latitude) ? center.latitude : 0, -85, 85);
-  const longitude = clamp(Number.isFinite(center.longitude) ? center.longitude : 0, -180, 180);
+const mapTheme = () => (isDarkTheme() ? 'dark' : 'light');
 
-  const longitudeDelta = clamp(deltaForZoom(clampZoom(zoom)), 1e-4, 360);
-  const cosine = Math.max(0.05, Math.cos((latitude * Math.PI) / 180));
-  const latitudeDelta = clamp(longitudeDelta * aspectRatio * cosine, 1e-4, 180);
+const viewUrl = () => `${API_CONFIG.BASE_URL}/api/nf-map/view?theme=${mapTheme()}`;
+const styleUrl = () => `${API_CONFIG.BASE_URL}/api/nf-map/style.json?theme=${mapTheme()}`;
 
-  return { latitude, longitude, latitudeDelta, longitudeDelta };
+/** Racine de la page, pour reconnaître ce qui a le droit de naviguer. */
+const VIEW_ORIGIN = `${API_CONFIG.BASE_URL}/api/nf-map/view`;
+
+/**
+ * Ce que la page reçoit AVANT d'avoir fini de se charger.
+ *
+ * `window.NFMAP_BOOT` est lu par le pont à la toute fin de son évaluation : la
+ * carte démarre donc sans attendre un aller-retour de message. Injecter après
+ * le chargement marcherait aussi, mais laisserait une fenêtre — visible — où la
+ * page est là et la carte pas encore.
+ */
+function bootScript(camera: MapCamera): string {
+  return `window.NFMAP_BOOT = ${JSON.stringify({
+    style: styleUrl(),
+    latitude: camera.center.latitude,
+    longitude: camera.center.longitude,
+    zoom: clampZoom(camera.zoom),
+  })};
+true;`;
 }
 
 /**
- * Fond de carte sombre.
+ * Les deux caractères que JSON accepte et que JavaScript refuse.
  *
- * L'app est noire ; le fond par défaut de Google Maps est blanc cassé et
- * saturé de routes jaunes. Poser des avatars dessus donnait une page qui ne
- * ressemblait à aucune autre de l'app. On garde les routes et l'eau lisibles,
- * on éteint tout le reste (commerces, transports, étiquettes de POI) : sur une
- * carte de gens, le nom d'une pizzeria n'est que du bruit derrière les visages.
- *
- * Google uniquement — Apple Maps suit le thème du système via
- * `userInterfaceStyle`, il n'accepte pas de feuille de style.
+ * Construits par code plutôt qu'écrits en clair : ils sont invisibles dans un
+ * éditeur, et une relecture les prendrait pour des espaces ordinaires.
  */
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#111111' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#6B6B6B' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0A0A0A' }] },
-  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-  {
-    featureType: 'administrative.locality',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#9A9A9A' }],
-  },
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#171717' }] },
-  { featureType: 'park', elementType: 'geometry', stylers: [{ color: '#141B14' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#242424' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2E2E2E' }] },
-  { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0C1420' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3A4A5A' }] },
-];
+const JS_LINE_BREAKS = new RegExp(
+  `[${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]`,
+  'g'
+);
+
+function toScriptLiteral(value: unknown): string {
+  return JSON.stringify(value).replace(
+    JS_LINE_BREAKS,
+    (char) => `\\u${char.charCodeAt(0).toString(16)}`
+  );
+}
 
 interface NfMapCanvasProps<T> {
   camera: MapCamera;
   markers: Array<MapMarker<T>>;
-  /** Appui sur un marqueur. Géré par la carte : voir la règle 1 en en-tête. */
+  /** Appui sur un marqueur. Géré par la carte : l'épingle est une image. */
   onMarkerPress?: (marker: MapMarker<T>) => void;
   /** Appui sur le fond de carte — sert à refermer ce qui est ouvert. */
   onPressMap?: () => void;
@@ -215,103 +185,17 @@ interface NfMapCanvasProps<T> {
    * exactement ce qu'elle affiche.
    */
   onRegionChange: (center: MapCoordinate, zoom: number, bounds: MapBounds) => void;
+  /**
+   * Le lieu au centre de la vue, mis à jour PENDANT le geste.
+   *
+   * Il vient des étiquettes que la carte dessine déjà, pas d'un géocodage
+   * inverse : c'est instantané, gratuit, et le nom annoncé est exactement
+   * celui qu'on lit à l'écran. `null` quand la vue ne couvre aucun lieu
+   * nommé — en pleine mer, ou trop dézoomé pour qu'une commune s'affiche.
+   */
+  onPlaceChange?: (name: string | null) => void;
   style?: any;
 }
-
-/**
- * Nombre de marqueurs posés sur la carte. FIXE, pour toute la session.
- *
- * ── Ce que ce nombre empêche ──
- * `AIRMap insertReactSubview:atIndex:` finit par
- * `[_reactSubviews insertObject:… atIndex:atIndex]`, sans borner l'index. Dès
- * que la transaction de montage de Fabric demande un index au-delà du tableau,
- * `NSMutableArray` lève `NSRangeException: index 10 beyond bounds [0 .. 8]` —
- * le crash, tel quel, dans le journal de l'appareil. Et l'index dérive parce
- * que `removeReactSubview:` retire par identité pendant que les insertions,
- * elles, arrivent par index.
- *
- * Ce n'était donc PAS le contenu des marqueurs, comme on l'a cru : ce sont les
- * marqueurs eux-mêmes, en tant qu'enfants du `MapView`. Les rendre sans enfants
- * n'y changeait rien, et le vidage par paquets qu'on avait ajouté fabriquait
- * précisément les retraits qui font dériver l'index.
- *
- * La parade tient en une phrase : le `MapView` reçoit `MARKER_POOL_SIZE`
- * enfants au premier rendu, et plus jamais un de plus ni un de moins. Une
- * épingle qui apparaît, disparaît ou change de place n'est plus qu'un
- * changement de props sur un emplacement déjà posé.
- *
- * ── Pourquoi 64 ──
- * Le regroupement fusionne tout ce qui tient dans 72 px : un écran de
- * téléphone n'expose donc jamais plus d'une soixantaine de cases. Les
- * emplacements inutilisés portent un pixel transparent et ne coûtent rien.
- */
-const MARKER_POOL_SIZE = 64;
-
-/** Un pixel transparent : l'emplacement est là, mais ne montre rien. */
-const PARKED_IMAGE =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-
-/**
- * Où dorment les emplacements inutilisés.
- *
- * Un point fixe, et non le centre courant : une coordonnée qui suivrait la
- * carte réécrirait soixante marqueurs à chaque déplacement du doigt, pour des
- * vues que personne ne voit.
- */
-const PARKED_COORDINATE = { latitude: 0, longitude: 0 };
-
-/**
- * Un EMPLACEMENT de marqueur, pas un marqueur.
- *
- * Il est monté une fois et ne repart jamais. Quand il porte quelqu'un, il
- * affiche son épingle ; sinon il se gare hors de vue avec un pixel transparent.
- * Voir `MARKER_POOL_SIZE` pour ce que cette permanence évite.
- *
- * Mémoïsé : sans cette barrière, tout rendu de l'écran — une lettre tapée dans
- * la recherche d'amis, une image de l'animation de la feuille — renvoie une
- * mise à jour aux soixante-quatre emplacements.
- */
-function MarkerSlotView<T>({
-  marker,
-  onMarkerPress,
-}: {
-  /** `null` = emplacement libre. */
-  marker: MapMarker<T> | null;
-  onMarkerPress?: (marker: MapMarker<T>) => void;
-}) {
-  return (
-    <Marker
-      coordinate={
-        marker ? { latitude: marker.latitude, longitude: marker.longitude } : PARKED_COORDINATE
-      }
-      // Le point désigné n'est pas au centre de l'image : une épingle pointe
-      // par sa pointe, sous laquelle il reste encore l'étiquette du pseudo.
-      //
-      // ⚠️ Sans effet sur Apple Maps : `anchor` n'existe que dans
-      // `AirGoogleMaps`. Sur iOS l'image est donc centrée sur la coordonnée.
-      anchor={{ x: 0.5, y: marker ? marker.anchorY : 0.5 }}
-      zIndex={marker?.zIndex ?? 0}
-      image={{ uri: marker ? marker.image : PARKED_IMAGE }}
-      // Aucune vue à suivre : la carte n'a rien à re-photographier. Laisser la
-      // valeur par défaut (vrai) ferait redessiner le marqueur à chaque image
-      // pour un contenu qui ne bouge jamais.
-      tracksViewChanges={false}
-      onPress={marker && onMarkerPress ? () => onMarkerPress(marker) : undefined}
-      /*
-       * Sans ça, l'épingle est inutilisable sur iOS.
-       *
-       * Sur Apple Maps, toucher un marqueur déclenche SON `onPress` puis, dans
-       * la foulée, celui de la carte — ce que ce drapeau existe précisément
-       * pour empêcher. Le `onPress` de la carte sert à refermer ce qui est
-       * ouvert : il effaçait donc la fiche dans l'instant où le marqueur
-       * venait de la remplir, et toucher quelqu'un ne semblait rien faire.
-       */
-      stopPropagation
-    />
-  );
-}
-
-const MarkerSlot = React.memo(MarkerSlotView) as typeof MarkerSlotView;
 
 export default function NfMapCanvas<T>({
   camera,
@@ -319,58 +203,38 @@ export default function NfMapCanvas<T>({
   onMarkerPress,
   onPressMap,
   onRegionChange,
+  onPlaceChange,
   style,
 }: NfMapCanvasProps<T>) {
-  const mapRef = useRef<MapView | null>(null);
+  const webRef = useRef<WebView | null>(null);
 
   /**
-   * Format réel de la carte, mesuré.
+   * La page a-t-elle fini de poser sa première vue ?
    *
-   * Il sert à calculer un `latitudeDelta` cohérent avec le `longitudeDelta`
-   * demandé — voir `regionForCamera`. Mesuré plutôt que déduit de
-   * `Dimensions.get('window')` : la carte n'occupe pas forcément tout l'écran,
-   * et sur Android la fenêtre inclut des barres système qui n'en font pas
-   * partie. Le repli 16/9 ne sert qu'à la toute première image.
+   * Avant, toute injection serait perdue : le pont existe, mais la carte n'est
+   * pas construite. Il remet ce qu'on lui donne en attente, mais s'appuyer
+   * là-dessus rendrait l'ordre des messages significatif — on préfère ne rien
+   * envoyer tant que la page n'a pas dit qu'elle était prête.
    */
-  const aspectRatio = useRef(16 / 9);
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    if (width > 0 && height > 0) aspectRatio.current = height / width;
-  }, []);
-
-  const initialRegion = useMemo<Region>(
-    () => regionForCamera(camera.center, camera.zoom, Dimensions.get('window').height / Dimensions.get('window').width),
-    // Volontairement figée : `initialRegion` ne sert qu'au premier rendu, la
-    // suite passe par `animateToRegion`. La mesure de `onLayout` n'est pas
-    // encore disponible ici, d'où la fenêtre système en approximation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
-  // Saut explicite demandé par l'écran. Un déplacement au doigt ne change pas
-  // le `nonce`, donc ne repasse jamais ici : la carte n'est jamais recadrée
-  // sous le doigt.
-  const lastNonce = useRef(camera.nonce);
-  useEffect(() => {
-    if (camera.nonce === lastNonce.current) return;
-    lastNonce.current = camera.nonce;
-    // Tout passe par `regionForCamera` : c'est le seul endroit qui garantit
-    // qu'aucune valeur non finie ou hors du globe n'atteint le natif, où elle
-    // lèverait une exception sans laisser de trace côté JS.
-    mapRef.current?.animateToRegion(
-      regionForCamera(camera.center, camera.zoom, aspectRatio.current),
-      350
-    );
-  }, [camera]);
+  const [ready, setReady] = useState(false);
 
   /**
-   * Un marqueur sans coordonnées valides fait tomber le natif.
+   * Camera de départ, FIGÉE.
+   *
+   * Elle ne sert qu'au script d'amorçage, évalué une seule fois : la
+   * recalculer à chaque rendu changerait la prop `injectedJavaScriptBefore…` et
+   * ferait recharger la WebView entière à chaque déplacement.
+   */
+  const initialCamera = useRef(camera);
+
+  /**
+   * Un marqueur sans coordonnées valides n'a rien à faire sur la carte.
    *
    * `Number(null)` vaut 0 et `Number(undefined)` vaut `NaN` : une ligne à
-   * laquelle il manque une latitude arrivait jusqu'ici. Côté natif, un point
-   * `NaN` n'est pas rejeté proprement, il produit l'objet nil qui fait
-   * exploser le tableau de marqueurs. On filtre à l'entrée plutôt que d'y
-   * faire confiance.
+   * laquelle il manque une latitude arrivait jusqu'ici. Ça ne fait plus tomber
+   * l'app comme du temps de la carte native — le pont refuse les coordonnées
+   * non finies — mais une épingle posée à zéro degré, au large du golfe de
+   * Guinée, resterait un défaut visible.
    */
   const safeMarkers = useMemo(
     () =>
@@ -384,19 +248,89 @@ export default function NfMapCanvas<T>({
     [markers]
   );
 
+  /**
+   * Ce qui descend réellement dans la page : la géométrie, pas les données.
+   *
+   * `data` porte la personne entière — pseudo, avatar, mode de partage,
+   * horodatage. Rien de tout cela n'est utile au rendu, et la page n'a aucune
+   * raison de le connaître : elle ne reçoit que ce qu'elle dessine. L'appui
+   * remonte un identifiant, que ce composant remet en correspondance ici.
+   */
+  const payload = useMemo(
+    () =>
+      safeMarkers.map((marker) => ({
+        id: marker.id,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        image: marker.image,
+        anchorY: marker.anchorY,
+        zIndex: marker.zIndex ?? 0,
+      })),
+    [safeMarkers]
+  );
+
+  /** Correspondance identifiant → marqueur, pour l'appui qui remonte. */
+  const byId = useMemo(() => {
+    const map = new Map<string, MapMarker<T>>();
+    for (const marker of safeMarkers) map.set(marker.id, marker);
+    return map;
+  }, [safeMarkers]);
 
   /**
-   * Tant que la carte native n'a pas répondu « je suis prête », AUCUN
-   * marqueur n'est monté.
+   * Dernier envoi, pour ne pas réémettre l'identique.
    *
-   * Sur iOS, poser des marqueurs pendant que la carte s'installe encore fait
-   * tomber l'app dans `-[__NSArrayM insertObject:atIndex:]: object cannot be
-   * nil` : du code natif, donc pas une ligne dans la console JS. C'est la même
-   * famille de panne que le montage/démontage de marqueurs sous la Nouvelle
-   * Architecture, corrigée côté bibliothèque à partir de 1.21 — mais la garde
-   * ne coûte rien et couvre le cas où la course se rejoue.
+   * L'écran se rend à chaque lettre tapée dans la recherche d'amis et à chaque
+   * image de l'animation de la feuille. Sans cette comparaison, chacun de ces
+   * rendus renverrait la liste entière des épingles dans la page.
    */
-  const [ready, setReady] = useState(false);
+  const lastSent = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    const serialized = toScriptLiteral(payload);
+    if (serialized === lastSent.current) return;
+    lastSent.current = serialized;
+    webRef.current?.injectJavaScript(`window.NFMAP.setMarkers(${serialized});true;`);
+  }, [payload, ready]);
+
+  /**
+   * Saut explicite demandé par l'écran.
+   *
+   * Un déplacement au doigt ne change pas le `nonce`, donc ne repasse jamais
+   * ici : la carte n'est jamais recadrée sous le doigt. C'est ce qui a supprimé
+   * le sursaut au relâchement qu'on a passé deux versions à traquer.
+   */
+  const lastNonce = useRef(camera.nonce);
+  /**
+   * Le PREMIER cadrage ne s'anime pas.
+   *
+   * La carte s'ouvre sur une position de repli, puis l'écran apprend où on est
+   * — soit par le GPS, soit par la dernière position retenue. Animer ce
+   * passage-là faisait survoler des centaines de kilomètres à chaque ouverture,
+   * après quoi la carte se posait : c'est le « ça se téléporte au lancement ».
+   *
+   * Les sauts SUIVANTS gardent leur animation : eux sont demandés, et suivre
+   * des yeux le trajet vers un ami dit où il est par rapport à soi.
+   */
+  const firstJumpDone = useRef(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (camera.nonce === lastNonce.current) return;
+    lastNonce.current = camera.nonce;
+
+    const { latitude, longitude } = camera.center;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    const instant = !firstJumpDone.current;
+    firstJumpDone.current = true;
+
+    webRef.current?.injectJavaScript(
+      `window.NFMAP.jumpTo(${clamp(latitude, -85, 85)},${clamp(longitude, -180, 180)},${clampZoom(
+        camera.zoom
+      )},${instant});true;`
+    );
+  }, [camera, ready]);
 
   /**
    * Le point de passage OBLIGÉ de tout ce qui remonte vers l'écran.
@@ -407,10 +341,10 @@ export default function NfMapCanvas<T>({
    *     tel quel dans la requête, que le serveur refuse — et `nearby` rend une
    *     liste vide sans distinguer « refusé » de « personne ici ». La carte
    *     cessait de se peupler dès qu'on dézoomait un peu ;
-   *   - une fenêtre à cheval sur l'antiméridien. `getMapBoundaries` rend alors
-   *     un coin nord-est à -170° et un sud-ouest à 170° : trier ces deux
-   *     nombres donne le rectangle COMPLÉMENTAIRE, c'est-à-dire tout le globe
-   *     sauf ce qu'on regarde.
+   *   - une fenêtre à cheval sur l'antiméridien. Les bornes rendent alors un
+   *     est à -170° et un ouest à 170° : trier ces deux nombres donne le
+   *     rectangle COMPLÉMENTAIRE, c'est-à-dire tout le globe sauf ce qu'on
+   *     regarde.
    *
    * On rabat donc sur le globe, on garantit `north > south` (le serveur le
    * refuse à l'identique) et on rejette tout ce qui n'est pas fini.
@@ -436,144 +370,131 @@ export default function NfMapCanvas<T>({
     [onRegionChange]
   );
 
-  /**
-   * Les emplacements, dans leur ordre définitif.
-   *
-   * Toujours `MARKER_POOL_SIZE` entrées : les premières portent les marqueurs à
-   * montrer, les suivantes valent `null` et se garent. C'est ce tableau de
-   * longueur constante qui garantit que le `MapView` ne voit jamais un enfant
-   * apparaître ni disparaître — la seule chose qui faisait tomber l'app.
-   *
-   * Un débordement se coupe ici plutôt que de se répandre : au-delà de la
-   * soixantaine de cases qu'un écran peut montrer, une épingle de plus ne serait
-   * de toute façon pas lisible.
-   */
-  const slots = useMemo(() => {
-    const out: Array<MapMarker<T> | null> = new Array(MARKER_POOL_SIZE).fill(null);
-    const count = Math.min(safeMarkers.length, MARKER_POOL_SIZE);
-    for (let index = 0; index < count; index += 1) out[index] = safeMarkers[index];
-    return out;
-  }, [safeMarkers]);
-
-  /**
-   * Première fenêtre, dès que la carte est posée.
-   *
-   * Sur Android, `onRegionChangeComplete` ne se déclenche PAS au premier
-   * affichage (bug connu de la bibliothèque, corrigé en 1.24.11 mais qu'on ne
-   * veut pas être seul à devoir croire) : sans ce rattrapage, l'écran n'a
-   * aucune fenêtre à interroger tant que le doigt n'a pas bougé la carte —
-   * d'où une carte vide à l'arrivée, qui ne se peuplait qu'après un dézoom.
-   *
-   * On demande ses bornes à la carte plutôt que de les recalculer : elle seule
-   * sait ce qu'elle affiche vraiment, une fois les marges appliquées.
-   */
-  const handleMapReady = useCallback(async () => {
-    setReady(true);
-    try {
-      const box = await mapRef.current?.getMapBoundaries();
-      if (!box) return;
-      const { northEast, southWest } = box;
-      publishRegion(
-        northEast.latitude,
-        southWest.latitude,
-        northEast.longitude,
-        southWest.longitude
-      );
-    } catch {
-      // La carte n'est pas prête à répondre : le premier déplacement prendra
-      // le relais. Rien à signaler à l'utilisateur.
-    }
-  }, [publishRegion]);
-
-  const handleRegionChangeComplete = useCallback(
-    (region: Region) => {
-      // Une région non finie (carte pas encore posée sur Android) ferait
-      // remonter des bornes `NaN` jusqu'à la requête réseau et au calcul des
-      // groupes. Les quatre champs sont vérifiés, pas deux : Android en a déjà
-      // renvoyé trois valides sur quatre pendant l'installation de la vue.
-      if (
-        ![region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta].every(
-          Number.isFinite
-        )
-      ) {
+  const handleMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      let message: any;
+      try {
+        message = JSON.parse(event.nativeEvent.data);
+      } catch {
+        // La page n'émet que du JSON qu'elle fabrique elle-même. Un message
+        // illisible ne peut venir que d'un état qu'on ne connaît pas : on
+        // l'ignore plutôt que de laisser remonter une exception dans un
+        // gestionnaire d'événement natif.
         return;
       }
 
-      publishRegion(
-        region.latitude + region.latitudeDelta / 2,
-        region.latitude - region.latitudeDelta / 2,
-        region.longitude + region.longitudeDelta / 2,
-        region.longitude - region.longitudeDelta / 2
-      );
+      switch (message?.type) {
+        case 'ready':
+          // Une WebView peut être rechargée par le système sous pression
+          // mémoire. Repasser par `ready` doit tout reposer : on oublie donc
+          // le dernier envoi pour que les épingles soient réémises.
+          lastSent.current = null;
+          setReady(true);
+          return;
+
+        case 'region': {
+          const bounds = message.bounds;
+          if (!bounds) return;
+          publishRegion(bounds.north, bounds.south, bounds.east, bounds.west);
+          return;
+        }
+
+        case 'marker': {
+          const marker = byId.get(String(message.id));
+          if (marker && onMarkerPress) onMarkerPress(marker);
+          return;
+        }
+
+        case 'place':
+          onPlaceChange?.(typeof message.name === 'string' ? message.name : null);
+          return;
+
+        case 'map':
+          onPressMap?.();
+          return;
+
+        default:
+          return;
+      }
     },
-    [publishRegion]
+    [byId, onMarkerPress, onPlaceChange, onPressMap, publishRegion]
   );
 
+  /**
+   * Rien ne navigue, sauf la page elle-même.
+   *
+   * L'attribution des données porte des liens : sans ce filtre, un appui
+   * dessus remplacerait la carte par un site web à l'intérieur de l'écran,
+   * sans aucun moyen de revenir. On les ouvre dans le navigateur du système,
+   * ce qui est le comportement attendu, et la carte reste en place.
+   */
+  const handleNavigation = useCallback((request: { url: string }) => {
+    if (request.url.startsWith(VIEW_ORIGIN)) return true;
+    if (/^https?:\/\//i.test(request.url)) {
+      Linking.openURL(request.url).catch(() => {
+        /* Aucun navigateur disponible : il n'y a rien à dire à l'utilisateur. */
+      });
+    }
+    return false;
+  }, []);
+
   return (
-    <View style={[styles.root, style]} onLayout={handleLayout}>
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFill}
-        // Google des deux côtés serait un fond identique partout, mais impose
-        // une clé sur iOS aussi ; on garde Apple Maps sur iOS, en sombre.
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        customMapStyle={Platform.OS === 'android' ? DARK_MAP_STYLE : undefined}
-        userInterfaceStyle="dark"
-        initialRegion={initialRegion}
-        onRegionChangeComplete={handleRegionChangeComplete}
-        onMapReady={handleMapReady}
-        onPress={onPressMap}
-        showsUserLocation={false}
-        showsMyLocationButton={false}
-        showsCompass={false}
-        showsPointsOfInterest={false}
-        showsBuildings={false}
-        showsTraffic={false}
-        toolbarEnabled={false}
-        rotateEnabled={false}
-        pitchEnabled={false}
-        /*
-         * ⚠️ PAS de `minZoomLevel` / `maxZoomLevel` ici. Jamais.
-         *
-         * Ils y ont été posés une fois, pour garder la carte dans un domaine où
-         * la fenêtre reste interrogeable. Ils ont fabriqué une boucle
-         * d'animations réentrantes au pincement — précisément le « ça plante
-         * quand on zoome trop » qu'ils étaient censés éviter.
-         *
-         * `legacyZoomConstraintsEnabled` vaut YES par défaut, mais les bornes
-         * par défaut (0 et `AIRMapMaxZoomLevel`, qui vaut 20) font que le
-         * garde-fou ne se déclenche jamais. Les renseigner l'ARME : dès qu'on
-         * dépasse la borne, `applyLegacyZoomConstrains` appelle
-         * `setRegion:animated:YES` DEPUIS `regionDidChangeAnimated` — ce qui
-         * redéclenche `regionDidChangeAnimated`, qui reclampe, qui rappelle
-         * `setRegion`, pendant que les doigts continuent de pincer.
-         *
-         * Et ces bornes ne protégeaient rien qui ne le soit déjà ailleurs :
-         * `publishRegion` rabat les bornes sur le globe, `queryableBounds`
-         * (côté écran) ramène la requête au plus grand carré que le serveur
-         * accepte, et `regionForCamera` borne le zoom de tout saut de caméra.
-         * Le zoom AFFICHÉ, lui, n'a pas besoin d'être bridé.
-         */
-        /*
-         * Sur Android, toucher un marqueur recentre la carte par défaut. Ce
-         * recadrage non demandé déclenche un changement de région, donc une
-         * nouvelle requête, alors qu'on voulait seulement ouvrir une fiche.
-         */
-        moveOnMarkerPress={false}
-      >
-        {/* La clé est l'INDEX de l'emplacement, jamais l'identité de la
-            personne : c'est ce qui interdit à React de réordonner, d'insérer ou
-            de retirer un enfant du MapView. Une épingle qui change de main
-            n'est plus qu'un changement de props. */}
-        {ready &&
-          slots.map((marker, index) => (
-            <MarkerSlot key={index} marker={marker} onMarkerPress={onMarkerPress} />
-          ))}
-      </MapView>
+    <View style={[styles.root, { backgroundColor: colors.bg }, style]}>
+      <WebView
+        ref={webRef}
+        source={{ uri: viewUrl() }}
+        // La page pose son propre fond, mais trop tard : le compositeur natif
+        // peint le sien AVANT d'avoir lu la moindre ligne de CSS, et il est
+        // blanc par défaut. C'est le flash qui trahit une WebView.
+        // Le fond sombre est posé par le style, pas par une prop : `opaque` et
+        // `backgroundColor` existent bien sur la vue native mais sont absents
+        // des types de la 13.15.0. C'est `styles.web` qui peint le fond avant
+        // le premier rendu de la page, ce qui est le point qui compte — sans
+        // lui, la WebView est blanche le temps du chargement.
+        style={[styles.web, { backgroundColor: colors.bg }]}
+        injectedJavaScriptBeforeContentLoaded={bootScript(initialCamera.current)}
+        onMessage={handleMessage}
+        onShouldStartLoadWithRequest={handleNavigation}
+        // ── Tout ce qui suit efface la « page web » ──
+        // Le rebond élastique de fin de geste est la signature nº1 d'une
+        // WebView : aucune carte native ne rebondit.
+        bounces={false}
+        overScrollMode="never"
+        scrollEnabled={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        // L'aperçu de lien au appui long (iOS) et le menu contextuel n'ont
+        // aucun sens sur une carte.
+        allowsLinkPreview={false}
+        // Pas d'indicateur de chargement : la page se dévoile d'elle-même une
+        // fois ses tuiles posées (voir l'opacité dans la page).
+        startInLoadingState={false}
+        // Rien ne doit pouvoir ouvrir une seconde vue par-dessus la carte.
+        setSupportMultipleWindows={false}
+        javaScriptCanOpenWindowsAutomatically={false}
+        // La page et MapLibre sont derrière des URLs immuables : le cache de
+        // la plateforme évite de retélécharger un mégaoctet à chaque ouverture.
+        cacheEnabled
+        // Le rendu WebGL doit être composité par le GPU, sinon le déplacement
+        // saccade sur Android.
+        androidLayerType="hardware"
+        // Une carte ne se met jamais à l'échelle du texte du système : le
+        // canvas se retrouverait à une taille qui n'est plus celle de la vue.
+        textZoom={100}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+        // Le contenu vient de notre API et de nulle part ailleurs — la page
+        // elle-même est verrouillée par sa CSP (`connect-src 'self'`).
+        originWhitelist={[API_CONFIG.BASE_URL]}
+        // Les tuiles arrivent en clair du proxy de l'API, jamais d'un tiers.
+        mixedContentMode="never"
+        {...(Platform.OS === 'ios' ? { allowsBackForwardNavigationGestures: false } : null)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden' },
+  web: { flex: 1 },
 });

@@ -51,12 +51,35 @@ export interface Cluster<T extends Clusterable> {
  * cette famille d'algorithmes, et c'est ce qui a produit des groupes de 204 px
  * de large alors qu'on croyait en demander 72.
  *
- * 36 px donne donc des groupes de 72 px au plus — 79 px en tenant compte de
- * l'arrondi de l'échelle. Une épingle mesurant 46 px, deux personnes ainsi
- * réunies sont bien à un jet de pierre l'une de l'autre à l'écran, ce qui est
- * exactement ce que « regrouper » doit vouloir dire.
+ * ── Pourquoi 72, et plus 36 ──
+ * 36 avait été calibré sur une épingle de 46 px : deux graines séparées de
+ * 36 px laissaient les ronds se toucher sans se recouvrir. Mais une épingle
+ * n'est plus un rond de 46 px depuis qu'elle est dessinée par le serveur — elle
+ * fait **96 pt de large** (`PIN.width` dans
+ * `api/src/services/nfMapPinService.js`) : 46 pt pour le rond, le reste pour
+ * l'étiquette du pseudo posée dessous. Les ronds ne se recouvraient donc pas,
+ * mais les ÉTIQUETTES se chevauchaient dès que deux personnes étaient à moins
+ * de 96 px l'une de l'autre. C'est le « ça stack mal » observé à l'écran.
+ *
+ * 72 px porte la séparation minimale à 72 px et plafonne un groupe à 144 px.
+ * C'est un compromis assumé : garantir ZÉRO chevauchement demanderait 96, donc
+ * des groupes de 192 px — la moitié d'un écran de téléphone, ce qui
+ * fusionnerait des gens manifestement distincts.
+ *
+ * ⚠️ Si la géométrie de l'épingle change côté serveur, cette valeur doit être
+ * revue : elle décrit un ENCOMBREMENT À L'ÉCRAN, pas une distance sur le sol.
+ *
+ * ── Une note sur le choix de la valeur exacte ──
+ * Un seuil de distance a forcément une frontière : pour toute configuration de
+ * points, il existe des rayons où deux d'entre eux tombent pile dessus, et une
+ * dérive d'un pour cent bascule alors leur groupe. La foule du test
+ * `map-cluster.test.js` est un réseau RÉGULIER, donc particulièrement sujette à
+ * ça : ses distances tombent exactement sur 60 et 78 px, qui sont instables,
+ * alors que 30 à 54, 66, 72 et 84 à 96 ne le sont pas. Ce n'est pas une
+ * propriété de l'algorithme mais du semis de test — et c'est une raison de plus
+ * de ne pas retoucher cette constante sans relancer les tests.
  */
-export const CLUSTER_RADIUS_PX = 36;
+export const CLUSTER_RADIUS_PX = 72;
 
 /**
 /**
@@ -69,7 +92,19 @@ export function clusterize<T extends Clusterable>(
   items: T[],
   degreesPerPixel: number,
   radiusPx = CLUSTER_RADIUS_PX,
-  latitudeCosine = 1
+  latitudeCosine = 1,
+  /**
+   * Points à semer AVANT tous les autres.
+   *
+   * Une graine n'est jamais absorbée : elle porte son groupe. C'est ce qu'il
+   * faut à l'épingle « Toi », qui doit rester visible même entourée de monde —
+   * si elle était absorbée, on disparaîtrait de sa propre carte.
+   *
+   * Sans ce paramètre, l'ordre de semis est celui des identifiants, et rien ne
+   * garantissait que « Toi » y soit en tête : `_` se classe après les chiffres,
+   * donc après la plupart des identifiants de comptes.
+   */
+  prioritySeeds?: ReadonlySet<string>
 ): Array<Cluster<T>> {
   if (items.length === 0) return [];
 
@@ -113,7 +148,14 @@ export function clusterize<T extends Clusterable>(
    * et demandent les mêmes images. Semer dans l'ordre du serveur ferait changer
    * la composition à chaque réponse, pour des gens qui n'ont pas bougé.
    */
-  const ordered = [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const byId = (a: Clusterable, b: Clusterable) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const ordered = [...items].sort((a, b) => {
+    // Deux rangs, chacun trié par identifiant : le résultat reste totalement
+    // déterministe, une graine prioritaire passe simplement devant.
+    const rankA = prioritySeeds?.has(a.id) ? 0 : 1;
+    const rankB = prioritySeeds?.has(b.id) ? 0 : 1;
+    return rankA !== rankB ? rankA - rankB : byId(a, b);
+  });
   const taken = new Set<string>();
   const clusters: Array<Cluster<T>> = [];
   const radiusSquared = radiusPx * radiusPx;
