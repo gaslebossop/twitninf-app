@@ -237,6 +237,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               user?.g_auth_linked ? 'checkmark-circle' : 'link-outline',
               handleLinkGAuth
             )}
+
+            {renderActionButton(
+              'Super Cœur',
+              'Le like arc-en-ciel du palier Pro — ton solde restant, ta prochaine recharge',
+              'heart-circle-outline',
+              () => navigation.navigate('SuperHearts')
+            )}
           </Animated.View>
 
           {/* Section Confidentialité */}

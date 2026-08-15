@@ -13,6 +13,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { colors } from '../../theme';
+import { STORY_GRADIENT } from '../StoryRing';
 
 /**
  * Éclat de réaction — le « pop » du cœur et du retweet.
@@ -35,8 +36,15 @@ const PARTICLE_COUNT = 8;
 export interface ReactionPalette {
   /** Disque + anneau. */
   ring: string;
-  /** Les particules alternent entre ces deux teintes. */
+  /** Les particules alternent entre ces deux teintes, sauf si `rainbowParticles` est fourni. */
   particles: readonly [string, string];
+  /**
+   * Super Cœur uniquement : les particules parcourent cette palette au lieu
+   * d'alterner entre deux teintes — c'est le « arc-en-ciel » demandé. Un
+   * dégradé vrai sur l'anneau demanderait un masque (MaskedView, absent de
+   * ce repo) ; les particules multicolores portent l'effet à elles seules.
+   */
+  rainbowParticles?: readonly string[];
 }
 
 export const LIKE_PALETTE: ReactionPalette = {
@@ -47,6 +55,13 @@ export const LIKE_PALETTE: ReactionPalette = {
 export const RETWEET_PALETTE: ReactionPalette = {
   ring: colors.success,
   particles: [colors.success, '#4CD8F0'],
+};
+
+/** Super Cœur — pression longue sur le like, réservé au palier Pro. */
+export const SUPER_HEART_PALETTE: ReactionPalette = {
+  ring: colors.gold,
+  particles: [colors.gold, STORY_GRADIENT[2]],
+  rainbowParticles: STORY_GRADIENT,
 };
 
 interface ParticleProps {
@@ -163,7 +178,7 @@ function ReactionBurst({ progress, palette, iconSize = 16 }: ReactionBurstProps)
           key={i}
           index={i}
           progress={progress}
-          color={palette.particles[i % 2]}
+          color={palette.rainbowParticles ? palette.rainbowParticles[i % palette.rainbowParticles.length] : palette.particles[i % 2]}
           distance={distance}
           dotSize={dotSize}
         />

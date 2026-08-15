@@ -1261,6 +1261,44 @@ class ApiService {
     }
   }
 
+  async superLikeTweet(id: string): Promise<ApiResponse<{ liked: boolean; is_super: boolean; super_hearts_remaining: number }>> {
+    try {
+      console.log(`🌈 Super Cœur sur le tweet ${id}...`);
+      const response = await this.makeRequest(`/api/tweets/${id}/super-like`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      console.log('✅ Super Cœur posé');
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la pose du Super Cœur';
+      console.error('❌ Erreur de Super Cœur:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
+  async getSuperHearts(): Promise<ApiResponse<{ eligible: boolean; remaining: number; cap: number; renew_days: number; renews_at: string | null }>> {
+    try {
+      const response = await this.makeRequest('/api/premium/super-hearts', {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la récupération des Super Cœurs';
+      console.error('❌ Erreur Super Cœurs:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
   async retweet(id: string, comment?: string): Promise<ApiResponse<{ retweeted: boolean }>> {
     try {
       console.log(`🔄 Retweet du tweet ${id}...`);
