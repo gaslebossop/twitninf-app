@@ -1,5 +1,5 @@
 import { fonts, colors , statusBarStyle} from '../theme';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { apiService } from '../services';
 import { Tweet } from '../types/api';
 import Avatar from '../components/Avatar';
@@ -380,9 +381,6 @@ const VideoCard: React.FC<VideoCardProps> = ({ tweet, isActive, onSheetToggle, c
 const PAGE_SIZE = 2;
 const PREFETCH_THRESHOLD = 1;
 
-// ✅ Hauteur intrinsèque de la tab bar React Navigation (identique iOS/Android)
-const TAB_BAR_HEIGHT = 49;
-
 const TwitNinfVideo: React.FC = () => {
   const [videos, setVideos] = useState<Tweet[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -398,10 +396,21 @@ const TwitNinfVideo: React.FC = () => {
   const videosLengthRef = useRef(0);
 
   const insets = useSafeAreaInsets();
+  // `BottomTabBarHeightContext` vaut `undefined` hors navigateur d'onglets
+  // (voir CasinoScreen) — et TwitNinfVideo est AUSSI poussé hors des onglets,
+  // en écran plein depuis Réglages > Vidéos (MainNavigator.tsx, route
+  // "Video" du MainStack, distincte de l'onglet du même nom). Dans ce cas
+  // il n'y a pas de tab bar du tout : le seul espace à réserver en bas est
+  // la zone de sécurité de l'appareil (encoche/gestures), via insets.bottom.
+  // Dans l'onglet, `tabBarHeight` (83 iOS / 85 Android, safe area incluse)
+  // est la valeur RÉELLEMENT rendue par la tab bar, contrairement à l'ancien
+  // `TAB_BAR_HEIGHT = 49` codé en dur qui ne correspondait à aucune des deux.
+  const tabBarHeight = useContext(BottomTabBarHeightContext);
+  const bottomReserve = tabBarHeight ?? insets.bottom;
 
-  // ✅ Hauteur responsive : écran - tab bar - safe area bottom
+  // ✅ Hauteur responsive : écran - (tab bar ou safe area, selon le contexte)
   // Fonctionne sur tous les devices iOS & Android (encoche, Dynamic Island, barre Android...)
-  const cardHeight = height - insets.bottom - TAB_BAR_HEIGHT;
+  const cardHeight = height - bottomReserve;
 
   useEffect(() => {
     videosLengthRef.current = videos.length;
@@ -544,8 +553,9 @@ const TwitNinfVideo: React.FC = () => {
           disableIntervalMomentum
           onRefresh={() => fetchVideos(true)}
           refreshing={refreshing}
-          // ✅ padding dynamique = ce qui est "caché" sous la tab bar
-          contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}
+          // ✅ padding dynamique = ce qui est "caché" sous la tab bar (ou,
+          // hors onglets, la zone de sécurité basse de l'appareil)
+          contentContainerStyle={{ paddingBottom: bottomReserve }}
         />
       )}
 
