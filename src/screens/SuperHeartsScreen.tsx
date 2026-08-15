@@ -25,8 +25,10 @@ function fmtDate(d: string): string {
 }
 
 /**
- * « Super Cœur » : solde restant, réservé au palier Pro. Consultation
- * seule — la pose se fait par pression longue sur le like, dans le fil.
+ * « Super Cœur » : solde restant, réservé aux paliers Plus et Pro (10 par
+ * renouvellement en Pro, 3 en Plus — voir `SUPER_HEART_CAPS` côté API).
+ * Consultation seule — la pose se fait par pression longue sur le like,
+ * dans le fil.
  */
 const SuperHeartsScreen: React.FC<Props> = ({ navigation }) => {
   const [data, setData] = useState<SuperHeartsData | null>(null);
@@ -91,8 +93,8 @@ const SuperHeartsScreen: React.FC<Props> = ({ navigation }) => {
                 <View style={styles.notice}>
                   <Ionicons name="lock-closed-outline" size={15} color={colors.textMuted} />
                   <Text style={styles.noticeText}>
-                    Réservé aux abonnés Pro. Passe au palier Pro pour recevoir des Super Cœurs à
-                    chaque renouvellement.
+                    Réservé aux abonnés Plus et Pro. Passe à l'un de ces paliers pour recevoir des
+                    Super Cœurs à chaque renouvellement — 10 en Pro, 3 en Plus.
                   </Text>
                 </View>
               ) : data.renews_at ? (

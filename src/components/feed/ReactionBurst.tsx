@@ -67,6 +67,8 @@ export const SUPER_HEART_PALETTE: ReactionPalette = {
 interface ParticleProps {
   progress: SharedValue<number>;
   index: number;
+  /** Nombre total de particules de cet appel — répartit le cercle. */
+  count: number;
   color: string;
   /** Distance parcourue depuis le centre, en px. */
   distance: number;
@@ -76,6 +78,7 @@ interface ParticleProps {
 const Particle = memo(function Particle({
   progress,
   index,
+  count,
   color,
   distance,
   dotSize,
@@ -83,7 +86,7 @@ const Particle = memo(function Particle({
   // Étoile régulière, départ vers le haut. Les particules impaires partent
   // très légèrement plus loin : sans ce décalage l'ensemble ressemble à une
   // roue dentée parfaite, ce qui fait tout de suite « figure géométrique ».
-  const angle = (index / PARTICLE_COUNT) * Math.PI * 2 - Math.PI / 2;
+  const angle = (index / count) * Math.PI * 2 - Math.PI / 2;
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
   const reach = distance * (index % 2 === 0 ? 1 : 0.82);
@@ -125,16 +128,37 @@ export interface ReactionBurstProps {
   palette: ReactionPalette;
   /** Diamètre de l'icône visée — tout le reste s'échelonne dessus. */
   iconSize?: number;
+  /**
+   * Nombre de particules. Reste un nombre FIXE pour un usage donné (les hooks
+   * des enfants en dépendent) — deux appels distincts de `ReactionBurst` (like
+   * normal, Super Cœur) peuvent chacun avoir le leur, mais un seul appel ne
+   * doit jamais faire varier cette valeur d'un rendu à l'autre.
+   */
+  particleCount?: number;
+  /**
+   * Halo doux derrière l'anneau, réservé aux moments qui doivent se sentir
+   * au-dessus d'un like ordinaire (Super Cœur) — même idée que le halo de
+   * `RewardBurst`, à l'échelle de l'icône plutôt que de l'écran entier.
+   */
+  halo?: boolean;
 }
 
 /**
  * À poser en frère de l'icône, dans un conteneur `position: relative`. Le
  * composant se centre tout seul sur l'icône et ne capte aucun toucher.
  */
-function ReactionBurst({ progress, palette, iconSize = 16 }: ReactionBurstProps) {
+function ReactionBurst({ progress, palette, iconSize = 16, particleCount = PARTICLE_COUNT, halo = false }: ReactionBurstProps) {
   const ringSize = iconSize * 2.1;
   const distance = iconSize * 1.15;
   const dotSize = Math.max(3, iconSize * 0.22);
+  const haloSize = iconSize * 3.4;
+
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.2, 0.55, 1], [0, 0.5, 0.3, 0], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(progress.value, [0, 1], [0.5, 1.25], Extrapolation.CLAMP) },
+    ],
+  }));
 
   const discStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.06, 0.26, 0.4], [0, 0.85, 0.55, 0], Extrapolation.CLAMP),
@@ -150,6 +174,16 @@ function ReactionBurst({ progress, palette, iconSize = 16 }: ReactionBurstProps)
     ],
   }));
 
+  // Second anneau, décalé dans le temps : sur le Super Cœur (halo=true) ça lit
+  // comme deux ondes qui se suivent au lieu d'une seule — le reste du temps il
+  // est confondu avec le premier, donc invisible, coût nul à l'oeil.
+  const echoRingStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.3, 0.44, 0.78, 1], [0, 0.8, 0.4, 0], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(progress.value, [0.3, 1], [0.5, 1.75], Extrapolation.CLAMP) },
+    ],
+  }));
+
   const box = {
     width: ringSize,
     height: ringSize,
@@ -160,10 +194,38 @@ function ReactionBurst({ progress, palette, iconSize = 16 }: ReactionBurstProps)
 
   return (
     <Animated.View pointerEvents="none" style={[S.anchor, { top: iconSize / 2, left: iconSize / 2 }]}>
+      {halo && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            S.layer,
+            {
+              width: haloSize,
+              height: haloSize,
+              borderRadius: haloSize / 2,
+              marginLeft: -haloSize / 2,
+              marginTop: -haloSize / 2,
+              backgroundColor: palette.ring,
+            },
+            haloStyle,
+          ]}
+        />
+      )}
       <Animated.View
         pointerEvents="none"
         style={[S.layer, box, { backgroundColor: palette.ring }, discStyle]}
       />
+      {halo && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            S.layer,
+            box,
+            { borderWidth: Math.max(2, iconSize * 0.16), borderColor: palette.ring },
+            echoRingStyle,
+          ]}
+        />
+      )}
       <Animated.View
         pointerEvents="none"
         style={[
@@ -173,10 +235,11 @@ function ReactionBurst({ progress, palette, iconSize = 16 }: ReactionBurstProps)
           ringStyle,
         ]}
       />
-      {Array.from({ length: PARTICLE_COUNT }, (_, i) => (
+      {Array.from({ length: particleCount }, (_, i) => (
         <Particle
           key={i}
           index={i}
+          count={particleCount}
           progress={progress}
           color={palette.rainbowParticles ? palette.rainbowParticles[i % palette.rainbowParticles.length] : palette.particles[i % 2]}
           distance={distance}
@@ -211,8 +274,11 @@ export interface ReactionAnimation {
  * puis dépasse et se pose sur un ressort.
  *
  * @param spin fait pivoter l'icône d'un tour — utilisé pour le retweet.
+ * @param burstMs durée de l'éclat. Plus long réservé à un moment qui doit se
+ *   sentir au-dessus d'un appui ordinaire (Super Cœur) — reste une durée
+ *   fixe qui se joue une fois, jamais une boucle ni un rebond répété.
  */
-export function useReactionAnimation(spin = false): ReactionAnimation {
+export function useReactionAnimation(spin = false, burstMs = 620): ReactionAnimation {
   const progress = useSharedValue(0);
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
@@ -249,10 +315,10 @@ export function useReactionAnimation(spin = false): ReactionAnimation {
       progress.value = 0;
       progress.value = withDelay(
         30,
-        withTiming(1, { duration: 620, easing: Easing.out(Easing.cubic) }),
+        withTiming(1, { duration: burstMs, easing: Easing.out(Easing.cubic) }),
       );
     },
-    [progress, rotation, scale, spin],
+    [progress, rotation, scale, spin, burstMs],
   );
 
   return { progress, iconStyle, play };

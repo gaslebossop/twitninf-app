@@ -135,8 +135,10 @@ function TweetRow({
   // ── Valeurs d'animation : thread UI, jamais dans le state React ────────────
   const like = useReactionAnimation();
   // Éclat séparé du like normal : les deux gestes peuvent viser la même
-  // icône sans se marcher dessus, chacun avec sa propre palette.
-  const superLike = useReactionAnimation();
+  // icône sans se marcher dessus, chacun avec sa propre palette. Plus long
+  // (850 vs 620 ms) : un Super Cœur est un geste payant et rare (palier
+  // Pro/Plus, solde limité), il doit se sentir au-dessus d'un like ordinaire.
+  const superLike = useReactionAnimation(false, 850);
   const retweet = useReactionAnimation(true);
   const bigHeart = useSharedValue(0);
   const pressed = useSharedValue(0);
@@ -308,7 +310,9 @@ function TweetRow({
     if (isContentLocked) return refuseLocked();
     if (isSuperLiked) return; // déjà posé : rien à rejouer, la route est idempotente
     blockRowPress();
-    feedback.select();
+    // `.reward()` et pas `.select()` : un Super Cœur est un geste payant et
+    // rare, il doit se sentir différent d'un appui ordinaire.
+    feedback.reward();
     like.play(true);
     superLike.play(true);
     onAction({ type: 'superlike', tweetId: tweet.id });
@@ -647,7 +651,17 @@ function TweetRow({
               >
                 <View style={S.burstHost}>
                   <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={16} />
-                  <ReactionBurst progress={superLike.progress} palette={SUPER_HEART_PALETTE} iconSize={16} />
+                  {/* Nettement plus grand que le like normal (38 vs 16), avec
+                      halo + double anneau + deux fois plus de particules :
+                      un geste payant et rare doit se voir depuis plus loin
+                      que l'icône de 16px qui le déclenche. */}
+                  <ReactionBurst
+                    progress={superLike.progress}
+                    palette={SUPER_HEART_PALETTE}
+                    iconSize={38}
+                    particleCount={16}
+                    halo
+                  />
                   <Animated.View style={like.iconStyle}>
                     <Ionicons
                       name={isLiked ? 'heart' : 'heart-outline'}
