@@ -812,6 +812,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               )}
 
               <Animated.View style={[S.metaRow, entrance.line(4)]}>
+                {!!user.city?.trim?.() && (
+                  <View style={S.metaItem}>
+                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                    <Text style={S.metaText}> {String(user.city).trim()}</Text>
+                  </View>
+                )}
                 {user.created_at && (
                   <View style={S.metaItem}>
                     <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />

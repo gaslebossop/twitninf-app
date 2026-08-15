@@ -42,6 +42,8 @@ export interface User {
   /** Image de bannière profil (URL) */
   banner?: string | null;
   bio?: string | null;
+  /** Ville affichée sur le profil (déclarative, distincte du consentement géoloc) */
+  city?: string | null;
   verified: boolean;
   is_ios_native?: boolean;
   verification_style?: string;

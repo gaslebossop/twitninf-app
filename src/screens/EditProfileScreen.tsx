@@ -17,6 +17,7 @@ export default function EditProfileScreen({ navigation }: any) {
   const [fullName, setFullName] = useState(user?.full_name || '');
   const [username, setUsername] = useState(user?.username || '');
   const [bio, setBio] = useState(user?.bio || '');
+  const [city, setCity] = useState(user?.city || '');
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
@@ -58,16 +59,19 @@ export default function EditProfileScreen({ navigation }: any) {
     setFullName(user?.full_name || '');
     setUsername(user?.username || '');
     setBio(user?.bio || '');
-  }, [user?.id, user?.full_name, user?.username, user?.bio]);
+    setCity(user?.city || '');
+  }, [user?.id, user?.full_name, user?.username, user?.bio, user?.city]);
 
   const performSave = async () => {
     try {
       setIsSaving(true);
       const trimmedBio = bio.trim();
+      const trimmedCity = city.trim();
       const res = await apiService.updateProfile({
         full_name: fullName.trim(),
         username: username.trim(),
         bio: trimmedBio.length > 0 ? trimmedBio : '',
+        city: trimmedCity.length > 0 ? trimmedCity : '',
       });
       if (!res.success) {
         toast.error(res.message || 'Impossible de mettre à jour le profil');
@@ -263,6 +267,14 @@ export default function EditProfileScreen({ navigation }: any) {
           textAlignVertical="top"
         />
         <Text style={styles.bioCount}>{bio.length}/500</Text>
+        <Text style={styles.label}>Ville</Text>
+        <TextInput
+          style={styles.input}
+          value={city}
+          onChangeText={(t) => setCity(t.length > 30 ? t.slice(0, 30) : t)}
+          placeholder="Votre ville"
+          placeholderTextColor={colors.textMuted}
+        />
       </ScrollView>
       </KeyboardAvoidingView>
     </ScreenBackground>

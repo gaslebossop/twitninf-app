@@ -81,6 +81,7 @@ interface UserProfile {
   avatar?: string;
   banner?: string | null;
   bio?: string | null;
+  city?: string | null;
   verified: boolean;
   is_ios_native?: boolean;
   premium: boolean;
@@ -962,18 +963,26 @@ export default function UserProfileScreen() {
                   </Animated.Text>
                 )}
 
-                {userProfile.created_at ? (
+                {(userProfile.created_at || userProfile.city?.trim?.()) ? (
                   <Animated.View style={[S.metaRow, entrance.line(4)]}>
-                    <View style={S.metaItem}>
-                      <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
-                      <Text style={S.metaText}>
-                        {' '}A rejoint TwitNinf en{' '}
-                        {new Date(userProfile.created_at).toLocaleDateString('fr-FR', {
-                          year: 'numeric',
-                          month: 'long',
-                        })}
-                      </Text>
-                    </View>
+                    {!!userProfile.city?.trim?.() && (
+                      <View style={S.metaItem}>
+                        <Ionicons name="location-outline" size={14} color={colors.textMuted} />
+                        <Text style={S.metaText}> {String(userProfile.city).trim()}</Text>
+                      </View>
+                    )}
+                    {userProfile.created_at && (
+                      <View style={S.metaItem}>
+                        <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
+                        <Text style={S.metaText}>
+                          {' '}A rejoint TwitNinf en{' '}
+                          {new Date(userProfile.created_at).toLocaleDateString('fr-FR', {
+                            year: 'numeric',
+                            month: 'long',
+                          })}
+                        </Text>
+                      </View>
+                    )}
                   </Animated.View>
                 ) : null}
 
