@@ -725,6 +725,7 @@ function areEqual(prev: TweetRowProps, next: TweetRowProps) {
     a.stats?.views === b.stats?.views &&
     a.user_interaction?.is_liked === b.user_interaction?.is_liked &&
     a.user_interaction?.is_retweeted === b.user_interaction?.is_retweeted &&
+    a.user_interaction?.is_super_liked === b.user_interaction?.is_super_liked &&
     a.content === b.content &&
     prev.index === next.index &&
     prev.isThreadParent === next.isThreadParent &&

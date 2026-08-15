@@ -805,8 +805,12 @@ export default function TweetsScreen() {
     if (!currentTweet) { likeLockRef.current[tweetId] = false; return; }
 
     const wasLiked = currentTweet.user_interaction?.is_liked || false;
+    // Un like retiré perd son éventuel Super Cœur (jamais rendu — voir
+    // `handleSuperLike`) : sans ce nettoyage, l'icône restait dorée et le
+    // garde-fou de `TweetRow` bloquait toute nouvelle pose après un unlike.
+    const wasSuperLiked = currentTweet.user_interaction?.is_super_liked || false;
     const currentLikes = currentTweet.stats?.likes || 0;
-    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, likes: wasLiked ? currentLikes - 1 : currentLikes + 1 }, user_interaction: { ...tweet.user_interaction, is_liked: !wasLiked } }));
+    setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, likes: wasLiked ? currentLikes - 1 : currentLikes + 1 }, user_interaction: { ...tweet.user_interaction, is_liked: !wasLiked, is_super_liked: wasLiked ? false : wasSuperLiked } }));
 
     // Hors ligne : on met en file et on GARDE l'état optimiste. Annuler le like
     // sous les yeux de l'utilisateur alors qu'on sait le réseau coupé lui ferait
@@ -820,7 +824,7 @@ export default function TweetsScreen() {
     try {
       const response = await apiService.likeTweet(tweetId);
       if (!response.success) {
-        setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked } } : tweet));
+        setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: wasSuperLiked } } : tweet));
       } else {
         trackTweetInteraction(tweetId, wasLiked ? 'unlike' : 'like', { tab: activeTab, previous_likes: currentLikes, algorithm: currentAlgorithm });
         if (activeTab === 'forYou') {
@@ -829,7 +833,7 @@ export default function TweetsScreen() {
         }
       }
     } catch {
-      setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked } } : tweet));
+      setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: wasSuperLiked } } : tweet));
     } finally { likeLockRef.current[tweetId] = false; }
   }, [activeTab, currentAlgorithm, trackTweetInteraction, offlineEnabled, online, queueAction]);
 
