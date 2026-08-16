@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fonts, radius, withAlpha } from '../theme';
+import { fonts, radius } from '../theme';
 import { ScreenBackground, ScreenSkeleton, EmptyState } from '../components/ui';
 import SceneCanvas from '../components/SceneCanvas';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
@@ -1043,17 +1043,17 @@ export default function SearchScreen() {
             {/* Aucun résultat : il pleut sur le rebord. */}
             {(searchResults?.users?.length || 0) === 0 && (searchResults?.tweets?.length || 0) === 0 && (
               <View style={styles.videSousLaPluie}>
-                {/* Une recherche sans résultat est un moment creux, pas une
-                    erreur : la scène de pluie l'habille au lieu de laisser un
-                    blanc. Purement décorative — tout ce qui se lit est écrit
-                    par-dessus, et la page reste entière sans elle. */}
-                <SceneCanvas scene="02-pluie" />
-                <View style={styles.voilePluie} pointerEvents="none" />
-                <EmptyState
-                  icon="search-outline"
-                  title="Aucun résultat"
-                  message="Essaie de rechercher quelque chose d'autre."
-                />
+                {/* La scene ne porte NI cadre NI voile : transparente, elle se
+                    fond dans l'ecran au lieu d'y poser une vignette. Le texte
+                    passe donc dessous, dans les couleurs du theme — il reste
+                    lisible en clair comme en sombre sans rien teinter. */}
+                <View style={styles.scenePluie}>
+                  <SceneCanvas scene="02-pluie" />
+                </View>
+                <Text style={styles.videTitre}>Aucun résultat</Text>
+                <Text style={styles.videTexte} numberOfLines={2}>
+                  Rien pour « {searchQuery.trim()} ». Essaie autre chose.
+                </Text>
               </View>
             )}
           </>
@@ -1237,24 +1237,35 @@ const styles = StyleSheet.create({
   aiRefTweetCard: {
     marginBottom: 8,
   },
-  /**
-   * Le cadre de l'état vide.
-   *
-   * `SceneCanvas` se pose en absolu : sans hauteur explicite ici, il n'aurait
-   * rien à remplir et la scène serait invisible. `overflow: hidden` retient la
-   * WebView dans les coins arrondis — sur Android elle déborde sinon.
-   */
   videSousLaPluie: {
-    marginTop: 28,
-    minHeight: 380,
-    justifyContent: 'center',
-    borderRadius: 22,
-    overflow: 'hidden',
+    marginTop: 20,
+    paddingBottom: 28,
+    alignItems: 'center',
   },
-  /** Voile de lisibilité : le texte se lit sur la scène, pas contre elle. */
-  voilePluie: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: withAlpha(colors.bg, 0.46),
+  /**
+   * `SceneCanvas` se pose en absolu : sans hauteur explicite ici, il n'aurait
+   * rien à remplir et la scène serait invisible.
+   */
+  scenePluie: {
+    width: '100%',
+    height: 300,
+  },
+  videTitre: {
+    marginTop: 14,
+    color: colors.textPrimary,
+    fontFamily: fonts.display,
+    fontSize: 19,
+    lineHeight: 25,
+    textAlign: 'center',
+  },
+  videTexte: {
+    marginTop: 8,
+    maxWidth: 320,
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   resultsSection: {
     marginVertical: 20,

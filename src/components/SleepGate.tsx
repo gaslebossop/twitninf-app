@@ -12,6 +12,13 @@
  * mise en page réserve une boîte d'illustration en haut : ça aurait donné
  * exactement le calque posé par-dessus qu'on cherche à éviter.
  *
+ * ── Pourquoi cette page est sombre dans les deux thèmes ──
+ * C'est une page de NUIT. La scène qu'elle porte en est une aussi, et depuis
+ * que la WebView est transparente, c'est le fond de la page qui passe derrière
+ * elle : en thème clair, `colors.bg` aurait mis une chambre de nuit sur du
+ * blanc. Les valeurs sont donc fixes ici — c'est le seul écran de l'app dans
+ * ce cas, et il l'assume.
+ *
  * ── Ce qui se passe si la scène ne charge pas ──
  * Rien de visible : il reste le fond de l'app, et toute la page se lit
  * normalement. Aucune information n'est portée par l'animation.
@@ -31,7 +38,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { colors, fonts, statusBarStyle, withAlpha } from '../theme';
+import { colors, fonts } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
 import { stepStyles } from './StartupStepPage';
@@ -114,8 +121,10 @@ export default function SleepGate() {
 
   return (
     <View style={styles.page}>
+      {/* Page sombre imposée : la barre d'état doit être claire, quel que
+          soit le thème de l'app. */}
       <StatusBar
-        barStyle={statusBarStyle()}
+        barStyle="light-content"
         translucent={Platform.OS !== 'android'}
         backgroundColor="transparent"
       />
@@ -127,7 +136,7 @@ export default function SleepGate() {
       {/* Voile de lisibilité, concentré là où le texte se pose. Il part de
           transparent pour ne pas éteindre la scène dans le haut du cadre. */}
       <LinearGradient
-        colors={['transparent', withAlpha(colors.bg, 0.72), colors.bg]}
+        colors={['transparent', 'rgba(14, 11, 9, 0.74)', NUIT]}
         locations={[0, 0.52, 0.82]}
         style={styles.voile}
         pointerEvents="none"
@@ -191,10 +200,14 @@ export default function SleepGate() {
   );
 }
 
+/** Le noir des scènes, et l'ivoire qui s'y lit. Fixes — voir l'en-tête. */
+const NUIT = '#0E0B09';
+const ENCRE = '#F4EFE7';
+
 const styles = StyleSheet.create({
   page: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.bg,
+    backgroundColor: NUIT,
     zIndex: 100,
   },
   voile: {
@@ -213,12 +226,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: withAlpha(colors.bg, 0.55),
+    backgroundColor: 'rgba(14, 11, 9, 0.55)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: withAlpha(colors.accent, 0.35),
+    borderColor: 'rgba(254, 44, 85, 0.4)',
   },
   horlogeTexte: {
-    color: colors.textPrimary,
+    color: ENCRE,
     fontFamily: fonts.semibold,
     fontSize: 13,
     fontVariant: ['tabular-nums'],
@@ -227,7 +240,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   titre: {
-    color: colors.textPrimary,
+    color: ENCRE,
     fontFamily: fonts.display,
     fontSize: 34,
     lineHeight: 39,
@@ -235,7 +248,7 @@ const styles = StyleSheet.create({
   },
   texte: {
     marginTop: 12,
-    color: colors.textSecondary,
+    color: 'rgba(244, 239, 231, 0.74)',
     fontFamily: fonts.regular,
     fontSize: 15,
     lineHeight: 23,
@@ -249,7 +262,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   plusTardTexte: {
-    color: colors.textMuted,
+    color: 'rgba(244, 239, 231, 0.58)',
     fontFamily: fonts.semibold,
     fontSize: 14,
   },

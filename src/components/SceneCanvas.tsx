@@ -37,7 +37,7 @@ import {
   sceneUrl,
   type SceneName,
 } from '../config/scenes';
-import { colors, duration } from '../theme';
+import { duration } from '../theme';
 
 /**
  * Ce que la page nous dit d'elle-même.
@@ -134,11 +134,15 @@ export default function SceneCanvas({ scene, active = true, style, onReady }: Sc
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]}>
           <WebView
             source={{ uri: sceneUrl(scene) }}
-            // Le fond est peint par le style, pas par une prop : `opaque` et
-            // `backgroundColor` existent sur la vue native mais sont absents des
-            // types de la 13.15.0. Sans lui, la WebView est BLANCHE le temps du
-            // chargement — c'est le défaut qui trahit une page web.
+            // Transparente des DEUX cotes, sinon elle pose un rectangle sur
+            // l'ecran : la page rend son fond transparent en mode `?plein`
+            // (voir `html.plein` dans scene.css), et la vue native doit suivre.
+            // Sur iOS `backgroundColor` ne suffit pas, il faut aussi `opaque:
+            // false` — les deux existent sur la vue native mais sont absents
+            // des types de la 13.15.0, d'ou le style pour l'un et la
+            // conversion pour l'autre.
             style={styles.web}
+            {...({ opaque: false } as object)}
             injectedJavaScript={READY_PROBE}
             onMessage={handleMessage}
             onError={() => setFailed(true)}
@@ -182,11 +186,14 @@ export default function SceneCanvas({ scene, active = true, style, onReady }: Sc
 const styles = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.bg,
+    // Aucun fond : ce que l'ecran a derriere doit passer au travers. C'est ce
+    // qui evite la « vignette posee sur la page » et fait que la scene
+    // appartient a l'ecran au lieu de flotter dessus.
+    backgroundColor: 'transparent',
     overflow: 'hidden',
   },
   web: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
 });

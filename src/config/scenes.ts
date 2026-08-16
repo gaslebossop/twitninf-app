@@ -37,7 +37,19 @@ export const SCENES_ORIGIN = override || `${API_CONFIG.BASE_URL}/anim`;
  * `scenes/scene.css`. Sans lui, la scène s'afficherait en vignette au milieu
  * de la vue.
  */
-export const sceneUrl = (name: SceneName) => `${SCENES_ORIGIN}/scenes/${name}.html?plein=1`;
+/**
+ * Empreinte des pages, à incrémenter dès qu'une scène est retouchée.
+ *
+ * L'API sert les pages en `no-cache`, donc en régime normal ce numéro ne sert
+ * à rien. Il existe pour les appareils qui ont chargé une scène AVANT ce
+ * réglage : leur entrée de cache portait un `max-age` d'un mois, et rien ne les
+ * fera redemander la page avant. Changer l'URL est le seul moyen de les
+ * rattraper — un en-tête corrigé n'atteint jamais celui qui ne redemande rien.
+ */
+export const SCENES_VERSION = '2';
+
+export const sceneUrl = (name: SceneName) =>
+  `${SCENES_ORIGIN}/scenes/${name}.html?plein=1&v=${SCENES_VERSION}`;
 
 /**
  * L'origine au sens du web : schéma + hôte, SANS chemin.
