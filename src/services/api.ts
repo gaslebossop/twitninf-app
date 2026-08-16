@@ -34,7 +34,8 @@ import {
   RecommendationResponse,
   RecommendationFeedback,
   RecommendationStats,
-  UserSuggestionsResponse
+  UserSuggestionsResponse,
+  SwipeCandidate
 } from '../types/api';
 import { API_CONFIG } from '../config/api';
 import { Platform } from 'react-native';
@@ -2484,6 +2485,38 @@ class ApiService {
         message: errorMessage,
         errors: []
       };
+    }
+  }
+
+  /**
+   * File de candidats pour l'écran "Swipe or Follow", classée par le moteur
+   * swipe-recommender (graphe social, intérêts, comportement, qualité,
+   * fraîcheur — voir swipe-recommender/README.md).
+   */
+  async getSwipeCandidates(limit: number = 20, forceRefresh: boolean = false): Promise<ApiResponse<SwipeCandidate[]>> {
+    try {
+      const response = await this.makeRequest(`/api/swipe/candidates?limit=${limit}&force_refresh=${forceRefresh}`, {
+        requiresAuth: true
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la récupération des profils';
+      return { success: false, message: errorMessage, errors: [] };
+    }
+  }
+
+  /** Enregistre un "pass" : ce profil ne sera pas reproposé pendant un moment. */
+  async passSwipeUser(targetUserId: string): Promise<ApiResponse<null>> {
+    try {
+      const response = await this.makeRequest('/api/swipe/pass', {
+        method: 'POST',
+        body: { target_user_id: targetUserId },
+        requiresAuth: true
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de l\'enregistrement du pass';
+      return { success: false, message: errorMessage, errors: [] };
     }
   }
 

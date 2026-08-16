@@ -17,7 +17,8 @@ export type OptionalTabKey =
   | 'wallet'
   | 'analytics'
   | 'monetization'
-  | 'nfmap';
+  | 'nfmap'
+  | 'swipe';
 
 export interface OptionalTabInfo {
   key: OptionalTabKey;
@@ -52,6 +53,12 @@ export const OPTIONAL_TABS: OptionalTabInfo[] = [
     description: 'Où sont les comptes liés à toi',
     icon: 'map-outline',
     flag: FLAGS.NF_MAP,
+  },
+  {
+    key: 'swipe',
+    label: 'Swipe',
+    description: 'Découvre des comptes à suivre, un par un',
+    icon: 'albums-outline',
   },
 ];
 

@@ -27,6 +27,7 @@ import WalletDetailScreen from '../screens/WalletDetailScreen';
 import AccountStatsScreen from '../screens/AccountStatsScreen';
 import TweetMonetizationScreen from '../screens/TweetMonetizationScreen';
 import NfMapScreen from '../screens/NfMapScreen';
+import SwipeFollowScreen from '../screens/SwipeFollowScreen';
 import { useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { useFlag } from '../contexts/FeatureFlagContext';
 import { FLAGS } from '../config/featureFlagKeys';
@@ -61,6 +62,7 @@ export default function BottomTabNavigator() {
    */
   const nfMapEnabled = useFlag(FLAGS.NF_MAP);
   const showNfMapTab = nfMapEnabled && selectedOptionalTabs.includes('nfmap');
+  const showSwipeTab = selectedOptionalTabs.includes('swipe');
 
   // Vérifier si l'événement Kospor Birthday est actif
   const { isEventActive } = useKosporBirthdayEvent();
@@ -171,6 +173,8 @@ export default function BottomTabNavigator() {
             iconName = focused ? 'cash' : 'cash-outline';
           } else if (route.name === 'NfMapTab') {
             iconName = focused ? 'map' : 'map-outline';
+          } else if (route.name === 'SwipeFollow') {
+            iconName = focused ? 'albums' : 'albums-outline';
           } else if (route.name === 'KosporBirthday') {
             iconName = focused ? 'gift' : 'gift-outline';
           } else {
@@ -270,6 +274,12 @@ export default function BottomTabNavigator() {
             name="Recherche"
             component={SearchScreen}
           />
+          {showSwipeTab && (
+            <Tab.Screen
+              name="SwipeFollow"
+              component={SwipeFollowScreen}
+            />
+          )}
           <Tab.Screen
             name="Notifications"
             component={NotificationsScreen}

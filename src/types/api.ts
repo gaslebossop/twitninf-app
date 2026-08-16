@@ -833,6 +833,20 @@ export interface UserSuggestion extends User {
 
 export interface UserSuggestionsResponse extends ApiResponse<UserSuggestion[]> {}
 
+/** Candidat renvoyé par swipe-recommender pour l'écran "Swipe or Follow". */
+export interface SwipeCandidate {
+  id: string;
+  username: string;
+  full_name: string;
+  avatar: string;
+  bio: string | null;
+  city: string | null;
+  verified: boolean;
+  followers_count: number;
+  score: number;
+  reasons: string[];
+}
+
 export interface RecommendationStats {
   total_recommendations: number;
   algorithm_performance: {
