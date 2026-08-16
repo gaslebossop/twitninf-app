@@ -55,7 +55,8 @@ import { colors, fonts } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
 import { stepStyles } from './StartupStepPage';
-import SceneCanvas from './SceneCanvas';
+import SceneCanvas, { SceneReveal, useSceneReveal } from './SceneCanvas';
+import Skeleton from './ui/Skeleton';
 import {
   doitRappeler,
   reporterJusquAuMatin,
@@ -101,6 +102,15 @@ export function SleepPage({
 }: SleepPageProps) {
   const insets = useSafeAreaInsets();
 
+  /* La page attend son décor. Sans ça, le texte et les boutons s'affichent
+     d'abord et la chambre apparaît par-dessus une demi-seconde plus tard : on
+     ne lit pas une page qui se charge, on lit un décor qui « spawn ». */
+  const { pret, onSettled } = useSceneReveal(active);
+  const marges = {
+    paddingTop: Math.max(insets.top, 16),
+    paddingBottom: Math.max(insets.bottom, 18),
+  };
+
   return (
     <View style={styles.page}>
       {/* Page sombre imposée : la barre d'état doit être claire, quel que
@@ -119,7 +129,7 @@ export function SleepPage({
           une boîte proche de son rapport d'origine, on la voit entière, et le
           texte se lit sur du noir franc en dessous. */}
       <View style={styles.decor} pointerEvents="none">
-        <SceneCanvas scene="01-chambre" active={active} />
+        <SceneCanvas scene="01-chambre" active={active} onSettled={onSettled} />
         {/* La scène se fond dans la page au lieu de s'arrêter sur une arête. */}
         <LinearGradient
           colors={['transparent', 'rgba(14, 11, 9, 0.82)', NUIT]}
@@ -129,12 +139,19 @@ export function SleepPage({
         />
       </View>
 
-      <View
-        style={[
-          styles.contenu,
-          { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 18) },
-        ]}
-      >
+      {!pret && (
+        <View style={[styles.contenu, marges]} pointerEvents="none">
+          <Skeleton width={104} height={31} rounded={999} />
+          <View style={styles.bas}>
+            <Skeleton width="62%" height={34} />
+            <Skeleton width="100%" height={16} style={styles.attenteLigne} />
+            <Skeleton width="88%" height={16} style={styles.attenteLigne} />
+            <Skeleton width="100%" height={52} rounded={16} style={styles.attenteBouton} />
+          </View>
+        </View>
+      )}
+
+      <SceneReveal visible={pret} style={[styles.contenu, marges]}>
         <View style={styles.horloge}>
           <Ionicons name="moon" size={15} color={colors.accent} />
           <Text style={styles.horlogeTexte}>{heure}</Text>
@@ -184,7 +201,7 @@ export function SleepPage({
 
           {footer}
         </View>
-      </View>
+      </SceneReveal>
     </View>
   );
 }
@@ -305,6 +322,8 @@ const styles = StyleSheet.create({
   bas: {
     paddingBottom: 4,
   },
+  attenteLigne: { marginTop: 10 },
+  attenteBouton: { marginTop: 26 },
   titre: {
     color: ENCRE,
     fontFamily: fonts.display,

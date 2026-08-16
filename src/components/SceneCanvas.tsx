@@ -69,6 +69,17 @@ const READY_PROBE = `(function () {
 })();
 true;`;
 
+/**
+ * Delai au bout duquel on cesse d'attendre la scene, quoi qu'il arrive.
+ *
+ * La sonde vit DANS la page : si la page ne charge jamais — reseau coupe au
+ * milieu, resolution DNS qui traine, serveur muet — elle ne s'execute pas et
+ * personne ne previent. Sans ce plafond, un ecran qui attend le decor
+ * attendrait indefiniment, et c'est bien pire que de le voir arriver en
+ * retard.
+ */
+const LIMITE_MS = 4000;
+
 interface SceneCanvasProps {
   scene: SceneName;
   /**
@@ -80,12 +91,54 @@ interface SceneCanvasProps {
   style?: StyleProp<ViewStyle>;
   /** Prévient quand le décor est là — sert à retarder ce qui se pose dessus. */
   onReady?: () => void;
+  /**
+   * Prévient quand il n'y a PLUS RIEN à attendre : décor posé, ou décor
+   * définitivement absent (erreur, hors ligne, délai dépassé).
+   *
+   * C'est celui-ci qu'il faut écouter pour dévoiler un écran, jamais
+   * `onReady` : une page qui n'arrive pas n'appelle jamais `onReady`, et
+   * l'écran resterait en chargement pour toujours.
+   */
+  onSettled?: () => void;
 }
 
-export default function SceneCanvas({ scene, active = true, style, onReady }: SceneCanvasProps) {
+export default function SceneCanvas({
+  scene,
+  active = true,
+  style,
+  onReady,
+  onSettled,
+}: SceneCanvasProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const fade = useRef(new Animated.Value(0)).current;
+
+  /* Gardés en référence : ces fonctions sont souvent recréées à chaque rendu
+     du parent, et les mettre en dépendance relancerait le compte à rebours. */
+  const rappels = useRef({ onReady, onSettled });
+  rappels.current = { onReady, onSettled };
+
+  /* Une fois posé, on ne revient pas dessus : prévenir deux fois ferait
+     rejouer l'entrée de l'écran qui nous écoute. */
+  const regle = useRef(false);
+  const poser = useCallback(() => {
+    if (regle.current) return;
+    regle.current = true;
+    rappels.current.onSettled?.();
+  }, []);
+
+  /* Rien à attendre du tout : pas d'adresse de serveur, ou la page a échoué.
+     Le dire tout de suite, sinon l'écran attend un décor qui ne viendra pas. */
+  useEffect(() => {
+    if (!active) return;
+    if (!SCENES_AVAILABLE || failed) poser();
+  }, [active, failed, poser]);
+
+  useEffect(() => {
+    if (!active) return;
+    const t = setTimeout(poser, LIMITE_MS);
+    return () => clearTimeout(t);
+  }, [active, poser]);
 
   useEffect(() => {
     if (!ready) return;
@@ -96,15 +149,15 @@ export default function SceneCanvas({ scene, active = true, style, onReady }: Sc
       easing: Easing.bezier(0.16, 1, 0.3, 1),
       useNativeDriver: true,
     }).start();
-    onReady?.();
-    // `onReady` volontairement hors dépendances : une fonction recréée à chaque
-    // rendu du parent rejouerait le fondu depuis zéro.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, fade]);
+    rappels.current.onReady?.();
+    poser();
+  }, [ready, fade, poser]);
 
   useEffect(() => {
     if (!active) {
       setReady(false);
+      setFailed(false);
+      regle.current = false;
       fade.setValue(0);
     }
   }, [active, fade]);
@@ -197,3 +250,64 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
 });
+
+/**
+ * L'attente du décor, du côté de l'écran qui l'affiche.
+ *
+ * `pret` reste faux tant qu'il y a quelque chose à attendre. À brancher sur
+ * `onSettled` — et surtout pas sur `onReady`, voir le commentaire de la prop.
+ */
+export function useSceneReveal(active: boolean = true) {
+  const [pret, setPret] = useState(false);
+  const onSettled = useCallback(() => setPret(true), []);
+
+  useEffect(() => {
+    if (!active) setPret(false);
+  }, [active]);
+
+  return { pret, onSettled };
+}
+
+/**
+ * Fait entrer d'un bloc ce qui attendait la scène.
+ *
+ * Sans ça, l'écran s'affiche d'abord et le décor apparaît par-dessus une
+ * demi-seconde plus tard : on ne lit pas une page qui se charge, on lit un
+ * élément qui « spawn ». Les deux arrivent donc ensemble, en un seul fondu.
+ */
+export function SceneReveal({
+  visible,
+  style,
+  children,
+}: {
+  visible: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const fade = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      fade.setValue(0);
+      return;
+    }
+    Animated.timing(fade, {
+      toValue: 1,
+      duration: duration.base,
+      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, fade]);
+
+  return (
+    <Animated.View
+      style={[style, { opacity: fade }]}
+      // Une vue a `opacity: 0` recoit quand meme les touches sous React
+      // Native : sans ca, on peut appuyer sur un bouton invisible pendant le
+      // chargement, et l'ecran repond a un geste que personne n'a vu faire.
+      pointerEvents={visible ? 'auto' : 'none'}
+    >
+      {children}
+    </Animated.View>
+  );
+}

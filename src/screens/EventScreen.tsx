@@ -14,7 +14,8 @@ import Tappable from '../components/ui/Tappable';
 import { useEvents } from '../contexts/EventsContext';
 import QuestCard from '../components/events/QuestCard';
 import EventAmbience from '../components/events/EventAmbience';
-import SceneCanvas from '../components/SceneCanvas';
+import SceneCanvas, { SceneReveal, useSceneReveal } from '../components/SceneCanvas';
+import Skeleton from '../components/ui/Skeleton';
 import EventCelebration from '../components/events/EventCelebration';
 import EventRewards from '../components/events/EventRewards';
 import RewardReveal from '../components/events/RewardReveal';
@@ -161,6 +162,13 @@ export default function EventScreen() {
     [claim, claimingId],
   );
 
+  /**
+   * Le décor de l'en-tête. Un habillage sans scène n'a rien à attendre : il
+   * est prêt d'emblée, sinon la page resterait en squelette pour toujours.
+   */
+  const { pret: decorPret, onSettled: onDecorEnTete } = useSceneReveal();
+  const enTetePrete = !art.scene || decorPret;
+
   return (
     <View style={[S.root, { backgroundColor: art.colors.ink }]}>
       <StatusBar
@@ -189,7 +197,7 @@ export default function EventScreen() {
             {art.scene ? (
               <>
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: NUIT_SCENE }]} />
-                <SceneCanvas scene={art.scene} />
+                <SceneCanvas scene={art.scene} onSettled={onDecorEnTete} />
               </>
             ) : (
               <LinearGradient
@@ -202,7 +210,20 @@ export default function EventScreen() {
 
             <EventAmbience art={art} height={210} />
 
-            <View style={S.headerBody}>
+            {/* L'en-tête attend son décor : sans ça le titre s'affiche sur un
+                aplat noir, puis le feu arrive dessous une demi-seconde plus
+                tard. Un habillage SANS scène n'attend rien — `enTetePrete` y
+                est vrai d'emblée. */}
+            {!enTetePrete && (
+              <View style={S.headerBody} pointerEvents="none">
+                <Skeleton width={72} height={12} />
+                <Skeleton width="76%" height={34} style={S.attenteLigne} />
+                <Skeleton width="100%" height={4} rounded={2} style={S.attenteJauge} />
+                <Skeleton width="58%" height={20} style={S.attenteLigne} />
+              </View>
+            )}
+
+            <SceneReveal visible={enTetePrete} style={S.headerBody}>
               <Text style={[S.eyebrow, { color: withAlpha(art.colors.onHeader, 0.85) }]}>
                 {isLive ? 'EN COURS' : 'BIENTÔT'}
               </Text>
@@ -249,7 +270,7 @@ export default function EventScreen() {
                   {formatRemaining(endsIn)}
                 </Text>
               </View>
-            </View>
+            </SceneReveal>
           </View>
 
           {/* ── Onglets ── */}
@@ -381,6 +402,8 @@ const S = StyleSheet.create({
     borderBottomRightRadius: round.xxl,
   },
   headerBody: { gap: space.xxs },
+  attenteLigne: { marginTop: space.xs },
+  attenteJauge: { marginTop: space.md },
   eyebrow: { fontFamily: fonts.bold, ...type.caption, letterSpacing: 1.5 },
   title: { ...type.display },
 

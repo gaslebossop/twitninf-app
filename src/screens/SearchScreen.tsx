@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fonts, radius } from '../theme';
 import { ScreenBackground, ScreenSkeleton, EmptyState } from '../components/ui';
-import SceneCanvas from '../components/SceneCanvas';
+import SceneCanvas, { SceneReveal, useSceneReveal } from '../components/SceneCanvas';
+import Skeleton from '../components/ui/Skeleton';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import {
   View,
@@ -753,6 +754,9 @@ export default function SearchScreen() {
     return num.toString();
   };
 
+  /* Le decor de l'etat vide : le bloc n'apparait qu'une fois la pluie prete. */
+  const { pret: pluiePrete, onSettled: onDecorPluie } = useSceneReveal();
+
   const renderUserItem = (user: User, index: number) => (
     <Animated.View
       key={user.id || index}
@@ -1046,14 +1050,28 @@ export default function SearchScreen() {
                 {/* La scene ne porte NI cadre NI voile : transparente, elle se
                     fond dans l'ecran au lieu d'y poser une vignette. Le texte
                     passe donc dessous, dans les couleurs du theme — il reste
-                    lisible en clair comme en sombre sans rien teinter. */}
+                    lisible en clair comme en sombre sans rien teinter.
+
+                    Le bloc entier attend le decor : sans ca le texte s'affiche
+                    d'abord, et la pluie arrive par-dessus une demi-seconde
+                    plus tard. */}
                 <View style={styles.scenePluie}>
-                  <SceneCanvas scene="02-pluie" />
+                  <SceneCanvas scene="02-pluie" onSettled={onDecorPluie} />
                 </View>
-                <Text style={styles.videTitre}>Aucun résultat</Text>
-                <Text style={styles.videTexte} numberOfLines={2}>
-                  Rien pour « {searchQuery.trim()} ». Essaie autre chose.
-                </Text>
+
+                {!pluiePrete && (
+                  <View style={styles.videAttente} pointerEvents="none">
+                    <Skeleton width="52%" height={20} />
+                    <Skeleton width="72%" height={14} style={styles.videAttenteLigne} />
+                  </View>
+                )}
+
+                <SceneReveal visible={pluiePrete} style={styles.videTextes}>
+                  <Text style={styles.videTitre}>Aucun résultat</Text>
+                  <Text style={styles.videTexte} numberOfLines={2}>
+                    Rien pour « {searchQuery.trim()} ». Essaie autre chose.
+                  </Text>
+                </SceneReveal>
               </View>
             )}
           </>
@@ -1250,6 +1268,16 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 300,
   },
+  videTextes: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  videAttente: {
+    alignItems: 'center',
+    paddingTop: 16,
+    gap: 0,
+  },
+  videAttenteLigne: { marginTop: 10 },
   videTitre: {
     marginTop: 14,
     color: colors.textPrimary,
