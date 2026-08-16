@@ -117,8 +117,49 @@ async function fetchJson(url: string): Promise<any | null> {
   }
 }
 
+/**
+ * Catalogue G-Store — la source de verite ANDROID.
+ *
+ * ── Pourquoi une source par plateforme ───────────────────────────────────────
+ * Les deux plateformes partageaient le `buildVersion` du gist, mais seule la
+ * CI iOS l'incremente : Android se contentait de l'estampiller. Android ne
+ * pouvait donc jamais publier deux fois entre deux sorties iOS, et le serveur
+ * refusait la publication (« versionCode 25 deja publie, catalogue : 26 »).
+ *
+ * Chaque plateforme a maintenant son compteur, dans le flux qui la distribue :
+ * le gist pour iOS, le catalogue G-Store pour Android. Ils n'ont plus aucune
+ * raison de coincider.
+ */
+const GSTORE_CATALOG_URL = 'https://twitninf.duckdns.org/static/gstore/catalog.json';
+const ANDROID_PACKAGE = 'com.gasleboss.TwitNin';
+
+async function fetchAndroidUpdate(): Promise<UpdateInfo | null> {
+  const catalog = await fetchJson(GSTORE_CATALOG_URL);
+  const apps = Array.isArray(catalog?.apps) ? catalog.apps : [];
+  const entry = apps.find((a: any) => a?.packageName === ANDROID_PACKAGE);
+  const published = Number(entry?.versionCode);
+
+  if (!Number.isFinite(published) || published <= BUILD_VERSION) return null;
+
+  return {
+    buildVersion: published,
+    label: typeof entry?.versionName === 'string' ? entry.versionName : undefined,
+  } as UpdateInfo;
+}
+
 async function fetchAvailableUpdate(): Promise<UpdateInfo | null> {
-  if (!FEED_URL || !BUILD_VERSION) return null;
+  if (!BUILD_VERSION) return null;
+
+  // Android ne lit plus le gist : il interroge le store qui le distribue.
+  if (Platform.OS === 'android') {
+    try {
+      return await fetchAndroidUpdate();
+    } catch {
+      return null;
+    }
+  }
+
+  if (!FEED_URL) return null;
 
   try {
     const payload = await fetchJson(FEED_URL);
@@ -152,7 +193,9 @@ async function fetchAvailableUpdate(): Promise<UpdateInfo | null> {
  * versions suivantes.
  */
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
-  if (!FEED_URL || !BUILD_VERSION) return null;
+  // Android n'a pas besoin de FEED_URL : son flux est le catalogue G-Store.
+  if (!BUILD_VERSION) return null;
+  if (Platform.OS !== 'android' && !FEED_URL) return null;
 
   try {
     const lastCheck = Number(await AsyncStorage.getItem(LAST_CHECK_KEY));

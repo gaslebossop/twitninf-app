@@ -57,29 +57,36 @@ jobs:
       # Meme compteur que iOS : le `buildVersion` du gist AltStore fait
       # autorite pour les deux plateformes. On l'ESTAMPILLE sans l'incrementer
       # — c'est la publication iOS qui le fait avancer.
-      - name: Numero de build (compteur partage avec iOS)
+      # ── Le compteur ANDROID, et lui seul ────────────────────────────────
+      #
+      # Avant, on estampillait le `buildVersion` du gist — le compteur iOS.
+      # Mais seule la CI iOS l'incremente : deux publications Android entre
+      # deux sorties iOS portaient le meme numero, et le serveur refusait la
+      # seconde (« versionCode deja publie »). Les deux plateformes n'ont
+      # aucune raison de partager un compteur : chacune a son flux.
+      #
+      # Le numero Android vient donc du catalogue G-Store, qui est justement ce
+      # que ce workflow met a jour : dernier publie + 1. Impossible de
+      # desynchroniser, impossible de reculer.
+      - name: Numero de build (compteur du catalogue G-Store)
         run: |
           set -euo pipefail
-          GIST_ID="4d82d6b4a3adaef965765ab37937ef83"
-          FEED_URL="https://api.github.com/gists/${GIST_ID}"
+          CATALOG="https://twitninf.duckdns.org/static/gstore/catalog.json"
+          PACKAGE="com.gasleboss.TwitNin"
 
-          BUILD_VERSION=$(curl -sS -m 20 -H "Accept: application/json" "$FEED_URL" \
-            | python3 -c "import json,sys;print(json.loads(json.load(sys.stdin)['files']['apps.json']['content'])['apps'][0]['versions'][0]['buildVersion'])")
+          CURRENT=$(curl -sS -m 20 "$CATALOG"             | python3 -c "import json,sys;print(next((a.get('versionCode',0) for a in json.load(sys.stdin).get('apps',[]) if a.get('packageName')=='$PACKAGE'), 0))"             || echo 0)
 
-          if [ -z "$BUILD_VERSION" ]; then
-            echo "::error::buildVersion introuvable dans le gist $GIST_ID."
-            exit 1
-          fi
-          echo "buildVersion estampillee : $BUILD_VERSION"
+          NEXT=$((CURRENT + 1))
+          echo "catalogue : $CURRENT -> nouvelle version : $NEXT"
 
+          # `EXPO_PUBLIC_UPDATE_FEED_URL` reste le gist : c'est l'adresse que
+          # l'app iOS interroge. Cote Android, `updateCheck.ts` lit le
+          # catalogue directement, sans passer par cette variable.
           {
-            echo "EXPO_PUBLIC_BUILD_VERSION=$BUILD_VERSION"
-            echo "EXPO_PUBLIC_UPDATE_FEED_URL=$FEED_URL"
+            echo "EXPO_PUBLIC_BUILD_VERSION=$NEXT"
+            echo "EXPO_PUBLIC_UPDATE_FEED_URL=https://api.github.com/gists/4d82d6b4a3adaef965765ab37937ef83"
           } >> .env
-          {
-            echo "EXPO_PUBLIC_BUILD_VERSION=$BUILD_VERSION"
-            echo "EXPO_PUBLIC_UPDATE_FEED_URL=$FEED_URL"
-          } >> "$GITHUB_ENV"
+          echo "EXPO_PUBLIC_BUILD_VERSION=$NEXT" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
