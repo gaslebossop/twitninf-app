@@ -166,6 +166,10 @@ jobs:
       - name: Build APK release
         working-directory: android
         run: |
+          # Le bit executable de gradlew ne survit pas a la restauration du
+          # cache du dossier natif : sans ce chmod, le build s'arrete sur
+          # « ./gradlew: Permission denied » (code 126).
+          chmod +x ./gradlew
           ./gradlew assembleRelease --build-cache --no-parallel --no-daemon \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
             -Pandroid.lint.checkReleaseBuilds=false
