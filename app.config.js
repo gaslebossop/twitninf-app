@@ -62,6 +62,17 @@ module.exports = ({ config }) => {
         backgroundColor: "#ffffff"
       },
       package: "com.gasleboss.TwitNin",
+      /**
+       * Même compteur que côté iOS : le `buildVersion` du gist AltStore, lu
+       * AVANT le bundling et injecté en `EXPO_PUBLIC_BUILD_VERSION` (voir
+       * `.github/workflows/android-build.yml` et `tools/build-twitninf.sh` de
+       * G-Store). Une seule source de vérité pour les deux plateformes.
+       *
+       * Sans ce champ, Expo posait `versionCode: 1` à CHAQUE build : deux APK
+       * successifs sortaient avec le même numéro, et aucun store — G-Store
+       * compris — ne pouvait détecter une mise à jour.
+       */
+      versionCode: Number(process.env.EXPO_PUBLIC_BUILD_VERSION) || 1,
       useNextNotificationsApi: true,
       permissions: [
         "INTERNET",
@@ -118,6 +129,9 @@ module.exports = ({ config }) => {
     // Injecte la clé Google Maps à chaque prebuild — voir le plugin pour
     // pourquoi la ligne écrite à la main dans le manifeste ne tenait pas.
     "./plugins/withGoogleMapsApiKey",
+    // Signature de release stable — sans elle, chaque build porte une clé
+    // aléatoire et Android refuse la mise à jour de l'APK précédent.
+    "./plugins/withReleaseSigning",
     "expo-secure-store",
     "expo-web-browser",
     [
