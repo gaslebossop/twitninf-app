@@ -75,7 +75,21 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 export type UpdateInfo = PublishedVersion;
 
 /** Nom du canal d'installation, tel qu'il s'appelle sur l'appareil. */
-export const INSTALL_CHANNEL = Platform.OS === 'ios' ? 'Kospor Injection' : 'Kospor Store';
+export const INSTALL_CHANNEL = Platform.OS === 'ios' ? 'Kospor Injection' : 'G-Store';
+
+/**
+ * Lien direct vers la fiche TwitNinf dans G-Store (Android).
+ *
+ * Un lien implicite `gstore://` plutôt qu'un intent explicite : Android 11
+ * cloisonne la visibilité des paquets, et viser `com.gstore` nommément
+ * exigerait de le déclarer en `<queries>` ici. Le schéma marche sans rien
+ * déclarer, et échoue proprement si G-Store n'est pas installé — d'où le
+ * repli sur la page web ci-dessous.
+ */
+export const STORE_DEEP_LINK = 'gstore://app/com.gasleboss.TwitNin';
+
+/** Page d'installation publique, quand G-Store n'est pas encore sur l'appareil. */
+export const STORE_WEB_URL = 'https://twitninf.duckdns.org/static/gstore/';
 
 /**
  * Interroge le flux et renvoie la version publiée si elle est plus récente que

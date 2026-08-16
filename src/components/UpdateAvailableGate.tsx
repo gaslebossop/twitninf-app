@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fonts } from '../theme';
@@ -11,6 +11,8 @@ import {
   checkForUpdate,
   dismissUpdate,
   INSTALL_CHANNEL,
+  STORE_DEEP_LINK,
+  STORE_WEB_URL,
   type UpdateInfo,
 } from '../services/updateCheck';
 
@@ -44,9 +46,9 @@ const STEPS = Platform.select({
     'Lance la mise à jour et laisse-la aller au bout.',
   ],
   default: [
-    `Ouvre ${INSTALL_CHANNEL} sur ton téléphone.`,
-    'TwitNinf apparaît avec une mise à jour disponible.',
-    "Installe-la par-dessus : tes comptes et tes brouillons sont conservés.",
+    `Le bouton ci-dessous ouvre ${INSTALL_CHANNEL} directement sur TwitNinf.`,
+    'Appuie sur « Mettre à jour ».',
+    'Tes comptes et tes brouillons sont conservés.',
   ],
 }) as string[];
 
@@ -89,6 +91,25 @@ export default function UpdateAvailableGate() {
     };
   }, []);
 
+  /**
+   * Ouvre G-Store sur la fiche TwitNinf.
+   *
+   * `openURL` echoue si aucune app ne repond au schema — c'est le cas quand
+   * G-Store n'est pas installe. On bascule alors sur la page d'installation
+   * publique, qui explique quoi faire. Dans les deux cas la page se ferme :
+   * l'utilisateur a repondu.
+   */
+  const handleOpenStore = async () => {
+    const dismissed = update;
+    setUpdate(null);
+    try {
+      await Linking.openURL(STORE_DEEP_LINK);
+    } catch {
+      await Linking.openURL(STORE_WEB_URL).catch(() => {});
+    }
+    if (dismissed) await dismissUpdate(dismissed.buildVersion);
+  };
+
   const handleDismiss = async () => {
     const dismissed = update;
     // Libère le créneau tout de suite : l'écriture du refus ne doit pas
@@ -114,13 +135,28 @@ export default function UpdateAvailableGate() {
           : `À installer depuis ${INSTALL_CHANNEL}`
       }
       footer={
-        <TouchableOpacity
-          style={stepStyles.primaryButton}
-          onPress={handleDismiss}
-          activeOpacity={0.85}
-        >
-          <Text style={stepStyles.primaryText}>J'ai compris</Text>
-        </TouchableOpacity>
+        Platform.OS === 'android' ? (
+          <View style={S.actions}>
+            <TouchableOpacity
+              style={stepStyles.primaryButton}
+              onPress={handleOpenStore}
+              activeOpacity={0.85}
+            >
+              <Text style={stepStyles.primaryText}>Continuer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleDismiss} activeOpacity={0.7} style={S.laterButton}>
+              <Text style={S.laterText}>Plus tard</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={stepStyles.primaryButton}
+            onPress={handleDismiss}
+            activeOpacity={0.85}
+          >
+            <Text style={stepStyles.primaryText}>J'ai compris</Text>
+          </TouchableOpacity>
+        )
       }
     >
       <View style={S.channelCard}>
@@ -146,6 +182,18 @@ export default function UpdateAvailableGate() {
 }
 
 const S = StyleSheet.create({
+  actions: {
+    gap: 6,
+  },
+  laterButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  laterText: {
+    color: colors.textMuted,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+  },
   channelCard: {
     flexDirection: 'row',
     alignItems: 'center',
