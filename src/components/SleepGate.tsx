@@ -4,13 +4,20 @@
  * Affichée à l'ouverture de l'app entre 23 h et 5 h, une fois le socle légal
  * passé. C'est une suggestion, pas un verrou : les deux issues laissent entrer.
  *
- * ── Pourquoi l'animation est le FOND et pas une vignette ──
- * Un visuel qui se superpose à l'écran existant est refusé depuis longtemps
- * ici : il habille, ou il n'existe pas. La scène occupe donc toute la page, et
- * le texte se pose dessus derrière un voile qui ne sert qu'à la lisibilité.
- * C'est aussi pour ça que cette page n'utilise pas `StartupStepPage`, dont la
- * mise en page réserve une boîte d'illustration en haut : ça aurait donné
- * exactement le calque posé par-dessus qu'on cherche à éviter.
+ * ── Où se pose l'animation ──
+ * Elle tient le haut de la page, dans une boîte proche du rapport pour lequel
+ * les scènes sont composées, et s'éteint en fondu vers le bas. Le texte se lit
+ * en dessous, sur du noir franc.
+ *
+ * Ce n'est pas la première version : la scène remplissait toute la page. Un
+ * téléphone étant deux fois plus haut que large, elle y était étirée au point
+ * de cadrer la mascotte en gros plan — sa chambre hors champ, et le texte sur
+ * son manteau. Une scène ne se met pas à l'échelle de n'importe quel cadre.
+ *
+ * Elle n'est pas non plus une vignette posée en haut d'une page ordinaire :
+ * c'est pour ça que `StartupStepPage` n'est pas utilisé ici, sa boîte
+ * d'illustration aurait donné exactement le calque rapporté qu'on évite. Ici
+ * le décor et le texte partagent le même noir, sans couture entre les deux.
  *
  * ── Pourquoi cette page est sombre dans les deux thèmes ──
  * C'est une page de NUIT. La scène qu'elle porte en est une aussi, et depuis
@@ -104,18 +111,23 @@ export function SleepPage({
         backgroundColor="transparent"
       />
 
-      {/* La scène occupe toute la page. Elle est décorative : rien de ce qui
-          suit n'en dépend. */}
-      <SceneCanvas scene="01-chambre" active={active} />
+      {/* La scène tient le HAUT de la page, elle ne la remplit pas.
 
-      {/* Voile de lisibilité, concentré là où le texte se pose. Il part de
-          transparent pour ne pas éteindre la scène dans le haut du cadre. */}
-      <LinearGradient
-        colors={['transparent', 'rgba(14, 11, 9, 0.74)', NUIT]}
-        locations={[0, 0.52, 0.82]}
-        style={styles.voile}
-        pointerEvents="none"
-      />
+          Plein cadre sur un téléphone, elle est étirée du 4/5 pour lequel
+          elle a été composée vers un 9/19,5 : la mascotte passe en gros plan,
+          sa chambre sort du champ, et le texte atterrit sur son manteau. Dans
+          une boîte proche de son rapport d'origine, on la voit entière, et le
+          texte se lit sur du noir franc en dessous. */}
+      <View style={styles.decor} pointerEvents="none">
+        <SceneCanvas scene="01-chambre" active={active} />
+        {/* La scène se fond dans la page au lieu de s'arrêter sur une arête. */}
+        <LinearGradient
+          colors={['transparent', 'rgba(14, 11, 9, 0.82)', NUIT]}
+          locations={[0, 0.68, 1]}
+          style={styles.fondu}
+          pointerEvents="none"
+        />
+      </View>
 
       <View
         style={[
@@ -252,11 +264,23 @@ const styles = StyleSheet.create({
     backgroundColor: NUIT,
     zIndex: 100,
   },
-  voile: {
+  decor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    /**
+     * 62 % : c'est ce qui ramène la boîte autour du rapport 3/4, proche du 4/5
+     * dans lequel les scènes sont composées. Au-delà, la mascotte repasse en
+     * gros plan ; en deçà, elle devient une vignette au sommet de l'écran.
+     */
+    height: '62%',
+  },
+  fondu: {
     ...StyleSheet.absoluteFillObject,
   },
   contenu: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     paddingHorizontal: 24,
     justifyContent: 'space-between',
   },
