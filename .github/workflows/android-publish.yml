@@ -43,10 +43,15 @@ jobs:
             echo "::error::EXPO_PUBLIC_API_URL et/ou EXPO_PUBLIC_STREAM_SERVER absents des secrets du depot."
             exit 1
           fi
+          # `if` et non `[ -n ... ] && echo` : sous `set -e`, un test faux en
+          # DERNIERE instruction du bloc fait echouer l'etape entiere. C'est
+          # exactement ce qui s'est passe au premier run, cle Maps absente.
           {
             echo "EXPO_PUBLIC_API_URL=$API_URL"
             echo "EXPO_PUBLIC_STREAM_SERVER=$STREAM_SERVER"
-            [ -n "$MAPS_KEY" ] && echo "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY=$MAPS_KEY"
+            if [ -n "$MAPS_KEY" ]; then
+              echo "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY=$MAPS_KEY"
+            fi
           } >> .env
 
       # Meme compteur que iOS : le `buildVersion` du gist AltStore fait

@@ -14,6 +14,13 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # Un commit qui ne touche QUE la CI Android ne doit pas publier une version
+    # iOS aux gens en sideload. Chaque correction du workflow Android partait
+    # sinon en release iOS, avec un numero de build consomme a chaque fois.
+    paths-ignore:
+      - '.github/workflows/android-*.yml'
+      - '.github/scripts/receive-apk.sh'
+      - '.github/scripts/gstore-push.sh'
 
 # Un seul build publiant a la fois, et surtout PAS d'annulation du run en cours.
 #
