@@ -92,6 +92,29 @@ jobs:
           java-version: 17
           cache: gradle
 
+
+      # ── Ce qui evite de tout recompiler a chaque run ─────────────────────
+      #
+      # Le poste de depense, c'est la compilation native C++ (CMake, un
+      # passage par architecture). Elle repartait de zero a chaque fois parce
+      # que `prebuild --clean` supprime `android/` — donc aussi
+      # `android/app/.cxx`, ou CMake garde ses objets compiles.
+      #
+      # On garde donc `android/` et `node_modules` entre les runs. La cle
+      # inclut l'empreinte de tout ce qui change la generation native
+      # (dependances, config Expo, config plugins) : une modification de l'un
+      # d'eux invalide le cache et force une regeneration propre.
+      - name: Cache du dossier natif et des dependances
+        id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            android
+            node_modules
+          key: android-native-${{ hashFiles('package-lock.json', 'app.config.js', 'plugins/**') }}-${{ github.run_id }}
+          restore-keys: |
+            android-native-${{ hashFiles('package-lock.json', 'app.config.js', 'plugins/**') }}-
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
@@ -118,7 +141,16 @@ jobs:
           TWITNINF_KEY_PASSWORD: ${{ secrets.TWITNINF_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          npx expo prebuild --platform android --clean
+          # `--clean` UNIQUEMENT sans cache : il supprime android/ en entier, y
+          # compris les objets natifs deja compiles. En incremental, les mods
+          # du plugin de signature se reappliquent sans dommage (il verifie
+          # avant d'ecrire).
+          if [ -d android/app ]; then
+            echo "dossier natif restaure : prebuild incremental"
+            npx expo prebuild --platform android
+          else
+            npx expo prebuild --platform android --clean
+          fi
           grep -q "signingConfigs.release" android/app/build.gradle || {
             echo "::error::le buildType release pointe encore sur la cle de debug."
             exit 1

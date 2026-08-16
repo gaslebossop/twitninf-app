@@ -109,11 +109,33 @@ jobs:
 
       # --legacy-peer-deps : meme ERESOLVE React 19 / RN 0.81 que sur iOS
       # (voir ios-build.yml) sur @react-native-community/datetimepicker.
+
+      # Meme cache que android-publish.yml : ce qui coute cher est la
+      # compilation native, et `prebuild --clean` la jetait a chaque run avec
+      # le dossier android/.
+      - name: Cache du dossier natif et des dependances
+        uses: actions/cache@v4
+        with:
+          path: |
+            android
+            node_modules
+          key: android-native-${{ hashFiles('package-lock.json', 'app.config.js', 'plugins/**') }}-${{ github.run_id }}
+          restore-keys: |
+            android-native-${{ hashFiles('package-lock.json', 'app.config.js', 'plugins/**') }}-
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
       - name: Prebuild Android
-        run: npx expo prebuild --platform android --clean
+        run: |
+          set -euo pipefail
+          # `--clean` seulement sans cache : il supprime android/app/.cxx, ou
+          # CMake garde ses objets deja compiles.
+          if [ -d android/app ]; then
+            npx expo prebuild --platform android
+          else
+            npx expo prebuild --platform android --clean
+          fi
 
       # Lint (lintVitalAnalyzeRelease) desactive : sur un run precedent, des
       # taches de lint ont plante vers un avertissement memoire JVM
