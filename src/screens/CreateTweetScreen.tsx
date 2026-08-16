@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
   StatusBar,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,6 +49,14 @@ import { showActionSheet } from '../components/ui/ActionSheet';
 import { useFlag } from '../contexts/FeatureFlagContext';
 import { FLAGS } from '../config/featureFlagKeys';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import VoiceWaveform, {
+  downsampleWaveform,
+  formatClock,
+  normalizeMetering,
+  WAVEFORM_BAR_COUNT,
+} from '../components/ui/VoiceWaveform';
+import VoiceRecorderPanel from '../components/ui/VoiceRecorderPanel';
+import { useVoicePlayback } from '../hooks/useVoicePlayback';
 
 /** Plafond du modèle `Tweet` côté API (`media_urls` : 4 maximum). */
 const MAX_TWEET_IMAGES = 4;
@@ -55,12 +64,8 @@ const MAX_TWEET_IMAGES = 4;
 /** Aligné avec `tweetAudioService.MAX_DURATION_SECONDS` côté API. */
 const MAX_VOICE_SECONDS = 120;
 
-function formatVoiceDuration(totalSeconds: number) {
-  const seconds = Math.max(0, Math.round(totalSeconds));
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return `${minutes}:${rest.toString().padStart(2, '0')}`;
-}
+/** En dessous, c'est un appui malheureux sur le micro, pas un message. */
+const MIN_VOICE_MS = 800;
 
 interface CreateTweetScreenProps {
   navigation: any;
@@ -121,14 +126,22 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   // dans notre tweet ») ──
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [audioDuration, setAudioDuration] = useState(0);
+  /** Amplitudes du vocal enregistré — la waveform montrée avant publication. */
+  const [audioWaveform, setAudioWaveform] = useState<number[]>([]);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [uploadingAudio, setUploadingAudio] = useState(false);
-  const [isVoicePreviewPlaying, setIsVoicePreviewPlaying] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const recordingElapsedRef = useRef(0);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const voicePreviewSoundRef = useRef<Audio.Sound | null>(null);
+  /**
+   * Durée et métrage vivent en `ref`, pas en état : le statut d'enregistrement
+   * tombe dix fois par seconde, et re-rendre cet écran à ce rythme le ferait
+   * ramer pendant tout l'enregistrement. `VoiceRecorderPanel` relit ces refs
+   * pour son propre affichage — lui seul se re-rend.
+   */
+  const recordingElapsedMsRef = useRef(0);
+  const recordingSamplesRef = useRef<number[]>([]);
+
+  /** Relecture du vocal enregistré, avant publication. */
+  const voicePreview = useVoicePlayback(audioUri, audioDuration * 1000);
 
   // ── Morceau Spotify joint ──
   const [selectedTrack, setSelectedTrack] = useState<SpotifyTrack | null>(null);
@@ -376,109 +389,106 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
    */
   const canAttachVoice = !quoteTweetId && !videoUri && !audioUri;
 
-  /** Arrête l'enregistrement en cours et récupère le fichier produit. */
-  const stopVoiceRecording = useCallback(async () => {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
+  /**
+   * Fin d'enregistrement.
+   *
+   * `keep: false` = abandon : le fichier est bien fermé (sans quoi le micro
+   * resterait ouvert) mais rien n'est joint. C'est la sortie qui manquait — la
+   * seule façon d'arrêter était de valider.
+   */
+  const finishVoiceRecording = useCallback(async (keep: boolean) => {
     const recording = recordingRef.current;
     recordingRef.current = null;
     setIsRecordingVoice(false);
     if (!recording) return;
 
+    const elapsedMs = recordingElapsedMsRef.current;
+    const samples = recordingSamplesRef.current;
+
     try {
       await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      if (uri) {
-        setAudioUri(uri);
-        setAudioDuration(recordingElapsedRef.current || 1);
-      }
     } catch (e) {
+      if (keep) {
+        toast.error('Enregistrement perdu', {
+          description: 'Réessaie l\'enregistrement du message vocal.',
+        });
+      }
+      return;
+    }
+
+    if (!keep) return;
+
+    const uri = recording.getURI();
+    if (!uri) {
       toast.error('Enregistrement perdu', {
         description: 'Réessaie l\'enregistrement du message vocal.',
       });
+      return;
     }
+
+    if (elapsedMs < MIN_VOICE_MS) {
+      toast.info('Message trop court', {
+        description: 'Parle au moins une seconde avant de joindre le vocal.',
+      });
+      return;
+    }
+
+    setAudioUri(uri);
+    setAudioDuration(Math.max(1, Math.round(elapsedMs / 1000)));
+    // La silhouette réellement captée : c'est elle qu'on relit avant de publier.
+    setAudioWaveform(downsampleWaveform(samples, WAVEFORM_BAR_COUNT));
   }, []);
 
   const startVoiceRecording = useCallback(async () => {
     const permission = await Audio.requestPermissionsAsync();
     if (!permission.granted) {
-      toast.error('Permission requise', {
-        description: "L'accès au micro est nécessaire pour enregistrer un message vocal.",
+      toast.error('Micro bloqué', {
+        description: "Autorise l'accès au micro pour enregistrer un message vocal.",
       });
       return;
     }
 
     try {
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      recordingRef.current = recording;
-      recordingElapsedRef.current = 0;
-      setRecordingElapsed(0);
+      recordingElapsedMsRef.current = 0;
+      recordingSamplesRef.current = [];
       setIsRecordingVoice(true);
-      // Arrêt automatique au plafond serveur : un enregistrement plus long
-      // se ferait de toute façon tronquer la durée à la publication.
-      recordingTimerRef.current = setInterval(() => {
-        recordingElapsedRef.current += 1;
-        setRecordingElapsed(recordingElapsedRef.current);
-        if (recordingElapsedRef.current >= MAX_VOICE_SECONDS) {
-          stopVoiceRecording();
-        }
-      }, 1000);
+      const { recording } = await Audio.Recording.createAsync(
+        // `isMeteringEnabled` : sans lui, aucune amplitude ne remonte et la
+        // waveform serait une décoration inventée.
+        { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
+        (status) => {
+          if (typeof status.durationMillis === 'number') recordingElapsedMsRef.current = status.durationMillis;
+          if (status.isRecording) recordingSamplesRef.current.push(normalizeMetering(status.metering));
+          // Arrêt automatique au plafond serveur : un enregistrement plus long
+          // se ferait de toute façon tronquer la durée à la publication.
+          if ((status.durationMillis || 0) >= MAX_VOICE_SECONDS * 1000) {
+            finishVoiceRecording(true);
+          }
+        },
+        100,
+      );
+      recordingRef.current = recording;
     } catch (e) {
+      setIsRecordingVoice(false);
       toast.error('Micro indisponible', {
         description: 'Impossible de démarrer l\'enregistrement.',
       });
     }
-  }, [stopVoiceRecording]);
+  }, [finishVoiceRecording]);
 
   const removeAudio = useCallback(async () => {
-    if (voicePreviewSoundRef.current) {
-      await voicePreviewSoundRef.current.unloadAsync().catch(() => {});
-      voicePreviewSoundRef.current = null;
-    }
-    setIsVoicePreviewPlaying(false);
+    await voicePreview.unload();
     setAudioUri(null);
     setAudioDuration(0);
-  }, []);
+    setAudioWaveform([]);
+  }, [voicePreview]);
 
-  /** Écoute (avant publication) du message vocal tout juste enregistré. */
-  const toggleVoicePreview = useCallback(async () => {
-    if (!audioUri) return;
-    try {
-      if (voicePreviewSoundRef.current) {
-        const status = await voicePreviewSoundRef.current.getStatusAsync();
-        if (status.isLoaded && status.isPlaying) {
-          await voicePreviewSoundRef.current.pauseAsync();
-          setIsVoicePreviewPlaying(false);
-        } else {
-          await voicePreviewSoundRef.current.playAsync();
-          setIsVoicePreviewPlaying(true);
-        }
-        return;
-      }
-      const { sound } = await Audio.Sound.createAsync({ uri: audioUri }, { shouldPlay: true });
-      voicePreviewSoundRef.current = sound;
-      setIsVoicePreviewPlaying(true);
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setIsVoicePreviewPlaying(false);
-          sound.setPositionAsync(0).catch(() => {});
-        }
-      });
-    } catch (e) {
-      toast.error('Lecture impossible', { description: 'Réessaie dans un instant.' });
-    }
-  }, [audioUri]);
-
-  // Un composeur fermé pendant un enregistrement ou une écoute ne doit pas
-  // laisser le micro ouvert ni le son continuer en arrière-plan.
+  // Un composeur fermé pendant un enregistrement ne doit pas laisser le micro
+  // ouvert (la lecture, elle, est déchargée par `useVoicePlayback`).
   useEffect(() => {
     return () => {
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
-      voicePreviewSoundRef.current?.unloadAsync().catch(() => {});
     };
   }, []);
 
@@ -1239,34 +1249,74 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                   </View>
                 )}
 
-                {/* Message vocal joint — aperçu, lecture, retrait */}
-                {!!audioUri && (
+                {/* Message vocal — l'enregistrement occupe la place de la
+                    future pièce jointe : le panneau devient la carte, au même
+                    endroit, avec la même waveform. */}
+                {isRecordingVoice && (
+                  <VoiceRecorderPanel
+                    samplesRef={recordingSamplesRef}
+                    elapsedMsRef={recordingElapsedMsRef}
+                    maxSeconds={MAX_VOICE_SECONDS}
+                    onCancel={() => finishVoiceRecording(false)}
+                    onAttach={() => finishVoiceRecording(true)}
+                  />
+                )}
+
+                {!!audioUri && !isRecordingVoice && (
                   <View style={styles.voiceAttachment}>
-                    <TouchableOpacity
-                      style={styles.voiceAttachmentPlay}
-                      onPress={toggleVoicePreview}
-                      accessibilityLabel={isVoicePreviewPlaying ? 'Mettre en pause' : 'Écouter le message vocal'}
-                    >
-                      <Ionicons name={isVoicePreviewPlaying ? 'pause' : 'play'} size={16} color={colors.white} />
-                    </TouchableOpacity>
-                    <View style={styles.voiceAttachmentMeta}>
-                      <Text style={styles.voiceAttachmentTitle}>Message vocal</Text>
-                      <Text style={styles.voiceAttachmentDuration}>{formatVoiceDuration(audioDuration)}</Text>
-                    </View>
-                    {!loading && (
+                    <View style={styles.voiceRow}>
                       <TouchableOpacity
-                        style={styles.voiceAttachmentRemove}
-                        onPress={removeAudio}
-                        accessibilityLabel="Retirer le message vocal"
+                        style={styles.voicePlay}
+                        onPress={voicePreview.toggle}
+                        activeOpacity={0.85}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          voicePreview.isPlaying ? 'Mettre le message vocal en pause' : 'Écouter le message vocal'
+                        }
                       >
-                        <Ionicons name="close" size={16} color={colors.white} />
+                        {voicePreview.isLoading ? (
+                          <ActivityIndicator size="small" color={colors.onAccent} />
+                        ) : (
+                          <Ionicons
+                            name={voicePreview.isPlaying ? 'pause' : 'play'}
+                            size={16}
+                            color={colors.onAccent}
+                            style={!voicePreview.isPlaying ? styles.voicePlayGlyph : undefined}
+                          />
+                        )}
                       </TouchableOpacity>
+
+                      <VoiceWaveform
+                        bars={audioWaveform}
+                        progress={voicePreview.progress}
+                        height={28}
+                        onSeek={voicePreview.seekToRatio}
+                      />
+
+                      <Text style={styles.voiceClock}>
+                        {formatClock(voicePreview.positionMs > 0 ? voicePreview.positionMs : audioDuration * 1000)}
+                      </Text>
+
+                      {!loading && (
+                        <TouchableOpacity
+                          style={styles.voiceRemove}
+                          onPress={removeAudio}
+                          accessibilityLabel="Retirer le message vocal"
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close" size={15} color={colors.white} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {uploadingAudio && (
+                      <View style={styles.voiceUploadRow}>
+                        <ActivityIndicator size="small" color={colors.textMuted} />
+                        <Text style={styles.voiceUploadText}>Envoi du message vocal…</Text>
+                      </View>
                     )}
                   </View>
-                )}
-                {uploadingAudio && (
-                  <Text style={styles.imageHint}>Envoi du message vocal…</Text>
                 )}
 
                 {/* Options du tweet — chips pleins style segmented */}
@@ -1307,6 +1357,9 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     </TouchableOpacity>
                   )}
 
+                  {/* Une seule puce, jamais remplacée par un chronomètre :
+                      l'enregistrement se pilote depuis son panneau, sinon la
+                      rangée se réagence sous le doigt au démarrage. */}
                   {canAttachVoice && !isRecordingVoice && (
                     <TouchableOpacity
                       style={styles.optionChip}
@@ -1316,20 +1369,6 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     >
                       <Ionicons name="mic-outline" size={17} color={colors.textMuted} />
                       <Text style={styles.optionText}>VOCAL</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {isRecordingVoice && (
-                    <TouchableOpacity
-                      style={[styles.optionChip, styles.optionChipActive]}
-                      onPress={stopVoiceRecording}
-                      activeOpacity={0.8}
-                      accessibilityLabel="Arrêter l'enregistrement"
-                    >
-                      <Ionicons name="stop" size={17} color={colors.white} />
-                      <Text style={[styles.optionText, styles.optionTextActive]}>
-                        {formatVoiceDuration(recordingElapsed)}
-                      </Text>
                     </TouchableOpacity>
                   )}
 
@@ -1878,42 +1917,55 @@ const styles = StyleSheet.create({
   },
 
   voiceAttachment: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
     marginTop: 18,
-    padding: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderRadius: 16,
     backgroundColor: colors.surface,
+    gap: 10,
   },
-  voiceAttachmentPlay: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  voiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  voicePlay: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
   },
-  voiceAttachmentMeta: {
-    flex: 1,
-    gap: 2,
+  /** Le triangle de `play` paraît décentré dans un rond : 2 px le posent. */
+  voicePlayGlyph: {
+    marginLeft: 2,
   },
-  voiceAttachmentTitle: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontFamily: fonts.bold,
+  voiceClock: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    // Chasse fixe : sinon la waveform se décale à chaque seconde écoulée.
+    fontFamily: fonts.mono,
+    minWidth: 30,
+    textAlign: 'right',
   },
-  voiceAttachmentDuration: {
-    color: colors.textMuted,
-    fontSize: 12.5,
-  },
-  voiceAttachmentRemove: {
+  voiceRemove: {
     width: 26,
     height: 26,
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: withAlpha(colors.bg, 0.7),
+  },
+  voiceUploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  voiceUploadText: {
+    color: colors.textMuted,
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
   },
 
   spotifyPanel: {

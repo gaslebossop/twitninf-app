@@ -50,3 +50,15 @@ export { default as Button } from './GlassButton';
 export { default as IconButton } from './GlassIconButton';
 
 export { default as AppHeader, shouldShowBackButton } from './AppHeader';
+
+// Message vocal — une seule waveform pour l'enregistrement, la relecture et
+// la lecture dans le fil.
+export {
+  default as VoiceWaveform,
+  WAVEFORM_BAR_COUNT,
+  normalizeMetering,
+  downsampleWaveform,
+  pseudoWaveform,
+  formatClock,
+} from './VoiceWaveform';
+export { default as VoiceRecorderPanel } from './VoiceRecorderPanel';

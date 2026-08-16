@@ -2,15 +2,21 @@
  * Message vocal joint à un tweet (La Forge : « pouvoir ajouter un message
  * vocal dans notre tweet »).
  *
- * Pas de cadre visuel façon vidéo : c'est du son seul, une carte compacte
- * bouton play/pause + durée suffit — même esprit que `TweetMusicCard`.
+ * Pas de cadre façon vidéo : c'est du son seul. Une ligne — bouton, waveform,
+ * compteur — qu'on retrouve à l'identique dans le composeur.
+ *
+ * Ce que la première version ne faisait pas et qui manquait vraiment : montrer
+ * l'avancée de la lecture (la waveform restait morte du début à la fin), faire
+ * défiler le temps, et permettre de reprendre plus loin. Un vocal de deux
+ * minutes se réécoutait alors depuis le début, à l'aveugle.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Audio } from 'expo-av';
+import React, { useCallback, useMemo } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts } from '../../theme';
+import VoiceWaveform, { formatClock, pseudoWaveform } from '../ui/VoiceWaveform';
+import { useVoicePlayback } from '../../hooks/useVoicePlayback';
 
 interface TweetVoiceMessageProps {
   audioUrl: string;
@@ -19,80 +25,63 @@ interface TweetVoiceMessageProps {
   onBeforeOpen?: () => void;
 }
 
-function formatDuration(totalSeconds: number) {
-  const seconds = Math.max(0, Math.round(totalSeconds));
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return `${minutes}:${rest.toString().padStart(2, '0')}`;
-}
+function TweetVoiceMessage({ audioUrl, durationSeconds, onBeforeOpen }: TweetVoiceMessageProps) {
+  const fallbackMs = typeof durationSeconds === 'number' && durationSeconds > 0 ? durationSeconds * 1000 : 0;
+  const { isPlaying, isLoading, positionMs, durationMs, progress, toggle, seekToRatio } = useVoicePlayback(
+    audioUrl,
+    fallbackMs,
+  );
 
-export default function TweetVoiceMessage({ audioUrl, durationSeconds, onBeforeOpen }: TweetVoiceMessageProps) {
-  const [playing, setPlaying] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  /**
+   * L'API ne garde que l'URL et la durée : aucune amplitude à rejouer côté
+   * fil. La silhouette est donc tirée de l'URL — stable pour un tweet donné,
+   * différente d'un tweet à l'autre.
+   */
+  const bars = useMemo(() => pseudoWaveform(audioUrl), [audioUrl]);
 
-  // Le son ne doit pas continuer à jouer une fois la ligne quittée.
-  useEffect(() => {
-    return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
-      soundRef.current = null;
-    };
-  }, []);
-
-  const handlePress = async () => {
+  const handleToggle = useCallback(() => {
     onBeforeOpen?.();
+    toggle();
+  }, [onBeforeOpen, toggle]);
 
-    if (soundRef.current) {
-      const status = await soundRef.current.getStatusAsync();
-      if (status.isLoaded && status.isPlaying) {
-        await soundRef.current.pauseAsync();
-        setPlaying(false);
-      } else {
-        await soundRef.current.playAsync();
-        setPlaying(true);
-      }
-      return;
-    }
+  const handleSeek = useCallback(
+    (ratio: number) => {
+      onBeforeOpen?.();
+      seekToRatio(ratio);
+    },
+    [onBeforeOpen, seekToRatio],
+  );
 
-    try {
-      setLoading(true);
-      const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });
-      soundRef.current = sound;
-      setPlaying(true);
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setPlaying(false);
-          sound.setPositionAsync(0).catch(() => {});
-        }
-      });
-    } catch (e) {
-      // Silencieux : un message vocal qui ne charge pas n'est pas une erreur
-      // bloquante pour le reste de la ligne.
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Le compteur montre où on en est pendant l'écoute, et la longueur totale au
+  // repos : les deux informations utiles, jamais en même temps.
+  const clock = formatClock(positionMs > 0 ? positionMs : durationMs);
 
   return (
-    <Pressable style={styles.card} onPress={handlePress}>
-      <View style={styles.playButton}>
-        <Ionicons name={loading ? 'hourglass-outline' : playing ? 'pause' : 'play'} size={18} color={colors.white} />
-      </View>
-      <View style={styles.waveform} pointerEvents="none">
-        {Array.from({ length: 18 }).map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.waveformBar,
-              { height: 6 + ((index * 7) % 16) },
-            ]}
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.playButton}
+        onPress={handleToggle}
+        activeOpacity={0.85}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Mettre le message vocal en pause' : 'Écouter le message vocal'}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.onAccent} />
+        ) : (
+          <Ionicons
+            name={isPlaying ? 'pause' : 'play'}
+            size={16}
+            color={colors.onAccent}
+            style={!isPlaying ? styles.playGlyph : undefined}
           />
-        ))}
-      </View>
-      {typeof durationSeconds === 'number' && durationSeconds > 0 && (
-        <Text style={styles.duration}>{formatDuration(durationSeconds)}</Text>
-      )}
-    </Pressable>
+        )}
+      </TouchableOpacity>
+
+      <VoiceWaveform bars={bars} progress={progress} height={26} onSeek={handleSeek} style={styles.waveform} />
+
+      <Text style={styles.clock}>{clock}</Text>
+    </View>
   );
 }
 
@@ -102,32 +91,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginTop: 8,
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 16,
     backgroundColor: colors.surface,
   },
   playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
   },
+  /** Le triangle de `play` paraît décentré dans un rond : 1 px suffit à le poser. */
+  playGlyph: {
+    marginLeft: 2,
+  },
   waveform: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
+    marginHorizontal: 2,
   },
-  waveformBar: {
-    width: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.surfaceAlt,
-  },
-  duration: {
-    color: colors.textMuted,
-    fontSize: 12.5,
-    fontFamily: fonts.regular,
+  clock: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    // Chasse fixe : sans elle, la waveform se décale d'un pixel à chaque
+    // seconde qui passe, pendant toute la lecture.
+    fontFamily: fonts.mono,
+    minWidth: 30,
+    textAlign: 'right',
   },
 });
+
+export default React.memo(TweetVoiceMessage);
