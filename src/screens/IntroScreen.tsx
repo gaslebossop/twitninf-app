@@ -8,11 +8,11 @@ import {
   TouchableOpacity,
   Text,
   Platform,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import FuturisticCarousel from '../components/FuturisticCarousel';
 import { colors, fonts , statusBarStyle} from '../theme';
-import { ScreenBackground } from '../components/ui';
+import { AppStatusBar, ScreenBackground } from '../components/ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -51,8 +51,12 @@ export default function IntroScreen({ navigation }: any) {
 
   return (
     <ScreenBackground>
-      <SafeAreaView style={[styles.container, showCarousel && styles.containerCarousel]}>
-        <StatusBar barStyle={showCarousel ? 'light-content' : statusBarStyle()} backgroundColor="transparent" translucent />
+      {/* `SafeAreaView` de `react-native-safe-area-context`, PAS celle du
+          coeur de React Native : cette derniere ne pose aucun inset sur
+          Android. `edges={['top']}` seulement — le bas est deja tenu par
+          ce qui s'y trouve. */}
+      <SafeAreaView style={[styles.container, showCarousel && styles.containerCarousel]} edges={['top']}>
+        <AppStatusBar barStyle={showCarousel ? 'light-content' : undefined} />
 
         {showCarousel ? (
           <FuturisticCarousel onFinish={handleCarouselFinish} />

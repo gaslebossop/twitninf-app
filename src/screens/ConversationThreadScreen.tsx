@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
@@ -16,6 +15,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 // `expo-image` plutôt que `Image` de React Native : cache disque et décodage
 // hors du thread JS, sur des avatars et pièces jointes montés en liste.
 // `transition={0}` : aucune apparition en fondu, le rendu ne change pas.
@@ -40,7 +40,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { io } from 'socket.io-client';
 import { colors, fonts , statusBarStyle} from '../theme';
-import { ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { AppStatusBar, ScreenBackground, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
 import unreadService from '../services/unreadService';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -1518,8 +1518,12 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   return (
     <ScreenBackground>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+      {/* `SafeAreaView` de `react-native-safe-area-context`, PAS celle du
+          coeur de React Native : cette derniere ne pose aucun inset sur
+          Android. `edges={['top']}` seulement — le bas est deja tenu par
+          ce qui s'y trouve. */}
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <AppStatusBar />
 
         {/* ── Header ── */}
         <View style={styles.header}>

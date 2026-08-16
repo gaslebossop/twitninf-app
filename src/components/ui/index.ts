@@ -1,4 +1,5 @@
 export { default as ScreenBackground } from './ScreenBackground';
+export { default as AppStatusBar } from './AppStatusBar';
 export { default as GlassCard } from './GlassCard';
 export { default as GlassHeader } from './GlassHeader';
 export { default as GlassButton } from './GlassButton';

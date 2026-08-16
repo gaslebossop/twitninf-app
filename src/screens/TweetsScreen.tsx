@@ -1,5 +1,5 @@
 import { fonts , statusBarStyle} from '../theme';
-import { ScreenBackground, AppRefreshControl } from '../components/ui';
+import { AppStatusBar, ScreenBackground, AppRefreshControl } from '../components/ui';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import { withoutOrphanReplies } from '../utils/feed';
 import AlgoCheckCard from '../components/feed/AlgoCheckCard';
@@ -1434,7 +1434,7 @@ export default function TweetsScreen() {
         que le bas est deja gere par la barre d'onglets, en position
         absolue. */}
     <SafeAreaView style={S.container} edges={['top']}>
-      <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+      <AppStatusBar />
 
       {/* ── Bandeau d'événement ──
           Un seul, désormais. `EventBanner` et `FunctionalEventBanner` étaient

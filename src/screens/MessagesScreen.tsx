@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, fonts , statusBarStyle} from '../theme';
-import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
+import { AppStatusBar, ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -366,7 +366,7 @@ export default function MessagesScreen({ navigation }: any) {
           que le bas est deja gere par la barre d'onglets, en position
           absolue. */}
       <SafeAreaView style={styles.container} edges={['top']}>
-        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+        <AppStatusBar />
 
         {/* ── Header Instagram : identité à gauche, actions à droite ── */}
         <View style={styles.header}>
