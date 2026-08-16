@@ -177,188 +177,193 @@ export default function EventScreen() {
         backgroundColor="transparent"
       />
       <SafeAreaView style={S.safe} edges={['top']}>
-        <ScrollView
-          contentContainerStyle={S.content}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          {/* ── En-tête ── */}
-          <View style={S.headerWrap}>
-            {/* Quand l'habillage porte une scène, l'en-tête n'a PLUS de
-                dégradé : la scène EST le fond.
+        {/* C'est la PAGE ENTIÈRE qui attend le décor, pas seulement l'en-tête.
 
-                Le dégradé saturé de la DA la teintait en magenta jusqu'à la
-                mascotte, et le voile de lecture qu'il fallait par-dessus
-                l'éteignait — dans les deux cas on ne voyait plus le feu, qui
-                est la seule raison de l'avoir mise là.
+            N'attendre que l'en-tête ne réglait rien : le reste de la page
+            s'affichait, puis le feu arrivait après tout le monde — et c'est
+            précisément ça qui se remarque. Le contenu reste monté pendant
+            l'attente (à `opacity: 0`), sans quoi la scène ne commencerait
+            jamais à charger. */}
+        <SceneReveal visible={enTetePrete} style={S.safe}>
+          <ScrollView
+            contentContainerStyle={S.content}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          >
+            {/* ── En-tête ── */}
+            <View style={S.headerWrap}>
+              {/* Quand l'habillage porte une scène, l'en-tête n'a PLUS de
+                  dégradé : la scène EST le fond.
 
-                Le noir plat en dessous est celui des scènes elles-mêmes :
-                leurs bords s'y dissolvent sans laisser d'arête. */}
-            {art.scene ? (
-              <>
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: NUIT_SCENE }]} />
-                <SceneCanvas scene={art.scene} onSettled={onDecorEnTete} />
-              </>
-            ) : (
-              <LinearGradient
-                colors={art.gradients.header}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-            )}
+                  Le dégradé saturé de la DA la teintait en magenta jusqu'à la
+                  mascotte, et le voile de lecture qu'il fallait par-dessus
+                  l'éteignait — dans les deux cas on ne voyait plus le feu, qui
+                  est la seule raison de l'avoir mise là.
 
-            <EventAmbience art={art} height={210} />
-
-            {/* L'en-tête attend son décor : sans ça le titre s'affiche sur un
-                aplat noir, puis le feu arrive dessous une demi-seconde plus
-                tard. Un habillage SANS scène n'attend rien — `enTetePrete` y
-                est vrai d'emblée. */}
-            {!enTetePrete && (
-              <View style={S.headerBody} pointerEvents="none">
-                <Skeleton width={72} height={12} />
-                <Skeleton width="76%" height={34} style={S.attenteLigne} />
-                <Skeleton width="100%" height={4} rounded={2} style={S.attenteJauge} />
-                <Skeleton width="58%" height={20} style={S.attenteLigne} />
-              </View>
-            )}
-
-            <SceneReveal visible={enTetePrete} style={S.headerBody}>
-              <Text style={[S.eyebrow, { color: withAlpha(art.colors.onHeader, 0.85) }]}>
-                {isLive ? 'EN COURS' : 'BIENTÔT'}
-              </Text>
-
-              {/* La police d'affiche est réservée au titre et aux chiffres.
-                  L'employer partout la banaliserait en une journée. */}
-              <Text
-                style={[S.title, { fontFamily: art.fonts.display, color: art.colors.onHeader }]}
-                numberOfLines={2}
-              >
-                {event?.name ?? 'Événement'}
-              </Text>
-
-              {/* Jauge segmentée : un segment par quête. On lit « combien il y
-                  en a » et « combien sont faites » sans avoir à compter. */}
-              {quests.length > 0 && (
-                <View style={S.segments}>
-                  {quests.map((quest) => (
-                    <View
-                      key={quest.id}
-                      style={[
-                        S.segment,
-                        {
-                          backgroundColor: quest.state.completed
-                            ? art.colors.onHeader
-                            : withAlpha(art.colors.onHeader, 0.28),
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
+                  Le noir plat en dessous est celui des scènes elles-mêmes :
+                  leurs bords s'y dissolvent sans laisser d'arête. */}
+              {art.scene ? (
+                <>
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: NUIT_SCENE }]} />
+                  <SceneCanvas scene={art.scene} onSettled={onDecorEnTete} />
+                </>
+              ) : (
+                <LinearGradient
+                  colors={art.gradients.header}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
               )}
 
-              <View style={S.metrics}>
-                <Text
-                  style={[S.metricValue, { fontFamily: art.fonts.display, color: art.colors.onHeader }]}
-                >
-                  {doneCount}/{quests.length}
+              <EventAmbience art={art} height={210} />
+
+              <View style={S.headerBody}>
+                <Text style={[S.eyebrow, { color: withAlpha(art.colors.onHeader, 0.85) }]}>
+                  {isLive ? 'EN COURS' : 'BIENTÔT'}
                 </Text>
-                <Text style={[S.metricLabel, { color: withAlpha(art.colors.onHeader, 0.75) }]}>quêtes</Text>
-                <View style={[S.dot, { backgroundColor: withAlpha(art.colors.onHeader, 0.5) }]} />
-                <Ionicons name="time-outline" size={13} color={withAlpha(art.colors.onHeader, 0.75)} />
-                <Text style={[S.metricLabel, { color: withAlpha(art.colors.onHeader, 0.75) }]}>
-                  {formatRemaining(endsIn)}
+
+                {/* La police d'affiche est réservée au titre et aux chiffres.
+                    L'employer partout la banaliserait en une journée. */}
+                <Text
+                  style={[S.title, { fontFamily: art.fonts.display, color: art.colors.onHeader }]}
+                  numberOfLines={2}
+                >
+                  {event?.name ?? 'Événement'}
+                </Text>
+
+                {/* Jauge segmentée : un segment par quête. On lit « combien il y
+                    en a » et « combien sont faites » sans avoir à compter. */}
+                {quests.length > 0 && (
+                  <View style={S.segments}>
+                    {quests.map((quest) => (
+                      <View
+                        key={quest.id}
+                        style={[
+                          S.segment,
+                          {
+                            backgroundColor: quest.state.completed
+                              ? art.colors.onHeader
+                              : withAlpha(art.colors.onHeader, 0.28),
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                )}
+
+                <View style={S.metrics}>
+                  <Text
+                    style={[S.metricValue, { fontFamily: art.fonts.display, color: art.colors.onHeader }]}
+                  >
+                    {doneCount}/{quests.length}
+                  </Text>
+                  <Text style={[S.metricLabel, { color: withAlpha(art.colors.onHeader, 0.75) }]}>quêtes</Text>
+                  <View style={[S.dot, { backgroundColor: withAlpha(art.colors.onHeader, 0.5) }]} />
+                  <Ionicons name="time-outline" size={13} color={withAlpha(art.colors.onHeader, 0.75)} />
+                  <Text style={[S.metricLabel, { color: withAlpha(art.colors.onHeader, 0.75) }]}>
+                    {formatRemaining(endsIn)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ── Onglets ── */}
+            <View style={[S.tabs, { backgroundColor: art.colors.surfaceAlt }]}>
+              {TABS.map((item) => {
+                const active = tab === item.key;
+                // La pastille ne s'affiche que sur l'onglet qu'on ne regarde pas :
+                // signaler « il y a 2 récompenses » sur l'onglet ouvert, où elles
+                // sont déjà visibles, est du bruit.
+                const badge = item.key === 'quests' && !active ? claimableCount : 0;
+
+                return (
+                  <Tappable
+                    key={item.key}
+                    style={[S.tab, active && { backgroundColor: art.colors.festive }]}
+                    scaleTo={0.97}
+                    haptic="select"
+                    onPress={() => setTab(item.key)}
+                    accessibilityLabel={item.label}
+                  >
+                    <Text
+                      style={[
+                        S.tabLabel,
+                        { color: active ? art.colors.onFestive : art.colors.textDim },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.label}
+                    </Text>
+                    {badge > 0 && (
+                      <View style={[S.badge, { backgroundColor: art.colors.festive }]}>
+                        <Text style={[S.badgeText, { color: art.colors.onFestive }]}>{badge}</Text>
+                      </View>
+                    )}
+                  </Tappable>
+                );
+              })}
+            </View>
+
+            {/* ── Contenu ── */}
+            {!event && !loading ? (
+              <View style={S.empty}>
+                <Ionicons name="calendar-outline" size={34} color={art.colors.textMuted} />
+                <Text style={[S.emptyTitle, { color: art.colors.text }]}>Rien en ce moment</Text>
+                <Text style={[S.emptyText, { color: art.colors.textDim }]}>
+                  Le prochain événement s'affichera ici dès qu'il commencera.
                 </Text>
               </View>
-            </SceneReveal>
-          </View>
-
-          {/* ── Onglets ── */}
-          <View style={[S.tabs, { backgroundColor: art.colors.surfaceAlt }]}>
-            {TABS.map((item) => {
-              const active = tab === item.key;
-              // La pastille ne s'affiche que sur l'onglet qu'on ne regarde pas :
-              // signaler « il y a 2 récompenses » sur l'onglet ouvert, où elles
-              // sont déjà visibles, est du bruit.
-              const badge = item.key === 'quests' && !active ? claimableCount : 0;
-
-              return (
-                <Tappable
-                  key={item.key}
-                  style={[S.tab, active && { backgroundColor: art.colors.festive }]}
-                  scaleTo={0.97}
-                  haptic="select"
-                  onPress={() => setTab(item.key)}
-                  accessibilityLabel={item.label}
-                >
-                  <Text
-                    style={[
-                      S.tabLabel,
-                      { color: active ? art.colors.onFestive : art.colors.textDim },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {item.label}
-                  </Text>
-                  {badge > 0 && (
-                    <View style={[S.badge, { backgroundColor: art.colors.festive }]}>
-                      <Text style={[S.badgeText, { color: art.colors.onFestive }]}>{badge}</Text>
-                    </View>
-                  )}
-                </Tappable>
-              );
-            })}
-          </View>
-
-          {/* ── Contenu ── */}
-          {!event && !loading ? (
-            <View style={S.empty}>
-              <Ionicons name="calendar-outline" size={34} color={art.colors.textMuted} />
-              <Text style={[S.emptyTitle, { color: art.colors.text }]}>Rien en ce moment</Text>
-              <Text style={[S.emptyText, { color: art.colors.textDim }]}>
-                Le prochain événement s'affichera ici dès qu'il commencera.
-              </Text>
-            </View>
-          ) : tab === 'party' && event ? (
-            <Animated.View key="party" entering={enterPanel()}>
-            <EventCelebration
-              event={event}
-              art={art}
-              quests={quests}
-              onQuestsChanged={() => refresh(true)}
-            />
-            </Animated.View>
-          ) : tab === 'rewards' ? (
-            <Animated.View key="rewards" entering={enterPanel()}>
-              <EventRewards art={art} quests={quests} />
-            </Animated.View>
-          ) : (
-            grouped.map((section, sectionIndex) => (
-              <Animated.View key={section.title} entering={enterItem(sectionIndex)}>
-                <View style={S.sectionHeader}>
-                  <Text style={[S.sectionTitle, { color: art.colors.text }]}>{section.title}</Text>
-                  <View style={[S.sectionCount, { backgroundColor: art.colors.surfaceAlt }]}>
-                    <Text style={[S.sectionCountText, { color: art.colors.textDim }]}>
-                      {section.data.length}
-                    </Text>
-                  </View>
-                </View>
-                {section.data.map((quest, index) => (
-                  <Animated.View key={quest.id} entering={enterItem(index)}>
-                    <QuestCard
-                      quest={quest}
-                      art={art}
-                      claiming={claimingId === quest.id}
-                      onClaim={onClaim}
-                    />
-                  </Animated.View>
-                ))}
+            ) : tab === 'party' && event ? (
+              <Animated.View key="party" entering={enterPanel()}>
+              <EventCelebration
+                event={event}
+                art={art}
+                quests={quests}
+                onQuestsChanged={() => refresh(true)}
+              />
               </Animated.View>
-            ))
-          )}
+            ) : tab === 'rewards' ? (
+              <Animated.View key="rewards" entering={enterPanel()}>
+                <EventRewards art={art} quests={quests} />
+              </Animated.View>
+            ) : (
+              grouped.map((section, sectionIndex) => (
+                <Animated.View key={section.title} entering={enterItem(sectionIndex)}>
+                  <View style={S.sectionHeader}>
+                    <Text style={[S.sectionTitle, { color: art.colors.text }]}>{section.title}</Text>
+                    <View style={[S.sectionCount, { backgroundColor: art.colors.surfaceAlt }]}>
+                      <Text style={[S.sectionCountText, { color: art.colors.textDim }]}>
+                        {section.data.length}
+                      </Text>
+                    </View>
+                  </View>
+                  {section.data.map((quest, index) => (
+                    <Animated.View key={quest.id} entering={enterItem(index)}>
+                      <QuestCard
+                        quest={quest}
+                        art={art}
+                        claiming={claimingId === quest.id}
+                        onClaim={onClaim}
+                      />
+                    </Animated.View>
+                  ))}
+                </Animated.View>
+              ))
+            )}
 
-          <View style={{ height: 120 }} />
-        </ScrollView>
+            <View style={{ height: 120 }} />
+          </ScrollView>
+        </SceneReveal>
+
+        {!enTetePrete && (
+          <View style={S.attente} pointerEvents="none">
+            <Skeleton width="100%" height={330} rounded={round.xxl} />
+            <Skeleton width="100%" height={54} rounded={999} style={S.attenteLigne} />
+            <Skeleton width="100%" height={148} rounded={round.xl} style={S.attenteLigne} />
+            <Skeleton width="100%" height={112} rounded={round.xl} style={S.attenteLigne} />
+          </View>
+        )}
       </SafeAreaView>
 
       <RewardReveal
@@ -402,8 +407,12 @@ const S = StyleSheet.create({
     borderBottomRightRadius: round.xxl,
   },
   headerBody: { gap: space.xxs },
-  attenteLigne: { marginTop: space.xs },
-  attenteJauge: { marginTop: space.md },
+  /** Le squelette de la page, posé par-dessus le contenu encore invisible. */
+  attente: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: space.md,
+  },
+  attenteLigne: { marginTop: space.md },
   eyebrow: { fontFamily: fonts.bold, ...type.caption, letterSpacing: 1.5 },
   title: { ...type.display },
 
