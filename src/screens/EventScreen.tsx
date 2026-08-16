@@ -14,6 +14,7 @@ import Tappable from '../components/ui/Tappable';
 import { useEvents } from '../contexts/EventsContext';
 import QuestCard from '../components/events/QuestCard';
 import EventAmbience from '../components/events/EventAmbience';
+import SceneCanvas from '../components/SceneCanvas';
 import EventCelebration from '../components/events/EventCelebration';
 import EventRewards from '../components/events/EventRewards';
 import RewardReveal from '../components/events/RewardReveal';
@@ -181,6 +182,29 @@ export default function EventScreen() {
               end={{ x: 0.5, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
+            {/* La scène de la mascotte, quand l'habillage en porte une.
+
+                Elle est posée SUR le dégradé et non à sa place : ses bords
+                s'éteignent en fondu, elle a donc besoin d'une couleur dessous
+                pour s'y dissoudre — sans quoi on lirait un rectangle. */}
+            {art.scene ? <SceneCanvas scene={art.scene} /> : null}
+
+            {/* Voile de lecture, en HAUT seulement : le titre y est, et la
+                scène occupe le bas. Un voile plein cadre éteindrait le feu,
+                qui est la seule raison de l'avoir mise là. */}
+            {art.scene ? (
+              <LinearGradient
+                colors={[
+                  withAlpha(art.gradients.header[0], 0.92),
+                  withAlpha(art.gradients.header[0], 0.4),
+                  'transparent',
+                ]}
+                locations={[0, 0.42, 1]}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+            ) : null}
+
             <EventAmbience art={art} height={210} />
 
             <View style={S.headerBody}>
@@ -338,6 +362,14 @@ const S = StyleSheet.create({
   content: { paddingHorizontal: space.md },
 
   headerWrap: {
+    /**
+     * Hauteur plancher pour que la scène ait de quoi se déployer. Sans elle,
+     * l'en-tête se règle sur son texte (~200) et la scène s'y retrouve deux
+     * fois plus large que haute : la mascotte devient une fourmi et le feu
+     * sort du cadre.
+     */
+    minHeight: 330,
+    justifyContent: 'flex-start',
     marginHorizontal: -space.md,
     paddingHorizontal: space.md,
     paddingTop: space.md,

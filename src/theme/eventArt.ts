@@ -1,6 +1,7 @@
 import { colors, withAlpha } from './colors';
 import { fonts, displayNameFonts } from './fonts';
 import type { EventArtId, QuestTier } from '../types/events';
+import type { SceneName } from '../config/scenes';
 
 /**
  * Les directions artistiques d'événement.
@@ -35,6 +36,12 @@ export interface EventArt {
   id: EventArtId;
   /** Nom montré dans les réglages et l'admin. */
   name: string;
+  /**
+   * Scène animée de la mascotte posée en fond d'en-tête. Facultative, et
+   * portée par l'habillage plutôt que par l'écran : un événement suivant
+   * n'hérite ainsi pas du décor de celui d'avant.
+   */
+  scene?: SceneName;
   /**
    * Palette AUTONOME — c'est le point important.
    *
@@ -195,6 +202,16 @@ const NONE: EventArt = {
 const BIRTHDAY: EventArt = {
   id: 'birthday',
   name: 'Confettis — anniversaire twitninf',
+  /**
+   * Le feu de camp de la mascotte, en fond d'en-tête.
+   *
+   * C'est une scène de NUIT sur une DA claire : le contraste est assumé, et
+   * c'est la place qui le rend tenable. Le dégradé de l'en-tête finit en ambre
+   * (#FFB03A) exactement là où les flammes se trouvent — les deux chaleurs se
+   * rejoignent au lieu de se disputer, et le haut reste au magenta pour le
+   * titre.
+   */
+  scene: '05-feu-de-camp',
   colors: {
     // Gris très clair pour la page, blanc pur pour les cartes : c'est cet
     // écart minuscule qui fait « décoller » les cartes sans aucune bordure.
