@@ -48,12 +48,16 @@ import { duration } from '../theme';
  * demi-seconde, puis la mascotte apparaître d'un coup — exactement l'« état
  * intermédiaire visible » qu'on s'interdit.
  *
- * On attend donc que `.perso svg` existe. Le garde-fou existe parce que ce
- * signal peut ne JAMAIS arriver : une CSP qui bloque le script de la page, un
- * SVG introuvable, et la sonde attend pour rien pendant que la vue reste à
- * `opacity: 0` — donc invisible, sans la moindre erreur. Passé le délai on
- * dévoile quand même : au pire il manque le personnage, et le décor (qui est
- * en CSS pur) fait un fond correct à lui seul.
+ * On attend donc que la PAGE se déclare prête, en posant `.prete` sur sa
+ * scène. C'est elle qui sait : elle attend d'avoir le personnage dessiné, son
+ * masque d'éclairage chargé (un second fichier de 500 Ko) et ses particules
+ * semées. Guetter `.perso svg` depuis ici ne marchait pas — l'élément existe
+ * dès l'insertion, donc on dévoilait le décor avant la mascotte.
+ *
+ * Le garde-fou existe parce que ce signal peut ne JAMAIS arriver : une CSP qui
+ * bloque le script de la page, un fichier introuvable, et la sonde attend pour
+ * rien pendant que la vue reste à `opacity: 0` — invisible, sans la moindre
+ * erreur. Passé le délai on dévoile quand même.
  */
 const READY_PROBE = `(function () {
   var depart = Date.now();
@@ -61,8 +65,8 @@ const READY_PROBE = `(function () {
     if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(etat);
   };
   var attendre = function () {
-    if (document.querySelector('.perso svg')) return dire('prete');
-    if (Date.now() - depart > 2500) return dire('partielle');
+    if (document.querySelector('.scene.prete')) return dire('prete');
+    if (Date.now() - depart > 4500) return dire('partielle');
     requestAnimationFrame(attendre);
   };
   attendre();
@@ -78,7 +82,7 @@ true;`;
  * attendrait indefiniment, et c'est bien pire que de le voir arriver en
  * retard.
  */
-const LIMITE_MS = 4000;
+const LIMITE_MS = 5000;
 
 interface SceneCanvasProps {
   scene: SceneName;
