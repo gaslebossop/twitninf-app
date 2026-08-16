@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fonts, radius } from '../theme';
+import { fonts, radius, withAlpha } from '../theme';
 import { ScreenBackground, ScreenSkeleton, EmptyState } from '../components/ui';
+import SceneCanvas from '../components/SceneCanvas';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import {
   View,
@@ -1039,9 +1040,21 @@ export default function SearchScreen() {
               </View>
             )}
 
-            {/* Aucun résultat */}
+            {/* Aucun résultat : il pleut sur le rebord. */}
             {(searchResults?.users?.length || 0) === 0 && (searchResults?.tweets?.length || 0) === 0 && (
-              <EmptyState icon="search-outline" title="Aucun résultat" message="Essaie de rechercher quelque chose d'autre." style={{ marginTop: 40 }} />
+              <View style={styles.videSousLaPluie}>
+                {/* Une recherche sans résultat est un moment creux, pas une
+                    erreur : la scène de pluie l'habille au lieu de laisser un
+                    blanc. Purement décorative — tout ce qui se lit est écrit
+                    par-dessus, et la page reste entière sans elle. */}
+                <SceneCanvas scene="02-pluie" />
+                <View style={styles.voilePluie} pointerEvents="none" />
+                <EmptyState
+                  icon="search-outline"
+                  title="Aucun résultat"
+                  message="Essaie de rechercher quelque chose d'autre."
+                />
+              </View>
             )}
           </>
         )}
@@ -1223,6 +1236,25 @@ const styles = StyleSheet.create({
   },
   aiRefTweetCard: {
     marginBottom: 8,
+  },
+  /**
+   * Le cadre de l'état vide.
+   *
+   * `SceneCanvas` se pose en absolu : sans hauteur explicite ici, il n'aurait
+   * rien à remplir et la scène serait invisible. `overflow: hidden` retient la
+   * WebView dans les coins arrondis — sur Android elle déborde sinon.
+   */
+  videSousLaPluie: {
+    marginTop: 28,
+    minHeight: 380,
+    justifyContent: 'center',
+    borderRadius: 22,
+    overflow: 'hidden',
+  },
+  /** Voile de lisibilité : le texte se lit sur la scène, pas contre elle. */
+  voilePluie: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: withAlpha(colors.bg, 0.46),
   },
   resultsSection: {
     marginVertical: 20,

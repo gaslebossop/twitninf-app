@@ -30,6 +30,7 @@ import ConsentGate from './src/components/ConsentGate';
 import PatchNotesModal from './src/components/PatchNotesModal';
 import FollowOnboardingGate from './src/components/FollowOnboardingGate';
 import UpdateAvailableGate from './src/components/UpdateAvailableGate';
+import SleepGate from './src/components/SleepGate';
 
 /**
  * Choix de la langue de lecture à la première connexion.
@@ -182,6 +183,9 @@ export default function App() {
                 {/* Dernier de la file des popups de démarrage : le socle légal
                     se pose une fois que les autres questions sont passées. */}
                 <ConsentGate />
+                {/* Entre 23 h et 5 h : « il est tard ». Suggestion, jamais
+                    un verrou - les deux issues laissent entrer. */}
+                <SleepGate />
                 <FollowOnboardingGate />
                 {/* L'app n'est sur aucun store : sans cette page, un appareil
                     reste indéfiniment sur un build périmé sans le savoir. */}

@@ -28,7 +28,7 @@ import React, {
  */
 export type StartupPopupId =
   | 'language' | 'patch' | 'birthday' | 'navbar' | 'profile'
-  | 'consent' | 'follow_onboarding' | 'update';
+  | 'consent' | 'follow_onboarding' | 'update' | 'sleep';
 
 /**
  * Du plus bloquant au plus accessoire.
@@ -61,6 +61,11 @@ const PRIORITY: StartupPopupId[] = [
   // présenter des nouveautés introuvables.
   'update',
   'consent',
+  // Juste apres le socle legal, et avant tout le reste : dire « il est
+  // tard » a quelqu'un qui vient de remplir cinq formulaires n'a plus
+  // aucun sens. Cette etape n'engage a rien - les deux issues laissent
+  // entrer - donc la placer tot ne bloque personne.
+  'sleep',
   // Juste derrière le socle légal : sans abonnement, le recommandeur n'a aucun
   // signal et sert un fil générique. Cette étape conditionne donc tout ce que
   // la personne verra ensuite, y compris pendant les popups suivantes.
