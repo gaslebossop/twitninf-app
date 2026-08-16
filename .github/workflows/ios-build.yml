@@ -10,17 +10,20 @@ name: Build iOS Unsigned
 # requis) : le RE-signer ensuite avec Sideloadly ou AltStore (Apple ID
 # gratuit) pour l'installer sur un appareil. Voir l'etape « Package IPA »
 # pour pourquoi l'ad-hoc n'est pas optionnel.
+# PUBLICATION MANUELLE UNIQUEMENT.
+#
+# Ce workflow publiait sur chaque push vers `main` : un merge de branche, une
+# correction de CI, une faute de frappe dans un README — et une nouvelle
+# version partait aux gens en sideload, en consommant un numero de build au
+# passage. Publier est une DECISION, pas un effet de bord d'un merge.
+#
+# Pour publier :
+#   gh workflow run ios-build.yml --repo gaslebossop/twitninf-app
+# ou l'onglet Actions > Build iOS Unsigned > Run workflow.
+#
+# Meme regle des deux cotes : `android-publish.yml` est en manuel lui aussi.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    # Un commit qui ne touche QUE la CI Android ne doit pas publier une version
-    # iOS aux gens en sideload. Chaque correction du workflow Android partait
-    # sinon en release iOS, avec un numero de build consomme a chaque fois.
-    paths-ignore:
-      - '.github/workflows/android-*.yml'
-      - '.github/scripts/receive-apk.sh'
-      - '.github/scripts/gstore-push.sh'
 
 # Un seul build publiant a la fois, et surtout PAS d'annulation du run en cours.
 #
