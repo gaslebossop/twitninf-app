@@ -18,7 +18,6 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   Platform,
   UIManager,
   StatusBar,
@@ -27,6 +26,7 @@ import {
   Dimensions,
   type LayoutChangeEvent,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -1428,7 +1428,12 @@ export default function TweetsScreen() {
 
   return (
     <ScreenBackground>
-    <SafeAreaView style={S.container}>
+    {/* `SafeAreaView` vient de `react-native-safe-area-context`, PAS du coeur
+        de React Native : celle du coeur ne pose aucun inset sur Android, et
+        le contenu passait sous la barre de statut. `edges={['top']}` parce
+        que le bas est deja gere par la barre d'onglets, en position
+        absolue. */}
+    <SafeAreaView style={S.container} edges={['top']}>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
       {/* ── Bandeau d'événement ──

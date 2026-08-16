@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
@@ -10,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, fonts , statusBarStyle} from '../theme';
@@ -360,7 +360,12 @@ export default function MessagesScreen({ navigation }: any) {
 
   return (
     <ScreenBackground>
-      <SafeAreaView style={styles.container}>
+      {/* `SafeAreaView` vient de `react-native-safe-area-context`, PAS du coeur
+          de React Native : celle du coeur ne pose aucun inset sur Android, et
+          le contenu passait sous la barre de statut. `edges={['top']}` parce
+          que le bas est deja gere par la barre d'onglets, en position
+          absolue. */}
+      <SafeAreaView style={styles.container} edges={['top']}>
         <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
         {/* ── Header Instagram : identité à gauche, actions à droite ── */}
