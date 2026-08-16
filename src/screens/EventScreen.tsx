@@ -176,34 +176,29 @@ export default function EventScreen() {
         >
           {/* ── En-tête ── */}
           <View style={S.headerWrap}>
-            <LinearGradient
-              colors={art.gradients.header}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {/* La scène de la mascotte, quand l'habillage en porte une.
+            {/* Quand l'habillage porte une scène, l'en-tête n'a PLUS de
+                dégradé : la scène EST le fond.
 
-                Elle est posée SUR le dégradé et non à sa place : ses bords
-                s'éteignent en fondu, elle a donc besoin d'une couleur dessous
-                pour s'y dissoudre — sans quoi on lirait un rectangle. */}
-            {art.scene ? <SceneCanvas scene={art.scene} /> : null}
+                Le dégradé saturé de la DA la teintait en magenta jusqu'à la
+                mascotte, et le voile de lecture qu'il fallait par-dessus
+                l'éteignait — dans les deux cas on ne voyait plus le feu, qui
+                est la seule raison de l'avoir mise là.
 
-            {/* Voile de lecture, en HAUT seulement : le titre y est, et la
-                scène occupe le bas. Un voile plein cadre éteindrait le feu,
-                qui est la seule raison de l'avoir mise là. */}
+                Le noir plat en dessous est celui des scènes elles-mêmes :
+                leurs bords s'y dissolvent sans laisser d'arête. */}
             {art.scene ? (
+              <>
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: NUIT_SCENE }]} />
+                <SceneCanvas scene={art.scene} />
+              </>
+            ) : (
               <LinearGradient
-                colors={[
-                  withAlpha(art.gradients.header[0], 0.92),
-                  withAlpha(art.gradients.header[0], 0.4),
-                  'transparent',
-                ]}
-                locations={[0, 0.42, 1]}
+                colors={art.gradients.header}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
                 style={StyleSheet.absoluteFill}
-                pointerEvents="none"
               />
-            ) : null}
+            )}
 
             <EventAmbience art={art} height={210} />
 
@@ -354,6 +349,13 @@ export default function EventScreen() {
     </View>
   );
 }
+
+/**
+ * Le noir des scènes animées. Écrit ici plutôt que pris dans l'habillage :
+ * c'est la couleur de fond des PAGES de scène, celle dans laquelle leurs bords
+ * s'éteignent. Une autre valeur laisserait un liseré tout autour.
+ */
+const NUIT_SCENE = '#0E0B09';
 
 const S = StyleSheet.create({
   root: { flex: 1 },
