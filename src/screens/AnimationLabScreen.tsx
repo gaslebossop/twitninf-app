@@ -9,6 +9,7 @@ import { INSTALL_CHANNEL } from '../services/updateCheck';
 import { EventsPreviewProvider } from '../contexts/EventsContext';
 import EventScreen from './EventScreen';
 import { buildPreviewState } from './eventPreviewFixture';
+import { SleepPage, heureCourante } from '../components/SleepGate';
 
 /**
  * Banc d'essai des écrans qu'on ne peut pas provoquer.
@@ -56,6 +57,11 @@ const PREVIEWS: Preview[] = [
     label: "Page d'événement",
     hint: "L'anniversaire twitninf, avec une quête de chaque état possible.",
   },
+  {
+    key: 'sleep',
+    label: 'Il est tard (page de nuit)',
+    hint: "La chambre en fond, et les deux issues. Ne s'affiche autrement qu'entre 23 h et 5 h.",
+  },
 ];
 
 /** Tailles d'épreuve. Un tracé juste à 200 peut se disloquer ailleurs. */
@@ -89,6 +95,31 @@ export default function AnimationLabScreen({ navigation }: any) {
           <Ionicons name="close" size={18} color={colors.white} />
           <Text style={S.floatingCloseText}>Fermer l'aperçu</Text>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (preview === 'sleep') {
+    return (
+      <View style={S.fill}>
+        {/* La VRAIE page, avec ses vrais boutons — ils sont juste rendus
+            inoffensifs ici : « bonne nuit » fermerait l'app sur Android et
+            écrirait un report jusqu'au matin, ce qu'un aperçu n'a aucune
+            raison de faire. La sortie est posée dans la page plutôt qu'au
+            dessus : superposer une barre changerait la mise en page qu'on
+            essaie de juger. */}
+        <SleepPage
+          key={run}
+          heure={heureCourante()}
+          onBonneNuit={close}
+          onEncoreUneHeure={close}
+          footer={
+            <TouchableOpacity style={S.previewExit} onPress={close} activeOpacity={0.85}>
+              <Ionicons name="close" size={15} color={colors.white} />
+              <Text style={S.floatingCloseText}>Fermer l'aperçu</Text>
+            </TouchableOpacity>
+          }
+        />
       </View>
     );
   }
@@ -198,6 +229,17 @@ const S = StyleSheet.create({
     backgroundColor: 'rgba(10,6,16,0.86)',
   },
   floatingCloseText: { color: colors.white, fontFamily: fonts.bold, fontSize: 14 },
+  /** Sortie posée DANS la page de nuit, sous ses propres commandes. */
+  previewExit: {
+    marginTop: 18,
+    height: 44,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
   list: { padding: 16, gap: 12 },
 
   note: {

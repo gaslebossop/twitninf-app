@@ -20,11 +20,17 @@
  * ce cas, et il l'assume.
  *
  * ── Ce qui se passe si la scène ne charge pas ──
- * Rien de visible : il reste le fond de l'app, et toute la page se lit
- * normalement. Aucune information n'est portée par l'animation.
+ * Rien de visible : il reste le fond de la page, et tout se lit normalement.
+ * Aucune information n'est portée par l'animation.
+ *
+ * ── Deux composants, et pourquoi ──
+ * `SleepPage` est la page. `SleepGate` décide de l'afficher. Le banc d'essai
+ * des animations ouvre `SleepPage` directement : sans cette séparation, il
+ * faudrait attendre 23 h pour la regarder, ou trafiquer l'horloge de
+ * l'appareil.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BackHandler,
   Platform,
@@ -62,14 +68,120 @@ const STARTUP_SETTLE_MS = 300;
  * quelle que soit la locale de l'appareil, et surtout un format qui ne dépend
  * pas de la présence d'ICU dans le moteur JS.
  */
-const heureCourante = (d: Date) => `${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}`;
+export const heureCourante = (d: Date = new Date()) =>
+  `${d.getHours()}h${String(d.getMinutes()).padStart(2, '0')}`;
+
+interface SleepPageProps {
+  /** Heure affichée dans la pastille. */
+  heure: string;
+  /** Dernier état, sans bouton : la question a reçu sa réponse. */
+  bonneNuit?: boolean;
+  onBonneNuit: () => void;
+  onEncoreUneHeure: () => void;
+  /** Coupe l'animation quand la page n'est pas regardée. */
+  active?: boolean;
+  /** Sortie posée par le banc d'essai, à la place des deux boutons. */
+  footer?: ReactNode;
+}
+
+export function SleepPage({
+  heure,
+  bonneNuit = false,
+  onBonneNuit,
+  onEncoreUneHeure,
+  active = true,
+  footer,
+}: SleepPageProps) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={styles.page}>
+      {/* Page sombre imposée : la barre d'état doit être claire, quel que
+          soit le thème de l'app. */}
+      <StatusBar
+        barStyle="light-content"
+        translucent={Platform.OS !== 'android'}
+        backgroundColor="transparent"
+      />
+
+      {/* La scène occupe toute la page. Elle est décorative : rien de ce qui
+          suit n'en dépend. */}
+      <SceneCanvas scene="01-chambre" active={active} />
+
+      {/* Voile de lisibilité, concentré là où le texte se pose. Il part de
+          transparent pour ne pas éteindre la scène dans le haut du cadre. */}
+      <LinearGradient
+        colors={['transparent', 'rgba(14, 11, 9, 0.74)', NUIT]}
+        locations={[0, 0.52, 0.82]}
+        style={styles.voile}
+        pointerEvents="none"
+      />
+
+      <View
+        style={[
+          styles.contenu,
+          { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 18) },
+        ]}
+      >
+        <View style={styles.horloge}>
+          <Ionicons name="moon" size={15} color={colors.accent} />
+          <Text style={styles.horlogeTexte}>{heure}</Text>
+        </View>
+
+        <View style={styles.bas}>
+          {bonneNuit ? (
+            <>
+              <Text style={styles.titre}>Bonne nuit.</Text>
+              <Text style={styles.texte}>
+                Pose le téléphone. Ce qui se passe ici sera toujours là demain —
+                on ne te fera pas rater grand-chose entre {heure} et le matin.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.titre}>Il est tard.</Text>
+              <Text style={styles.texte}>
+                Le fil ne s'arrête jamais, c'est fait pour. Toi si. Rien de ce
+                qui est publié cette nuit ne vaut une heure de sommeil — tu le
+                retrouveras demain, exactement pareil.
+              </Text>
+
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={stepStyles.primaryButton}
+                  onPress={onBonneNuit}
+                  activeOpacity={0.85}
+                >
+                  <Text style={stepStyles.primaryText}>Bonne nuit</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.plusTard}
+                  onPress={onEncoreUneHeure}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.plusTardTexte}>Encore une heure</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={stepStyles.footnote}>
+                On ne te le redemandera pas avant une heure.
+              </Text>
+            </>
+          )}
+
+          {footer}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 export default function SleepGate() {
   const { isAuthenticated } = useAuth();
   const [wanted, setWanted] = useState(false);
   const [bonneNuit, setBonneNuit] = useState(false);
-  const heure = useMemo(() => heureCourante(new Date()), [wanted]);
-  const insets = useSafeAreaInsets();
+  const heure = useMemo(() => heureCourante(), [wanted]);
 
   const visible = useStartupPopupSlot('sleep', wanted);
 
@@ -120,83 +232,13 @@ export default function SleepGate() {
   if (!visible) return null;
 
   return (
-    <View style={styles.page}>
-      {/* Page sombre imposée : la barre d'état doit être claire, quel que
-          soit le thème de l'app. */}
-      <StatusBar
-        barStyle="light-content"
-        translucent={Platform.OS !== 'android'}
-        backgroundColor="transparent"
-      />
-
-      {/* La scène occupe toute la page. Elle est décorative : rien de ce qui
-          suit n'en dépend. */}
-      <SceneCanvas scene="01-chambre" active={visible} />
-
-      {/* Voile de lisibilité, concentré là où le texte se pose. Il part de
-          transparent pour ne pas éteindre la scène dans le haut du cadre. */}
-      <LinearGradient
-        colors={['transparent', 'rgba(14, 11, 9, 0.74)', NUIT]}
-        locations={[0, 0.52, 0.82]}
-        style={styles.voile}
-        pointerEvents="none"
-      />
-
-      <View
-        style={[
-          styles.contenu,
-          { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 18) },
-        ]}
-      >
-        <View style={styles.horloge}>
-          <Ionicons name="moon" size={15} color={colors.accent} />
-          <Text style={styles.horlogeTexte}>{heure}</Text>
-        </View>
-
-        <View style={styles.bas}>
-          {bonneNuit ? (
-            <>
-              <Text style={styles.titre}>Bonne nuit.</Text>
-              <Text style={styles.texte}>
-                Pose le téléphone. Ce qui se passe ici sera toujours là demain —
-                on ne te fera pas rater grand-chose entre {heure} et le matin.
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.titre}>Il est tard.</Text>
-              <Text style={styles.texte}>
-                Le fil ne s'arrête jamais, c'est fait pour. Toi si. Rien de ce
-                qui est publié cette nuit ne vaut une heure de sommeil — tu le
-                retrouveras demain, exactement pareil.
-              </Text>
-
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={stepStyles.primaryButton}
-                  onPress={handleBonneNuit}
-                  activeOpacity={0.85}
-                >
-                  <Text style={stepStyles.primaryText}>Bonne nuit</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.plusTard}
-                  onPress={handleEncoreUneHeure}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.plusTardTexte}>Encore une heure</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={stepStyles.footnote}>
-                On ne te le redemandera pas avant une heure.
-              </Text>
-            </>
-          )}
-        </View>
-      </View>
-    </View>
+    <SleepPage
+      heure={heure}
+      bonneNuit={bonneNuit}
+      onBonneNuit={handleBonneNuit}
+      onEncoreUneHeure={handleEncoreUneHeure}
+      active={visible}
+    />
   );
 }
 
