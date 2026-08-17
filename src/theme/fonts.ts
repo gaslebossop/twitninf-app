@@ -1,9 +1,11 @@
 /**
- * Familles de polices « Encre ».
+ * Familles de polices « Pulse ».
  *
- * Duo premium :
- *  - Plus Jakarta Sans → titres, noms, chiffres marquants (caractère, géométrie).
- *  - Inter → corps, UI, métadonnées (lisibilité irréprochable).
+ * Une seule famille de marque, TwitNinf Sans, pour tout le texte de l'app —
+ * titres, corps, boutons. Trois fichiers embarqués (Book/Medium/Bold) : la
+ * famille ne fournit ni ExtraBold ni SemiBold droit (ce dernier n'existe
+ * qu'en italique), donc Bold sert de graisse la plus lourde partout où
+ * l'ancien duo demandait ExtraBold ou SemiBold — voir `twitninf-sans/*.otf`.
  *
  * Les polices sont chargées une seule fois dans App.tsx via `fontAssets`.
  * On référence toujours une FAMILLE PRÉCISE (un fichier = un poids) car
@@ -11,13 +13,6 @@
  */
 // Import each weight directly. Importing a package root makes Metro resolve
 // every weight exported by that package, including weights the app never uses.
-import { PlusJakartaSans_600SemiBold } from '@expo-google-fonts/plus-jakarta-sans/600SemiBold';
-import { PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans/700Bold';
-import { PlusJakartaSans_800ExtraBold } from '@expo-google-fonts/plus-jakarta-sans/800ExtraBold';
-import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
-import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
-import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { Anton_400Regular } from '@expo-google-fonts/anton/400Regular';
 import { PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display/700Bold';
 import { Lora_700Bold } from '@expo-google-fonts/lora/700Bold';
@@ -39,26 +34,28 @@ import { Cinzel_700Bold } from '@expo-google-fonts/cinzel/700Bold';
 
 /** Noms de familles utilisés partout dans le thème. */
 export const fonts = {
-  // Display / titres — Plus Jakarta Sans
-  displayHeavy: 'Jakarta-ExtraBold',
-  display: 'Jakarta-Bold',
-  heading: 'Jakarta-SemiBold',
+  // Display / titres — TwitNinf Sans Bold (pas d'ExtraBold dans la famille).
+  displayHeavy: 'TwitninfSans-Bold',
+  display: 'TwitninfSans-Bold',
+  // Pas de SemiBold droit dans la famille (600 n'existe qu'en italique) :
+  // Medium marque la marche en dessous de Bold.
+  heading: 'TwitninfSans-Medium',
 
-  // Corps / UI — Inter
-  regular: 'Inter-Regular',
-  medium: 'Inter-Medium',
-  semibold: 'Inter-SemiBold',
-  bold: 'Inter-Bold',
+  // Corps / UI — TwitNinf Sans
+  regular: 'TwitninfSans-Book',
+  medium: 'TwitninfSans-Medium',
+  semibold: 'TwitninfSans-Bold',
+  bold: 'TwitninfSans-Bold',
 
   /**
-   * Chiffres et valeurs — Space Mono.
+   * Chiffres et valeurs — Space Mono, INCHANGÉ.
    *
    * Une somme n'est pas une phrase : en chasse fixe, les chiffres s'alignent
    * d'une ligne a l'autre et se lisent comme une valeur frappee plutot que
-   * comme du texte. La famille etait deja embarquee, mais seulement declaree
-   * dans `displayNameFonts` — le catalogue des polices de NOM de profil. La
-   * reprendre depuis la faisait dependre un montant d'un reglage cosmetique
-   * qui n'a rien a voir.
+   * comme du texte. TwitNinf Sans n'a pas de variante monospace, et forcer
+   * des chiffres tabulaires par feature OpenType n'est pas fiable entre iOS
+   * et Android sur une police custom — Space Mono reste donc la police des
+   * montants tant que ce n'est pas un choix a part entiere.
    */
   mono: 'SpaceMono-Bold',
 } as const;
@@ -97,13 +94,9 @@ export const displayNameFonts = {
 
 /** Map passée à `useFonts` / `Font.loadAsync`. */
 export const fontAssets = {
-  'Jakarta-SemiBold': PlusJakartaSans_600SemiBold,
-  'Jakarta-Bold': PlusJakartaSans_700Bold,
-  'Jakarta-ExtraBold': PlusJakartaSans_800ExtraBold,
-  'Inter-Regular': Inter_400Regular,
-  'Inter-Medium': Inter_500Medium,
-  'Inter-SemiBold': Inter_600SemiBold,
-  'Inter-Bold': Inter_700Bold,
+  'TwitninfSans-Book': require('../../assets/fonts/TwitninfSans-Book.otf'),
+  'TwitninfSans-Medium': require('../../assets/fonts/TwitninfSans-Medium.otf'),
+  'TwitninfSans-Bold': require('../../assets/fonts/TwitninfSans-Bold.otf'),
   [displayNameFonts.poster]: Anton_400Regular,
   [displayNameFonts.editorial]: PlayfairDisplay_700Bold,
   [displayNameFonts.serif]: Lora_700Bold,

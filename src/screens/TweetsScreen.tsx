@@ -1469,7 +1469,7 @@ export default function TweetsScreen() {
               style={{ width: 26, height: 26 }}
               resizeMode="contain"
             />
-            <Text style={S.brandWord}>twitninf</Text>
+            <Text style={S.brandWord}>Twitninf</Text>
           </View>
 
           <TouchableOpacity
@@ -1652,9 +1652,9 @@ const S = StyleSheet.create({
   },
   brandWord: {
     color: C.textPrimary,
-    fontSize: 17,
+    fontSize: 21,
     fontFamily: fonts.displayHeavy,
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
   settingsBtn: {
     width: 34,

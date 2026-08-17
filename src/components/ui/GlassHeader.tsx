@@ -16,13 +16,14 @@ interface GlassHeaderProps {
   subtitle?: string;
   onBack?: () => void;
   right?: React.ReactNode;
-  /** Grand titre façon héros (aligné à gauche, Jakarta ExtraBold). */
+  /** Grand titre façon héros (aligné à gauche, TwitNinf Sans en graisse Bold). */
   large?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
 /**
- * En-tête plat de la DA « Pulse » — fond uni, filet bas net, titre Jakarta.
+ * En-tête plat de la DA « Pulse » — fond uni, filet bas net, titre TwitNinf
+ * Sans.
  */
 export default function GlassHeader({
   title,
@@ -107,13 +108,13 @@ const styles = StyleSheet.create({
     paddingLeft: 2,
   },
   title: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
+    fontFamily: fonts.displayHeavy,
+    fontSize: 19,
     color: colors.textPrimary,
   },
   titleLarge: {
     fontFamily: fonts.displayHeavy,
-    fontSize: 28,
+    fontSize: 32,
     letterSpacing: -0.8,
   },
   subtitle: {

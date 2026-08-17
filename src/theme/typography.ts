@@ -1,9 +1,10 @@
 /**
- * Échelle typographique « Encre ».
+ * Échelle typographique « Pulse ».
  *
- * Duo Plus Jakarta Sans (titres) + Inter (corps). La hiérarchie repose sur
- * la famille, la taille, la hauteur de ligne et le letterSpacing — jamais sur
- * `fontWeight` (les polices custom portent leur graisse dans le fichier).
+ * Une seule famille, TwitNinf Sans (voir `theme/fonts.ts`). La hiérarchie
+ * repose sur la graisse, la taille, la hauteur de ligne et le letterSpacing
+ * — jamais sur `fontWeight` numérique (les polices custom portent leur
+ * graisse dans le fichier, React Native ne les épaissit pas).
  */
 import { TextStyle } from 'react-native';
 import { fontSize } from '../utils/responsive';

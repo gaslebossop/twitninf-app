@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
   sideBtnCollapsed: { width: 40, height: 40 },
   titleBox: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0, paddingHorizontal: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '100%' },
-  title: { color: colors.textPrimary, fontSize: 16, fontFamily: fonts.heading },
+  title: { color: colors.textPrimary, fontSize: 19, fontFamily: fonts.displayHeavy },
   subtitle: { color: colors.textMuted, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 2 },
   badge: {
     paddingHorizontal: 5,
