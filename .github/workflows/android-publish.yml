@@ -195,11 +195,39 @@ jobs:
           echo "APK_NAME=$NAME" >> "$GITHUB_ENV"
           echo "$PACKAGE $NAME (code $CODE), $(du -h "$APK" | cut -f1)"
 
+      # ── Pourquoi une empreinte EN DUR ────────────────────────────────────
+      #
+      # L'etape ne faisait qu'AFFICHER l'empreinte du certificat. Elle passait
+      # donc aussi bien avec la cle permanente qu'avec un keystore de debug
+      # regenere par Gradle — et c'est arrive : le build 27 (2026-08-16) est
+      # parti signe `fac61745...`, le 28 avec la vraie cle `ee30a3a8...`.
+      # Resultat cote appareil : INSTALL_FAILED_UPDATE_INCOMPATIBLE, et une
+      # desinstallation manuelle pour tous ceux qui avaient la 27.
+      #
+      # Une signature qui derive ne se rattrape pas par une republication :
+      # Android refuse toute mise a jour dont la cle differe de l'installee.
+      # C'est donc la CI qui doit s'arreter AVANT de publier, pas l'appareil
+      # qui doit s'en apercevoir apres.
+      #
+      # L'empreinte attendue est celle de `twitninf-release.p12` (alias
+      # `twitninf`), sauvegarde sur le VPS dans /home/debian/keystores. La
+      # changer ici sans changer la cle casse tout le parc installe.
       - name: Verifie la signature
+        env:
+          EXPECTED_SHA256: ee30a3a84947621924688eec84310da63dba7482da2b9797170e2f8b60289efb
         run: |
           set -euo pipefail
           APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs "$APK_PATH" | grep -i "SHA-256 digest" | head -1
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK_PATH")
+          echo "$CERTS" | grep -i "SHA-256 digest"
+
+          if ! grep -qi "certificate SHA-256 digest: $EXPECTED_SHA256" <<<"$CERTS"; then
+            echo "::error::APK signe avec une AUTRE cle que la cle permanente."
+            echo "::error::attendu $EXPECTED_SHA256"
+            echo "::error::Publier cet APK rendrait la mise a jour impossible sur toutes les installations existantes."
+            exit 1
+          fi
+          echo "signature conforme a la cle permanente."
 
       - name: Publie dans G-Store et previent les appareils
         env:
