@@ -179,6 +179,19 @@ class ModerationService {
     }
   }
 
+  /** Recherche légère par pseudo/nom — évite de charger les 1000 comptes de `getUsers()`. */
+  async searchUsers(query: string, limit = 15): Promise<User[]> {
+    try {
+      const q = encodeURIComponent(query.trim());
+      const response = await this.makeRequest(`/users?limit=${limit}&page=1&search=${q}`);
+      const users = response.data?.users || response.users || response.data || [];
+      return Array.isArray(users) ? users : [];
+    } catch (error) {
+      console.error('❌ Erreur recherche utilisateurs:', error);
+      return [];
+    }
+  }
+
   async banUser(userId: string, reason: string, duration?: number, permanent?: boolean): Promise<boolean> {
     try {
       const response = await this.makeRequest(`/users/${userId}/ban`, {

@@ -134,6 +134,20 @@ module.exports = ({ config }) => {
     "./plugins/withReleaseSigning",
     "expo-secure-store",
     "expo-web-browser",
+    // ⚠️ PAS de plugin "expo-camera" ici, et c'est délibéré.
+    //
+    // Le seul rôle de ce plugin est de DÉCLARER les permissions caméra. Elles
+    // le sont déjà : `CAMERA` dans `android.permissions` ci-dessus (le live la
+    // demandait avant le contrôle des places), et `NSCameraUsageDescription` /
+    // `NSMicrophoneUsageDescription` dans `ios.infoPlist`, rédigées pour ce que
+    // l'utilisateur lit vraiment avant d'accepter.
+    //
+    // Or les mods d'un plugin s'appliquent APRÈS `ios.infoPlist` : ajouter
+    // "expo-camera" sans lui repasser explicitement nos deux chaînes écraserait
+    // les descriptions françaises par les valeurs anglaises par défaut de la
+    // bibliothèque — sans erreur, et sans que rien ne se voie avant qu'Apple ne
+    // le relève. Le module fonctionne sans son plugin dès lors que les
+    // permissions existent.
     [
       "expo-location",
       {

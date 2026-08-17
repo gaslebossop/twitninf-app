@@ -245,6 +245,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'heart-circle-outline',
               () => navigation.navigate('SuperHearts')
             )}
+
+            {renderActionButton(
+              'État du compte',
+              'Distribution de tes posts, avertissements actifs et date de retour',
+              'shield-checkmark-outline',
+              () => navigation.navigate('AccountStatus')
+            )}
           </Animated.View>
 
           {/* Section Confidentialité */}
@@ -365,6 +372,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'Estimez la portée d\'un tweet avant de le publier (Pro)',
               'trending-up-outline',
               () => navigation.navigate('PredictiveAnalytics')
+            )}
+
+            {renderActionButton(
+              'Mes invitations',
+              'Les places à présenter à l\'entrée d\'un événement',
+              'ticket-outline',
+              () => navigation.navigate('MyPasses')
             )}
 
             {renderActionButton(

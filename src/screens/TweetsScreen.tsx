@@ -62,6 +62,10 @@ import EventStrip from '../components/events/EventStrip';
 import ReportSheet from '../components/ReportSheet';
 import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
 import TweetSkeleton from '../components/feed/TweetSkeleton';
+import ExploreGrid, { type CardRect } from '../components/feed/ExploreGrid';
+import ExploreImmersive from '../components/feed/ExploreImmersive';
+import feedback from '../utils/feedback';
+import { displayContentOf, splitTweetMedia } from '../utils/tweetMedia';
 import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
 import StoriesTray from '../components/StoriesTray';
 import SpotlightBanner from '../components/SpotlightBanner';
@@ -103,6 +107,16 @@ const C = {
 const SWIPE_SPAN = Dimensions.get('window').width;
 /** Fraction de la course, PROJETÉE, au-delà de laquelle l'onglet bascule. */
 const SWIPE_COMMIT = 0.32;
+
+/**
+ * Les trois onglets du fil, dans leur ordre d'affichage — c'est aussi l'ordre
+ * du glissé horizontal (0 = le plus à gauche). `explore` a été ajouté à droite
+ * de « Pour toi » : le geste de bascule (plus bas) est écrit en fonction de
+ * cette longueur, jamais en dur pour deux onglets.
+ */
+const TAB_ORDER = ['following', 'forYou', 'explore'] as const;
+type FeedTab = typeof TAB_ORDER[number];
+const tabIndexOf = (tab: FeedTab): number => TAB_ORDER.indexOf(tab);
 
 /**
  * Fusionne une nouvelle page de tweets dans la liste existante en écartant les
@@ -180,8 +194,32 @@ export default function TweetsScreen() {
   const [storyUserIds, setStoryUserIds] = useState<Set<string>>(new Set());
   const [unseenStoryUserIds, setUnseenStoryUserIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'following' | 'forYou'>('forYou');
+  const [activeTab, setActiveTab] = useState<FeedTab>('forYou');
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+
+  // ─── Onglet Explorer — état entièrement séparé ─────────────────────────────
+  //
+  // Volontairement PAS branché sur `tweets`/`tabCacheRef` : ce couple est
+  // profondément lié au fil linéaire (like/retweet optimistes, suivi de vues,
+  // repli hors ligne, pagination par `offset` partagé). La grille n'affiche
+  // que des cartes tapables vers le détail — aucune de ces mécaniques n'y est
+  // invoquée — donc lui donner son propre état évite de réinterroger tout ce
+  // câblage déjà réglé pour deux onglets.
+  const [exploreTweets, setExploreTweets] = useState<Tweet[]>([]);
+  const [exploreLoading, setExploreLoading] = useState(false);
+  const [exploreRefreshing, setExploreRefreshing] = useState(false);
+  const [exploreLoadingMore, setExploreLoadingMore] = useState(false);
+  const [exploreError, setExploreError] = useState<string | null>(null);
+  const [exploreHasMore, setExploreHasMore] = useState(true);
+  const [exploreOffset, setExploreOffset] = useState(0);
+  const exploreGenerationRef = useRef(0);
+  // Vrai quand un tirage neuf n'a plus rien apporté : coupe la relance
+  // automatique en bas de page (voir `onExploreEndReached`).
+  const exploreExhaustedRef = useRef(false);
+  // Index ouvert en lecture ; `null` = grille seule. `immersiveOrigin` est le
+  // rectangle de la carte touchée : la lecture s'agrandit depuis lui.
+  const [immersiveIndex, setImmersiveIndex] = useState<number | null>(null);
+  const [immersiveOrigin, setImmersiveOrigin] = useState<CardRect | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -226,11 +264,10 @@ export default function TweetsScreen() {
   //    d'un coup à la bonne place au lieu de se poser.
   // On mesure donc chaque onglet et on pilote la pastille sur ces valeurs, à
   // l'intérieur d'une piste `absoluteFill` qui, elle, ignore le padding.
-  const tabIndicator = useSharedValue(activeTab === 'forYou' ? 1 : 0);
-  const tabLayouts = useSharedValue<{ x: number; y: number; width: number; height: number }[]>([
-    { x: 0, y: 0, width: 0, height: 0 },
-    { x: 0, y: 0, width: 0, height: 0 },
-  ]);
+  const tabIndicator = useSharedValue(tabIndexOf(activeTab));
+  const tabLayouts = useSharedValue<{ x: number; y: number; width: number; height: number }[]>(
+    TAB_ORDER.map(() => ({ x: 0, y: 0, width: 0, height: 0 })),
+  );
   /** Passe à 1 quand les deux onglets sont mesurés : évite le pop. */
   const tabsReady = useSharedValue(0);
 
@@ -260,14 +297,14 @@ export default function TweetsScreen() {
    * Onglet courant, en valeur partagée : un worklet ne peut pas lire un state
    * React ni une ref. 0 = « Abonnements » (à gauche), 1 = « Pour toi ».
    */
-  const tabIndex = useSharedValue(activeTab === 'forYou' ? 1 : 0);
+  const tabIndex = useSharedValue(tabIndexOf(activeTab));
   useEffect(() => {
-    tabIndex.value = activeTab === 'forYou' ? 1 : 0;
+    tabIndex.value = tabIndexOf(activeTab);
   }, [activeTab, tabIndex]);
 
   const tabIndicatorStyle = useAnimatedStyle(() => {
-    const [left, right] = tabLayouts.value;
-    if (!left.width || !right.width) {
+    const layouts = tabLayouts.value;
+    if (!layouts.every((l) => l.width > 0)) {
       return {
         opacity: 0,
         width: 0,
@@ -276,22 +313,27 @@ export default function TweetsScreen() {
       };
     }
     // La pastille suit le doigt : glisser vers la gauche (valeur négative) la
-    // fait avancer vers « Pour toi ». Sans ce terme, le geste n'aurait de
+    // fait avancer vers l'onglet suivant. Sans ce terme, le geste n'aurait de
     // retour visuel qu'au moment où il est déjà joué.
-    const p = clamp(tabIndicator.value - swipe.value / SWIPE_SPAN, 0, 1);
+    //
+    // `interpolate` généralise ici à N points (un par onglet) exactement comme
+    // à deux : chaque point d'entrée est l'index de l'onglet, chaque sortie sa
+    // mesure. Avec deux onglets, c'est rigoureusement le calcul d'avant.
+    const inputRange = layouts.map((_, i) => i);
+    const p = clamp(tabIndicator.value - swipe.value / SWIPE_SPAN, 0, layouts.length - 1);
     return {
       opacity: tabsReady.value,
-      width: interpolate(p, [0, 1], [left.width, right.width]),
-      height: interpolate(p, [0, 1], [left.height, right.height]),
+      width: interpolate(p, inputRange, layouts.map((l) => l.width)),
+      height: interpolate(p, inputRange, layouts.map((l) => l.height)),
       transform: [
-        { translateX: interpolate(p, [0, 1], [left.x, right.x]) },
-        { translateY: interpolate(p, [0, 1], [left.y, right.y]) },
+        { translateX: interpolate(p, inputRange, layouts.map((l) => l.x)) },
+        { translateY: interpolate(p, inputRange, layouts.map((l) => l.y)) },
       ] as const,
     };
   });
 
-  const animateTabSwitch = useCallback((tab: 'following' | 'forYou') => {
-    tabIndicator.value = withSpring(tab === 'forYou' ? 1 : 0, {
+  const animateTabSwitch = useCallback((tab: FeedTab) => {
+    tabIndicator.value = withSpring(tabIndexOf(tab), {
       damping: 20,
       stiffness: 220,
     });
@@ -310,8 +352,8 @@ export default function TweetsScreen() {
    * bascule ne partirait jamais. En passant par `runOnJS(switchTab)`, la
    * lecture de la ref a lieu côté JS, où elle est à jour.
    */
-  const handleTabChangeRef = useRef<(tab: 'following' | 'forYou') => void>(() => {});
-  const switchTab = useCallback((tab: 'following' | 'forYou') => {
+  const handleTabChangeRef = useRef<(tab: FeedTab) => void>(() => {});
+  const switchTab = useCallback((tab: FeedTab) => {
     handleTabChangeRef.current(tab);
   }, []);
 
@@ -342,21 +384,27 @@ export default function TweetsScreen() {
         })
         .onUpdate((event) => {
           const raw = swipeStart.value + event.translationX;
-          // Sur « Abonnements » (index 0) un glissé vers la droite ne mène
-          // nulle part, et sur « Pour toi » (index 1) c'est la gauche. Dans ce
-          // sens-là, butée élastique : le geste est vu, il n'aboutit pas.
-          const outward = tabIndex.value === 0 ? raw > 0 : raw < 0;
+          // Sur le premier onglet un glissé vers la droite ne mène nulle
+          // part, et sur le dernier c'est la gauche. Dans ce sens-là, butée
+          // élastique : le geste est vu, il n'aboutit pas. Un onglet du
+          // milieu n'a pas de bord : les deux sens restent libres.
+          const atStart = tabIndex.value <= 0;
+          const atEnd = tabIndex.value >= TAB_ORDER.length - 1;
+          const outward = (raw > 0 && atStart) || (raw < 0 && atEnd);
           swipe.value = outward ? rubberBand(raw, SWIPE_SPAN * 0.5, 0.55) : raw;
         })
         .onEnd((event) => {
           // Où le doigt envoyait le fil, pas où il l'a laissé : un petit coup
-          // sec bascule, une longue traînée molle repose.
+          // sec bascule, une longue traînée molle repose. Un geste ne fait
+          // jamais avancer de plus d'un onglet — la course (`SWIPE_SPAN`) est
+          // calibrée sur un seul écran, pas sur trois.
           const projected = swipe.value + projectDecay(event.velocityX);
           const commit = Math.abs(projected) > SWIPE_SPAN * SWIPE_COMMIT;
-          const target = projected < 0 ? 1 : 0;
+          const step = projected < 0 ? 1 : -1;
+          const target = clamp(tabIndex.value + step, 0, TAB_ORDER.length - 1);
 
           if (commit && target !== tabIndex.value) {
-            runOnJS(switchTab)(target === 1 ? 'forYou' : 'following');
+            runOnJS(switchTab)(TAB_ORDER[target]);
           }
           // Le fil revient toujours à sa place : le contenu du nouvel onglet
           // est servi depuis son cache et remplace l'ancien sous le doigt. Le
@@ -665,6 +713,116 @@ export default function TweetsScreen() {
     await fetchNeuralRankRecommendations(forceRefresh);
   };
 
+  /**
+   * Onglet Explorer : le mode `trending` du recommandeur Rust — 40 % score de
+   * base, 60 % vélocité d'engagement récente (voir `algorithm/trending.rs`
+   * côté service). C'est délibérément un mode DIFFÉRENT de `for_you`
+   * (personnalisé) et de `discover` (qui déprécie les comptes déjà suivis) :
+   * une grille de découverte doit montrer ce qui prend de l'ampleur, suivi ou
+   * non, pas repartir du graphe social de la personne qui regarde.
+   *
+   * Les réponses de la grille sont filtrées des réponses (`tweet_type ===
+   * 'reply'`) : une réponse sortie de son fil de discussion, sans le tweet
+   * auquel elle répond au-dessus, ne veut rien dire dans une carte de grille.
+   */
+  /**
+   * @param forceRefresh recalcule le classement côté serveur (voir plus bas)
+   * @param appendOnly   garde la liste affichée et n'y ajoute que l'inédit
+   *
+   * `appendOnly` sert le « nouveau tirage » de fin de grille : on veut un
+   * classement recalculé (donc `forceRefresh`) SANS remplacer ce qui est à
+   * l'écran, sinon le geste renverrait l'utilisateur en haut d'une grille
+   * repartie de zéro. Le mélange pondéré côté Rust fait remonter des tweets
+   * restés sous la coupure au tirage précédent ; `mergeUniqueTweets` écarte
+   * ceux qui étaient déjà là, donc rien n'est jamais montré deux fois.
+   */
+  const fetchExplore = async (forceRefresh: boolean = true, appendOnly: boolean = false) => {
+    if (forceRefresh) exploreGenerationRef.current += 1;
+    const generation = exploreGenerationRef.current;
+
+    try {
+      if (forceRefresh && !appendOnly) setExploreLoading(true);
+      else setExploreLoadingMore(true);
+      setExploreError(null);
+
+      const currentOffset = forceRefresh ? 0 : exploreOffset;
+      const response = await neuralRankService.getRecommendations({
+        mode: 'trending',
+        limit: 20,
+        offset: currentOffset,
+        // Explorer n'a pas le droit de resservir un classement figé : un
+        // rafraîchissement doit vraiment changer le feed, pas repartir sur le
+        // même cache Rust (jusqu'à 60 s pour `trending`). Pagination
+        // (`forceRefresh` faux) continue elle sur le classement déjà en
+        // cache, pour ne pas décaler l'ordre pendant un défilement en cours.
+        forceRefresh,
+        // Explorer est la seule surface qui doit être NEUVE à chaque visite :
+        // rouvrir la page sur ce qu'on a déjà lu hier est ce qui fait qu'on ne
+        // la rouvre plus. Le fil et « Pour toi » ne le demandent pas — eux
+        // assument de resservir un tweet manqué.
+        excludeSeen: true,
+      });
+
+      if (generation !== exploreGenerationRef.current) return;
+
+      if (response?.success && Array.isArray(response.data?.recommendations)) {
+        // ── Ce qui a le droit d'entrer dans la grille ────────────────────────
+        // `t.content` non vide était exigé : ça jetait silencieusement TOUT
+        // retweet pur (son texte est sur l'original, la ligne du retweet a
+        // `content: ''`) et tout tweet publié en image seule. L'API elle-même
+        // les accepte — son propre contrôle (`hasRenderableContent`) demande du
+        // texte OU du média, sur le tweet ou son original. Sur une page dont le
+        // problème est la taille du vivier, c'était une coupe nette pour rien.
+        //
+        // Les réponses restent écartées (une réponse sortie de son fil ne veut
+        // rien dire dans une grille), mais sur `parent_tweet_id` et non sur
+        // `tweet_type` : en base, des tweets typés `'tweet'` ont un parent
+        // renseigné — voir le commentaire de `RawTweet.parent_tweet_id` côté
+        // Rust. `tweet_type` en laissait donc passer.
+        const tweets = dedupeTweets(
+          response.data.recommendations.filter((t: any) => {
+            if (!t || !t.id || !t.author?.id) return false;
+            if (t.parent_tweet_id || t.tweet_type === 'reply') return false;
+            const source = t.is_retweet && t.originalTweet ? t.originalTweet : t;
+            const hasText = !!String(source?.content || '').trim();
+            const hasMedia = Array.isArray(source?.media_urls) && source.media_urls.length > 0;
+            return hasText || hasMedia;
+          })
+        );
+
+        let added = tweets.length;
+        setExploreTweets((prev) => {
+          if (forceRefresh && !appendOnly) return tweets;
+          const merged = mergeUniqueTweets(prev, tweets);
+          added = merged.length - prev.length;
+          return merged;
+        });
+
+        if (response.data.pagination) {
+          // Un tirage qui n'apporte rien d'inédit signifie que le vivier est
+          // réellement épuisé — c'est là, et seulement là, que la grille cesse
+          // de proposer une suite.
+          setExploreHasMore(appendOnly ? added > 0 : response.data.pagination.hasMore);
+          setExploreOffset(currentOffset + tweets.length);
+        }
+        if (appendOnly) exploreExhaustedRef.current = added === 0;
+        else if (forceRefresh) exploreExhaustedRef.current = false;
+
+        if (forceRefresh && !appendOnly && tweets.length === 0) {
+          setExploreError('Rien à explorer pour l’instant');
+        }
+      } else if (forceRefresh && !appendOnly) {
+        setExploreError(response?.error || 'Erreur de chargement');
+      }
+    } catch {
+      if (forceRefresh && !appendOnly) setExploreError('Erreur de connexion');
+    } finally {
+      setExploreLoading(false);
+      setExploreRefreshing(false);
+      setExploreLoadingMore(false);
+    }
+  };
+
   const sendRecommendationFeedback = async (tweetId: string, action: 'like' | 'dislike' | 'skip' | 'share' | 'bookmark') => {
     try { await apiService.sendRecommendationFeedback({ tweetId, action, algorithm: currentAlgorithm, sessionId: `session_${Date.now()}` }); } catch { }
   };
@@ -706,10 +864,17 @@ export default function TweetsScreen() {
 
   const onRefresh = useCallback(async () => {
     trackCustomAction('refresh', 'pull_to_refresh', 'user_action', { tab: activeTab, algorithm: currentAlgorithm, tweets_before_refresh: tweetsRef.current.length });
+    setStoriesRefresh((value) => value + 1);
+
+    if (activeTab === 'explore') {
+      setExploreRefreshing(true);
+      await fetchExplore(true);
+      return;
+    }
+
     setRefreshing(true);
     setError(null);
     servedFromCacheRef.current = false;
-    setStoriesRefresh((value) => value + 1);
     try {
       if (activeTab === 'forYou') await fetchRecommendations(undefined, true);
       else {
@@ -733,13 +898,26 @@ export default function TweetsScreen() {
    * deux onglets partageaient un unique tableau, ce qui affichait le contenu du
    * précédent après le basculement.
    */
-  const handleTabChange = useCallback(async (newTab: 'following' | 'forYou') => {
+  const handleTabChange = useCallback(async (newTab: FeedTab) => {
     if (newTab === activeTab) return;
 
     trackCustomAction('tab_change', newTab, 'navigation', { previous_tab: activeTab, new_tab: newTab, algorithm: currentAlgorithm, tweets_loaded: tweetsRef.current.length });
 
-    // Mémoriser l'onglet quitté avant de basculer.
-    tabCacheRef.current[activeTab] = tweetsRef.current;
+    // L'onglet Explorer a son propre état (voir sa déclaration) : il ne
+    // touche jamais `tabCacheRef`/`tweets`, qui restent aux deux onglets du
+    // fil linéaire.
+    if (newTab === 'explore') {
+      setActiveTab(newTab);
+      animateTabSwitch(newTab);
+      if (exploreTweets.length === 0) await fetchExplore(true);
+      return;
+    }
+
+    // Mémoriser l'onglet quitté avant de basculer — seulement s'il fait
+    // partie du fil linéaire, cible réelle de ce cache.
+    if (activeTab !== 'explore') {
+      tabCacheRef.current[activeTab] = tweetsRef.current;
+    }
 
     const cached = tabCacheRef.current[newTab];
     setActiveTab(newTab);
@@ -754,7 +932,7 @@ export default function TweetsScreen() {
       if (newTab === 'forYou') await fetchRecommendations(undefined, true);
       else await fetchTweets(true);
     }
-  }, [activeTab, currentAlgorithm, trackCustomAction, animateTabSwitch]);
+  }, [activeTab, currentAlgorithm, trackCustomAction, animateTabSwitch, exploreTweets.length]);
 
   // Rend la dernière version accessible au geste construit plus haut.
   handleTabChangeRef.current = handleTabChange;
@@ -1306,18 +1484,26 @@ export default function TweetsScreen() {
       // impressions à composer avec des entrées qui ne sont pas des tweets.
       if (askAtId !== item.id) return row;
 
+      // Le tweet d'abord, la question juste en dessous : sinon on lit « ce
+      // genre de tweet, ça te parle ? » avant d'avoir vu le tweet concerné, et
+      // la question devient méconnaissable — rien à l'écran ne dit de quoi
+      // elle parle.
+      const author = (item as any)?.originalTweet?.author || (item as any)?.author;
       return (
         <>
+          {row}
           <AlgoCheckCard
             onAnswer={(liked) => {
-              // Une réponse explicite est un signal bien plus fort qu'un like
-              // passif — mais l'API n'accepte que le vocabulaire d'interaction
-              // existant (`InteractionType` côté Rust est une énumération
-              // fermée). On envoie donc `like` / `skip`, qui portent déjà le
-              // bon signe pour l'apprentissage.
+              // Même vocabulaire que la question posée dans Explorer
+              // (`handleExploreInterest`) : `interested`/`not_interested`, pas
+              // `like`/`skip`. Un « pas trop » ici doit mettre l'auteur en
+              // sourdine côté moteur comme n'importe quel refus explicite —
+              // sans `authorId`, il ne portait que sur ce tweet et restait
+              // sans effet perceptible dans le fil.
               neuralRankService.trackInteraction({
                 tweetId: item.id,
-                interactionType: liked ? 'like' : 'skip',
+                interactionType: liked ? 'interested' : 'not_interested',
+                authorId: author?.id ? String(author.id) : undefined,
               });
               trackCustomAction('algo_check_answer', item.id, 'tweet', {
                 liked,
@@ -1332,7 +1518,6 @@ export default function TweetsScreen() {
               closeAlgoCheck(index, item.id);
             }}
           />
-          {row}
         </>
       );
     },
@@ -1426,6 +1611,223 @@ export default function TweetsScreen() {
 
   const isInitialLoading = (loading || recommendationsLoading) && visibleTweets.length === 0;
 
+  /**
+   * Bas de la grille — ou de la lecture plein écran.
+   *
+   * Quand la pagination est épuisée, on ne s'arrête pas : on demande un tirage
+   * neuf et on n'ajoute que l'inédit. C'est ce qui fait que la lecture continue
+   * ne tombe jamais sur une porte fermée. Le drapeau `exploreExhaustedRef`
+   * arrête ce mécanisme dès qu'un tirage n'apporte plus rien — sans lui, rester
+   * en bas de page relancerait une requête sans fin.
+   */
+  const onExploreEndReached = useCallback(() => {
+    if (exploreLoadingMore || exploreLoading) return;
+    if (exploreHasMore) { fetchExplore(false); return; }
+    if (exploreExhaustedRef.current) return;
+    fetchExplore(true, true);
+  }, [exploreHasMore, exploreLoadingMore, exploreLoading, exploreOffset]);
+
+  const onExploreRetry = useCallback(() => {
+    exploreExhaustedRef.current = false;
+    fetchExplore(true);
+  }, []);
+
+  /** « Nouveau tirage » de fin de grille — geste explicite, donc jamais bloqué. */
+  const onExploreDrawMore = useCallback(() => {
+    feedback.tap();
+    exploreExhaustedRef.current = false;
+    fetchExplore(true, true);
+  }, []);
+
+  /**
+   * Appui sur une carte de la grille : ouvre la lecture plein écran, pas la
+   * page de détail.
+   *
+   * `TweetDetailScreen` reste accessible depuis la lecture (« Voir le fil »),
+   * mais n'est plus le passage obligé : y envoyer chaque appui terminait la
+   * consultation au premier tweet — voir l'en-tête de `ExploreImmersive`.
+   */
+  const handleOpenExploreTweet = useCallback((tweet: Tweet, from: CardRect | null) => {
+    const index = exploreTweets.findIndex(t => t.id === tweet.id);
+    trackCustomAction('open_tweet', tweet.id, 'user_action', { tab: 'explore', source: 'explore_grid' });
+    setImmersiveOrigin(from);
+    setImmersiveIndex(Math.max(0, index));
+  }, [exploreTweets, trackCustomAction]);
+
+  const handleCloseImmersive = useCallback(() => setImmersiveIndex(null), []);
+
+  /**
+   * Ouvre le fil d'un tweet depuis la lecture plein écran.
+   *
+   * La `<Modal>` doit se fermer AVANT la navigation : elle est une fenêtre
+   * native au-dessus de la pile, l'écran poussé s'ouvrirait derrière elle.
+   */
+  const handleOpenExploreThread = useCallback((tweet: Tweet) => {
+    setImmersiveIndex(null);
+    (navigation as any).navigate('TweetDetail', { tweetId: tweet.id });
+  }, [navigation]);
+
+  const handleOpenExploreProfile = useCallback((tweet: Tweet) => {
+    const author = (tweet as any)?.originalTweet?.author || tweet.author;
+    if (!author?.id) return;
+    setImmersiveIndex(null);
+    (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
+  }, [navigation]);
+
+  /**
+   * Like d'un tweet de la surface Explorer.
+   *
+   * Handler distinct de `handleLike` : l'état de la grille (`exploreTweets`)
+   * est volontairement séparé de `tweets`, donc la mise à jour optimiste doit
+   * viser cette liste-là et pas l'autre.
+   *
+   * `next` est l'état VOULU, pas une bascule : `apiService.likeTweet` bascule
+   * côté serveur, donc un appel émis alors qu'on est déjà dans l'état demandé
+   * ferait exactement l'inverse. Le double-tap (grille et lecture) ne demande
+   * jamais autre chose que `true`, et n'enlève donc jamais un like.
+   */
+  const handleExploreLike = useCallback(async (tweet: Tweet, next: boolean) => {
+    const tweetId = tweet.id;
+    if (likeLockRef.current[tweetId]) return;
+    if (!!tweet.user_interaction?.is_liked === next) return;
+    likeLockRef.current[tweetId] = true;
+
+    // Incrément/décrément relatif plutôt qu'un instantané restauré : la carte
+    // peut avoir été rechargée entre-temps par une pagination.
+    const applyLiked = (liked: boolean) =>
+      setExploreTweets(prev => prev.map(t => t.id !== tweetId ? t : {
+        ...t,
+        stats: { ...t.stats, likes: Math.max(0, (t.stats?.likes || 0) + (liked ? 1 : -1)) },
+        user_interaction: { ...t.user_interaction, is_liked: liked },
+      }));
+
+    applyLiked(next);
+
+    // Hors ligne : même règle que le fil linéaire — on met en file et on garde
+    // l'état optimiste plutôt que d'annuler sous les yeux de l'utilisateur.
+    if (offlineEnabled && !online) {
+      await queueAction({ type: 'like', tweetId, value: next });
+      likeLockRef.current[tweetId] = false;
+      return;
+    }
+
+    try {
+      const response = await apiService.likeTweet(tweetId);
+      if (!response.success) {
+        applyLiked(!next);
+      } else {
+        trackTweetInteraction(tweetId, next ? 'like' : 'unlike', {
+          tab: 'explore',
+          previous_likes: tweet.stats?.likes || 0,
+          algorithm: 'trending',
+        });
+        neuralRankService.trackInteraction({ tweetId, interactionType: next ? 'like' : 'unlike' });
+      }
+    } catch {
+      applyLiked(!next);
+    } finally { likeLockRef.current[tweetId] = false; }
+  }, [offlineEnabled, online, queueAction, trackTweetInteraction]);
+
+  /** Double-tap de la grille : ne pose un like, jamais ne l'enlève. */
+  const handleGridDoubleTapLike = useCallback(
+    (tweet: Tweet) => handleExploreLike(tweet, true),
+    [handleExploreLike]
+  );
+
+  /** Repartage depuis la lecture plein écran — même optimisme que le like. */
+  const handleExploreRetweet = useCallback(async (tweet: Tweet) => {
+    const tweetId = tweet.id;
+    if (retweetLockRef.current[tweetId]) return;
+    retweetLockRef.current[tweetId] = true;
+
+    const wasRetweeted = !!tweet.user_interaction?.is_retweeted;
+    const applyRetweeted = (value: boolean) =>
+      setExploreTweets(prev => prev.map(t => t.id !== tweetId ? t : {
+        ...t,
+        stats: { ...t.stats, retweets: Math.max(0, (t.stats?.retweets || 0) + (value ? 1 : -1)) },
+        user_interaction: { ...t.user_interaction, is_retweeted: value },
+      }));
+
+    applyRetweeted(!wasRetweeted);
+
+    try {
+      const response = await apiService.retweet(tweetId);
+      if (!response.success) applyRetweeted(wasRetweeted);
+      else neuralRankService.trackInteraction({
+        tweetId,
+        interactionType: wasRetweeted ? 'unretweet' : 'retweet',
+      });
+    } catch {
+      applyRetweeted(wasRetweeted);
+    } finally { retweetLockRef.current[tweetId] = false; }
+  }, []);
+
+  /** Suivre l'auteur sans quitter la lecture — l'abonnement se prend au moment de l'envie. */
+  const handleExploreFollow = useCallback(async (tweet: Tweet) => {
+    const author = (tweet as any)?.originalTweet?.author || tweet.author;
+    const authorId = author?.id ? String(author.id) : '';
+    if (!authorId || followingIds.has(authorId)) return;
+
+    setFollowingIds(prev => new Set(prev).add(authorId));
+    feedback.select();
+    try {
+      const response = await apiService.followUser(authorId);
+      if (!response.success) {
+        setFollowingIds(prev => { const copy = new Set(prev); copy.delete(authorId); return copy; });
+      }
+    } catch {
+      setFollowingIds(prev => { const copy = new Set(prev); copy.delete(authorId); return copy; });
+    }
+  }, [followingIds]);
+
+  /**
+   * Temps réellement passé sur un tweet en lecture plein écran.
+   *
+   * C'est le signal de goût le plus fiable dont dispose le classement, et le
+   * seul que cette surface peut produire : la grille ne sait rien de ce qui a
+   * retenu l'attention, un like n'arrive que sur une minorité de tweets. Toute
+   * la chaîne existait déjà (`dwellMs` accepté par le service mobile, relayé
+   * par la route Node, pondéré par le handler Rust) — personne ne l'alimentait
+   * depuis Explorer.
+   */
+  /**
+   * Réponse à la question posée dans la lecture (« ça t'intéresse ? »).
+   *
+   * `authorId` est joint impérativement : sans lui, un refus ne porte que sur ce
+   * tweet-là et reste invisible dans le fil — c'est ce qui rend le bouton
+   * « pas intéressé » de YouTube inefficace (11 % des recommandations non
+   * voulues évitées, contre 43 % pour un refus au niveau du compte).
+   */
+  const handleExploreInterest = useCallback((tweet: Tweet, interested: boolean) => {
+    const author = (tweet as any)?.originalTweet?.author || tweet.author;
+    neuralRankService.trackInteraction({
+      tweetId: tweet.id,
+      interactionType: interested ? 'interested' : 'not_interested',
+      authorId: author?.id ? String(author.id) : undefined,
+    });
+    // Un « non » doit se voir tout de suite : le tweet quitte la grille au
+    // retour, au lieu d'y être encore après qu'on a dit ne pas en vouloir.
+    if (!interested) {
+      setExploreTweets(prev => prev.filter(t => t.id !== tweet.id));
+    }
+  }, []);
+
+  const handleExploreDwell = useCallback((tweet: Tweet, dwellMs: number, videoDurationMs?: number) => {
+    // Le temps seul ne dit rien : il faut savoir ce qu'il fallait de temps pour
+    // consommer CE contenu. Un pavé survolé dure plus longtemps qu'un tweet
+    // court adoré — sans ces trois champs, le moteur apprend juste que les
+    // contenus longs « marchent mieux ». Voir `algorithm/dwell.rs`.
+    const media = splitTweetMedia(tweet);
+    neuralRankService.trackInteraction({
+      tweetId: tweet.id,
+      interactionType: 'view',
+      dwellMs,
+      dwellMedia: media.videoUrl ? 'video' : media.hasVisual ? 'image' : 'text',
+      contentChars: displayContentOf(tweet).length,
+      videoDurationMs,
+    });
+  }, []);
+
   return (
     <ScreenBackground>
     {/* `SafeAreaView` vient de `react-native-safe-area-context`, PAS du coeur
@@ -1449,6 +1851,30 @@ export default function TweetsScreen() {
         targetId={reportTarget?.id || ''}
         targetType="tweet"
         targetLabel={reportTarget?.label}
+      />
+
+      {/* Lecture plein écran de la découverte. Montée ici, dans l'écran qui
+          porte déjà l'état d'Explorer : la grille et la lecture partagent la
+          même liste, donc un like posé en lecture est déjà à jour dans la
+          grille au retour, et la pagination faite en lecture profite à la
+          grille (on ressort sur une grille plus fournie qu'à l'entrée). */}
+      <ExploreImmersive
+        visible={immersiveIndex !== null}
+        tweets={exploreTweets}
+        initialIndex={immersiveIndex ?? 0}
+        originRect={immersiveOrigin}
+        loadingMore={exploreLoadingMore}
+        onClose={handleCloseImmersive}
+        onEndReached={onExploreEndReached}
+        onLike={handleExploreLike}
+        onRetweet={handleExploreRetweet}
+        onOpenThread={handleOpenExploreThread}
+        onOpenProfile={handleOpenExploreProfile}
+        onFollow={handleExploreFollow}
+        onInterest={handleExploreInterest}
+        onDwell={handleExploreDwell}
+        followedIds={followingIds}
+        currentUserId={user?.id}
       />
 
       {/* ── Header ── */}
@@ -1488,7 +1914,7 @@ export default function TweetsScreen() {
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
             <Animated.View style={[S.tabIndicator, tabIndicatorStyle]} />
           </View>
-          {(['following', 'forYou'] as const).map((tab, index) => (
+          {TAB_ORDER.map((tab, index) => (
             <TouchableOpacity
               key={tab}
               style={[S.tabItem, activeTab === tab && S.tabItemActive]}
@@ -1497,7 +1923,7 @@ export default function TweetsScreen() {
               activeOpacity={0.85}
             >
               <Text style={[S.tabLabel, activeTab === tab && S.tabLabelActive]}>
-                {tab === 'following' ? 'Abonnements' : 'Pour toi'}
+                {tab === 'following' ? 'Abonnements' : tab === 'forYou' ? 'Pour toi' : 'Explorer'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -1539,6 +1965,22 @@ export default function TweetsScreen() {
           défilement vertical reste natif et prioritaire (`failOffsetY`). */}
       <GestureDetector gesture={feedSwipe}>
       <View style={S.feedWrap}>
+      {activeTab === 'explore' ? (
+        <ExploreGrid
+          tweets={exploreTweets}
+          loading={exploreLoading}
+          loadingMore={exploreLoadingMore}
+          refreshing={exploreRefreshing}
+          hasMore={exploreHasMore}
+          error={exploreError}
+          onRefresh={onRefresh}
+          onEndReached={onExploreEndReached}
+          onOpenTweet={handleOpenExploreTweet}
+          onLikeTweet={handleGridDoubleTapLike}
+          onRetry={onExploreRetry}
+          onDrawMore={onExploreDrawMore}
+        />
+      ) : (
       <FlatList
         data={visibleTweets}
         renderItem={renderTweet}
@@ -1597,6 +2039,7 @@ export default function TweetsScreen() {
           </>
         }
       />
+      )}
       </View>
       </GestureDetector>
 

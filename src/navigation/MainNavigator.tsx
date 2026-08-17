@@ -109,6 +109,11 @@ import UserConnectionsScreen from '../screens/UserConnectionsScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import ContestScreen from '../screens/ContestScreen';
 import CreateContestScreen from '../screens/CreateContestScreen';
+import EventPassAdminScreen from '../screens/EventPassAdminScreen';
+import EventPassScanScreen from '../screens/EventPassScanScreen';
+import MyPassesScreen from '../screens/MyPassesScreen';
+import AccountStatusScreen from '../screens/AccountStatusScreen';
+import ShadowbanAdminScreen from '../screens/ShadowbanAdminScreen';
 import { navigationRef } from './NavigationService';
 import { colors } from '../theme';
 
@@ -240,6 +245,18 @@ export type MainStackParamList = {
   UsernameMarket: undefined;
   /** `content` : texte actuel, pour ne pas rouvrir l'éditeur sur un champ vide. */
   EditTweet: { tweetId: string; content?: string };
+
+  // Places d'invitation
+  EventPassAdmin: undefined;
+  /**
+   * Contrôle à l'entrée. Sans `eventSlug`, toute place valable est acceptée —
+   * c'est le cas d'un modérateur qui dépanne une porte sans savoir laquelle.
+   * Avec, une place authentique émise pour une AUTRE soirée est refusée.
+   */
+  EventPassScan: { eventSlug?: string; eventName?: string } | undefined;
+  MyPasses: undefined;
+  AccountStatus: undefined;
+  ShadowbanAdmin: undefined;
 };
 
 const MainStack = createNativeStackNavigator<MainStackParamList>();
@@ -1045,6 +1062,40 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="EditTweet"
         component={EditTweetScreen}
+        options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
+      />
+
+      {/* Places d'invitation — emission cote organisation, controle a la porte,
+          et les invitations recues cote invite. */}
+      <MainStack.Screen
+        name="EventPassAdmin"
+        component={EventPassAdminScreen}
+        options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
+      />
+
+      {/* Meme raison que `RecordVideo` : la camera doit occuper tout le cadre,
+          alors qu'une feuille modale laisse voir l'ecran precedent derriere. */}
+      <MainStack.Screen
+        name="EventPassScan"
+        component={EventPassScanScreen}
+        options={{ presentation: 'card', headerShown: false }}
+      />
+
+      <MainStack.Screen
+        name="MyPasses"
+        component={MyPassesScreen}
+        options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
+      />
+
+      <MainStack.Screen
+        name="AccountStatus"
+        component={AccountStatusScreen}
+        options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
+      />
+
+      <MainStack.Screen
+        name="ShadowbanAdmin"
+        component={ShadowbanAdminScreen}
         options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
       />
 

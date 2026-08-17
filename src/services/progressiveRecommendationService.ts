@@ -250,7 +250,9 @@ class ProgressiveRecommendationService {
         `${this.baseUrl}/track-interaction`,
         {
           method: 'POST',
-          body: JSON.stringify(request),
+          // `apiService.request` stringifie déjà le corps — le refaire ici
+          // double l'encodage et le serveur reçoit une chaîne, pas un objet.
+          body: request,
           requiresAuth: true
         }
       );

@@ -167,8 +167,22 @@ export default function ModerationScreen() {
     if ((canBanUsers || canSuspendUsers) && !isClasseur) {
       list.push({ action: 'users', title: 'Gestion utilisateurs', subtitle: 'Bannir, suspendre, verifier', icon: 'people-outline', group: 'Moderation', tone: 'accent', available: true });
     }
+    // Distinct de « Gestion utilisateurs » : ici on agit sur la DISTRIBUTION
+    // algorithmique (avertissements, niveaux de restriction), pas sur l'accès
+    // au compte. Meme porte serveur que les autres actions d'administration
+    // (`requireAdminRole` sur `/api/admin/shadowban/*`).
+    if ((isAdmin || isSuperAdmin) && !isClasseur) {
+      list.push({ action: 'shadowban', title: 'Avertissements', subtitle: 'Registre de distribution, par compte', icon: 'eye-off-outline', group: 'Moderation', tone: 'danger', available: true });
+    }
     if ((isAdmin || isSuperAdmin) && !isClasseur) {
       list.push({ action: 'unban-tickets', title: 'Tickets de deban', subtitle: 'Reviser les demandes de debannissement', icon: 'mail-unread-outline', group: 'Moderation', tone: 'accent', available: true });
+    }
+
+    // Le controle a l'entree suit la porte du SERVEUR, qui l'ouvre aux
+    // moderateurs et pas seulement aux administrateurs : l'equipe qui tient
+    // l'entree n'est pas celle qui emet les places.
+    if (isModerator || isAdmin || isSuperAdmin) {
+      list.push({ action: 'event-pass-scan', title: 'Controler une entree', subtitle: 'Scanner les places a la porte d\'un evenement', icon: 'scan-outline', group: 'Moderation', tone: 'cyan', available: true });
     }
 
     if (canManageModerators) {
@@ -189,6 +203,7 @@ export default function ModerationScreen() {
     if (isAdmin || isSuperAdmin) {
       list.push({ action: 'events', title: 'Evenements', subtitle: 'Themes Halloween, Noel, etc.', icon: 'calendar-outline', group: 'Traçabilite', tone: 'neutral', available: true });
       list.push({ action: 'functional-events', title: 'Evenements fonctionnels', subtitle: 'Double XP, messages illimites, etc.', icon: 'flash-outline', group: 'Traçabilite', tone: 'neutral', available: true });
+      list.push({ action: 'event-passes', title: 'Places d\'invitation', subtitle: 'Emettre des places, et suivre les entrees', icon: 'ticket-outline', group: 'Traçabilite', tone: 'neutral', available: true });
       list.push({ action: 'forge-review', title: 'File de la Forge', subtitle: 'Idees proposees par les utilisateurs, et leur recompense', icon: 'hammer-outline', group: 'Traçabilite', tone: 'neutral', available: true });
       list.push({ action: 'feature-flags', title: 'Fonctionnalites en test', subtitle: 'Ouvrir une nouveaute a un groupe, puis a tout le monde', icon: 'flag-outline', group: 'Traçabilite', tone: 'neutral', available: true });
     }
@@ -200,7 +215,7 @@ export default function ModerationScreen() {
   }, [
     canViewReports, canViewAnalytics, canBanUsers, canSuspendUsers,
     canDeleteTweets, canManageModerators, isClasseur, canModerateContent,
-    canManageEconomy, isAdmin, isSuperAdmin,
+    canManageEconomy, isAdmin, isSuperAdmin, isModerator,
   ]);
 
   const loadRealStats = useCallback(async () => {
@@ -284,6 +299,12 @@ export default function ModerationScreen() {
           description: 'Vous n\'avez pas la permission de voir les analyses',
         });
         break;
+      case 'shadowban':
+        if (isAdmin || isSuperAdmin) (navigation as any).navigate('ShadowbanAdmin');
+        else toast.error('Permission refusee', {
+          description: 'Reserve aux administrateurs',
+        });
+        break;
       case 'moderators':
         if (canManageModerators) toast.info('Gestion des moderateurs', {
           description: 'Fonctionnalite en cours de developpement...',
@@ -302,6 +323,25 @@ export default function ModerationScreen() {
         if (isAdmin || isSuperAdmin) (navigation as any).navigate('FunctionalEventManagement');
         else toast.error('Permission refusee', {
           description: 'Vous devez etre administrateur pour gerer les evenements fonctionnels',
+        });
+        break;
+      case 'event-pass-scan':
+        // Sans slug : le poste accepte alors toute place valable, quel que soit
+        // l'evenement. C'est ce qu'il faut a un moderateur qui depanne une
+        // porte sans savoir laquelle. L'ecran d'emission, lui, ouvre le
+        // scanner deja cadre sur son evenement.
+        if (isModerator || isAdmin || isSuperAdmin) (navigation as any).navigate('EventPassScan');
+        else toast.error('Permission refusee', {
+          description: 'Reserve a l\'equipe de moderation',
+        });
+        break;
+      case 'event-passes':
+        // L'emission est reservee aux administrateurs cote serveur ; le
+        // controle a l'entree, lui, s'ouvre aussi aux moderateurs. C'est
+        // l'ecran d'emission qui est atteint ici, d'ou la meme porte.
+        if (isAdmin || isSuperAdmin) (navigation as any).navigate('EventPassAdmin');
+        else toast.error('Permission refusee', {
+          description: 'Reserve aux administrateurs',
         });
         break;
       case 'forge-review':
@@ -339,7 +379,7 @@ export default function ModerationScreen() {
       default:
         toast.info(`Fonctionnalite "${title}" en cours de developpement`);
     }
-  }, [navigation, canDeleteTweets, canModerateContent, canViewReports, canBanUsers, canSuspendUsers, canViewAnalytics, canManageModerators, isClasseur, canManageEconomy, isAdmin, isSuperAdmin]);
+  }, [navigation, canDeleteTweets, canModerateContent, canViewReports, canBanUsers, canSuspendUsers, canViewAnalytics, canManageModerators, isClasseur, canManageEconomy, isAdmin, isSuperAdmin, isModerator]);
 
   const roleLabel = isSuperAdmin ? 'SUPER ADMIN' : isAdmin ? 'ADMINISTRATEUR' : isEconomyGuardian ? 'GARDIEN ECO' : isModerator ? 'MODERATEUR' : 'UTILISATEUR';
   const roleTone: Tone = isSuperAdmin ? 'danger' : isAdmin ? 'accent' : isEconomyGuardian ? 'gold' : 'cyan';
