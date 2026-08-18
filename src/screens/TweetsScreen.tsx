@@ -61,6 +61,7 @@ import { useEventStyles } from '../hooks/useEventStyles';
 import EventStrip from '../components/events/EventStrip';
 import ReportSheet from '../components/ReportSheet';
 import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
+import PromotedAccountCard from '../components/feed/PromotedAccountCard';
 import TweetSkeleton from '../components/feed/TweetSkeleton';
 import ExploreGrid, { type CardRect } from '../components/feed/ExploreGrid';
 import ExploreImmersive from '../components/feed/ExploreImmersive';
@@ -577,7 +578,12 @@ export default function TweetsScreen() {
       if (!id) return null;
       const isRetweet = tweetData.is_retweet || tweetData.tweet_type === 'retweet' || rec.is_retweet;
       const isQuote = tweetData.is_quote || tweetData.tweet_type === 'quote' || rec.is_quote;
-      if (!isRetweet && !isQuote && (!content || typeof content !== 'string' || content.trim().length === 0)) return null;
+      // Un COMPTE promu n'est pas un tweet : il n'a ni contenu propre ni
+      // engagement, seulement un profil à montrer. Le test « pas de contenu =
+      // pas une carte » le jetterait avant même d'arriver à la liste.
+      const promotedAccount = tweetData.promoted_account || rec.promoted_account || null;
+      if (!promotedAccount && !isRetweet && !isQuote
+          && (!content || typeof content !== 'string' || content.trim().length === 0)) return null;
       if (!author || !author.id) return null;
       return {
         id: String(id), content: String(content).trim(),
@@ -604,6 +610,7 @@ export default function TweetsScreen() {
         ...(rec.score !== undefined && { _recommendation_score: Number(rec.score), _recommendation_final_score: Number(rec.finalScore || rec.score), _recommendation_confidence: Number(rec.confidence || 0), _recommendation_algorithm: rec.algorithm || currentAlgorithm }),
         is_ad: Boolean(tweetData.is_ad || rec.is_ad || false),
         ad_data: tweetData.ad_data || rec.ad_data,
+        promoted_account: promotedAccount,
         parent_tweet_id: tweetData.parent_tweet_id || rec.parent_tweet_id || null,
         originalTweet: tweetData.originalTweet || rec.originalTweet || null,
         // « Traduction (bêta) » : cette normalisation recopie les champs un à
@@ -1465,6 +1472,24 @@ export default function TweetsScreen() {
     ({ item, index }: { item: Tweet; index: number }) => {
       const next = visibleTweets[index + 1];
       const prev = visibleTweets[index - 1];
+      // Un compte promu n'a rien d'un tweet : pas de like, pas de réponse,
+      // rien à ouvrir en détail. Le passer à `TweetRow` afficherait une carte
+      // de tweet vide avec une bio à la place du texte.
+      const promoted = (item as any).promoted_account;
+      if (promoted) {
+        return (
+          <PromotedAccountCard
+            account={promoted}
+            adId={(item as any).ad_data?.id}
+            onOpen={() => {
+              if ((item as any).ad_data?.id) {
+                apiService.post(`/api/ads/advertisements/${(item as any).ad_data.id}/click`).catch(() => {});
+              }
+              (navigation as any).navigate('UserProfile', { userId: promoted.id, username: promoted.username });
+            }}
+          />
+        );
+      }
       const row = (
         <TweetRow
           tweet={item}
@@ -1521,7 +1546,7 @@ export default function TweetsScreen() {
         </>
       );
     },
-    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm]
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation]
   );
 
   const keyExtractor = useCallback((item: Tweet) => String(item.id), []);

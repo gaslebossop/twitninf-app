@@ -49,7 +49,10 @@ const C = {
 // ─── TYPES ─────────────────────────────────────────────────────
 interface TargetingCategory {
   category: string;
-  values: { value: string; user_count: number }[];
+  /** Libellé lisible du critère ; `category` est la clé technique du moteur. */
+  label?: string;
+  description?: string;
+  values: { value: string; label?: string; user_count: number }[];
 }
 interface SearchUser {
   id: string; username: string; full_name: string; avatar?: string; verified?: boolean;
@@ -59,8 +62,9 @@ interface SearchTweet {
   user?: { username: string; avatar?: string };
   stats?: { likes: number; retweets: number };
 }
-type RedirectTarget =
-  | { type: 'profile'; username: string; label: string; avatar?: string }
+/** Ce que la campagne met en avant : un compte, ou un tweet. */
+type PromoTarget =
+  | { type: 'profile'; userId: string; username: string; label: string; avatar?: string }
   | { type: 'tweet'; tweetId: string; label: string; username: string };
 
 // ─── FIELD COMPONENT ───────────────────────────────────────────
@@ -138,11 +142,10 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [availableTargeting, setAvailableTargeting] = useState<TargetingCategory[]>([]);
-  const [textContent, setTextContent] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [campaignName, setCampaignName] = useState('');
   const [maxViews, setMaxViews] = useState('');
   const [selectedGroups, setSelectedGroups] = useState<{ category: string; value: string }[]>([]);
-  const [redirectTarget, setRedirectTarget] = useState<RedirectTarget | null>(null);
+  const [promoTarget, setPromoTarget] = useState<PromoTarget | null>(null);
   const [activeTab, setActiveTab] = useState<'create' | 'stats'>('create');
   const [myAds, setMyAds] = useState<any[]>([]);
   const [walletBalance, setWalletBalance] = useState(0);
@@ -227,23 +230,23 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
   };
 
   const selectProfile = (u: SearchUser) => {
-    setRedirectTarget({ type: 'profile', username: u.username, label: `@${u.username}`, avatar: u.avatar });
+    setPromoTarget({ type: 'profile', userId: u.id, username: u.username, label: `@${u.username}`, avatar: u.avatar });
     closeSearch();
   };
   const selectTweet = (t: SearchTweet) => {
-    setRedirectTarget({ type: 'tweet', tweetId: t.id, label: t.content?.substring(0, 60) || `Tweet de @${t.user?.username}`, username: t.user?.username || '' });
+    setPromoTarget({ type: 'tweet', tweetId: t.id, label: t.content?.substring(0, 60) || `Tweet de @${t.user?.username}`, username: t.user?.username || '' });
     closeSearch();
   };
   const closeSearch = () => { setSearchModalVisible(false); setSearchQuery(''); setSearchUsers([]); setSearchTweets([]); };
 
   const submitAd = async () => {
-    // Le ciblage promeut désormais un tweet EXISTANT, pas un visuel créé à
-    // part : c'est ce qui permet à la publicité de passer par le même
-    // classement, les mêmes règles de visibilité et le même affichage que
-    // n'importe quel contenu. Il faut donc en désigner un.
-    if (!redirectTarget || redirectTarget.type !== 'tweet' || !redirectTarget.tweetId) {
-      toast.error('Tweet à promouvoir manquant', {
-        description: 'Choisis un de tes tweets à mettre en avant.',
+    // Une campagne met en avant quelque chose qui existe déjà sur la
+    // plateforme — un tweet OU un compte — plutôt qu'un visuel créé à part :
+    // c'est ce qui lui fait suivre le même classement, les mêmes règles de
+    // visibilité et le même affichage que n'importe quel contenu.
+    if (!promoTarget) {
+      toast.error('Rien à promouvoir', {
+        description: 'Choisis un tweet ou un compte à mettre en avant.',
       });
       return;
     }
@@ -260,9 +263,9 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
     }); return; }
     setSubmitting(true);
     try {
-      // Plus de `redirect_url` : la publicité EST le tweet promu, on y arrive
-      // en le touchant comme n'importe quel autre. Une redirection séparée
-      // n'avait de sens que du temps du visuel créé à part.
+      // Plus de `redirect_url` : la publicité EST le tweet ou le compte promu,
+      // on y arrive en la touchant. Une redirection séparée n'avait de sens
+      // que du temps du visuel créé à part.
       // Les segments choisis sont regroupés par critère : le moteur attend un
       // tableau par critère (`user_types`, `hours`, `follows_any_of`), pas une
       // liste plate de paires — voir `rust-recommender/src/ads/serving.rs`.
@@ -272,10 +275,13 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
       }
 
       const res = await api.post('/api/ads/targeted', {
-        tweet_id: redirectTarget?.tweetId,
+        target_type: promoTarget.type,
+        ...(promoTarget.type === 'tweet'
+          ? { tweet_id: promoTarget.tweetId }
+          : { target_user_id: promoTarget.userId }),
         // Le budget EST le nombre de vues achetées : 0,10 NF l'impression.
         budget: Number((views * 0.10).toFixed(2)),
-        title: textContent?.slice(0, 60) || 'Publicité',
+        title: campaignName.trim().slice(0, 60) || promoTarget.label.slice(0, 60) || 'Publicité',
         max_impressions_per_user: 3,
         targeting,
       });
@@ -283,10 +289,16 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
         // On bascule directement sur les stats — c'est là que l'utilisateur
         // voulait aller. Le toast ne fait que nommer ce qui vient de se passer.
         setActiveTab('stats'); fetchMyAds(); fetchWalletBalance();
-        setTextContent(''); setImageUrl(''); setMaxViews(''); setSelectedGroups([]); setRedirectTarget(null);
+        setCampaignName(''); setMaxViews(''); setSelectedGroups([]); setPromoTarget(null);
         toast.success('Campagne créée', { description: 'Ta publicité est maintenant active.' });
       } else toast.error(res.message || 'Erreur lors de la création.');
-    } catch { toast.error('Vérifiez votre connexion et réessayez.'); }
+    } catch (e: any) {
+      // Le serveur refuse pour des raisons que l'annonceur peut corriger
+      // (compte privé, tweet non diffusable, solde) : les taire derrière
+      // « vérifiez votre connexion » lui laissait un écran sans explication.
+      const msg = e?.response?.data?.message || e?.data?.message || e?.message;
+      toast.error(msg || 'Vérifiez votre connexion et réessayez.');
+    }
     finally { setSubmitting(false); }
   };
 
@@ -306,8 +318,8 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
           <View style={s.modalDrag} />
           <View style={s.modalHead}>
             <View>
-              <Text style={s.modalTitle}>Destination du clic</Text>
-              <Text style={s.modalSub}>Profil ou tweet vers lequel rediriger</Text>
+              <Text style={s.modalTitle}>Que promouvoir ?</Text>
+              <Text style={s.modalSub}>Un compte à faire découvrir, ou un tweet à mettre en avant</Text>
             </View>
             <TouchableOpacity style={s.modalCloseBtn} onPress={closeSearch}>
               <Ionicons name="close" size={20} color={C.t2} />
@@ -396,7 +408,7 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
               {!searchQuery.length && (
                 <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
                   <Ionicons name="link-outline" size={40} color={C.t3} />
-                  <Text style={{ color: C.t2, fontSize: 16, fontWeight: '700' }}>Choisissez une destination</Text>
+                  <Text style={{ color: C.t2, fontSize: 16, fontWeight: '700' }}>Choisissez une cible</Text>
                   <Text style={{ color: C.t3, fontSize: 13 }}>Tapez un nom ou un mot-clé</Text>
                 </View>
               )}
@@ -460,9 +472,31 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
           )}
 
           {/* Step 1 */}
-          <Text style={s.step}>1  Contenu</Text>
-          <Field label="Message publicitaire" value={textContent} onChangeText={setTextContent} placeholder="Que souhaitez-vous promouvoir ?" multiline icon="create-outline" />
-          <Field label="URL de l'image  (optionnel)" value={imageUrl} onChangeText={setImageUrl} placeholder="https://…" icon="image-outline" />
+          <Text style={s.step}>1  Ce que vous promouvez</Text>
+          <Text style={s.segDesc}>Un tweet à mettre en avant, ou un compte à faire découvrir. Le vôtre ou celui de quelqu'un d'autre.</Text>
+          {promoTarget ? (
+            <View style={s.redirectCard}>
+              <View style={[s.redirectIco, { backgroundColor: promoTarget.type === 'profile' ? C.accentDim : C.amberDim }]}>
+                <Ionicons name={promoTarget.type === 'profile' ? 'person-outline' : 'chatbubble-ellipses-outline'} size={20} color={promoTarget.type === 'profile' ? C.accent : C.amber} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.redirectKind}>{promoTarget.type === 'profile' ? 'Compte' : 'Tweet'}</Text>
+                <Text style={s.redirectLbl} numberOfLines={1}>{promoTarget.label}</Text>
+              </View>
+              <TouchableOpacity style={s.ghostBtn} onPress={() => setSearchModalVisible(true)}>
+                <Text style={s.ghostBtnTxt}>Changer</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.ghostBtn, s.ghostBtnDanger]} onPress={() => setPromoTarget(null)}>
+                <Ionicons name="trash-outline" size={15} color={C.red} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={s.redirectPicker} onPress={() => setSearchModalVisible(true)}>
+              <Ionicons name="search-outline" size={20} color={C.t3} />
+              <Text style={s.redirectPickerTxt}>Choisir un tweet ou un compte…</Text>
+              <Ionicons name="chevron-forward" size={18} color={C.t3} />
+            </TouchableOpacity>
+          )}
 
           {/* Step 2 */}
           <Text style={s.step}>2  Objectif de vues</Text>
@@ -478,30 +512,15 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
           />
 
           {/* Step 3 */}
-          <Text style={s.step}>3  Destination  <Text style={s.stepOpt}>(optionnel)</Text></Text>
-          {redirectTarget ? (
-            <View style={s.redirectCard}>
-              <View style={[s.redirectIco, { backgroundColor: redirectTarget.type === 'profile' ? C.accentDim : C.amberDim }]}>
-                <Ionicons name={redirectTarget.type === 'profile' ? 'person-outline' : 'chatbubble-ellipses-outline'} size={20} color={redirectTarget.type === 'profile' ? C.accent : C.amber} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.redirectKind}>{redirectTarget.type === 'profile' ? 'Profil' : 'Tweet'}</Text>
-                <Text style={s.redirectLbl} numberOfLines={1}>{redirectTarget.label}</Text>
-              </View>
-              <TouchableOpacity style={s.ghostBtn} onPress={() => setSearchModalVisible(true)}>
-                <Text style={s.ghostBtnTxt}>Changer</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.ghostBtn, s.ghostBtnDanger]} onPress={() => setRedirectTarget(null)}>
-                <Ionicons name="trash-outline" size={15} color={C.red} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={s.redirectPicker} onPress={() => setSearchModalVisible(true)}>
-              <Ionicons name="search-outline" size={20} color={C.t3} />
-              <Text style={s.redirectPickerTxt}>Associer un profil ou un tweet…</Text>
-              <Ionicons name="chevron-forward" size={18} color={C.t3} />
-            </TouchableOpacity>
-          )}
+          <Text style={s.step}>3  Nom de la campagne  <Text style={s.stepOpt}>(optionnel)</Text></Text>
+          <Field
+            label="Pour vous y retrouver"
+            value={campaignName}
+            onChangeText={setCampaignName}
+            placeholder="ex : Lancement de septembre"
+            icon="pricetag-outline"
+            hint="Visible de vous seul, dans « Mes campagnes »."
+          />
 
           {/* Step 4 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8, marginBottom: 16 }}>
@@ -510,16 +529,21 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
           </View>
           <Text style={s.segDesc}>Sélectionnez les segments d'utilisateurs qui verront cette publicité.</Text>
 
+          {/* `category` et `value` sont les clés du moteur : « follows_any_of »
+              et un UUID de compte. C'est ce qui s'affichait ici — l'annonceur
+              choisissait son audience dans une liste d'identifiants. On envoie
+              toujours la clé, on n'affiche plus que le libellé. */}
           {availableTargeting.map((cat, i) => (
             <View key={i} style={s.catBlock}>
-              <Text style={s.catLabel}>{cat.category}</Text>
+              <Text style={s.catLabel}>{cat.label || cat.category}</Text>
+              {!!cat.description && <Text style={s.catDesc}>{cat.description}</Text>}
               <View style={s.chipRow}>
                 {cat.values.map((v, j) => {
                   const sel = isSelected(cat.category, v.value);
                   return (
                     <TouchableOpacity key={j} style={[s.chip, sel && s.chipOn]} onPress={() => toggleGroup(cat.category, v.value)}>
                       {sel && <Ionicons name="checkmark" size={12} color={C.accent} style={{ marginRight: 5 }} />}
-                      <Text style={[s.chipTxt, sel && s.chipTxtOn]}>{v.value}</Text>
+                      <Text style={[s.chipTxt, sel && s.chipTxtOn]}>{v.label || v.value}</Text>
                       <Text style={[s.chipCount, sel && { color: C.accent + '80' }]}>  {v.user_count.toLocaleString()}</Text>
                     </TouchableOpacity>
                   );
@@ -551,16 +575,29 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
           ) : (
-            myAds.map((ad, i) => {
-              const progress = Math.min(100, (ad.current_views / ad.max_views) * 100);
-              const ctr = ad.current_views > 0 ? ((ad.clicks || 0) / ad.current_views * 100).toFixed(1) : '0.0';
+            /* Les compteurs viennent tels quels de `/api/ads/targeted/me`. Ils
+               étaient lus sous d'anciens noms (`text_content`, et des vues qui
+               n'existaient plus sous ce nom) : d'où les « undefined » affichés
+               à la place des chiffres, et une progression à NaN. */
+            myAds.map((ad) => {
+              const views = Number(ad.current_views) || 0;
+              const target = Number(ad.max_views) || 0;
+              const clicks = Number(ad.clicks) || 0;
+              // Sans objectif connu, pas de barre plutôt qu'une barre fausse.
+              const progress = target > 0 ? Math.min(100, (views / target) * 100) : null;
+              const ctr = Number(ad.ctr ?? (views > 0 ? (clicks / views) * 100 : 0));
               const isActive = ad.status === 'active';
+              const isProfile = ad.target_type === 'profile';
               return (
-                <View key={i} style={s.adCard}>
+                <View key={String(ad.id)} style={s.adCard}>
                   <View style={s.adHead}>
                     <View style={{ flex: 1 }}>
-                      <Text style={s.adId}>Campagne #{ad.id}</Text>
-                      {ad.text_content && <Text style={s.adPreview} numberOfLines={1}>"{ad.text_content}"</Text>}
+                      <Text style={s.adId} numberOfLines={1}>{ad.title || 'Campagne'}</Text>
+                      {!!ad.target_label && (
+                        <Text style={s.adPreview} numberOfLines={1}>
+                          {isProfile ? ad.target_label : `« ${ad.target_label} »`}
+                        </Text>
+                      )}
                     </View>
                     <View style={[s.statusPill, { backgroundColor: isActive ? C.greenDim : C.white6, borderColor: isActive ? withAlpha(colors.success, 0.3) : C.border }]}>
                       <View style={[s.statusDot, { backgroundColor: isActive ? C.green : C.t3 }]} />
@@ -568,22 +605,34 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
                     </View>
                   </View>
 
-                  {ad.redirect_url && (
-                    <View style={s.redirectTag}>
-                      <Ionicons name="link-outline" size={12} color={C.accent} />
-                      <Text style={s.redirectTagTxt}>{ad.redirect_url.replace('twitnin://', '')}</Text>
-                    </View>
-                  )}
-
-                  <View style={s.statsRow}>
-                    <StatCell icon="eye-outline" label="VUES" value={`${ad.current_views}/${ad.max_views}`} color={C.accent} />
-                    <View style={s.statDiv} />
-                    <StatCell icon="hand-left-outline" label="CLICS" value={`${ad.clicks || 0}`} color={C.amber} />
-                    <View style={s.statDiv} />
-                    <StatCell icon="pulse-outline" label="CTR" value={`${ctr}%`} color={C.green} />
+                  <View style={s.redirectTag}>
+                    <Ionicons name={isProfile ? 'person-outline' : 'chatbubble-ellipses-outline'} size={12} color={C.accent} />
+                    <Text style={s.redirectTagTxt}>
+                      {isProfile ? 'Compte promu' : 'Tweet promu'}
+                      {ad.target_author && !isProfile ? ` · @${ad.target_author}` : ''}
+                    </Text>
                   </View>
 
-                  {isActive && (
+                  <View style={s.statsRow}>
+                    <StatCell
+                      icon="eye-outline"
+                      label="VUES"
+                      value={target > 0 ? `${views.toLocaleString()} / ${target.toLocaleString()}` : views.toLocaleString()}
+                      color={C.accent}
+                    />
+                    <View style={s.statDiv} />
+                    <StatCell icon="hand-left-outline" label="CLICS" value={clicks.toLocaleString()} color={C.amber} />
+                    <View style={s.statDiv} />
+                    <StatCell icon="pulse-outline" label="CTR" value={`${ctr.toFixed(1)}%`} color={C.green} />
+                  </View>
+
+                  <View style={s.spendRow}>
+                    <Text style={s.spendTxt}>
+                      {(Number(ad.spent) || 0).toFixed(2)} NF dépensés sur {(Number(ad.budget) || 0).toFixed(2)} NF
+                    </Text>
+                  </View>
+
+                  {isActive && progress !== null && (
                     <View style={{ marginTop: 18 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
                         <Text style={{ fontSize: 12, color: C.t3, fontWeight: '600' }}>Progression</Text>
@@ -681,6 +730,10 @@ const s = StyleSheet.create({
 
   catBlock: { marginBottom: 22 },
   catLabel: { fontSize: 12, fontWeight: '700', fontFamily: fonts.bold, color: C.t3, letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' },
+  catDesc: { fontSize: 12, color: C.t3, marginBottom: 10, lineHeight: 17 },
+  spendRow: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.border },
+  spendTxt: { fontSize: 12, color: C.t3, fontWeight: '600', fontFamily: fonts.semibold },
+
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     flexDirection: 'row', alignItems: 'center',
