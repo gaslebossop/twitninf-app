@@ -69,9 +69,16 @@ export const COUNTER_FLOOR = 5;
 /** Même raisonnement pour « N nouveaux depuis ta dernière visite ». */
 export const NEW_SINCE_FLOOR = 5;
 
-/** Marges verticales du corps texte (haut + bas) et hauteur de la signature. */
+/**
+ * Marges verticales du corps texte (haut + bas) et hauteur de la signature.
+ *
+ * `BYLINE_HEIGHT` suit la vignette d'auteur, qui est l'élément le plus haut de
+ * la ligne : 18 px d'avatar + 3 en haut + 10 en bas (voir les styles
+ * `byline` d'`ExploreCard`). Ces deux constantes doivent bouger AVEC ces
+ * styles — c'est la seule dépendance de l'estimation de hauteur au rendu.
+ */
 const TEXT_PADDING_V = 28;
-const BYLINE_HEIGHT = 30;
+const BYLINE_HEIGHT = 31;
 
 export function formatOf(tweet: Tweet): CardFormat {
   // `hasVisual` gère le cas des vidéos, dont `media_urls` vaut

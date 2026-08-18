@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { colors, elevation, fonts, radius, withAlpha } from '../../../theme';
+import Avatar from '../../Avatar';
 import { Tappable } from '../../ui';
 import feedback from '../../../utils/feedback';
 import { formatCompactCount } from '../../../utils/format';
@@ -213,15 +214,18 @@ function ExploreCard({
         </View>
 
         {/* Signature sur TOUTES les cartes — c'est ce qui donne au mur sa ligne
-            de base commune. Sans avatar : 3 comptes font 88 % du volume, et
-            les mêmes trois visages en boucle lisent « désert ». */}
+            de base commune : vignette, nom, compteur à droite.
+            Le nom d'AFFICHAGE, pas le `@handle` : c'est un nom de personne qui
+            se lit, et `Avatar` retombe sur son initiale en dégradé quand le
+            compte n'a pas de photo, donc jamais de rond vide. */}
         <View style={styles.byline}>
+          <Avatar size={18} username={author?.username} uri={author?.avatar} />
           <Text
             style={styles.bylineText}
             numberOfLines={1}
             maxFontSizeMultiplier={MAX_FONT_SCALE}
           >
-            {author?.username ? `@${author.username}` : ''}
+            {author?.full_name || author?.username || ''}
           </Text>
           {showLikes && (
             <View style={styles.likeChip}>
@@ -303,9 +307,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingBottom: 10,
-    paddingTop: 2,
+    paddingTop: 3,
   },
   bylineText: {
     flex: 1,
