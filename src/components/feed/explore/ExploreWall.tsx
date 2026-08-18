@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useContext, useMemo, useRef } from 'react';
 import {
+  LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -57,6 +58,17 @@ function ExploreWall({
 }: ExploreWallProps) {
   const { width } = useWindowDimensions();
   const endReachedFiredRef = useRef(false);
+  /**
+   * `onContentSizeChange` donne la hauteur du contenu mais pas celle du
+   * viewport ; `onLayout` donne l'inverse. On garde la dernière valeur connue
+   * de chacune (et le dernier offset de scroll) pour que les trois points
+   * d'entrée (scroll, contenu, layout) évaluent la même condition « proche
+   * de la fin » — y compris quand le contenu tient dans l'écran et que le
+   * `ScrollView` ne peut tout simplement pas défiler.
+   */
+  const contentHeightRef = useRef(0);
+  const layoutHeightRef = useRef(0);
+  const scrollOffsetRef = useRef(0);
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
 
   // `useWindowDimensions` et non `Dimensions.get()` : la largeur doit suivre
@@ -78,10 +90,29 @@ function ExploreWall({
     [tweets, lastVisitAt, isNew],
   );
 
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const distance = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    if (distance < layoutMeasurement.height * PREFETCH_SCREENS) {
+  /**
+   * Seule définition de « proche de la fin », partagée par les trois points
+   * d'entrée ci-dessous. Se défend elle-même : plus de pages (`!hasMore`) ou
+   * chargement déjà en cours (`loadingMore`) → on ne redéclenche pas, et on
+   * réarme le débounce (`endReachedFiredRef = false`) plutôt que de le
+   * laisser figé — c'est ce qui permet à un vrai « proche de la fin »
+   * ultérieur (nouvelle page arrivée, toujours courte) de refirer, au lieu
+   * de rester bloqué après le tout premier appel.
+   *
+   * Le cas dégénéré visé par ce correctif — contenu plus court que le
+   * viewport — n'a besoin d'aucun traitement particulier : `distance` est
+   * alors très négative (voire nulle tant que les deux mesures ne sont pas
+   * encore connues), donc toujours < seuil. Pas de division, pas de rapport,
+   * juste une soustraction qui reste vraie dans ce cas.
+   */
+  const checkEndReached = useCallback(() => {
+    if (!hasMore || loadingMore) {
+      endReachedFiredRef.current = false;
+      return;
+    }
+    const layoutHeight = layoutHeightRef.current;
+    const distance = contentHeightRef.current - layoutHeight - scrollOffsetRef.current;
+    if (distance < layoutHeight * PREFETCH_SCREENS) {
       if (!endReachedFiredRef.current) {
         endReachedFiredRef.current = true;
         onEndReached();
@@ -89,7 +120,30 @@ function ExploreWall({
     } else {
       endReachedFiredRef.current = false;
     }
-  }, [onEndReached]);
+  }, [hasMore, loadingMore, onEndReached]);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    contentHeightRef.current = contentSize.height;
+    layoutHeightRef.current = layoutMeasurement.height;
+    scrollOffsetRef.current = contentOffset.y;
+    checkEndReached();
+  }, [checkEndReached]);
+
+  // Un `ScrollView` nu ne rappelle `onScroll` que si l'utilisateur défile
+  // réellement — impossible si le contenu tient dans l'écran. `onLayout`
+  // (taille du viewport) et `onContentSizeChange` (taille du contenu)
+  // couvrent ce cas : la pagination ne dépend plus d'un geste utilisateur
+  // pour se déclencher.
+  const handleContentSizeChange = useCallback((_width: number, height: number) => {
+    contentHeightRef.current = height;
+    checkEndReached();
+  }, [checkEndReached]);
+
+  const handleLayout = useCallback((e: LayoutChangeEvent) => {
+    layoutHeightRef.current = e.nativeEvent.layout.height;
+    checkEndReached();
+  }, [checkEndReached]);
 
   const renderCard = (meta: (typeof metas)[number], wide: boolean) => (
     <ExploreCard
@@ -112,6 +166,8 @@ function ExploreWall({
       refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       onScroll={handleScroll}
       scrollEventThrottle={100}
+      onContentSizeChange={handleContentSizeChange}
+      onLayout={handleLayout}
     >
       {ListHeaderComponent}
 
