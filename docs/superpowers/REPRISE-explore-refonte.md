@@ -1,6 +1,6 @@
 # Reprise — refonte de l'onglet Explorer
 
-**Écrit le 2026-08-18, session interrompue faute de budget.**
+**Écrit le 2026-08-18, mis à jour le 2026-08-18 (session 2).**
 Tout ce qu'il faut pour continuer sans rien relire d'autre que ce document,
 le spec et le plan.
 
@@ -10,26 +10,28 @@ le spec et le plan.
 
 Dépôt : `C:\Users\nouno\OneDrive\Bureau\IAFILTRE\twitninfbeta`
 Branche : **`explore-refonte`** (partie de `main` au commit `13a5ec0`)
-État : `npm run typecheck` propre, `npm test` 96/96, arbre de travail propre.
+État : `npm run typecheck` **propre**, `npm test` **96/96**, arbre de travail propre.
 
 | Tâche | État |
 |---|---|
 | 0 — essayer le pager immersif sur appareil | **reportée** — exige un téléphone, décidé avec l'utilisateur |
 | 1 — `cardFormat.ts` + tokens couleur | ✅ livrée, relue, propre |
 | 2 — `wallLayout.ts` | ✅ livrée, relue, propre |
-| 3 — `ExploreCard.tsx` | ✅ livrée, 1 tour de correctif, **re-relue et approuvée** |
-| 4 — `ExploreHero.tsx` | ⚠️ livrée + correctif appliqué, **le correctif N'A PAS été re-relu** |
-| 5 — `ExploreActionSheet.tsx` | ❌ non commencée |
-| 6 — `ExploreWall.tsx` | ❌ non commencée |
-| 7 — `ExploreGrid.tsx` (assembleur) | ❌ non commencée |
-| 8 — câblage `TweetsScreen.tsx` | ❌ non commencée |
+| 3 — `ExploreCard.tsx` | ✅ livrée, 1 tour de correctif, re-relue et approuvée |
+| 4 — `ExploreHero.tsx` | ✅ livrée + correctif, **re-relu et approuvé** (fait en session 1) |
+| 5 — `ExploreActionSheet.tsx` | ✅ livrée, 1 tour de correctif, re-revue approuvée |
+| 6 — `ExploreWall.tsx` | ✅ livrée + 2 correctifs (le second, `cb9ceb9`, ferme un `onEndReached` au montage) |
+| 7 — `ExploreGrid.tsx` (assembleur) | ✅ livrée (598 → 168 lignes), relue |
+| 8 — câblage `TweetsScreen.tsx` | ✅ livrée |
 | 9 — vérification sur appareil | **reportée** — exige un téléphone |
 
-**Première chose à faire en reprenant :** re-relire le correctif de la Task 4
-(`git diff b147f2d 75f3d5c -- src/components/feed/explore/ExploreHero.tsx`).
-C'est le seul travail livré qui n'a pas passé sa porte de revue.
+⚠️ **Le code de la branche n'a jamais tourné sur un appareil.** Tout est écrit,
+typé et testé unitairement ; rien n'a été *vu*.
 
----
+⚠️ **Les deux derniers commits n'ont pas eu de relecteur indépendant.** La
+session 2 s'est déroulée sans droit de dispatch de sous-agents : le correctif
+`ExploreWall` et la Task 8 ont été écrits ET relus par le même agent. C'est le
+premier point à reprendre en revue finale.
 
 ## 2. Les documents
 
@@ -172,29 +174,30 @@ un cast.
 
 ## 6. Ce qui reste à faire, dans l'ordre
 
-1. **Re-relire le correctif de la Task 4** (voir §1).
-2. **Task 5** — `ExploreActionSheet.tsx`. ⚠️ Le brief impose de **lire d'abord
-   le hook `useActionSheet()` existant** et de ne garder un composant sur mesure
-   que si l'ancrage sur le rectangle de la carte l'exige. Le justifier dans le
-   rapport.
-3. **Task 6** — `ExploreWall.tsx`. Sa revue doit vérifier deux points reportés
-   des tâches 1 et 2 :
-   - que `estimatedHeightOf` est bien la **seule** source de vérité de hauteur
-     (rendu **et** équilibrage des colonnes) ;
-   - que la rupture est bien rendue **avant** les deux colonnes.
-4. **Task 7** — `ExploreGrid.tsx` devient un assembleur. Après cette tâche,
-   `npm run typecheck` **échouera sur `TweetsScreen.tsx`** tant que la Task 8
-   n'est pas faite : c'est attendu, ce n'est pas une régression.
-5. **Task 8** — câblage. Les noms exacts sont déjà relevés dans le plan :
-   `followingIds`, `handleExploreFollow` (qui **ne sait que suivre**, jamais se
-   désabonner), `handleShare(tweetId: string)`. Pas de prop `onReply` :
-   `ExploreGrid` héberge `CommentSheet` lui-même.
-6. **Tasks 0 et 9** — sur appareil, avec l'utilisateur. Le pager immersif
-   (`ExploreImmersive.tsx`, 928 lignes) **n'a jamais tourné sur un téléphone**.
+Toutes les tâches de code (1 → 8) sont livrées. Il reste :
 
-Puis : revue finale de branche, et `superpowers:finishing-a-development-branch`.
+1. **Revue finale de branche** — `git diff main...explore-refonte`. Deux points
+   d'attention prioritaires :
+   - le correctif `cb9ceb9` (`ExploreWall`) et la Task 8 (`TweetsScreen`) n'ont
+     **pas** eu de relecteur indépendant ;
+   - l'**écart assumé** de la Task 8 : `rememberExploreVisit` avance aussi
+     l'état React (`setLastExploreVisitAt`), là où le plan n'écrivait que dans
+     `AsyncStorage`. Motif dans `.superpowers/sdd/progress.md`.
+2. **Tasks 0 et 9** — sur appareil, avec l'utilisateur. Le pager immersif
+   (`ExploreImmersive.tsx`, 928 lignes) **n'a jamais tourné sur un téléphone**,
+   et le mur non plus. À vérifier au doigt en priorité :
+   - le `Gesture.Pan` de changement d'onglet (`TweetsScreen.tsx`) contre l'appui
+     long des cartes — le code le plus délicat de l'écran (§4.3, §4.4) ;
+   - le délai d'appui long de 500 ms (RNGH par défaut, assumé) ;
+   - la pagination du mur, dont le déclenchement au montage a déjà produit deux
+     bugs (`2be1c0c`, `cb9ceb9`) ;
+   - la ligne « N nouveaux depuis ta dernière visite » : elle ne doit pas
+     réapparaître sur des tweets déjà vus à la visite précédente.
+3. Puis `superpowers:finishing-a-development-branch`.
 
----
+**Limite connue assumée, à inscrire dans la revue finale :** le mur n'est **pas
+virtualisé** (tout s'accumule dans un `ScrollView`). Décision de l'utilisateur,
+motivée par les ~977 tweets vivants en prod. Commentée dans `ExploreWall.tsx`.
 
 ## 7. Remarques mineures à trancher en revue finale
 
@@ -208,6 +211,20 @@ Relevées par les relecteurs, non bloquantes, aucune corrigée :
 - `splitColumns` est un glouton sans tri préalable (pas LPT/best-fit) : l'écart
   peut rester visible sur un bloc très hétérogène.
 - Seuil `200` en dur dans le test d'équilibrage, origine non commentée.
+- Pendant les 120–280 ms de sortie du panneau d'actions, ses lignes restent
+  cliquables (aucun `pointerEvents="none"`) : un tap peut relancer un
+  `onLike`/`onShare`. Propriété inhérente au démontage différé,
+  `useSheetGesture.ts` a la même.
+- `handleShare` (`TweetsScreen.tsx:1163`) n'est pas mémoïsé : son identité change
+  à chaque rendu et annule le `memo()` d'`ExploreGrid`.
+- La date de visite n'est persistée qu'au **changement d'onglet**. Quitter
+  l'écran ou mettre l'app en arrière-plan depuis Explorer ne l'écrit pas
+  (aucun `AppState`/blur câblé — hors plan).
+- **Question ouverte, pré-existante :** `ExploreGrid` ouvre `CommentSheet` avec
+  l'id du **retweet** (`commentTarget.id`), pas celui du tweet d'origine, alors
+  que les interactions d'un retweet pur visent l'original.
+  `ExploreImmersive.tsx:780-781` fait pareil — convention en place, non modifiée
+  unilatéralement. Peut-être déjà résolu côté API : à trancher.
 
 ---
 
