@@ -20,7 +20,13 @@
 - **`useWindowDimensions`, jamais `Dimensions.get()`.** La largeur de carte doit être un paramètre, pas une constante de module.
 - **`maxFontSizeMultiplier={1.2}`** sur tout texte à hauteur contrainte.
 - **`collapsable={false}`** sur toute vue mesurée par `measureInWindow`.
-- **Pas de `Alert.alert`** (absent de l'app). Pas de `BlurView` décoratif. Pas de dégradé décoratif par carte.
+- **Pas de `Alert.alert`** — retiré entièrement du dépôt (392 appels → 0), ni `ActionSheetIOS`, ni `Alert.prompt`. Remplaçants imposés par `CLAUDE.md` : `useToast` (message d'issue), `useConfirm` (oui/non), `useActionSheet` (menu de N actions), `usePrompt` (réponse écrite), `useReward` (gain NF). ⚠️ Ces hôtes **ne s'affichent pas sous une `<Modal>`** React Native.
+- Pas de `BlurView` décoratif, pas de `rgba(255,255,255,0.0X)` translucide, pas de dégradé multiple par carte. **Surfaces pleines** — règle centrale du design system Pulse.
+- **`Tappable`, jamais `TouchableOpacity` seul** : l'opacité seule est invisible sur fond noir.
+- **La hauteur de la tab bar se LIT** via `useContext(BottomTabBarHeightContext)` — jamais un nombre en dur. `useContext` rend `undefined` hors tab navigator ; `useBottomTabBarHeight` lève une erreur.
+- **Avant d'écrire un composant, lire `src/components/ui/index.ts`** : la primitive existe probablement déjà.
+- **`git add -f` sur tout `.md` ou `.js` nouveau** — le `.gitignore` les avale sans le moindre avertissement (`!tests/*.test.js` est déjà excepté). Vérifier avec `git show --stat HEAD`.
+- ⚠️ **`TweetsScreen` importe Reanimated sous le nom `Animated`.** Une `Animated.Value` du cœur RN y échoue silencieusement (`Invariant Violation: Transform… must be a number`).
 - **Pas de `borderCurve`** : absent des types React Native 0.81.5 (constaté à la Task 3, `tsc` le rejette). Ne pas le réintroduire, ne pas le forcer par un cast. `fontVariant: 'tabular-nums'` reste obligatoire sur les compteurs.
 - **Marge basse explicite** : la tab bar est absolue et recouvre le bas de l'écran.
 - **`npm run typecheck` doit passer à la fin de chaque tâche.** Son absence avait livré le double-tap à moitié câblé en 5ᵉ passe.
@@ -1426,6 +1432,8 @@ git commit -m "feat(explore): bande d'entrée auto-défilante, interruptible au 
 - Consumes: `CardRect` de `./ExploreCard`
 - Produces: `interface ExploreActionSheetProps { tweet: Tweet | null; origin: CardRect | null; isFollowing: boolean; onClose; onLike; onFollow; onReply; onShare; onNotInterested }`, `export default memo(ExploreActionSheet)`
 
+⚠️ **À VÉRIFIER AVANT D'ÉCRIRE QUOI QUE CE SOIT :** le dépôt possède déjà un hook `useActionSheet()` (`showActionSheet({ items })`, documenté dans `CLAUDE.md` comme la primitive pour « menu de N actions »). **Lis-le d'abord.** Si tu peux obtenir un panneau **ancré sur le rectangle de la carte** avec lui, utilise-le et jette ce composant : dupliquer une primitive existante est un défaut. Ce composant sur mesure ne se justifie que par l'ancrage à l'origine — le panneau doit grandir depuis la carte touchée, ce qu'un menu d'actions centré ne fait pas. Si le hook ne sait pas s'ancrer, écris le composant et **dis-le explicitement dans ton rapport**, avec ce que tu as constaté du hook.
+
 ⚠️ **Contrainte relevée dans le code existant :** `handleExploreFollow` dans `TweetsScreen.tsx:1838` **ne sait que suivre** — il sort immédiatement si l'auteur est déjà suivi (`if (!authorId || followingIds.has(authorId)) return;`). La ligne « Suivre l'auteur » n'est donc affichée **que si on ne suit pas déjà**, au lieu de proposer un « Ne plus suivre » qui ne ferait rien. Ajouter le désabonnement est hors périmètre.
 
 - [ ] **Step 1: Créer le fichier**
@@ -1615,7 +1623,7 @@ git commit -m "feat(explore): panneau d'actions ancré sur la carte, sans naviga
 Créer `src/components/feed/explore/ExploreWall.tsx` :
 
 ```tsx
-import React, { memo, useCallback, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useContext, useMemo, useRef } from 'react';
 import {
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -1626,6 +1634,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 
 import { colors, fonts, radius } from '../../../theme';
 import { AppRefreshControl, Tappable } from '../../ui';
@@ -1639,8 +1648,14 @@ const GRID_PADDING = 12;
 const GRID_GAP = 10;
 /** Respiration autour d'une rupture — plus large que l'écart de grille. */
 const FEATURE_GAP = 16;
-/** La tab bar est absolue et recouvre le bas de l'écran. */
-const BOTTOM_INSET = 96;
+/**
+ * La tab bar est absolue et recouvre le bas de l'écran. Sa hauteur se LIT,
+ * elle ne se code pas en dur (83 iOS / 85 Android, plus l'inset système) —
+ * voir `CLAUDE.md`. `BottomTabBarHeightContext` via `useContext` rend
+ * `undefined` hors d'un tab navigator, contrairement à `useBottomTabBarHeight`
+ * qui lève une erreur : c'est la forme sûre.
+ */
+const FALLBACK_TAB_BAR_HEIGHT = 85;
 /** Avance de pagination, en hauteurs d'écran. */
 const PREFETCH_SCREENS = 2;
 
@@ -1667,6 +1682,7 @@ function ExploreWall({
 }: ExploreWallProps) {
   const { width } = useWindowDimensions();
   const endReachedFiredRef = useRef(false);
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
 
   // `useWindowDimensions` et non `Dimensions.get()` : la largeur doit suivre
   // une rotation ou un écran partagé, sinon toutes les hauteurs estimées sont
@@ -1716,7 +1732,7 @@ function ExploreWall({
   return (
     <ScrollView
       style={styles.list}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 24 }]}
       showsVerticalScrollIndicator={false}
       refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       onScroll={handleScroll}
@@ -1780,7 +1796,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: GRID_PADDING,
     paddingTop: 4,
-    paddingBottom: BOTTOM_INSET,
   },
   feature: { marginBottom: FEATURE_GAP },
   columns: { flexDirection: 'row', gap: GRID_GAP },
