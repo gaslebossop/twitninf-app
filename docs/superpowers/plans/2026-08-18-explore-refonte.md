@@ -21,7 +21,7 @@
 - **`maxFontSizeMultiplier={1.2}`** sur tout texte à hauteur contrainte.
 - **`collapsable={false}`** sur toute vue mesurée par `measureInWindow`.
 - **Pas de `Alert.alert`** (absent de l'app). Pas de `BlurView` décoratif. Pas de dégradé décoratif par carte.
-- **`borderCurve: 'continuous'`** sur les coins arrondis ; `fontVariant: 'tabular-nums'` sur les compteurs.
+- **Pas de `borderCurve`** : absent des types React Native 0.81.5 (constaté à la Task 3, `tsc` le rejette). Ne pas le réintroduire, ne pas le forcer par un cast. `fontVariant: 'tabular-nums'` reste obligatoire sur les compteurs.
 - **Marge basse explicite** : la tab bar est absolue et recouvre le bas de l'écran.
 - **`npm run typecheck` doit passer à la fin de chaque tâche.** Son absence avait livré le double-tap à moitié câblé en 5ᵉ passe.
 - **Aucune modification serveur.** `trending`, `force_refresh`, `exclude_seen` et le tirage à deux températures sont déjà déployés.
@@ -1027,7 +1027,6 @@ export default memo(ExploreCard);
 const styles = StyleSheet.create({
   card: {
     borderRadius: radius.lg,
-    borderCurve: 'continuous',
     overflow: 'hidden',
   },
   declarationBox: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 18 },
@@ -1054,7 +1053,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: radius.md,
-    borderCurve: 'continuous',
     backgroundColor: withAlpha('#000000', 0.55),
   },
   videoBadgeText: {
@@ -1336,7 +1334,6 @@ const styles = StyleSheet.create({
   band: {
     alignSelf: 'center',
     borderRadius: radius.lg,
-    borderCurve: 'continuous',
     overflow: 'hidden',
     backgroundColor: colors.accent,
     marginBottom: 14,
@@ -1574,7 +1571,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: SHEET_WIDTH,
     borderRadius: radius.lg,
-    borderCurve: 'continuous',
     // Fond OPAQUE obligatoire : rien ne doit transparaître à travers.
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
@@ -1803,7 +1799,6 @@ const styles = StyleSheet.create({
   loadingCard: {
     height: 160,
     borderRadius: radius.lg,
-    borderCurve: 'continuous',
     backgroundColor: colors.surfaceAlt,
   },
   drawMore: {
@@ -1814,7 +1809,6 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingVertical: 13,
     borderRadius: radius.lg,
-    borderCurve: 'continuous',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
