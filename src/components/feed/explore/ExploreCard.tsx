@@ -236,7 +236,7 @@ function ExploreCard({
             se lit, et `Avatar` retombe sur son initiale en dégradé quand le
             compte n'a pas de photo, donc jamais de rond vide. */}
         <View style={styles.byline}>
-          <Avatar size={16} username={author?.username} uri={author?.avatar} />
+          <Avatar size={22} username={author?.username} uri={author?.avatar} />
           <Text
             style={styles.bylineText}
             numberOfLines={1}
@@ -254,7 +254,7 @@ function ExploreCard({
                 Un cœur magenta plein partout peignait la grille en rouge. */}
             <Ionicons
               name={isLiked ? 'heart' : 'heart-outline'}
-              size={12}
+              size={13}
               color={isLiked ? colors.like : colors.textMuted}
             />
             <Text style={styles.likeText} maxFontSizeMultiplier={MAX_FONT_SCALE}>
@@ -357,13 +357,13 @@ const styles = StyleSheet.create({
   },
   bylineText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12.5,
     fontFamily: fonts.medium,
     color: colors.textMuted,
   },
   likeChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   likeText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontFamily: fonts.medium,
     color: colors.textMuted,
     fontVariant: ['tabular-nums'],
