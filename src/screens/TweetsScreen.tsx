@@ -130,12 +130,34 @@ const tabIndexOf = (tab: FeedTab): number => TAB_ORDER.indexOf(tab);
  * systématiquement lors d'une course entre un rafraîchissement et une
  * pagination encore en vol.
  */
+/**
+ * Clé de déduplication d'un tweet.
+ *
+ * Une publicité de tweet réutilise le VRAI id du tweet promu (voir
+ * `neuralRankRoutes.js` → `injectAds`) : c'est ce qui lui laisse suivre le
+ * même classement et le même affichage que n'importe quel contenu. Mais ce
+ * même tweet peut aussi remonter organiquement ailleurs dans le fil — un
+ * tweet qu'on fait la publicité a de bonnes chances d'être aussi
+ * recommandé pour ses propres mérites. Dédupliquer par id nu confondait
+ * alors les deux occurrences et gardait la première, presque toujours la
+ * version SANS l'étiquette « Sponsorisé » : la publicité disparaissait du
+ * fil sans qu'aucune règle de densité (un emplacement tous les 4 tweets)
+ * ne soit en cause côté serveur — c'est purement ce dédoublonnage qui
+ * l'avalait après coup.
+ */
+function dedupeKey(tweet: Tweet): string {
+  const t = tweet as any;
+  return t.is_ad ? `ad:${t.ad_data?.id || t.id}` : String(t.id);
+}
+
 function mergeUniqueTweets(base: Tweet[], incoming: Tweet[]): Tweet[] {
-  const seen = new Set(base.map((t) => t.id));
+  const seen = new Set(base.map(dedupeKey));
   const merged = base.slice();
   for (const tweet of incoming) {
-    if (!tweet?.id || seen.has(tweet.id)) continue;
-    seen.add(tweet.id);
+    if (!tweet?.id) continue;
+    const key = dedupeKey(tweet);
+    if (seen.has(key)) continue;
+    seen.add(key);
     merged.push(tweet);
   }
   return merged;
@@ -146,8 +168,10 @@ function dedupeTweets(list: Tweet[]): Tweet[] {
   const seen = new Set<string>();
   const out: Tweet[] = [];
   for (const tweet of list) {
-    if (!tweet?.id || seen.has(tweet.id)) continue;
-    seen.add(tweet.id);
+    if (!tweet?.id) continue;
+    const key = dedupeKey(tweet);
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(tweet);
   }
   return out;
@@ -1349,13 +1373,16 @@ export default function TweetsScreen() {
 
       case 'open': {
         if (payload?.isAd) {
+          // `redirect_url` n'existe plus côté serveur depuis que la publicité
+          // EST le tweet ou le compte promu : ces deux branches ne
+          // matchaient donc plus jamais, et un tap sur une pub-tweet
+          // retombait systématiquement sur le profil de l'auteur au lieu
+          // d'ouvrir le tweet lui-même.
           const tweet = payload.tweet;
           apiService.post(`/api/ads/advertisements/${tweet?.ad_data?.id}/click`).catch(() => {});
-          const redirectUrl: string | undefined = tweet?.ad_data?.redirect_url;
-          if (redirectUrl?.startsWith('twitnin://profile/')) {
-            (navigation as any).navigate('UserProfile', { username: redirectUrl.replace('twitnin://profile/', '') });
-          } else if (redirectUrl?.startsWith('twitnin://tweet/')) {
-            (navigation as any).navigate('TweetDetail', { tweetId: redirectUrl.replace('twitnin://tweet/', '') });
+          const promotedTweetId: string | undefined = tweet?.ad_data?.tweet_id;
+          if (promotedTweetId) {
+            (navigation as any).navigate('TweetDetail', { tweetId: promotedTweetId });
           } else if (tweet?.author?.id) {
             (navigation as any).navigate('UserProfile', { userId: tweet.author.id, username: tweet.author.username });
           }
@@ -1549,7 +1576,19 @@ export default function TweetsScreen() {
     [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation]
   );
 
-  const keyExtractor = useCallback((item: Tweet) => String(item.id), []);
+  // Une publicité de tweet garde le VRAI id du tweet (voir `dedupeKey`
+  // ci-dessus) : deux occurrences distinctes — l'organique et la publicité —
+  // peuvent désormais coexister dans la liste après le correctif de
+  // déduplication. `keyExtractor` doit donc, lui aussi, les distinguer : deux
+  // entrées avec la même clé React font disparaître silencieusement l'une des
+  // deux au rendu, ce qui aurait annulé le correctif.
+  const keyExtractor = useCallback(
+    (item: Tweet, index: number) => {
+      const t = item as any;
+      return t.is_ad ? `ad-${t.ad_data?.id || t.id}-${index}` : String(item.id);
+    },
+    [],
+  );
 
   /**
    * En-tête de liste, stabilisé.
