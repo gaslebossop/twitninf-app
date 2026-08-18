@@ -40,9 +40,10 @@ const {
   describeCards,
   shouldShowCount,
   estimatedHeightOf,
-  DECLARATION_MAX,
-  CITATION_MAX,
+  estimatedLines,
   COUNTER_FLOOR,
+  MEDIA_RATIO,
+  TEXT_MAX_LINES,
 } = loadTypeScriptModule('src/components/feed/explore/cardFormat.ts');
 
 const CARD_WIDTH = 180;
@@ -63,89 +64,83 @@ const photoTweet = (id, length = 10) => ({
   stats: { likes: 0, views: 0 },
 });
 
-test('la longueur décide du format, aux bornes exactes', () => {
-  assert.equal(formatOf(textTweet(1, 1)), 'declaration');
-  assert.equal(formatOf(textTweet(2, DECLARATION_MAX)), 'declaration');
-  assert.equal(formatOf(textTweet(3, DECLARATION_MAX + 1)), 'citation');
-  assert.equal(formatOf(textTweet(4, CITATION_MAX)), 'citation');
-  assert.equal(formatOf(textTweet(5, CITATION_MAX + 1)), 'bloc');
+test('la longueur du texte ne change plus le format', () => {
+  // C'est tout l'objet de la refonte uniforme : un tweet de 3 signes et un
+  // tweet de 300 reçoivent le MÊME traitement, seule leur hauteur diffère.
+  assert.equal(formatOf(textTweet(1, 1)), 'text');
+  assert.equal(formatOf(textTweet(2, 46)), 'text');
+  assert.equal(formatOf(textTweet(3, 100)), 'text');
+  assert.equal(formatOf(textTweet(4, 500)), 'text');
 });
 
-test('un média l’emporte sur la longueur du texte', () => {
-  // Sans cette priorité, un tweet illustré de 3 mots partirait en Déclaration
-  // et son image ne serait jamais rendue.
+test('un média l’emporte sur le texte', () => {
+  // Sans cette priorité, un tweet illustré n'afficherait jamais son image.
   assert.equal(formatOf(photoTweet(6, 5)), 'photo');
   assert.equal(formatOf(photoTweet(7, 500)), 'photo');
 });
 
-test('la cadence de couleur ne s’applique qu’aux déclarations', () => {
+test('toutes les cartes reçoivent la même description, sans cadence de couleur', () => {
   const tweets = [];
-  for (let i = 0; i < 10; i += 1) tweets.push(textTweet(i, 10));
+  for (let i = 0; i < 10; i += 1) tweets.push(textTweet(i, 10 + i * 25));
   const metas = describeCards(tweets, CARD_WIDTH);
-  const fills = metas.map((m) => m.fill);
-  assert.deepEqual(fills, [
-    'surface', 'surface', 'accent', 'surface', 'contrast',
-    'surface', 'surface', 'accent', 'surface', 'contrast',
-  ]);
-});
 
-test('les formats non-déclaration restent sur les surfaces neutres', () => {
-  const metas = describeCards(
-    [textTweet(1, 60), textTweet(2, 200), photoTweet(3)],
-    CARD_WIDTH,
-  );
+  assert.equal(metas.length, 10);
   for (const meta of metas) {
-    assert.ok(meta.fill === 'surface' || meta.fill === 'surfaceAlt');
+    // Plus aucun `fill` : le fond n'est plus une décision par carte.
+    assert.equal(meta.fill, undefined);
+    assert.equal(meta.format, 'text');
+    assert.ok(meta.height > 0);
   }
 });
 
-test('le rang de cadence compte les déclarations, pas les positions', () => {
-  // Deux déclarations séparées par des cartes d'un autre format doivent se
-  // suivre dans la cadence : sinon le magenta dépend du hasard du mélange.
-  const metas = describeCards(
-    [
-      textTweet(1, 10),   // déclaration rang 0 -> surface
-      textTweet(2, 200),  // bloc
-      textTweet(3, 10),   // déclaration rang 1 -> surface
-      textTweet(4, 200),  // bloc
-      textTweet(5, 10),   // déclaration rang 2 -> accent
-    ],
-    CARD_WIDTH,
+test('la hauteur croît avec la longueur, puis plafonne', () => {
+  const short = estimatedHeightOf(textTweet(1, 10), CARD_WIDTH);
+  const medium = estimatedHeightOf(textTweet(2, 120), CARD_WIDTH);
+  const long = estimatedHeightOf(textTweet(3, 5000), CARD_WIDTH);
+  const longer = estimatedHeightOf(textTweet(4, 50000), CARD_WIDTH);
+
+  assert.ok(medium > short, 'un texte plus long occupe plus de hauteur');
+  assert.ok(long > medium);
+  // Le plafond est la même borne que le `numberOfLines` du rendu : sans lui
+  // l'estimation dépasserait la carte réelle et déséquilibrerait les colonnes.
+  assert.equal(long, longer, 'au-delà du plafond, la hauteur ne bouge plus');
+});
+
+test('le nombre de lignes estimé ne dépasse jamais la borne du rendu', () => {
+  assert.equal(estimatedLines(0, CARD_WIDTH), 1, 'au moins une ligne');
+  assert.equal(estimatedLines(1, CARD_WIDTH), 1);
+  assert.equal(estimatedLines(100000, CARD_WIDTH), TEXT_MAX_LINES);
+});
+
+test('une carte plus étroite occupe plus de lignes pour le même texte', () => {
+  // Le garde-fou contre la régression qui figeait la largeur au chargement :
+  // la largeur doit réellement traverser le calcul.
+  const wide = estimatedLines(200, 300);
+  const narrow = estimatedLines(200, 120);
+  assert.ok(narrow > wide);
+});
+
+test('une carte photo se dimensionne sur le ratio unique', () => {
+  const height = estimatedHeightOf(photoTweet(1), CARD_WIDTH);
+  const image = Math.round(CARD_WIDTH * MEDIA_RATIO);
+  // La hauteur vaut l'image plus la signature — donc strictement plus que
+  // l'image seule, et le surplus est constant d'une photo à l'autre.
+  assert.ok(height > image);
+  assert.equal(height - image, estimatedHeightOf(photoTweet(2), CARD_WIDTH) - image);
+});
+
+test('deux photos ont exactement la même hauteur', () => {
+  // L'ancien module tirait le ratio par hash de l'id : deux photos voisines
+  // pouvaient avoir des hauteurs très différentes sans raison.
+  assert.equal(
+    estimatedHeightOf(photoTweet('abc'), CARD_WIDTH),
+    estimatedHeightOf(photoTweet('zzz-très-différent'), CARD_WIDTH),
   );
-  assert.equal(metas[4].fill, 'accent');
 });
 
 test('aucun compteur en dessous du plancher', () => {
   assert.equal(shouldShowCount(0), false);
   assert.equal(shouldShowCount(COUNTER_FLOOR - 1), false);
   assert.equal(shouldShowCount(COUNTER_FLOOR), true);
-  assert.equal(shouldShowCount(999), true);
-});
-
-test('la hauteur estimée croît avec la longueur du texte', () => {
-  const court = estimatedHeightOf(textTweet(1, 10), CARD_WIDTH);
-  const moyen = estimatedHeightOf(textTweet(2, 80), CARD_WIDTH);
-  const long = estimatedHeightOf(textTweet(3, 300), CARD_WIDTH);
-  assert.ok(court < moyen, 'court < moyen');
-  assert.ok(moyen < long, 'moyen < long');
-});
-
-test('la hauteur d’une photo suit la largeur de carte', () => {
-  // Une vignette est dimensionnée par un RATIO : deux fois plus large, deux
-  // fois plus haute. C'est ce qui permet à la grille de rester juste après une
-  // rotation — la largeur est un paramètre, pas une constante figée au
-  // chargement du module.
-  const etroit = estimatedHeightOf(photoTweet(1), 150);
-  const large = estimatedHeightOf(photoTweet(1), 300);
-  assert.ok(large > etroit);
-});
-
-test('une carte de texte RÉTRÉCIT quand la carte s’élargit', () => {
-  // Contre-intuitif mais juste, et c'est le sens qui compte pour l'équilibrage
-  // des colonnes : le même texte tient en MOINS de lignes sur une carte plus
-  // large, donc la boîte est plus courte. Une estimation qui grandirait avec la
-  // largeur décalerait les colonnes à chaque rotation.
-  const etroit = estimatedHeightOf(textTweet(1, 40), 150);
-  const large = estimatedHeightOf(textTweet(1, 40), 300);
-  assert.ok(large < etroit);
+  assert.equal(shouldShowCount(COUNTER_FLOOR + 100), true);
 });

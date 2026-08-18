@@ -21,57 +21,51 @@ const { buildWall, BLOCK_SIZE } = loadTypeScriptModule(
 );
 
 /** Fabrique un CardMeta minimal. */
-const meta = (id, format, height = 200) => ({
+const meta = (id, height = 200) => ({
   tweet: { id: String(id) },
-  format,
-  fill: 'surface',
+  format: 'text',
   height,
 });
 
-const manyBlocs = (n) => {
+const manyCards = (n, height = 200) => {
   const out = [];
-  for (let i = 0; i < n; i += 1) out.push(meta(i, 'bloc'));
+  for (let i = 0; i < n; i += 1) out.push(meta(i, height));
   return out;
 };
 
-test('le mur se découpe en blocs de 7', () => {
-  const blocks = buildWall(manyBlocs(21));
+const allIds = (block) => [...block.columns[0], ...block.columns[1]].map((m) => m.tweet.id);
+
+test('le mur se découpe en blocs de resynchronisation', () => {
+  const blocks = buildWall(manyCards(BLOCK_SIZE * 3));
   assert.equal(blocks.length, 3);
   for (const block of blocks) {
-    const total = 1 + block.columns[0].length + block.columns[1].length;
-    assert.equal(total, BLOCK_SIZE);
+    assert.equal(allIds(block).length, BLOCK_SIZE);
   }
 });
 
-test('la rupture est la première déclaration du bloc', () => {
-  const metas = [
-    meta(0, 'bloc'), meta(1, 'citation'), meta(2, 'declaration'),
-    meta(3, 'declaration'), meta(4, 'bloc'), meta(5, 'bloc'), meta(6, 'bloc'),
-  ];
-  const [block] = buildWall(metas);
-  assert.equal(block.feature.tweet.id, '2');
+test('aucune carte n’est promue en pleine largeur', () => {
+  // La rupture tous les sept tweets cassait la trame à deux colonnes : le mur
+  // est désormais uniforme, un bloc n'expose plus que ses deux colonnes.
+  const [block] = buildWall(manyCards(BLOCK_SIZE));
+  assert.equal(block.feature, undefined);
+  assert.deepEqual(Object.keys(block), ['columns']);
 });
 
-test('à défaut de déclaration, une photo fait la rupture', () => {
-  const metas = [
-    meta(0, 'bloc'), meta(1, 'citation'), meta(2, 'photo'),
-    meta(3, 'bloc'), meta(4, 'bloc'), meta(5, 'bloc'), meta(6, 'bloc'),
-  ];
-  const [block] = buildWall(metas);
-  assert.equal(block.feature.tweet.id, '2');
+test('toutes les cartes atterrissent dans une colonne, sans doublon', () => {
+  const total = BLOCK_SIZE * 2 + 3;
+  const blocks = buildWall(manyCards(total));
+  const seen = blocks.flatMap(allIds);
+  assert.equal(seen.length, total, 'aucune carte perdue');
+  assert.equal(new Set(seen).size, total, 'aucune carte rendue deux fois');
 });
 
-test('sans déclaration ni photo, la rupture est le premier du bloc', () => {
-  // Le flux arrive déjà classé par `trending` : le premier est le plus fort.
-  const [block] = buildWall(manyBlocs(7));
-  assert.equal(block.feature.tweet.id, '0');
-});
-
-test('la rupture n’apparaît jamais aussi dans les colonnes', () => {
-  const blocks = buildWall(manyBlocs(14));
-  for (const block of blocks) {
-    const inColumns = [...block.columns[0], ...block.columns[1]].map((m) => m.tweet.id);
-    assert.ok(!inColumns.includes(block.feature.tweet.id));
+test('l’ordre du classement est préservé dans chaque colonne', () => {
+  // Le flux arrive classé par `trending` : un tri interne le détruirait.
+  const [block] = buildWall(manyCards(BLOCK_SIZE));
+  for (const column of block.columns) {
+    const ids = column.map((m) => Number(m.tweet.id));
+    const sorted = [...ids].sort((a, b) => a - b);
+    assert.deepEqual(ids, sorted);
   }
 });
 
@@ -79,34 +73,28 @@ test('les colonnes s’équilibrent sur la hauteur, pas en alternant', () => {
   // Une simple alternance gauche/droite laisserait une colonne prendre tout le
   // retard si elle hérite de plusieurs grandes cartes d'affilée.
   const metas = [
-    meta(0, 'bloc', 100),   // rupture
-    meta(1, 'bloc', 400),
-    meta(2, 'bloc', 100),
-    meta(3, 'bloc', 100),
-    meta(4, 'bloc', 100),
-    meta(5, 'bloc', 100),
-    meta(6, 'bloc', 100),
+    meta(0, 600), meta(1, 100), meta(2, 100),
+    meta(3, 100), meta(4, 100), meta(5, 100),
+    meta(6, 100), meta(7, 100),
   ];
   const [block] = buildWall(metas);
-  const h = (col) => col.reduce((sum, m) => sum + m.height, 0);
-  const ecart = Math.abs(h(block.columns[0]) - h(block.columns[1]));
-  assert.ok(ecart <= 200, `écart trop grand : ${ecart}`);
+  const height = (column) => column.reduce((sum, m) => sum + m.height, 0);
+  const gap = Math.abs(height(block.columns[0]) - height(block.columns[1]));
+  // Seuil : la plus grande carte du jeu (600) sert de référence — un glouton
+  // correct finit forcément sous cet écart, une alternance naïve le dépasse
+  // (600+100+100+100 contre 100×4, soit 500).
+  assert.ok(gap < 600, `écart de colonnes trop grand : ${gap}`);
 });
 
-test('un reste plus court qu’un bloc forme quand même un bloc', () => {
-  const blocks = buildWall(manyBlocs(9));
+test('un dernier bloc incomplet ne casse rien', () => {
+  const blocks = buildWall(manyCards(BLOCK_SIZE + 1));
   assert.equal(blocks.length, 2);
-  const second = blocks[1];
-  assert.equal(1 + second.columns[0].length + second.columns[1].length, 2);
+  assert.equal(allIds(blocks[1]).length, 1);
+  // La clé de rendu du mur vient de la première carte de la colonne gauche :
+  // elle doit exister même pour un bloc d'une seule carte.
+  assert.ok(blocks[1].columns[0][0]);
 });
 
 test('une liste vide ne produit aucun bloc', () => {
   assert.deepEqual(buildWall([]), []);
-});
-
-test('un seul tweet devient une rupture sans colonnes', () => {
-  const blocks = buildWall([meta(0, 'declaration')]);
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0].columns[0].length, 0);
-  assert.equal(blocks[0].columns[1].length, 0);
 });

@@ -17,13 +17,10 @@ import { AppRefreshControl, Tappable } from '../../ui';
 import { describeCards, NEW_SINCE_FLOOR } from './cardFormat';
 import { buildWall } from './wallLayout';
 import ExploreCard, { type CardRect } from './ExploreCard';
-import ExploreHero, { HERO_COUNT } from './ExploreHero';
 import type { Tweet } from '../../../types/api';
 
 const GRID_PADDING = 12;
 const GRID_GAP = 10;
-/** Respiration autour d'une rupture — plus large que l'écart de grille. */
-const FEATURE_GAP = 16;
 /**
  * La tab bar est absolue et recouvre le bas de l'écran. Sa hauteur se LIT,
  * elle ne se code pas en dur (83 iOS / 85 Android, plus l'inset système) —
@@ -87,8 +84,9 @@ function ExploreWall({
   const cardWidth = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 
   const metas = useMemo(() => describeCards(tweets, cardWidth), [tweets, cardWidth]);
-  const heroMetas = useMemo(() => metas.slice(0, HERO_COUNT), [metas]);
-  const blocks = useMemo(() => buildWall(metas.slice(HERO_COUNT)), [metas]);
+  // Tous les tweets vont au mur : plus de bande héro à part, qui prélevait les
+  // cinq premiers et cassait la trame dès l'ouverture de l'onglet.
+  const blocks = useMemo(() => buildWall(metas), [metas]);
 
   const isNew = useCallback((tweet: Tweet) => {
     if (!lastVisitAt || !tweet.created_at) return false;
@@ -168,12 +166,11 @@ function ExploreWall({
     checkEndReached();
   }, [checkEndReached]);
 
-  const renderCard = (meta: (typeof metas)[number], wide: boolean) => (
+  const renderCard = (meta: (typeof metas)[number]) => (
     <ExploreCard
       key={meta.tweet.id}
       meta={meta}
       cardWidth={cardWidth}
-      wide={wide}
       isNew={isNew(meta.tweet)}
       onPress={onOpenTweet}
       onLike={onLikeTweet}
@@ -202,8 +199,6 @@ function ExploreWall({
     >
       {ListHeaderComponent}
 
-      <ExploreHero metas={heroMetas} onOpen={onOpenTweet} />
-
       {/* En dessous du plancher, aucune ligne : mieux vaut rien qu'un
           « 2 nouveaux », qui fait paraître le produit vide. */}
       {newCount >= NEW_SINCE_FLOOR && (
@@ -212,20 +207,22 @@ function ExploreWall({
         </Text>
       )}
 
+      {/* Une seule trame à deux colonnes, du haut au bas de la page. Les blocs
+          ne sont plus qu'un point de resynchronisation des hauteurs : ils ne
+          se voient pas, aucune carte n'y est promue. La clé vient de la
+          première carte de la colonne gauche, qui existe toujours pour un bloc
+          non vide (`splitColumns` y place la première carte). */}
       {blocks.map((block) => (
-        <View key={block.feature.tweet.id}>
-          <View style={styles.feature}>{renderCard(block.feature, true)}</View>
-          <View style={styles.columns}>
-            <View style={styles.column}>
-              {block.columns[0].map((meta) => (
-                <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta, false)}</View>
-              ))}
-            </View>
-            <View style={styles.column}>
-              {block.columns[1].map((meta) => (
-                <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta, false)}</View>
-              ))}
-            </View>
+        <View key={block.columns[0][0]?.tweet.id ?? 'empty'} style={styles.columns}>
+          <View style={styles.column}>
+            {block.columns[0].map((meta) => (
+              <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
+            ))}
+          </View>
+          <View style={styles.column}>
+            {block.columns[1].map((meta) => (
+              <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
+            ))}
           </View>
         </View>
       ))}
@@ -259,7 +256,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: GRID_PADDING,
     paddingTop: 4,
   },
-  feature: { marginBottom: FEATURE_GAP },
   columns: { flexDirection: 'row', gap: GRID_GAP },
   column: { flex: 1 },
   cell: { marginBottom: GRID_GAP },

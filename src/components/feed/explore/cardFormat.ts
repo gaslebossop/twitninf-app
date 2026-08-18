@@ -4,38 +4,59 @@ import type { Tweet } from '../../../types/api';
 /**
  * Toutes les décisions de forme du mur Explorer, en un seul module PUR.
  *
- * ── Pourquoi la forme n'est jamais tirée au sort ───────────────────────────
- * La version précédente choisissait le ratio d'une carte par hash de son id :
- * déterministe, mais arbitraire — la forme ne disait rien du tweet. Ici la
- * forme DÉCOULE de la longueur du texte, donc un tweet court REMPLIT une
- * grande typo et un tweet long reçoit une carte dense. C'est ce qui sépare une
- * mise en page dessinée d'une mise en page générée.
+ * ── Une seule grammaire de carte ───────────────────────────────────────────
+ * La version précédente donnait quatre traitements selon la longueur du texte
+ * (Déclaration en police affiche, Citation en serif à filet, Bloc dense,
+ * Photo), posait par-dessus une cadence de fonds colorés (magenta un tweet
+ * sur cinq, bloc clair un sur cinq) et promouvait une carte pleine largeur
+ * tous les sept tweets. Vu sur appareil, le mur n'avait plus de trame :
+ * chaque carte changeait de police, de taille et de fond, ce qui se lit comme
+ * une planche d'essais, pas comme un flux.
+ *
+ * Ici toutes les cartes partagent la MÊME grammaire — même fond, même police,
+ * même taille, même interlignage, même signature dessous. Ce qui varie est le
+ * contenu, et la hauteur, qui suit le nombre de lignes réellement occupées.
+ * C'est la trame des grilles d'exploration : la régularité vient du cadre, le
+ * rythme vient du contenu.
  *
  * ── Pourquoi la largeur est un paramètre ───────────────────────────────────
- * L'ancien module figeait `CARD_WIDTH` au chargement via `Dimensions.get()` :
- * après une rotation ou en écran partagé, toutes les hauteurs estimées étaient
- * fausses et les colonnes partaient en dents de scie. La largeur traverse
- * désormais chaque fonction.
+ * Figer la largeur au chargement via `Dimensions.get()` rend toutes les
+ * hauteurs estimées fausses après une rotation ou en écran partagé, et les
+ * colonnes partent en dents de scie. La largeur traverse chaque fonction.
  *
  * ⚠️ INVARIANT : `estimatedHeightOf` doit rester la SEULE source de vérité de
  * la hauteur, utilisée par le rendu ET par l'équilibrage des colonnes. Deux
  * estimations divergentes remettent le bas de page en dents de scie.
  */
 
-export type CardFormat = 'declaration' | 'citation' | 'bloc' | 'photo';
-export type CardFill = 'surface' | 'surfaceAlt' | 'accent' | 'contrast';
+/**
+ * Deux formats seulement, et ce n'est pas une différence de TRAITEMENT : les
+ * deux cartes ont le même cadre, la même signature et le même fond. Le format
+ * dit juste ce qu'il y a à l'intérieur — un visuel ou du texte.
+ */
+export type CardFormat = 'text' | 'photo';
 
 export interface CardMeta {
   tweet: Tweet;
   format: CardFormat;
-  fill: CardFill;
   /** Hauteur estimée, pour l'équilibrage des colonnes. */
   height: number;
 }
 
-/** Bornes de longueur. 55 % du corpus réel tient sous `DECLARATION_MAX`. */
-export const DECLARATION_MAX = 46;
-export const CITATION_MAX = 100;
+/** Corps de carte — identique pour TOUTES les cartes texte. */
+export const TEXT_FONT_SIZE = 15;
+export const TEXT_LINE_HEIGHT = 20.5;
+export const TEXT_MAX_LINES = 7;
+
+/**
+ * Ratio unique des vignettes, en portrait 4:5.
+ *
+ * L'ancien module tirait le ratio d'une liste de quatre valeurs par hash de
+ * l'id : la forme ne disait donc rien du contenu et deux photos voisines
+ * pouvaient avoir des hauteurs très différentes sans raison. Un ratio unique
+ * suffit — et 5 tweets vivants sur 977 portent réellement une image.
+ */
+export const MEDIA_RATIO = 1.25;
 
 /**
  * En dessous de ce plancher, aucun compteur n'est affiché.
@@ -48,32 +69,15 @@ export const COUNTER_FLOOR = 5;
 /** Même raisonnement pour « N nouveaux depuis ta dernière visite ». */
 export const NEW_SINCE_FLOOR = 5;
 
-/**
- * Cadence des fonds pleins, indexée sur le RANG DE LA DÉCLARATION (pas sur sa
- * position dans la liste) : deux déclarations séparées par des cartes d'un
- * autre format doivent se suivre dans la cadence, sinon la densité de magenta
- * dépend du hasard du mélange `trending`.
- *
- * Cinq crans, dont un accent et un contraste : le magenta touche 1 déclaration
- * sur 5, soit ~11 % de toutes les cartes. Il ponctue, il n'habille pas.
- */
-export const FILL_CADENCE: CardFill[] = [
-  'surface',
-  'surface',
-  'accent',
-  'surface',
-  'contrast',
-];
+/** Marges verticales du corps texte (haut + bas) et hauteur de la signature. */
+const TEXT_PADDING_V = 28;
+const BYLINE_HEIGHT = 30;
 
 export function formatOf(tweet: Tweet): CardFormat {
-  // Le média l'emporte toujours : `hasVisual` gère le cas des vidéos, dont
-  // `media_urls` vaut [url_vidéo, url_miniature] — mesurer l'index 0 traitait
-  // toute vidéo comme une image et l'affichait comme une case vide.
-  if (splitTweetMedia(tweet).hasVisual) return 'photo';
-  const length = displayContentOf(tweet).length;
-  if (length <= DECLARATION_MAX) return 'declaration';
-  if (length <= CITATION_MAX) return 'citation';
-  return 'bloc';
+  // `hasVisual` gère le cas des vidéos, dont `media_urls` vaut
+  // [url_vidéo, url_miniature] — mesurer l'index 0 traitait toute vidéo comme
+  // une image et l'affichait comme une case vide.
+  return splitTweetMedia(tweet).hasVisual ? 'photo' : 'text';
 }
 
 export function shouldShowCount(n: number): boolean {
@@ -81,101 +85,36 @@ export function shouldShowCount(n: number): boolean {
 }
 
 /**
- * Corps de la Déclaration : plus le tweet est court, plus il est grand.
- * Interlignage serré (0,95 × la taille) — c'est ce qui donne le bloc compact
- * d'une affiche plutôt qu'un paragraphe aéré.
+ * Nombre de lignes qu'occupera le texte, borné à `TEXT_MAX_LINES` — la même
+ * borne que le `numberOfLines` du rendu, sans quoi l'estimation dépasserait la
+ * carte réelle sur les tweets longs.
+ *
+ * `0,52 em` par caractère est la largeur moyenne observée pour une sans-serif
+ * à cette taille : une estimation, assumée comme telle. Elle n'a pas besoin
+ * d'être exacte, seulement cohérente entre les deux colonnes.
  */
-export function declarationType(length: number): {
-  fontSize: number;
-  lineHeight: number;
-  lines: number;
-} {
-  if (length <= 20) return { fontSize: 36, lineHeight: 34, lines: 4 };
-  if (length <= 32) return { fontSize: 32, lineHeight: 30, lines: 5 };
-  return { fontSize: 28, lineHeight: 27, lines: 5 };
+export function estimatedLines(length: number, cardWidth: number): number {
+  const charsPerLine = Math.max(8, Math.round(cardWidth / (TEXT_FONT_SIZE * 0.52)));
+  return Math.max(1, Math.min(TEXT_MAX_LINES, Math.ceil(length / charsPerLine)));
 }
-
-/** Corps des formats Citation et Bloc. */
-export function quoteType(length: number): {
-  fontSize: number;
-  lineHeight: number;
-  lines: number;
-  boxHeight: (cardWidth: number) => number;
-} {
-  if (length <= CITATION_MAX) {
-    return {
-      fontSize: 17,
-      lineHeight: 23,
-      lines: 6,
-      boxHeight: (w) => Math.round(w * 1.02),
-    };
-  }
-  return {
-    fontSize: 14.5,
-    lineHeight: 19,
-    lines: 9,
-    boxHeight: (w) => Math.round(w * 1.34),
-  };
-}
-
-/** Ratio de la vignette photo, choisi par hash stable de l'id. */
-const MEDIA_RATIOS = [0.78, 1.05, 1.32, 1.6];
-
-function hashId(id: string | number): number {
-  const s = String(id);
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-/**
- * Signature textuelle sous une carte Photo ou Bloc — une seule ligne, sans
- * avatar. Les Déclarations et Citations n'en ont pas du tout : avec 3 comptes
- * pour 88 % du volume, une ligne d'auteur partout affiche les mêmes trois
- * visages en boucle, ce qui lit « désert ».
- */
-const BYLINE_HEIGHT = 26;
 
 export function estimatedHeightOf(tweet: Tweet, cardWidth: number): number {
-  const format = formatOf(tweet);
-  const content = displayContentOf(tweet);
-
-  if (format === 'photo') {
-    const ratio = MEDIA_RATIOS[hashId(tweet.id) % MEDIA_RATIOS.length];
-    return Math.round(cardWidth * ratio) + BYLINE_HEIGHT;
+  if (formatOf(tweet) === 'photo') {
+    return Math.round(cardWidth * MEDIA_RATIO) + BYLINE_HEIGHT;
   }
-  if (format === 'declaration') {
-    const type = declarationType(content.length);
-    // Le bloc plein se dimensionne sur son texte, avec une marge fixe
-    // généreuse — c'est une affiche, pas un paragraphe.
-    const lines = Math.min(
-      type.lines,
-      Math.max(1, Math.ceil(content.length / Math.max(8, cardWidth / (type.fontSize * 0.52)))),
-    );
-    return Math.round(lines * type.lineHeight + 56);
-  }
-  const type = quoteType(content.length);
-  return type.boxHeight(cardWidth) + (format === 'bloc' ? BYLINE_HEIGHT : 0);
+  const lines = estimatedLines(displayContentOf(tweet).length, cardWidth);
+  return Math.round(lines * TEXT_LINE_HEIGHT + TEXT_PADDING_V + BYLINE_HEIGHT);
 }
 
 /**
- * Décrit chaque tweet en un seul passage : format, place dans la cadence de
- * couleur, hauteur estimée. C'est l'entrée unique du mur — `wallLayout` ne
- * manipule que des `CardMeta`, jamais des `Tweet` bruts.
+ * Décrit chaque tweet en un seul passage : format et hauteur estimée. C'est
+ * l'entrée unique du mur — `wallLayout` ne manipule que des `CardMeta`, jamais
+ * des `Tweet` bruts.
  */
 export function describeCards(tweets: Tweet[], cardWidth: number): CardMeta[] {
-  let declarationRank = 0;
-  return tweets.map((tweet) => {
-    const format = formatOf(tweet);
-    let fill: CardFill = 'surface';
-    if (format === 'declaration') {
-      fill = FILL_CADENCE[declarationRank % FILL_CADENCE.length];
-      declarationRank += 1;
-    } else if (format === 'bloc') {
-      // Léger contraste de fond pour distinguer un pavé de texte d'une
-      // citation, sans introduire une couleur de plus.
-      fill = 'surfaceAlt';
-    }
-    return { tweet, format, fill, height: estimatedHeightOf(tweet, cardWidth) };
-  });
+  return tweets.map((tweet) => ({
+    tweet,
+    format: formatOf(tweet),
+    height: estimatedHeightOf(tweet, cardWidth),
+  }));
 }
