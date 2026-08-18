@@ -60,3 +60,7 @@ currentprice-error-final-fix.md
 # anterieur a la regle `*.js` ci-dessus — tout nouveau plugin serait parti
 # silencieusement a la poubelle, sans le moindre avertissement de git.
 !plugins/*.js
+
+# Specs de conception (skill brainstorming) : la regle *.md ci-dessus les
+# excluait silencieusement, exactement le piege que ce fichier documente.
+!docs/**/*.md
