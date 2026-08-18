@@ -60,6 +60,14 @@ const DARK = {
   accentGlow: 'rgba(254,44,85,0.38)',
   onAccent: '#FFFFFF',
 
+  /**
+   * Bloc de contraste du mur Explorer — la carte claire de la cadence.
+   * Le rôle est « le bloc qui tranche avec le fond », donc en thème clair il
+   * devient sombre : c'est la CADENCE qui doit rester lisible, pas la teinte.
+   */
+  blockContrast: '#F2EFE9',
+  onBlockContrast: '#0A0A0A',
+
   // Accent secondaire — cyan électrique (rare : live, liens, highlight)
   cyan: '#25F4EE',
   cyanMuted: 'rgba(37,244,238,0.16)',
@@ -124,6 +132,9 @@ const LIGHT: typeof DARK = {
   accentSoft: 'rgba(225,29,72,0.06)',
   accentGlow: 'rgba(225,29,72,0.28)',
   onAccent: '#FFFFFF',
+
+  blockContrast: '#1A1A1A',
+  onBlockContrast: '#FFFFFF',
 
   cyan: '#0891B2',
   cyanMuted: 'rgba(8,145,178,0.14)',
