@@ -113,6 +113,7 @@ import EventPassAdminScreen from '../screens/EventPassAdminScreen';
 import EventPassScanScreen from '../screens/EventPassScanScreen';
 import MyPassesScreen from '../screens/MyPassesScreen';
 import AccountStatusScreen from '../screens/AccountStatusScreen';
+import CalibrationScreen from '../screens/CalibrationScreen';
 import ShadowbanAdminScreen from '../screens/ShadowbanAdminScreen';
 import { navigationRef } from './NavigationService';
 import { colors } from '../theme';
@@ -256,6 +257,7 @@ export type MainStackParamList = {
   EventPassScan: { eventSlug?: string; eventName?: string } | undefined;
   MyPasses: undefined;
   AccountStatus: undefined;
+  Calibration: undefined;
   ShadowbanAdmin: undefined;
 };
 
@@ -1090,6 +1092,12 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="AccountStatus"
         component={AccountStatusScreen}
+        options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
+      />
+
+      <MainStack.Screen
+        name="Calibration"
+        component={CalibrationScreen}
         options={{ presentation: 'card', animation: 'slide_from_bottom', headerShown: false }}
       />
 

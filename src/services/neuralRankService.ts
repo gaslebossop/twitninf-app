@@ -205,6 +205,58 @@ class NeuralRankService {
     }
   }
 
+  /**
+   * Un tour de la page « Recalibrer l'algorithme » (Paramètres, jamais
+   * proposée automatiquement) — voir `CalibrationSession` pour la boucle
+   * complète côté écran.
+   *
+   * `likedTweetIds`/`skippedTweetIds` sont CUMULÉS depuis le tour 1 de cette
+   * session, pas seulement le tour précédent : le moteur en a besoin pour ne
+   * jamais reproposer un tweet déjà vu.
+   */
+  async getCalibrationRound(
+    round: number,
+    likedTweetIds: string[],
+    skippedTweetIds: string[],
+  ): Promise<{ success: boolean; tweets: Tweet[]; message?: string }> {
+    try {
+      const response = await apiService.request(`${this.baseUrl}/calibration/round`, {
+        method: 'POST',
+        body: { round, likedTweetIds, skippedTweetIds },
+        requiresAuth: true,
+      });
+      if (!response?.success) {
+        return { success: false, tweets: [], message: response?.error || 'Tour indisponible' };
+      }
+      return { success: true, tweets: (response.data?.tweets as Tweet[]) || [] };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Tour de recalibration indisponible';
+      console.error('[NeuralRank] getCalibrationRound error:', msg);
+      return { success: false, tweets: [], message: msg };
+    }
+  }
+
+  /**
+   * Termine une session de recalibration. `likedTweetIds` = tous les choix
+   * "ça m'intéresse", tous tours confondus — voir `rust-recommender/src/
+   * calibration.rs` pour ce que ça déclenche : jamais un like public, un
+   * signal algorithmique seulement (boost temps réel par auteur,
+   * cooccurrence, vecteur de goût dédié).
+   */
+  async finishCalibration(likedTweetIds: string[]): Promise<{ success: boolean; applied: number }> {
+    try {
+      const response = await apiService.request(`${this.baseUrl}/calibration/finish`, {
+        method: 'POST',
+        body: { likedTweetIds },
+        requiresAuth: true,
+      });
+      return { success: !!response?.success, applied: response?.data?.applied || 0 };
+    } catch (error) {
+      console.error('[NeuralRank] finishCalibration error:', error);
+      return { success: false, applied: 0 };
+    }
+  }
+
   async healthCheck(): Promise<{ healthy: boolean }> {
     try {
       const res = await apiService.request(`${this.baseUrl}/health`, {

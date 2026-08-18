@@ -252,6 +252,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'shield-checkmark-outline',
               () => navigation.navigate('AccountStatus')
             )}
+
+            {renderActionButton(
+              'Recalibrer l\'algorithme',
+              '5 tours de tweets pour affiner ce qu\'on te recommande',
+              'sparkles-outline',
+              () => navigation.navigate('Calibration')
+            )}
           </Animated.View>
 
           {/* Section Confidentialité */}
