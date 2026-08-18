@@ -15,7 +15,11 @@
 - **`scheduleOnRN` de `react-native-worklets`, jamais `runOnJS`** dans tout code nouveau. `runOnJS` fonctionne encore en Reanimated 4.1.1 mais est déprécié deux fois. Les 50 usages existants ailleurs dans l'app ne sont **pas** migrés (hors périmètre).
 - **Une fonction JS ordinaire appelée dans un worklet tue l'app sans aucun log.** Toute fonction appelée depuis un worklet passe par `scheduleOnRN`.
 - **Aucune animation d'apparition sur les cartes.** Décision utilisateur antérieure. Le mouvement répond à un geste ou suit le doigt.
-- **Courbes et durées : celles de `src/theme/motion.ts` uniquement.** `easing.out = bezier(0.16, 1, 0.3, 1)`, ressort critique `damping: 28, stiffness: 190`. Ne jamais baisser `damping` sans recalculer `damping ≈ 2·√(stiffness · mass)`. Aucun rebond visible.
+- ⚠️ **DEUX moteurs d'animation, deux sources de courbes — ne jamais les mélanger.**
+  - **Reanimated** (`withTiming`, `withSpring`) → `import { ease, timing, springs } from '../../../utils/gesture'`. Reanimated 4.1.1 **exige** que la fonction d'easing soit un worklet (`assertEasingIsWorklet`, `timing.ts:81`) ; `src/utils/gesture.ts` construit les mêmes béziers avec le `Easing` de `react-native-reanimated`, et expose des configs prêtes (`timing.instant/fast/base/slow/exit`, `springs.settle/snappy`).
+  - **`Animated` du cœur React Native** → `src/theme/motion.ts`.
+  - **Passer `easing.out` de `motion.ts` à un `withTiming` de Reanimated lève `ReanimatedError: The easing function is not a worklet` au premier appel.** Constaté à la Task 4. `motion.ts` importe son `Easing` de `react-native`, ses fonctions n'ont donc jamais le `__workletHash`.
+  - Béziers identiques dans les deux : `out = (0.16, 1, 0.3, 1)`, `in = (0.5, 0, 0.75, 0)`. Ressort critique `damping: 28, stiffness: 190` — ne jamais baisser `damping` sans recalculer `damping ≈ 2·√(stiffness · mass)`. Aucun rebond visible.
 - **Durées 120–280 ms**, plafond absolu 340 ms.
 - **`useWindowDimensions`, jamais `Dimensions.get()`.** La largeur de carte doit être un paramètre, pas une constante de module.
 - **`maxFontSizeMultiplier={1.2}`** sur tout texte à hauteur contrainte.
@@ -1458,7 +1462,10 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { colors, duration, easing, fonts, radius, spring, withAlpha } from '../../../theme';
+import { colors, fonts, radius, withAlpha } from '../../../theme';
+// ⚠️ Courbes REANIMATED (worklets), pas celles de `theme/motion` — voir les
+// contraintes globales : un easing de `motion.ts` fait lever Reanimated.
+import { springs, timing } from '../../../utils/gesture';
 import feedback from '../../../utils/feedback';
 import type { Tweet } from '../../../types/api';
 import type { CardRect } from './ExploreCard';
@@ -1501,9 +1508,9 @@ function ExploreActionSheet({
 
   useEffect(() => {
     if (tweet) {
-      open.value = withSpring(1, spring);
+      open.value = withSpring(1, springs.settle);
     } else {
-      open.value = withTiming(0, { duration: duration.fast, easing: easing.in });
+      open.value = withTiming(0, timing.exit);
     }
   }, [tweet, open]);
 
