@@ -1343,7 +1343,7 @@ export default function TweetsScreen() {
       case 'open': {
         if (payload?.isAd) {
           const tweet = payload.tweet;
-          apiService.post(`/api/targeting/ads/${tweet?.ad_data?.id}/click`).catch(() => {});
+          apiService.post(`/api/ads/advertisements/${tweet?.ad_data?.id}/click`).catch(() => {});
           const redirectUrl: string | undefined = tweet?.ad_data?.redirect_url;
           if (redirectUrl?.startsWith('twitnin://profile/')) {
             (navigation as any).navigate('UserProfile', { username: redirectUrl.replace('twitnin://profile/', '') });

@@ -169,11 +169,11 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
     } catch { }
   };
   const fetchMyAds = async () => {
-    try { const r = await api.get('/api/targeting/ads/me'); if (r.success) setMyAds(r.ads || []); } catch { }
+    try { const r = await api.get('/api/ads/targeted/me'); if (r.success) setMyAds(r.data || []); } catch { }
   };
   const fetchTargetingOptions = async () => {
     try {
-      const r = await api.get('/api/targeting/available');
+      const r = await api.get('/api/ads/targeting/options');
       if (r.success && Array.isArray(r.data)) {
         // Trier les catégories par portée totale (somme des user_count)
         const sortedData = r.data
@@ -237,29 +237,47 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
   const closeSearch = () => { setSearchModalVisible(false); setSearchQuery(''); setSearchUsers([]); setSearchTweets([]); };
 
   const submitAd = async () => {
-    if (!textContent.trim() && !imageUrl.trim()) { toast.error('Contenu manquant', {
-      description: 'Ajoutez un texte ou une image.',
-    }); return; }
+    // Le ciblage promeut désormais un tweet EXISTANT, pas un visuel créé à
+    // part : c'est ce qui permet à la publicité de passer par le même
+    // classement, les mêmes règles de visibilité et le même affichage que
+    // n'importe quel contenu. Il faut donc en désigner un.
+    if (!redirectTarget || redirectTarget.type !== 'tweet' || !redirectTarget.tweetId) {
+      toast.error('Tweet à promouvoir manquant', {
+        description: 'Choisis un de tes tweets à mettre en avant.',
+      });
+      return;
+    }
     const views = parseInt(maxViews, 10);
     if (!views || views <= 0) { toast.error('Objectif invalide', {
       description: 'Saisissez un nombre de vues valide.',
     }); return; }
     const cost = views * 0.10;
     if (cost > walletBalance) { toast.error('Solde insuffisant', {
-      description: `Coût estimé : ${cost.toFixed(2)} TWC\nDisponible : ${walletBalance.toFixed(2)} TWC`,
+      description: `Coût estimé : ${cost.toFixed(2)} NF\nDisponible : ${walletBalance.toFixed(2)} NF`,
     }); return; }
     if (!selectedGroups.length) { toast.error('Audience requise', {
       description: 'Sélectionnez au moins un segment.',
     }); return; }
     setSubmitting(true);
     try {
-      const redirect_url = redirectTarget
-        ? redirectTarget.type === 'profile' ? `twitnin://profile/${redirectTarget.username}` : `twitnin://tweet/${redirectTarget.tweetId}`
-        : undefined;
-      const res = await api.post('/api/targeting/ads', {
-        image_url: imageUrl, text_content: textContent, max_views: views,
-        targeting_groups: selectedGroups.map(g => ({ name: g.category, value: g.value })),
-        redirect_url,
+      // Plus de `redirect_url` : la publicité EST le tweet promu, on y arrive
+      // en le touchant comme n'importe quel autre. Une redirection séparée
+      // n'avait de sens que du temps du visuel créé à part.
+      // Les segments choisis sont regroupés par critère : le moteur attend un
+      // tableau par critère (`user_types`, `hours`, `follows_any_of`), pas une
+      // liste plate de paires — voir `rust-recommender/src/ads/serving.rs`.
+      const targeting: Record<string, string[]> = {};
+      for (const g of selectedGroups) {
+        (targeting[g.category] ||= []).push(g.value);
+      }
+
+      const res = await api.post('/api/ads/targeted', {
+        tweet_id: redirectTarget?.tweetId,
+        // Le budget EST le nombre de vues achetées : 0,10 NF l'impression.
+        budget: Number((views * 0.10).toFixed(2)),
+        title: textContent?.slice(0, 60) || 'Publicité',
+        max_impressions_per_user: 3,
+        targeting,
       });
       if (res.success) {
         // On bascule directement sur les stats — c'est là que l'utilisateur
@@ -400,7 +418,7 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
         <Text style={s.headerTitle}>Publicités</Text>
         <View style={s.wallet}>
           <Text style={s.walletLabel}>Solde disponible</Text>
-          <Text style={s.walletAmt}>{walletBalance.toFixed(2)} <Text style={{ fontSize: 13, color: C.t3 }}>TWC</Text></Text>
+          <Text style={s.walletAmt}>{walletBalance.toFixed(2)} <Text style={{ fontSize: 13, color: C.t3 }}>NF</Text></Text>
         </View>
       </View>
 
@@ -435,8 +453,8 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
               <Ionicons name={overBudget ? 'warning-outline' : 'calculator-outline'} size={17} color={overBudget ? C.red : C.accent} />
               <Text style={[s.bannerTxt, { color: overBudget ? C.red : C.accent }]}>
                 {overBudget
-                  ? `Solde insuffisant — il vous manque ${(cost - walletBalance).toFixed(2)} TWC`
-                  : `Coût estimé : ${cost.toFixed(2)} TWC pour ${views.toLocaleString()} vues`}
+                  ? `Solde insuffisant — il vous manque ${(cost - walletBalance).toFixed(2)} NF`
+                  : `Coût estimé : ${cost.toFixed(2)} NF pour ${views.toLocaleString()} vues`}
               </Text>
             </View>
           )}
@@ -455,8 +473,8 @@ export default function CreateTargetingAdScreen({ navigation }: any) {
             placeholder="ex : 5000"
             keyboardType="numeric"
             icon="eye-outline"
-            hint="Tarif : 0,10 TWC par vue"
-            error={overBudget ? `Disponible : ${walletBalance.toFixed(2)} TWC — coût : ${cost.toFixed(2)} TWC` : undefined}
+            hint="Tarif : 0,10 NF par vue"
+            error={overBudget ? `Disponible : ${walletBalance.toFixed(2)} NF — coût : ${cost.toFixed(2)} NF` : undefined}
           />
 
           {/* Step 3 */}
