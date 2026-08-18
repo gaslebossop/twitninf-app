@@ -158,6 +158,14 @@ function ExploreWall({
     />
   );
 
+  // Décision assumée, pas un oubli : ce mur n'est pas virtualisé (pas de
+  // `FlatList`/`VirtualizedList`) — tout s'accumule dans ce `ScrollView` et
+  // rien ne se démonte. La prod tourne avec environ 977 tweets vivants au
+  // total, donc la liste accumulée reste bornée en pratique. Virtualiser un
+  // mur en maçonnerie avec bande héroïque et cartes de rupture pleine
+  // largeur est un chantier à part entière que le plan a délibérément
+  // évité. Limite acceptée à revisiter si le corpus grossit, pas à corriger
+  // maintenant.
   return (
     <ScrollView
       style={styles.list}
