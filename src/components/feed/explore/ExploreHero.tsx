@@ -96,12 +96,19 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
   useEffect(() => {
     if (count === 0) return;
     runProgress(0, index + 1);
-    return () => {
-      cancelAnimation(progress);
-      cancelAnimation(fade);
-      cancelAnimation(drift);
-    };
-  }, [index, count, runProgress, progress, fade, drift]);
+  }, [index, count, runProgress]);
+
+  // Séparé de l'effet ci-dessus À DESSEIN : `progress`/`fade`/`drift` sont des
+  // valeurs partagées stables, donc ce cleanup ne s'exécute qu'au VRAI
+  // démontage. Si on le fusionne avec l'effet indexé par `index`, son cleanup
+  // se redéclenche à CHAQUE changement de slide — souvent moins de 260 ms
+  // après que `goTo` a relancé le fondu entrant — et fige `fade`/`drift` près
+  // de 0 pour toute la durée du dwell suivant (bande quasi invisible).
+  useEffect(() => () => {
+    cancelAnimation(progress);
+    cancelAnimation(fade);
+    cancelAnimation(drift);
+  }, [progress, fade, drift]);
 
   /**
    * ⚠️ `measureInWindow` rend son résultat par CALLBACK ASYNCHRONE. Lire une
