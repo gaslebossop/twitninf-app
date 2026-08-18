@@ -94,8 +94,15 @@ test('toutes les cartes reçoivent la même description, sans cadence de couleur
 });
 
 test('la hauteur croît avec la longueur, puis plafonne', () => {
+  // Fixtures choisies SOUS le plafond, sinon le test comparerait deux fois la
+  // même hauteur plafonnée et ne mesurerait plus rien.
+  assert.ok(
+    estimatedLines(60, CARD_WIDTH) < TEXT_MAX_LINES,
+    'fixture « medium » à revoir : elle sature le plafond de lignes',
+  );
+
   const short = estimatedHeightOf(textTweet(1, 10), CARD_WIDTH);
-  const medium = estimatedHeightOf(textTweet(2, 120), CARD_WIDTH);
+  const medium = estimatedHeightOf(textTweet(2, 60), CARD_WIDTH);
   const long = estimatedHeightOf(textTweet(3, 5000), CARD_WIDTH);
   const longer = estimatedHeightOf(textTweet(4, 50000), CARD_WIDTH);
 
@@ -114,9 +121,13 @@ test('le nombre de lignes estimé ne dépasse jamais la borne du rendu', () => {
 
 test('une carte plus étroite occupe plus de lignes pour le même texte', () => {
   // Le garde-fou contre la régression qui figeait la largeur au chargement :
-  // la largeur doit réellement traverser le calcul.
-  const wide = estimatedLines(200, 300);
-  const narrow = estimatedLines(200, 120);
+  // la largeur doit réellement traverser le calcul. Longueur choisie pour que
+  // la carte LARGE reste sous le plafond — sinon les deux valeurs seraient
+  // plafonnées à l'identique et le test passerait pour de mauvaises raisons.
+  const wide = estimatedLines(100, 300);
+  const narrow = estimatedLines(100, 120);
+
+  assert.ok(wide < TEXT_MAX_LINES, 'fixture à revoir : la carte large sature');
   assert.ok(narrow > wide);
 });
 

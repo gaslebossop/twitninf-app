@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 
-import { colors, fonts, radius } from '../../../theme';
+import { colors, fonts, isDarkTheme, radius } from '../../../theme';
 import { AppRefreshControl, Tappable } from '../../ui';
 import { describeCards, NEW_SINCE_FLOOR } from './cardFormat';
 import { buildColumns } from './wallLayout';
@@ -31,6 +31,15 @@ const GRID_GAP = 10;
 const FALLBACK_TAB_BAR_HEIGHT = 85;
 /** Avance de pagination, en hauteurs d'écran. */
 const PREFETCH_SCREENS = 2;
+
+/**
+ * Fond de la grille. En clair, la page passe d'un blanc pur à un gris très
+ * léger pour que les cartes BLANCHES d'`ExploreCard` s'en détachent : c'est ce
+ * rapport-là — objet clair posé sur un plan légèrement plus sombre — qui fait
+ * lire une carte comme une carte. En sombre, le fond de l'app est déjà plus
+ * sombre que les cartes, donc rien à changer.
+ */
+const WALL_BACKGROUND = isDarkTheme() ? colors.bg : colors.bgElevated;
 
 interface ExploreWallProps {
   tweets: Tweet[];
@@ -248,10 +257,10 @@ function ExploreWall({
 export default memo(ExploreWall);
 
 const styles = StyleSheet.create({
-  list: { flex: 1 },
+  list: { flex: 1, backgroundColor: WALL_BACKGROUND },
   listContent: {
     paddingHorizontal: GRID_PADDING,
-    paddingTop: 4,
+    paddingTop: 8,
   },
   columns: { flexDirection: 'row', gap: GRID_GAP },
   column: { flex: 1 },

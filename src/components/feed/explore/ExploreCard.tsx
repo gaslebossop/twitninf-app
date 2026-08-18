@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { colors, fonts, radius, withAlpha } from '../../../theme';
+import { colors, fonts, isDarkTheme, radius, withAlpha } from '../../../theme';
 import Avatar from '../../Avatar';
 import { Tappable } from '../../ui';
 import feedback from '../../../utils/feedback';
@@ -24,6 +24,24 @@ import {
   TEXT_MAX_LINES,
   type CardMeta,
 } from './cardFormat';
+
+/**
+ * Fond de carte, et il DOIT être décidé par thème.
+ *
+ * En clair, la page est blanche et `colors.surface` vaut `#F2F2F5` : une carte
+ * grise posée sur du blanc, c'est le dessin exact d'un squelette de
+ * chargement, et c'est ce qui rendait la grille « pas finie ». On inverse le
+ * rapport — carte BLANCHE sur une page légèrement grisée (voir `ExploreWall`),
+ * qui est la façon dont une carte se lit comme un objet posé.
+ *
+ * En sombre, le rapport naturel est déjà le bon : `surface` (`#161616`) est
+ * plus clair que le fond (`#0A0A0A`), donc on n'y touche pas.
+ *
+ * Lu une seule fois au chargement du module, comme tout le reste du dépôt :
+ * `colors` est un objet muté au démarrage et changer de thème demande de
+ * toute façon un rechargement de l'app (voir `theme/colors.ts`).
+ */
+const CARD_BACKGROUND = isDarkTheme() ? colors.surface : colors.white;
 
 /** Même fenêtre de double-tap que dans tout le fil. */
 const DOUBLE_TAP_MS = 280;
@@ -149,7 +167,6 @@ function ExploreCard({
     });
   }, [onLongPress, tweet]);
 
-  const showLikes = shouldShowCount(likes);
   const showViews = shouldShowCount(views);
   const mediaHeight = Math.round(cardWidth * MEDIA_RATIO);
 
@@ -227,21 +244,23 @@ function ExploreCard({
           >
             {author?.full_name || author?.username || ''}
           </Text>
-          {showLikes && (
-            <View style={styles.likeChip}>
-              {/* Cœur PLEIN uniquement si j'ai aimé — sinon un contour discret.
-                  Un cœur magenta plein sur chaque carte peignait la grille en
-                  rouge et faisait passer le compteur avant le contenu. */}
-              <Ionicons
-                name={isLiked ? 'heart' : 'heart-outline'}
-                size={11}
-                color={isLiked ? colors.like : colors.textMuted}
-              />
-              <Text style={styles.likeText} maxFontSizeMultiplier={MAX_FONT_SCALE}>
-                {formatCompactCount(likes)}
-              </Text>
-            </View>
-          )}
+          {/* Compteur sur TOUTES les cartes, y compris à zéro. Le plancher qui
+              le masquait en dessous de 5 laissait une carte sur deux sans rien
+              à droite, et c'est cette alternance — une carte avec chiffre, la
+              suivante sans — qui donnait à la ligne de signature son air
+              inachevé. Un « 0 » assumé vaut mieux qu'un trou. */}
+          <View style={styles.likeChip}>
+            {/* Cœur PLEIN uniquement si j'ai aimé — sinon un contour discret.
+                Un cœur magenta plein partout peignait la grille en rouge. */}
+            <Ionicons
+              name={isLiked ? 'heart' : 'heart-outline'}
+              size={12}
+              color={isLiked ? colors.like : colors.textMuted}
+            />
+            <Text style={styles.likeText} maxFontSizeMultiplier={MAX_FONT_SCALE}>
+              {formatCompactCount(likes)}
+            </Text>
+          </View>
         </View>
       </View>
     </Tappable>
@@ -258,28 +277,27 @@ const styles = StyleSheet.create({
    * à la carte ici, ce n'est pas l'ombre, c'est le filet ci-dessous.
    */
   card: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 2,
   },
   /**
-   * Le filet : sans lui, un aplat gris à grand rayon sur fond blanc est
-   * exactement ce qu'on dessine pour un squelette de CHARGEMENT — la grille
-   * paraissait attendre son contenu au lieu de l'afficher. Un rayon plus
-   * serré (`md`) va dans le même sens : moins de rondeur, plus de tenue.
+   * Filet d'un cheveu en plus de l'ombre : l'ombre seule ne suffit pas à poser
+   * une arête sur Android, où elle est rendue par `elevation` et disparaît
+   * presque sur une surface claire.
    */
   cardInner: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     overflow: 'hidden',
-    backgroundColor: colors.surface,
+    backgroundColor: CARD_BACKGROUND,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
 
-  textBox: { paddingHorizontal: 12, paddingTop: 13, paddingBottom: 11 },
+  textBox: { paddingHorizontal: 13, paddingTop: 14, paddingBottom: 12 },
   text: {
     color: colors.textPrimary,
     fontFamily: fonts.medium,

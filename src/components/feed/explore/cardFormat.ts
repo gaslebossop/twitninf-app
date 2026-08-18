@@ -46,14 +46,12 @@ export interface CardMeta {
 /**
  * Corps de carte — identique pour TOUTES les cartes texte.
  *
- * 13,5 px et non 15 : à 15, un tweet court remplissait la carte d'un bord à
- * l'autre et la grille lisait comme une maquette non finie, chaque bloc de
- * texte réclamant l'attention au même volume. Une légende de grille se lit
- * en un coup d'œil, elle ne se lit pas « en grand » — la taille du texte doit
- * rester sous celle du corps de lecture du fil.
+ * Le texte EST le contenu ici : il n'y a pas de vignette pour porter la carte
+ * (5 tweets vivants sur 977 ont une image), donc le rabaisser au calibre
+ * d'une légende laissait des cartes vides autour de quelques mots.
  */
-export const TEXT_FONT_SIZE = 13.5;
-export const TEXT_LINE_HEIGHT = 18.5;
+export const TEXT_FONT_SIZE = 15.5;
+export const TEXT_LINE_HEIGHT = 21;
 /**
  * 6 lignes et non 7 : au-delà, une carte texte devient plus haute que deux
  * cartes voisines réunies et creuse un trou dans la colonne d'en face.
