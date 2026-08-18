@@ -11,11 +11,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { colors, duration, easing, radius, withAlpha } from '../../../theme';
+import { colors, duration, radius, withAlpha } from '../../../theme';
 // `displayNameFonts` n'est pas réexporté par le barrel `../../../theme` (seul
 // `fonts` l'est) : import direct depuis `theme/fonts`, comme le fait déjà
 // `ExploreCard.tsx`.
 import { displayNameFonts } from '../../../theme/fonts';
+// ⚠️ Courbes REANIMATED (worklets) — un easing de `theme/motion` fait lever
+// `ReanimatedError: The easing function is not a worklet`.
+import { ease, timing } from '../../../utils/gesture';
 import { displayContentOf, splitTweetMedia } from '../../../utils/tweetMedia';
 import { declarationType, type CardMeta } from './cardFormat';
 import type { CardRect } from './ExploreCard';
@@ -64,13 +67,13 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
     const wrapped = ((next % count) + count) % count;
     // Fondu croisé court + dérive latérale : l'œil suit le mouvement au lieu
     // de subir un remplacement sec.
-    fade.value = withTiming(0, { duration: 110, easing: easing.in }, (done) => {
+    fade.value = withTiming(0, { duration: duration.instant, easing: ease.in }, (done) => {
       'worklet';
       if (done) {
         scheduleOnRN(setIndex, wrapped);
         drift.value = 24;
-        fade.value = withTiming(1, { duration: duration.base, easing: easing.out });
-        drift.value = withTiming(0, { duration: duration.base, easing: easing.out });
+        fade.value = withTiming(1, timing.base);
+        drift.value = withTiming(0, timing.base);
       }
     });
   }, [count, drift, fade]);
@@ -93,8 +96,12 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
   useEffect(() => {
     if (count === 0) return;
     runProgress(0, index + 1);
-    return () => cancelAnimation(progress);
-  }, [index, count, runProgress, progress]);
+    return () => {
+      cancelAnimation(progress);
+      cancelAnimation(fade);
+      cancelAnimation(drift);
+    };
+  }, [index, count, runProgress, progress, fade, drift]);
 
   /**
    * ⚠️ `measureInWindow` rend son résultat par CALLBACK ASYNCHRONE. Lire une
@@ -102,14 +109,16 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
    * doit donc se faire DEPUIS le callback, pas juste après l'avoir déclenché.
    */
   const handlePress = useCallback(() => {
-    const current = slides[index];
+    // `index` peut survivre à un tirage plus court que le précédent : on le
+    // ramène dans les bornes plutôt que de lire `undefined`.
+    const current = slides[Math.min(index, count - 1)];
     if (!current) return;
     const node = frameRef.current;
     if (!node) { onOpen(current.tweet, null); return; }
     node.measureInWindow((x, y, w, h) => {
       onOpen(current.tweet, w > 0 && h > 0 ? { x, y, width: w, height: h } : null);
     });
-  }, [index, onOpen, slides]);
+  }, [count, index, onOpen, slides]);
 
   /**
    * UN SEUL geste sur la bande : un `Tap`.
@@ -160,7 +169,10 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
 
   if (count === 0) return null;
 
-  const current = slides[index];
+  // `index` peut survivre à un tirage plus court que le précédent : on le
+  // ramène dans les bornes plutôt que de lire `undefined`.
+  const boundedIndex = Math.min(index, count - 1);
+  const current = slides[boundedIndex];
   const content = displayContentOf(current.tweet);
   const media = splitTweetMedia(current.tweet);
   const type = declarationType(content.length);
@@ -200,8 +212,8 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
         <View style={styles.track} pointerEvents="none">
           {slides.map((meta, i) => (
             <View key={meta.tweet.id} style={styles.segment}>
-              {i < index && <View style={styles.segmentFull} />}
-              {i === index && <Animated.View style={[styles.segmentFull, barStyle]} />}
+              {i < boundedIndex && <View style={styles.segmentFull} />}
+              {i === boundedIndex && <Animated.View style={[styles.segmentFull, barStyle]} />}
             </View>
           ))}
         </View>
