@@ -1155,7 +1155,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { colors, displayNameFonts, duration, easing, fonts, radius, withAlpha } from '../../../theme';
+import { colors, duration, radius, withAlpha } from '../../../theme';
+import { displayNameFonts } from '../../../theme/fonts';
+// ⚠️ Courbes REANIMATED (worklets) — un easing de `theme/motion` fait lever
+// `ReanimatedError: The easing function is not a worklet`.
+import { ease, timing } from '../../../utils/gesture';
 import { displayContentOf, splitTweetMedia } from '../../../utils/tweetMedia';
 import { declarationType, type CardMeta } from './cardFormat';
 import type { CardRect } from './ExploreCard';
@@ -1204,13 +1208,13 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
     const wrapped = ((next % count) + count) % count;
     // Fondu croisé court + dérive latérale : l'œil suit le mouvement au lieu
     // de subir un remplacement sec.
-    fade.value = withTiming(0, { duration: 110, easing: easing.in }, (done) => {
+    fade.value = withTiming(0, { duration: duration.instant, easing: ease.in }, (done) => {
       'worklet';
       if (done) {
         scheduleOnRN(setIndex, wrapped);
         drift.value = 24;
-        fade.value = withTiming(1, { duration: duration.base, easing: easing.out });
-        drift.value = withTiming(0, { duration: duration.base, easing: easing.out });
+        fade.value = withTiming(1, timing.base);
+        drift.value = withTiming(0, timing.base);
       }
     });
   }, [count, drift, fade]);
