@@ -467,7 +467,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       confirmLabel: 'Déconnexion',
       destructive: true,
     }).then((ok) => {
-      if (ok) (async () => { await logout(); navigation.navigate('Intro'); })();
+      // Même raison que `AccountManagerScreen.handleClearAllAccounts` : pas de
+      // navigation manuelle, `AppNavigator` bascule déjà tout seul sur
+      // `isAuthenticated`. L'appeler ici en plus courait la course contre ce
+      // re-rendu et produisait « NAVIGATE Intro not handled » puis un
+      // « Maximum update depth exceeded ».
+      if (ok) (async () => { await logout(); })();
     });
   };
 

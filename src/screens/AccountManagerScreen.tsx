@@ -53,9 +53,18 @@ export default function AccountManagerScreen() {
       confirmLabel: 'Nettoyer et déconnecter',
       destructive: true,
     }).then((ok) => {
+      // Pas de navigation manuelle vers 'Intro' ici : `AppNavigator` bascule
+      // déjà tout seul sur le rendu conditionnel de `isAuthenticated`, qui
+      // vient de passer à `false`. Naviguer en plus, juste après, arrivait
+      // avant que React n'ait eu le temps de re-rendre avec ce nouvel état —
+      // 'Intro' n'existait donc pas encore dans le RootStack ('MainApp' y
+      // restait seul inscrit un instant de plus), d'où l'avertissement
+      // « NAVIGATE not handled by any navigator » et, dans son sillage, le
+      // crash « Maximum update depth exceeded » au moment où les deux
+      // tentatives de bascule (la conditionnelle et celle-ci) se sont
+      // télescopées.
       if (ok) (async () => {
             await clearAllAccountsAndLogout();
-            (navigation as any).navigate('Intro');
           })();
     });
   };
