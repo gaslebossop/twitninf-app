@@ -33,6 +33,7 @@ const validBirthday = (day: number, month: number) => {
 };
 
 export default function ProfileCompletionGate() {
+  if (__DEV__) console.count('[loop-hunt] ProfileCompletionGate render');
   const { user, isAuthenticated, refreshCurrentUser } = useAuth();
   const [ready, setReady] = useState(false);
   const [step, setStep] = useState<Step>('demographics');

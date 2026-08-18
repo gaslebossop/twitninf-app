@@ -258,6 +258,7 @@ function ConsentRow({
  * elle-meme, sinon une version ancienne se croirait a jour.
  */
 export default function ConsentGate() {
+  if (__DEV__) console.count('[loop-hunt] ConsentGate render');
   const { user, isAuthenticated } = useAuth();
   const [ready, setReady] = useState(false);
 

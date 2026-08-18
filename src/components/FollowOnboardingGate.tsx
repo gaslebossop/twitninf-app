@@ -29,6 +29,7 @@ const STARTUP_SETTLE_MS = 250;
  * volontairement plus lourd tant que le compte n'a pas d'historique reel.
  */
 export default function FollowOnboardingGate() {
+  if (__DEV__) console.count('[loop-hunt] FollowOnboardingGate render');
   const { user, isAuthenticated, refreshCurrentUser } = useAuth();
   const [ready, setReady] = useState(false);
   const [suggestions, setSuggestions] = useState<OnboardingSuggestion[]>([]);

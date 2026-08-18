@@ -207,6 +207,7 @@ export function SleepPage({
 }
 
 export default function SleepGate() {
+  if (__DEV__) console.count('[loop-hunt] SleepGate render');
   const { isAuthenticated } = useAuth();
   const [wanted, setWanted] = useState(false);
   const [bonneNuit, setBonneNuit] = useState(false);

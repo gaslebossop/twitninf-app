@@ -37,6 +37,7 @@ const TransparentTheme = {
 
 export default function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
+  if (__DEV__) console.count('[loop-hunt] AppNavigator render');
 
   if (isLoading) {
     return <AppLoadingScreen />;

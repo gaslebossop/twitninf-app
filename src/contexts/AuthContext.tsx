@@ -299,6 +299,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const checkAuthStatus = async () => {
+    if (__DEV__) console.count('[loop-hunt] checkAuthStatus call');
     try {
       const token = await tokenStore.getAccessToken();
 

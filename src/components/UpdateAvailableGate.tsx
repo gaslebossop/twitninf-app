@@ -53,6 +53,7 @@ const STEPS = Platform.select({
 }) as string[];
 
 export default function UpdateAvailableGate() {
+  if (__DEV__) console.count('[loop-hunt] UpdateAvailableGate render');
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const { width } = useWindowDimensions();
 

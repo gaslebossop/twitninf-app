@@ -41,6 +41,7 @@ import SleepGate from './src/components/SleepGate';
  * serveur, pas seulement sur l'appareil).
  */
 function ReadingLanguageGate() {
+  if (__DEV__) console.count('[loop-hunt] ReadingLanguageGate render');
   const { needsChoice } = useReadingLanguage();
   // Passe par la file d'attente des popups de démarrage : elle est prioritaire,
   // mais ne doit pas se superposer aux trois autres (voir StartupPopupContext).
