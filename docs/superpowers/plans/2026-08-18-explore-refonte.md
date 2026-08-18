@@ -247,12 +247,24 @@ test('la hauteur estimée croît avec la longueur du texte', () => {
   assert.ok(moyen < long, 'moyen < long');
 });
 
-test('la hauteur estimée suit la largeur de carte', () => {
-  // C'est ce qui permet à la grille de rester juste en rotation : la largeur
-  // est un paramètre, pas une constante figée au chargement du module.
-  const etroit = estimatedHeightOf(textTweet(1, 10), 150);
-  const large = estimatedHeightOf(textTweet(1, 10), 300);
+test('la hauteur d’une photo suit la largeur de carte', () => {
+  // Une vignette est dimensionnée par un RATIO : deux fois plus large, deux
+  // fois plus haute. C'est ce qui permet à la grille de rester juste après une
+  // rotation — la largeur est un paramètre, pas une constante figée au
+  // chargement du module.
+  const etroit = estimatedHeightOf(photoTweet(1), 150);
+  const large = estimatedHeightOf(photoTweet(1), 300);
   assert.ok(large > etroit);
+});
+
+test('une carte de texte RÉTRÉCIT quand la carte s’élargit', () => {
+  // Contre-intuitif mais juste, et c'est le sens qui compte pour l'équilibrage
+  // des colonnes : le même texte tient en MOINS de lignes sur une carte plus
+  // large, donc la boîte est plus courte. Une estimation qui grandirait avec la
+  // largeur décalerait les colonnes à chaque rotation.
+  const etroit = estimatedHeightOf(textTweet(1, 40), 150);
+  const large = estimatedHeightOf(textTweet(1, 40), 300);
+  assert.ok(large < etroit);
 });
 ```
 
