@@ -131,33 +131,41 @@ const tabIndexOf = (tab: FeedTab): number => TAB_ORDER.indexOf(tab);
  * pagination encore en vol.
  */
 /**
- * Clé de déduplication d'un tweet.
+ * Les publicités échappent à toute déduplication — jamais bloquées, jamais
+ * bloquantes.
  *
  * Une publicité de tweet réutilise le VRAI id du tweet promu (voir
  * `neuralRankRoutes.js` → `injectAds`) : c'est ce qui lui laisse suivre le
- * même classement et le même affichage que n'importe quel contenu. Mais ce
- * même tweet peut aussi remonter organiquement ailleurs dans le fil — un
- * tweet qu'on fait la publicité a de bonnes chances d'être aussi
- * recommandé pour ses propres mérites. Dédupliquer par id nu confondait
- * alors les deux occurrences et gardait la première, presque toujours la
- * version SANS l'étiquette « Sponsorisé » : la publicité disparaissait du
- * fil sans qu'aucune règle de densité (un emplacement tous les 4 tweets)
- * ne soit en cause côté serveur — c'est purement ce dédoublonnage qui
- * l'avalait après coup.
+ * même classement et le même affichage que n'importe quel contenu. Deux
+ * problèmes en découlaient, réglés tous les deux ici :
+ *
+ * 1. Ce même tweet peut remonter organiquement ailleurs dans le fil — un
+ *    tweet qu'on fait la publicité a de bonnes chances d'être aussi
+ *    recommandé pour ses propres mérites. Dédupliquer par id nu confondait
+ *    les deux occurrences et gardait la première, presque toujours la
+ *    version SANS l'étiquette « Sponsorisé ».
+ * 2. La MÊME publicité peut légitimement occuper plusieurs emplacements
+ *    d'une même page (voir `select_for_feed` côté moteur : avec peu de
+ *    campagnes actives, elle revient toutes les 4 lignes plutôt que de
+ *    laisser des emplacements vides — c'est voulu). Une première version de
+ *    ce correctif dédupliquait par id de PUBLICITÉ plutôt que par id de
+ *    tweet : ça réglait le point 1 mais recréait le même bug pour les
+ *    répétitions légitimes d'une même campagne, qui se faisaient à nouveau
+ *    avaler après la première occurrence.
+ *
+ * La seule règle qui satisfait les deux à la fois : une entrée publicitaire
+ * n'est jamais comparée à rien, ni pour être écartée, ni pour en écarter une
+ * autre. Le moteur a déjà décidé combien de fois et où ; le client n'a plus
+ * qu'à afficher.
  */
-function dedupeKey(tweet: Tweet): string {
-  const t = tweet as any;
-  return t.is_ad ? `ad:${t.ad_data?.id || t.id}` : String(t.id);
-}
-
 function mergeUniqueTweets(base: Tweet[], incoming: Tweet[]): Tweet[] {
-  const seen = new Set(base.map(dedupeKey));
+  const seen = new Set(base.filter((t) => !(t as any).is_ad).map((t) => t.id));
   const merged = base.slice();
   for (const tweet of incoming) {
     if (!tweet?.id) continue;
-    const key = dedupeKey(tweet);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if ((tweet as any).is_ad) { merged.push(tweet); continue; }
+    if (seen.has(tweet.id)) continue;
+    seen.add(tweet.id);
     merged.push(tweet);
   }
   return merged;
@@ -169,9 +177,9 @@ function dedupeTweets(list: Tweet[]): Tweet[] {
   const out: Tweet[] = [];
   for (const tweet of list) {
     if (!tweet?.id) continue;
-    const key = dedupeKey(tweet);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if ((tweet as any).is_ad) { out.push(tweet); continue; }
+    if (seen.has(tweet.id)) continue;
+    seen.add(tweet.id);
     out.push(tweet);
   }
   return out;
