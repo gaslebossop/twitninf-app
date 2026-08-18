@@ -43,6 +43,11 @@ export default function ProfileCompletionGate() {
   const [error, setError] = useState<string | null>(null);
   const [captured, setCaptured] = useState(false);
   const captureKey = useRef('');
+  // Verrou synchrone contre les ré-entrées de l'effet de capture ci-dessous
+  // (voir son commentaire) — remis à zéro en même temps que `captureKey`,
+  // donc à chaque changement d'identité, jamais entre deux rendus du même
+  // utilisateur.
+  const captureAttempted = useRef(false);
 
   const needsDemographics = Boolean(user && !user.demographics_validated_at);
   const consent = user?.location_consent_status || 'undetermined';
@@ -56,9 +61,11 @@ export default function ProfileCompletionGate() {
     setError(null);
     if (!user?.id || !isAuthenticated) {
       captureKey.current = '';
+      captureAttempted.current = false;
       return;
     }
     captureKey.current = makeCaptureKey(user.id);
+    captureAttempted.current = false;
     setAge(user.declared_age ? String(user.declared_age) : '');
     setDay(user.birth_day ? String(user.birth_day) : '');
     setMonth(user.birth_month ? String(user.birth_month) : '');
@@ -120,8 +127,23 @@ export default function ProfileCompletionGate() {
   }, [captured]);
 
   // Aux connexions suivantes : une seule capture, sans reposer la question.
+  //
+  // `captureLocation`/`storePermissionOnly` changent d'identité à chaque
+  // fois que `AuthContext` recalcule sa valeur mémoïsée (elles referment sur
+  // `refreshCurrentUser`, recréée à chaque changement de `user`/
+  // `isAuthenticated` — voir `AuthContext.tsx`) — et `storePermissionOnly`
+  // appelle justement `refreshCurrentUser()` avant de se terminer. Sans
+  // verrou synchrone, cette chaîne peut se rappeler elle-même : l'effet se
+  // relance sur la nouvelle identité de `storePermissionOnly` AVANT que
+  // `setCaptured(true)` (qui ne committe qu'à la résolution de l'appel
+  // réseau) n'ait eu le temps de fermer la porte — une deuxième capture
+  // démarre pendant que la première est encore en vol, chacune finissant par
+  // rappeler `refreshCurrentUser()` à son tour. C'est exactement la
+  // signature d'un « Maximum update depth exceeded » : la porte se ferme
+  // maintenant AVANT le moindre `await`, pas après.
   useEffect(() => {
-    if (!ready || !user?.id || consent !== 'granted' || captured) return;
+    if (!ready || !user?.id || consent !== 'granted' || captured || captureAttempted.current) return;
+    captureAttempted.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -131,6 +153,9 @@ export default function ProfileCompletionGate() {
         else await storePermissionOnly('denied');
       } catch (captureError) {
         console.error('[location] Echec de la capture de connexion:', captureError);
+        // Un échec réseau doit pouvoir être retenté au prochain rendu —
+        // seul un succès (via `captured`) doit fermer la porte pour de bon.
+        if (!cancelled) captureAttempted.current = false;
       }
     })();
     return () => { cancelled = true; };
