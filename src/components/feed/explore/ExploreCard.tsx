@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { colors, elevation, fonts, radius, withAlpha } from '../../../theme';
+import { colors, fonts, radius, withAlpha } from '../../../theme';
 import Avatar from '../../Avatar';
 import { Tappable } from '../../ui';
 import feedback from '../../../utils/feedback';
@@ -219,7 +219,7 @@ function ExploreCard({
             se lit, et `Avatar` retombe sur son initiale en dégradé quand le
             compte n'a pas de photo, donc jamais de rond vide. */}
         <View style={styles.byline}>
-          <Avatar size={18} username={author?.username} uri={author?.avatar} />
+          <Avatar size={16} username={author?.username} uri={author?.avatar} />
           <Text
             style={styles.bylineText}
             numberOfLines={1}
@@ -229,10 +229,13 @@ function ExploreCard({
           </Text>
           {showLikes && (
             <View style={styles.likeChip}>
+              {/* Cœur PLEIN uniquement si j'ai aimé — sinon un contour discret.
+                  Un cœur magenta plein sur chaque carte peignait la grille en
+                  rouge et faisait passer le compteur avant le contenu. */}
               <Ionicons
                 name={isLiked ? 'heart' : 'heart-outline'}
-                size={12}
-                color={isLiked ? colors.like : colors.textSecondary}
+                size={11}
+                color={isLiked ? colors.like : colors.textMuted}
               />
               <Text style={styles.likeText} maxFontSizeMultiplier={MAX_FONT_SCALE}>
                 {formatCompactCount(likes)}
@@ -248,17 +251,35 @@ function ExploreCard({
 export default memo(ExploreCard);
 
 const styles = StyleSheet.create({
+  /**
+   * Ombre volontairement TRÈS discrète (`elevation.card` du thème monte à 25 %
+   * d'opacité) : sur une carte gris clair posée sur fond blanc, une ombre
+   * marquée fait une auréole sale au lieu d'un relief. Ce qui donne son arête
+   * à la carte ici, ce n'est pas l'ombre, c'est le filet ci-dessous.
+   */
   card: {
-    borderRadius: radius.lg,
-    ...elevation.card,
+    borderRadius: radius.md,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
+  /**
+   * Le filet : sans lui, un aplat gris à grand rayon sur fond blanc est
+   * exactement ce qu'on dessine pour un squelette de CHARGEMENT — la grille
+   * paraissait attendre son contenu au lieu de l'afficher. Un rayon plus
+   * serré (`md`) va dans le même sens : moins de rondeur, plus de tenue.
+   */
   cardInner: {
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     overflow: 'hidden',
     backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
 
-  textBox: { paddingHorizontal: 14, paddingTop: 15, paddingBottom: 13 },
+  textBox: { paddingHorizontal: 12, paddingTop: 13, paddingBottom: 11 },
   text: {
     color: colors.textPrimary,
     fontFamily: fonts.medium,
@@ -303,25 +324,30 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
+  /**
+   * Signature en retrait : elle doit se lire APRÈS le contenu, jamais avant.
+   * En `semibold` à 11,5 px avec un cœur plein magenta, la ligne d'auteur
+   * pesait plus lourd que le tweet lui-même sur une carte courte.
+   */
   byline: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 11,
-    paddingBottom: 10,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingBottom: 9,
     paddingTop: 3,
   },
   bylineText: {
     flex: 1,
-    fontSize: 11.5,
-    fontFamily: fonts.semibold,
-    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: fonts.medium,
+    color: colors.textMuted,
   },
   likeChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   likeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: fonts.medium,
-    color: colors.textSecondary,
+    color: colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
 });

@@ -43,10 +43,22 @@ export interface CardMeta {
   height: number;
 }
 
-/** Corps de carte — identique pour TOUTES les cartes texte. */
-export const TEXT_FONT_SIZE = 15;
-export const TEXT_LINE_HEIGHT = 20.5;
-export const TEXT_MAX_LINES = 7;
+/**
+ * Corps de carte — identique pour TOUTES les cartes texte.
+ *
+ * 13,5 px et non 15 : à 15, un tweet court remplissait la carte d'un bord à
+ * l'autre et la grille lisait comme une maquette non finie, chaque bloc de
+ * texte réclamant l'attention au même volume. Une légende de grille se lit
+ * en un coup d'œil, elle ne se lit pas « en grand » — la taille du texte doit
+ * rester sous celle du corps de lecture du fil.
+ */
+export const TEXT_FONT_SIZE = 13.5;
+export const TEXT_LINE_HEIGHT = 18.5;
+/**
+ * 6 lignes et non 7 : au-delà, une carte texte devient plus haute que deux
+ * cartes voisines réunies et creuse un trou dans la colonne d'en face.
+ */
+export const TEXT_MAX_LINES = 6;
 
 /**
  * Ratio unique des vignettes, en portrait 4:5.
@@ -73,12 +85,12 @@ export const NEW_SINCE_FLOOR = 5;
  * Marges verticales du corps texte (haut + bas) et hauteur de la signature.
  *
  * `BYLINE_HEIGHT` suit la vignette d'auteur, qui est l'élément le plus haut de
- * la ligne : 18 px d'avatar + 3 en haut + 10 en bas (voir les styles
- * `byline` d'`ExploreCard`). Ces deux constantes doivent bouger AVEC ces
- * styles — c'est la seule dépendance de l'estimation de hauteur au rendu.
+ * la ligne : 16 px d'avatar + 3 en haut + 9 en bas (voir les styles `byline`
+ * d'`ExploreCard`). Ces deux constantes doivent bouger AVEC ces styles —
+ * c'est la seule dépendance de l'estimation de hauteur au rendu.
  */
-const TEXT_PADDING_V = 28;
-const BYLINE_HEIGHT = 31;
+const TEXT_PADDING_V = 24;
+const BYLINE_HEIGHT = 28;
 
 export function formatOf(tweet: Tweet): CardFormat {
   // `hasVisual` gère le cas des vidéos, dont `media_urls` vaut

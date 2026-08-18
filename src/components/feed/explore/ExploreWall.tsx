@@ -15,7 +15,7 @@ import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { colors, fonts, radius } from '../../../theme';
 import { AppRefreshControl, Tappable } from '../../ui';
 import { describeCards, NEW_SINCE_FLOOR } from './cardFormat';
-import { buildWall } from './wallLayout';
+import { buildColumns } from './wallLayout';
 import ExploreCard, { type CardRect } from './ExploreCard';
 import type { Tweet } from '../../../types/api';
 
@@ -86,7 +86,7 @@ function ExploreWall({
   const metas = useMemo(() => describeCards(tweets, cardWidth), [tweets, cardWidth]);
   // Tous les tweets vont au mur : plus de bande héro à part, qui prélevait les
   // cinq premiers et cassait la trame dès l'ouverture de l'onglet.
-  const blocks = useMemo(() => buildWall(metas), [metas]);
+  const [leftColumn, rightColumn] = useMemo(() => buildColumns(metas), [metas]);
 
   const isNew = useCallback((tweet: Tweet) => {
     if (!lastVisitAt || !tweet.created_at) return false;
@@ -207,25 +207,22 @@ function ExploreWall({
         </Text>
       )}
 
-      {/* Une seule trame à deux colonnes, du haut au bas de la page. Les blocs
-          ne sont plus qu'un point de resynchronisation des hauteurs : ils ne
-          se voient pas, aucune carte n'y est promue. La clé vient de la
-          première carte de la colonne gauche, qui existe toujours pour un bloc
-          non vide (`splitColumns` y place la première carte). */}
-      {blocks.map((block) => (
-        <View key={block.columns[0][0]?.tweet.id ?? 'empty'} style={styles.columns}>
-          <View style={styles.column}>
-            {block.columns[0].map((meta) => (
-              <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
-            ))}
-          </View>
-          <View style={styles.column}>
-            {block.columns[1].map((meta) => (
-              <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
-            ))}
-          </View>
+      {/* DEUX colonnes continues, du premier au dernier tweet — et non une
+          succession de blocs. Le découpage en blocs obligeait la colonne la
+          plus courte à attendre l'autre à chaque frontière, ce qui laissait
+          une bande blanche en travers de la grille tous les huit tweets. */}
+      <View style={styles.columns}>
+        <View style={styles.column}>
+          {leftColumn.map((meta) => (
+            <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
+          ))}
         </View>
-      ))}
+        <View style={styles.column}>
+          {rightColumn.map((meta) => (
+            <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
+          ))}
+        </View>
+      </View>
 
       {loadingMore && (
         <View style={styles.loadingRow}>

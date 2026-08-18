@@ -16,7 +16,7 @@ function loadTypeScriptModule(path) {
   return loaded.exports;
 }
 
-const { buildWall, BLOCK_SIZE } = loadTypeScriptModule(
+const { buildColumns } = loadTypeScriptModule(
   'src/components/feed/explore/wallLayout.ts',
 );
 
@@ -27,74 +27,84 @@ const meta = (id, height = 200) => ({
   height,
 });
 
-const manyCards = (n, height = 200) => {
-  const out = [];
-  for (let i = 0; i < n; i += 1) out.push(meta(i, height));
-  return out;
-};
-
-const allIds = (block) => [...block.columns[0], ...block.columns[1]].map((m) => m.tweet.id);
-
-test('le mur se découpe en blocs de resynchronisation', () => {
-  const blocks = buildWall(manyCards(BLOCK_SIZE * 3));
-  assert.equal(blocks.length, 3);
-  for (const block of blocks) {
-    assert.equal(allIds(block).length, BLOCK_SIZE);
-  }
-});
-
-test('aucune carte n’est promue en pleine largeur', () => {
-  // La rupture tous les sept tweets cassait la trame à deux colonnes : le mur
-  // est désormais uniforme, un bloc n'expose plus que ses deux colonnes.
-  const [block] = buildWall(manyCards(BLOCK_SIZE));
-  assert.equal(block.feature, undefined);
-  assert.deepEqual(Object.keys(block), ['columns']);
-});
+const heightOf = (column) => column.reduce((sum, m) => sum + m.height, 0);
 
 test('toutes les cartes atterrissent dans une colonne, sans doublon', () => {
-  const total = BLOCK_SIZE * 2 + 3;
-  const blocks = buildWall(manyCards(total));
-  const seen = blocks.flatMap(allIds);
-  assert.equal(seen.length, total, 'aucune carte perdue');
-  assert.equal(new Set(seen).size, total, 'aucune carte rendue deux fois');
+  const metas = [];
+  for (let i = 0; i < 25; i += 1) metas.push(meta(i, 120 + (i % 7) * 40));
+  const [left, right] = buildColumns(metas);
+
+  const ids = [...left, ...right].map((m) => m.tweet.id);
+  assert.equal(ids.length, 25, 'aucune carte perdue');
+  assert.equal(new Set(ids).size, 25, 'aucune carte rendue deux fois');
 });
 
 test('l’ordre du classement est préservé dans chaque colonne', () => {
   // Le flux arrive classé par `trending` : un tri interne le détruirait.
-  const [block] = buildWall(manyCards(BLOCK_SIZE));
-  for (const column of block.columns) {
+  const metas = [];
+  for (let i = 0; i < 20; i += 1) metas.push(meta(i, 100 + (i % 5) * 60));
+  const columns = buildColumns(metas);
+
+  for (const column of columns) {
     const ids = column.map((m) => Number(m.tweet.id));
-    const sorted = [...ids].sort((a, b) => a - b);
-    assert.deepEqual(ids, sorted);
+    assert.deepEqual(ids, [...ids].sort((a, b) => a - b));
   }
 });
 
-test('les colonnes s’équilibrent sur la hauteur, pas en alternant', () => {
-  // Une simple alternance gauche/droite laisserait une colonne prendre tout le
-  // retard si elle hérite de plusieurs grandes cartes d'affilée.
+test('l’écart entre colonnes reste borné par la plus grande carte', () => {
+  // C'est LA garantie qui remplace les blocs de resynchronisation : un glouton
+  // « poser dans la colonne la plus courte » est autocorrecteur, donc l'écart
+  // ne peut pas dériver, même sur une liste longue et très hétérogène.
+  const metas = [];
+  const heights = [90, 420, 130, 260, 700, 110, 180, 340];
+  for (let i = 0; i < 400; i += 1) metas.push(meta(i, heights[i % heights.length]));
+
+  const [left, right] = buildColumns(metas);
+  const gap = Math.abs(heightOf(left) - heightOf(right));
+  const tallest = Math.max(...heights);
+
+  assert.ok(gap <= tallest, `écart ${gap} au-dessus de la plus grande carte (${tallest})`);
+});
+
+test('une carte géante isolée ne fait pas dériver la suite', () => {
+  // L'autre colonne doit RATTRAPER : elle reçoit tout jusqu'à repasser devant.
+  const metas = [meta('geante', 2000)];
+  for (let i = 0; i < 30; i += 1) metas.push(meta(i, 100));
+
+  const [left, right] = buildColumns(metas);
+  const gap = Math.abs(heightOf(left) - heightOf(right));
+
+  assert.equal(left[0].tweet.id, 'geante');
+  assert.ok(left.length < right.length, 'la colonne chargée reçoit moins de cartes');
+  assert.ok(gap <= 2000);
+});
+
+test('l’alternance naïve serait battue sur un jeu déséquilibré', () => {
+  // Garde-fou explicite : si quelqu'un remplaçait le glouton par un simple
+  // pair/impair, ce test tomberait — c'est exactement la régression visée.
   const metas = [
-    meta(0, 600), meta(1, 100), meta(2, 100),
-    meta(3, 100), meta(4, 100), meta(5, 100),
-    meta(6, 100), meta(7, 100),
+    meta(0, 600), meta(1, 100), meta(2, 100), meta(3, 100),
+    meta(4, 100), meta(5, 100), meta(6, 100), meta(7, 100),
   ];
-  const [block] = buildWall(metas);
-  const height = (column) => column.reduce((sum, m) => sum + m.height, 0);
-  const gap = Math.abs(height(block.columns[0]) - height(block.columns[1]));
-  // Seuil : la plus grande carte du jeu (600) sert de référence — un glouton
-  // correct finit forcément sous cet écart, une alternance naïve le dépasse
-  // (600+100+100+100 contre 100×4, soit 500).
-  assert.ok(gap < 600, `écart de colonnes trop grand : ${gap}`);
+  const [left, right] = buildColumns(metas);
+  const greedyGap = Math.abs(heightOf(left) - heightOf(right));
+
+  const evens = metas.filter((_, i) => i % 2 === 0);
+  const odds = metas.filter((_, i) => i % 2 === 1);
+  const naiveGap = Math.abs(heightOf(evens) - heightOf(odds));
+
+  assert.ok(greedyGap < naiveGap, `glouton ${greedyGap} vs alternance ${naiveGap}`);
 });
 
-test('un dernier bloc incomplet ne casse rien', () => {
-  const blocks = buildWall(manyCards(BLOCK_SIZE + 1));
-  assert.equal(blocks.length, 2);
-  assert.equal(allIds(blocks[1]).length, 1);
-  // La clé de rendu du mur vient de la première carte de la colonne gauche :
-  // elle doit exister même pour un bloc d'une seule carte.
-  assert.ok(blocks[1].columns[0][0]);
+test('une liste vide donne deux colonnes vides', () => {
+  assert.deepEqual(buildColumns([]), [[], []]);
 });
 
-test('une liste vide ne produit aucun bloc', () => {
-  assert.deepEqual(buildWall([]), []);
+test('une seule carte va à gauche', () => {
+  // La colonne gauche est le point de départ : à hauteurs égales (0 et 0), le
+  // glouton doit choisir la gauche, sinon la première carte du classement se
+  // retrouverait à droite.
+  const [left, right] = buildColumns([meta('seule', 150)]);
+  assert.equal(left.length, 1);
+  assert.equal(right.length, 0);
 });
