@@ -1,33 +1,52 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, {
+  Easing,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, duration as D, easing as E, fonts, radius, spacing, withAlpha } from '../theme';
-import { AppHeader, Button, Card, ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { colors, fonts, radius, spacing, withAlpha } from '../theme';
+import { AppHeader, Button, ScreenBackground, ScreenSkeleton } from '../components/ui';
 import { toast } from '../components/ui/Toast';
-import Tappable from '../components/ui/Tappable';
 import Avatar from '../components/Avatar';
+import feedback from '../utils/feedback';
 import neuralRankService from '../services/neuralRankService';
 import type { Tweet } from '../types/api';
 
 /**
- * « Recalibrer l'algorithme » — Paramètres → Recalibration, jamais proposée
- * automatiquement (demande explicite de l'utilisateur, à distinguer de la
- * carte `AlgoCheckCard` qui apparaît d'elle-même dans le fil).
+ * « Recalibrer l'algorithme » — Paramètres uniquement, jamais proposé
+ * automatiquement (à distinguer de `AlgoCheckCard`, qui apparaît d'elle-même
+ * dans le fil).
  *
- * 5 tours de 6 tweets. Les 2 premiers explorent large (thèmes et auteurs
- * distincts), les 3 suivants resserrent sur ce que la session vient de
- * montrer comme intérêt — voir `rust-recommender/src/calibration.rs`, qui
- * porte toute la logique de sélection.
+ * Le geste, pas deux boutons : glisser à droite = ça m'intéresse, à gauche =
+ * non. Un tampon apparaît sous le doigt dès que le seuil est franchi, avant
+ * même de lâcher — sans ce retour immédiat, un glissé est un pari. C'est le
+ * seul point de l'app où l'on demande 18 réponses d'affilée : chaque
+ * aller-retour vers un bouton se paierait 18 fois.
  *
- * Signal privé : un « ça m'intéresse » ici n'est jamais un like public — pas
- * de notification à l'auteur, pas de compteur qui bouge. Seul l'algorithme en
- * tient compte (voir `calibration::finish`).
+ * 3 tours de 6 cartes : le premier couvre le plus large possible, les deux
+ * suivants visent ce que le moteur ne sait pas encore trancher — voir
+ * `rust-recommender/src/calibration.rs`, qui porte toute la sélection.
  */
 
-const ROUNDS = 5;
-const PER_ROUND = 6;
+const { width: SCREEN_W } = Dimensions.get('window');
+/** Distance à partir de laquelle le glissé compte comme une réponse. */
+const COMMIT_X = SCREEN_W * 0.28;
+/** Vitesse qui vaut décision, même sans avoir parcouru `COMMIT_X`. */
+const COMMIT_VELOCITY = 800;
+/** Seuil d'apparition du tampon — plus tôt que la validation, à dessein. */
+const STAMP_X = 40;
+
+// Doit rester synchronisé avec rust-recommender/src/calibration.rs.
+// La taille réelle d'un tour vient de toute façon de la réponse serveur.
+const ROUNDS = 3;
 
 type Phase = 'intro' | 'loading' | 'round' | 'finishing' | 'done';
 
@@ -38,15 +57,14 @@ export default function CalibrationScreen({ navigation }: any) {
   const [round, setRound] = useState(1);
   const [tweets, setTweets] = useState<Tweet[]>([]);
   const [cardIndex, setCardIndex] = useState(0);
-  const [answered, setAnswered] = useState<null | boolean>(null);
   const [error, setError] = useState<string | null>(null);
+  const [totalSeen, setTotalSeen] = useState(0);
 
-  // Cumulés depuis le tour 1 : le moteur en a besoin pour ne jamais
-  // reproposer un tweet déjà montré cette session.
   const likedIds = useRef<string[]>([]);
   const skippedIds = useRef<string[]>([]);
 
-  const fade = useRef(new Animated.Value(1)).current;
+  const x = useSharedValue(0);
+  const settling = useSharedValue(false);
 
   const loadRound = useCallback(async (targetRound: number) => {
     setPhase('loading');
@@ -57,21 +75,22 @@ export default function CalibrationScreen({ navigation }: any) {
       skippedIds.current,
     );
     if (!res.success || res.tweets.length === 0) {
-      setError(res.message || 'Impossible de charger ce tour pour le moment.');
+      setError(res.message || 'Plus assez de contenu pour continuer.');
       setPhase('intro');
       return;
     }
     setTweets(res.tweets);
     setCardIndex(0);
-    setAnswered(null);
     setRound(targetRound);
-    fade.setValue(1);
+    x.value = 0;
+    settling.value = false;
     setPhase('round');
-  }, [fade]);
+  }, [x, settling]);
 
   const start = useCallback(() => {
     likedIds.current = [];
     skippedIds.current = [];
+    setTotalSeen(0);
     loadRound(1);
   }, [loadRound]);
 
@@ -86,127 +105,169 @@ export default function CalibrationScreen({ navigation }: any) {
     setPhase('done');
   }, []);
 
-  const advance = useCallback(() => {
-    const nextIndex = cardIndex + 1;
-    if (nextIndex < tweets.length) {
-      setCardIndex(nextIndex);
-      setAnswered(null);
-      fade.setValue(1);
-      return;
-    }
-    // Tour terminé.
-    if (round >= ROUNDS) {
-      finish();
-    } else {
-      loadRound(round + 1);
-    }
-  }, [cardIndex, tweets.length, round, fade, finish, loadRound]);
-
-  const answer = useCallback(
+  /** Enregistre la réponse puis avance. Appelé depuis le worklet via runOnJS. */
+  const commit = useCallback(
     (liked: boolean) => {
-      if (answered !== null || phase !== 'round') return;
       const current = tweets[cardIndex];
       if (!current) return;
-      setAnswered(liked);
       (liked ? likedIds : skippedIds).current.push(current.id);
+      setTotalSeen((n) => n + 1);
+      feedback.success();
 
-      Animated.sequence([
-        Animated.delay(260),
-        Animated.timing(fade, {
-          toValue: 0,
-          duration: D.fast,
-          easing: E.in,
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (finished) advance();
-      });
+      const nextIndex = cardIndex + 1;
+      if (nextIndex < tweets.length) {
+        setCardIndex(nextIndex);
+        x.value = 0;
+        settling.value = false;
+        return;
+      }
+      if (round >= ROUNDS) finish();
+      else loadRound(round + 1);
     },
-    [answered, phase, tweets, cardIndex, fade, advance],
+    [tweets, cardIndex, round, x, settling, finish, loadRound],
   );
 
-  const progressLabel = `Tour ${round}/${ROUNDS} · ${Math.min(cardIndex + 1, PER_ROUND)}/${tweets.length || PER_ROUND}`;
+  const swipe = Gesture.Pan()
+    .activeOffsetX([-14, 14])
+    .failOffsetY([-24, 24])
+    .onUpdate((e) => {
+      'worklet';
+      if (settling.value) return;
+      x.value = e.translationX;
+    })
+    .onEnd((e) => {
+      'worklet';
+      if (settling.value) return;
+      const decided =
+        Math.abs(e.translationX) > COMMIT_X || Math.abs(e.velocityX) > COMMIT_VELOCITY;
+      if (!decided) {
+        x.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+        return;
+      }
+      const liked = e.translationX > 0;
+      settling.value = true;
+      x.value = withTiming(
+        liked ? SCREEN_W * 1.2 : -SCREEN_W * 1.2,
+        { duration: 180, easing: Easing.out(Easing.cubic) },
+        (done) => {
+          'worklet';
+          if (done) runOnJS(commit)(liked);
+        },
+      );
+    });
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: x.value },
+      { rotate: `${interpolate(x.value, [-SCREEN_W, 0, SCREEN_W], [-9, 0, 9])}deg` },
+    ] as const,
+  }));
+  const yesStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(x.value, [STAMP_X, COMMIT_X], [0, 1], 'clamp'),
+  }));
+  const noStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(x.value, [-COMMIT_X, -STAMP_X], [1, 0], 'clamp'),
+  }));
+
+  // La carte suivante, visible derrière : sans elle, le glissé découvre du
+  // vide et la pile paraît finie à chaque réponse.
+  const nextTweet = tweets[cardIndex + 1];
+  const current = tweets[cardIndex];
+  const totalCards = ROUNDS * (tweets.length || 6);
+
+  useEffect(() => { x.value = 0; }, [cardIndex, x]);
 
   return (
     <ScreenBackground>
       <AppHeader navigation={navigation} title="Recalibrer l'algorithme" />
       <View style={[styles.body, { paddingBottom: insets.bottom + spacing.lg }]}>
         {phase === 'intro' && (
-          <View style={styles.introWrap}>
-            <View style={styles.introIcon}>
+          <View style={styles.center}>
+            <View style={styles.bigIcon}>
               <Ionicons name="sparkles" size={26} color={colors.accent} />
             </View>
-            <Text style={styles.introTitle}>Réaccorder ton fil</Text>
-            <Text style={styles.introBody}>
-              5 tours de 6 tweets, d'auteurs et de thèmes différents. Dis ce qui
-              t'intéresse ou non — l'algorithme resserre à chaque tour. Rien de
-              ce que tu choisis ici n'est un like public : ni notification à
-              l'auteur, ni compteur qui bouge. Ça ne sert qu'à mieux te
-              connaître.
+            <Text style={styles.title}>Réaccorder ton fil</Text>
+            <Text style={styles.body2}>
+              Une pile de tweets à trier au doigt. Glisse à droite si ça
+              t'intéresse, à gauche sinon. Une vingtaine de cartes, une minute.
             </Text>
-            {error && <Text style={styles.errorText}>{error}</Text>}
-            <Button label="Commencer" onPress={start} style={styles.startBtn} />
+            <Text style={styles.note}>
+              Rien de tout ça n'est un like public : ni notification à l'auteur,
+              ni compteur qui bouge.
+            </Text>
+            {error && <Text style={styles.error}>{error}</Text>}
+            <Button label="Commencer" onPress={start} style={styles.cta} />
           </View>
         )}
 
-        {phase === 'loading' && <ScreenSkeleton variant="list" />}
-        {phase === 'finishing' && <ScreenSkeleton variant="list" />}
+        {(phase === 'loading' || phase === 'finishing') && <ScreenSkeleton variant="tweet" />}
 
-        {phase === 'round' && tweets[cardIndex] && (
-          <View style={styles.roundWrap}>
-            <Text style={styles.progress}>{progressLabel}</Text>
+        {phase === 'round' && current && (
+          <View style={styles.stage}>
+            <View style={styles.progressRow}>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.min(100, (totalSeen / totalCards) * 100)}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {totalSeen}/{totalCards}
+              </Text>
+            </View>
 
-            <Animated.View style={[styles.cardOuter, { opacity: fade }]}>
-              <Card style={styles.card}>
-                <View style={styles.authorRow}>
-                  <Avatar
-                    size={40}
-                    username={tweets[cardIndex].author?.username}
-                    uri={tweets[cardIndex].author?.avatar}
-                  />
-                  <View style={styles.authorText}>
-                    <Text style={styles.authorName} numberOfLines={1}>
-                      {tweets[cardIndex].author?.full_name || tweets[cardIndex].author?.username}
+            <View style={styles.deck}>
+              {nextTweet && (
+                <View style={[styles.card, styles.cardBehind]}>
+                  <CardBody tweet={nextTweet} />
+                </View>
+              )}
+
+              <GestureDetector gesture={swipe}>
+                <Reanimated.View style={[styles.card, cardStyle]}>
+                  <CardBody tweet={current} />
+
+                  <Reanimated.View style={[styles.stamp, styles.stampYes, yesStyle]}>
+                    <Ionicons name="heart" size={16} color={colors.success} />
+                    <Text style={[styles.stampText, { color: colors.success }]}>
+                      ÇA M'INTÉRESSE
                     </Text>
-                    <Text style={styles.authorHandle} numberOfLines={1}>
-                      @{tweets[cardIndex].author?.username}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.content} numberOfLines={8}>
-                  {tweets[cardIndex].content}
-                </Text>
-              </Card>
-            </Animated.View>
+                  </Reanimated.View>
 
-            <View style={styles.actions}>
-              <Tappable onPress={() => answer(false)} scaleTo={0.96} haptic={false} style={styles.half}>
-                <View style={[styles.btn, styles.btnGhost]}>
-                  <Ionicons name="thumbs-down-outline" size={18} color={colors.textSecondary} />
-                  <Text style={styles.btnGhostLabel}>Pas intéressé</Text>
-                </View>
-              </Tappable>
-              <Tappable onPress={() => answer(true)} scaleTo={0.96} haptic={false} style={styles.half}>
-                <View style={[styles.btn, styles.btnPrimary]}>
-                  <Ionicons name="thumbs-up" size={18} color={colors.onAccent} />
-                  <Text style={styles.btnPrimaryLabel}>Ça m'intéresse</Text>
-                </View>
-              </Tappable>
+                  <Reanimated.View style={[styles.stamp, styles.stampNo, noStyle]}>
+                    <Ionicons name="close" size={16} color={colors.like} />
+                    <Text style={[styles.stampText, { color: colors.like }]}>PAS POUR MOI</Text>
+                  </Reanimated.View>
+                </Reanimated.View>
+              </GestureDetector>
+            </View>
+
+            <View style={styles.hintRow}>
+              <View style={styles.hint}>
+                <Ionicons name="arrow-back" size={14} color={colors.textMuted} />
+                <Text style={styles.hintText}>Pas pour moi</Text>
+              </View>
+              <View style={styles.hint}>
+                <Text style={styles.hintText}>Ça m'intéresse</Text>
+                <Ionicons name="arrow-forward" size={14} color={colors.textMuted} />
+              </View>
             </View>
           </View>
         )}
 
         {phase === 'done' && (
-          <View style={styles.introWrap}>
-            <View style={[styles.introIcon, styles.introIconDone]}>
+          <View style={styles.center}>
+            <View style={[styles.bigIcon, styles.bigIconDone]}>
               <Ionicons name="checkmark" size={26} color={colors.success} />
             </View>
-            <Text style={styles.introTitle}>C'est noté</Text>
-            <Text style={styles.introBody}>
-              {likedIds.current.length} choix pris en compte. Ton fil va s'ajuster
-              dès le prochain chargement.
+            <Text style={styles.title}>C'est noté</Text>
+            <Text style={styles.body2}>
+              {likedIds.current.length} tweet{likedIds.current.length > 1 ? 's' : ''} retenu
+              {likedIds.current.length > 1 ? 's' : ''}. Ton fil est déjà à jour.
             </Text>
-            <Button label="Terminer" onPress={() => navigation?.goBack?.()} style={styles.startBtn} />
+            <Button label="Voir mon fil" onPress={() => navigation?.goBack?.()} style={styles.cta} />
           </View>
         )}
       </View>
@@ -214,18 +275,31 @@ export default function CalibrationScreen({ navigation }: any) {
   );
 }
 
+function CardBody({ tweet }: { tweet: Tweet }) {
+  return (
+    <>
+      <View style={styles.authorRow}>
+        <Avatar size={38} username={tweet.author?.username} uri={tweet.author?.avatar} />
+        <View style={styles.authorText}>
+          <Text style={styles.authorName} numberOfLines={1}>
+            {tweet.author?.full_name || tweet.author?.username}
+          </Text>
+          <Text style={styles.authorHandle} numberOfLines={1}>
+            @{tweet.author?.username}
+          </Text>
+        </View>
+      </View>
+      <Text style={styles.content} numberOfLines={12}>
+        {tweet.content}
+      </Text>
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
-  body: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-  },
-  introWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  introIcon: {
+  body: { flex: 1, paddingHorizontal: spacing.lg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+  bigIcon: {
     width: 56,
     height: 56,
     borderRadius: radius.lg,
@@ -233,16 +307,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: withAlpha(colors.accent, 0.16),
   },
-  introIconDone: {
-    backgroundColor: withAlpha(colors.success, 0.16),
-  },
-  introTitle: {
-    color: colors.textPrimary,
-    fontFamily: fonts.heading,
-    fontSize: 22,
-    textAlign: 'center',
-  },
-  introBody: {
+  bigIconDone: { backgroundColor: withAlpha(colors.success, 0.16) },
+  title: { color: colors.textPrimary, fontFamily: fonts.heading, fontSize: 22, textAlign: 'center' },
+  body2: {
     color: colors.textSecondary,
     fontFamily: fonts.regular,
     fontSize: 14.5,
@@ -250,90 +317,76 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.md,
   },
-  errorText: {
-    color: colors.like,
-    fontFamily: fonts.medium,
-    fontSize: 13,
+  note: {
+    color: colors.textMuted,
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
     textAlign: 'center',
+    paddingHorizontal: spacing.lg,
   },
-  startBtn: {
-    marginTop: spacing.sm,
-    minWidth: 200,
-  },
-  roundWrap: {
+  error: { color: colors.like, fontFamily: fonts.medium, fontSize: 13, textAlign: 'center' },
+  cta: { marginTop: spacing.sm, minWidth: 200 },
+
+  stage: { flex: 1, paddingTop: spacing.md },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  progressTrack: {
     flex: 1,
-    paddingTop: spacing.md,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceElevated,
+    overflow: 'hidden',
   },
-  progress: {
+  progressFill: { height: 4, borderRadius: 2, backgroundColor: colors.accent },
+  progressText: {
     color: colors.textMuted,
     fontFamily: fonts.semibold,
-    fontSize: 12.5,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginBottom: spacing.md,
+    fontSize: 12,
+    minWidth: 42,
+    textAlign: 'right',
   },
-  cardOuter: {
-    flex: 1,
-  },
+
+  deck: { flex: 1, marginTop: spacing.lg, marginBottom: spacing.md },
   card: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: withAlpha(colors.textMuted, 0.18),
     padding: spacing.lg,
   },
-  authorRow: {
+  cardBehind: { transform: [{ scale: 0.96 }, { translateY: 10 }], opacity: 0.5 },
+
+  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  authorText: { marginLeft: spacing.sm, flex: 1 },
+  authorName: { color: colors.textPrimary, fontFamily: fonts.semibold, fontSize: 15 },
+  authorHandle: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 13, marginTop: 1 },
+  content: { color: colors.textPrimary, fontFamily: fonts.regular, fontSize: 17, lineHeight: 25 },
+
+  stamp: {
+    position: 'absolute',
+    top: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 2,
   },
-  authorText: {
-    marginLeft: spacing.sm,
-    flex: 1,
+  stampYes: {
+    right: spacing.lg,
+    borderColor: colors.success,
+    backgroundColor: withAlpha(colors.success, 0.12),
   },
-  authorName: {
-    color: colors.textPrimary,
-    fontFamily: fonts.semibold,
-    fontSize: 15,
+  stampNo: {
+    left: spacing.lg,
+    borderColor: colors.like,
+    backgroundColor: withAlpha(colors.like, 0.12),
   },
-  authorHandle: {
-    color: colors.textMuted,
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    marginTop: 1,
-  },
-  content: {
-    color: colors.textPrimary,
-    fontFamily: fonts.regular,
-    fontSize: 16,
-    lineHeight: 23,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  half: {
-    flex: 1,
-  },
-  btn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 50,
-    borderRadius: radius.md,
-    gap: spacing.xs,
-  },
-  btnGhost: {
-    backgroundColor: colors.surfaceElevated,
-  },
-  btnGhostLabel: {
-    color: colors.textSecondary,
-    fontFamily: fonts.semibold,
-    fontSize: 14.5,
-  },
-  btnPrimary: {
-    backgroundColor: colors.accent,
-  },
-  btnPrimaryLabel: {
-    color: colors.onAccent,
-    fontFamily: fonts.bold,
-    fontSize: 14.5,
-  },
+  stampText: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.5 },
+
+  hintRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  hint: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  hintText: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 12.5 },
 });
