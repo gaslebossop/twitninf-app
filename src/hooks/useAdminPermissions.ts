@@ -1,67 +1,51 @@
-import { useState, useEffect } from 'react';
-import { apiService } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
+/**
+ * Dérivée pure de `user`, plus une source de vérité indépendante.
+ *
+ * Cette version rechargeait le rôle et les permissions elle-même à chaque
+ * montage : un `getCurrentUser()` réseau plus cinq lectures AsyncStorage,
+ * dans un `useEffect`. `AuthContext` fait déjà EXACTEMENT le même
+ * `getCurrentUser()` au démarrage et à chaque rafraîchissement de session —
+ * et `user.role` / `user.moderation_permissions` en sont le résultat direct.
+ * Chaque composant qui utilisait ce hook (dont `TweetCard`, monté une fois
+ * par tweet affiché) relançait donc son propre appel réseau redondant : sur
+ * un profil de 50 tweets, 50 requêtes `/api/auth/me` concurrentes rien que
+ * pour savoir si le lecteur est modérateur.
+ *
+ * Plus grave qu'une redondance : ces 50 requêtes concurrentes touchent le
+ * même mécanisme de rafraîchissement de jeton que la déconnexion / le
+ * changement de compte. Un logout pendant que des dizaines de
+ * `getCurrentUser()` sont en vol multiplie les échecs 401 quasi simultanés,
+ * chacun pouvant redéclencher le rafraîchissement de session — un terrain
+ * fertile pour la cascade de mises à jour d'état observée dans « Maximum
+ * update depth exceeded » au changement de compte.
+ *
+ * Une dérivation pure ne peut structurellement pas boucler : pas d'effet,
+ * pas d'état, pas d'appel réseau — juste une lecture de ce que le contexte
+ * porte déjà.
+ */
 export const useAdminPermissions = () => {
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isModerator, setIsModerator] = useState(false);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [isClasseur, setIsClasseur] = useState(false);
-  const [isEconomyGuardian, setIsEconomyGuardian] = useState(false);
-  const [userRole, setUserRole] = useState<string>('user');
-  const [permissions, setPermissions] = useState<any>({});
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
-  useEffect(() => {
-    const checkPermissions = async () => {
-      try {
-        setLoading(true);
-        
-        // Rafraîchir les données utilisateur du serveur pour éviter les rôles périmés
-        await apiService.getCurrentUser();
-        
-        // Récupérer le rôle et les permissions de l'utilisateur
-        const role = await apiService.getUserRole();
-        const userPermissions = await apiService.getUserPermissions();
-        
-        setUserRole(role);
-        setPermissions(userPermissions);
-        
-        // Définir les permissions en fonction du rôle
-        setIsAdmin(await apiService.isAdmin());
-        setIsModerator(await apiService.isModerator());
-        setIsSuperAdmin(await apiService.isSuperAdmin());
-        setIsClasseur(await apiService.hasRole('classeurdetweets'));
-        setIsEconomyGuardian(await apiService.hasRole('economiegardien'));
-        
-        console.log('👑 Permissions chargées:', { role, permissions: userPermissions });
-        
-      } catch (error) {
-        console.error('❌ Erreur lors de la vérification des permissions:', error);
-        // En cas d'erreur, pas de permissions
-        setIsAdmin(false);
-        setIsModerator(false);
-        setIsSuperAdmin(false);
-        setIsClasseur(false);
-        setIsEconomyGuardian(false);
-        setUserRole('user');
-        setPermissions({});
-      } finally {
-        setLoading(false);
-      }
-    };
+  const rawRole = String(user?.role || 'user');
+  const permissions: Record<string, boolean> = user?.moderation_permissions || {};
 
-    checkPermissions();
-  }, []);
-
-  const normalizeRole = (role?: string): string => {
+  const normalizeRole = (role: string): string => {
     if (role === 'moderator') return 'moderateur';
     if (role === 'super_admin' || role === 'supermoderateur') return 'superadmin';
-    return role || 'user';
+    return role;
   };
 
-  const normalizedRole = normalizeRole(userRole);
+  const normalizedRole = normalizeRole(rawRole);
   const hasSuperModerationAccess = ['superadmin', 'admin'].includes(normalizedRole);
   const hasModeratorAccess = ['moderateur', 'admin', 'superadmin', 'classeurdetweets', 'economiegardien'].includes(normalizedRole);
+
+  const isAdmin = normalizedRole === 'admin' || normalizedRole === 'superadmin';
+  const isModerator = hasModeratorAccess;
+  const isSuperAdmin = normalizedRole === 'superadmin';
+  const isClasseur = normalizedRole === 'classeurdetweets';
+  const isEconomyGuardian = normalizedRole === 'economiegardien';
 
   const hasPermission = (permission: string): boolean => {
     return hasSuperModerationAccess || permissions[permission] === true;
@@ -74,7 +58,7 @@ export const useAdminPermissions = () => {
   const canViewReports = hasPermission('can_view_reports');
   const canViewAnalytics = hasPermission('can_view_analytics');
   const canManageModerators = hasPermission('can_manage_moderators');
-  
+
   // Permissions spéciales
   const canModerateContent = hasModeratorAccess || isClasseur || hasPermission('can_moderate_content') || hasPermission('can_delete_tweets');
   const canExcludeFromRecommendations = isClasseur || hasPermission('can_exclude_recommendations');
@@ -85,9 +69,11 @@ export const useAdminPermissions = () => {
     isModerator,
     isSuperAdmin,
     isClasseur,
-    userRole,
+    userRole: normalizedRole,
     permissions,
-    loading,
+    // Rien à charger : `user` est déjà là ou ne l'est pas. Conservé pour ne
+    // pas casser les appelants qui affichent un état de chargement.
+    loading: false,
     hasPermission,
     canBanUsers,
     canSuspendUsers,

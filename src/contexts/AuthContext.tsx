@@ -29,9 +29,13 @@ interface User {
   ban_count?: number;
   suspension_reason?: string;
   suspended_until?: string;
-  // Permissions admin
-  role?: 'user' | 'moderator' | 'admin' | 'super_admin';
+  // Permissions admin. Le type ci-dessous ne couvre que les rôles
+  // « génériques » ; le backend renvoie aussi des rôles spécialisés
+  // (`classeurdetweets`, `economiegardien`, `superadmin`, `moderateur`…) que
+  // `useAdminPermissions` normalise — d'où le `string` en secours.
+  role?: 'user' | 'moderator' | 'admin' | 'super_admin' | string;
   is_admin?: boolean;
+  moderation_permissions?: Record<string, boolean>;
   stream_key?: string;
   declared_age?: number | null;
   birth_day?: number | null;
