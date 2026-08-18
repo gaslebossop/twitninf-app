@@ -20,7 +20,7 @@ import { displayNameFonts } from '../../../theme/fonts';
 // `ReanimatedError: The easing function is not a worklet`.
 import { ease, timing } from '../../../utils/gesture';
 import { displayContentOf, splitTweetMedia } from '../../../utils/tweetMedia';
-import { declarationType, type CardMeta } from './cardFormat';
+import { CITATION_MAX, declarationType, type CardMeta } from './cardFormat';
 import type { CardRect } from './ExploreCard';
 
 /** Nombre de tweets consommés par la bande — le mur commence après. */
@@ -28,6 +28,30 @@ export const HERO_COUNT = 5;
 
 /** Durée d'affichage d'un tweet avant enchaînement automatique. */
 const DWELL_MS = 4500;
+
+/**
+ * `declarationType` n'a que trois paliers, tous pensés pour la borne
+ * `DECLARATION_MAX` (46 caractères) du mur — jamais dépassée là-bas, car
+ * `formatOf` a déjà écarté tout tweet plus long vers un autre format. La
+ * bande héro n'a pas ce garde-fou : elle affiche le contenu de N'IMPORTE
+ * QUEL tweet du tirage, donc un texte de plusieurs phrases atterrissait
+ * quand même dans le palier le plus généreux de `declarationType`, agrandi
+ * ×1,35 — un paragraphe entier écrasé dans une police affiche à 38px,
+ * tronqué à 5 lignes en plein milieu d'un mot. Au-delà du seuil Citation, on
+ * renonce au traitement affiche et on retombe sur une taille de lecture
+ * confortable, quitte à perdre l'effet poster pour ces tirages-là.
+ */
+function heroDisplayType(length: number): { fontSize: number; lineHeight: number; lines: number } {
+  if (length <= CITATION_MAX) {
+    const base = declarationType(length);
+    return {
+      fontSize: Math.min(44, base.fontSize * 1.35),
+      lineHeight: Math.min(42, base.lineHeight * 1.35),
+      lines: 5,
+    };
+  }
+  return { fontSize: 22, lineHeight: 27, lines: 8 };
+}
 
 interface ExploreHeroProps {
   metas: CardMeta[];
@@ -182,7 +206,7 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
   const current = slides[boundedIndex];
   const content = displayContentOf(current.tweet);
   const media = splitTweetMedia(current.tweet);
-  const type = declarationType(content.length);
+  const type = heroDisplayType(content.length);
 
   return (
     <GestureDetector gesture={tap}>
@@ -206,10 +230,10 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
           ) : null}
           <Text
             style={[styles.text, {
-              fontSize: Math.min(44, type.fontSize * 1.35),
-              lineHeight: Math.min(42, type.lineHeight * 1.35),
+              fontSize: type.fontSize,
+              lineHeight: type.lineHeight,
             }]}
-            numberOfLines={5}
+            numberOfLines={type.lines}
             maxFontSizeMultiplier={1.2}
           >
             {content}
@@ -244,7 +268,9 @@ const styles = StyleSheet.create({
   text: {
     color: colors.onAccent,
     fontFamily: displayNameFonts.poster,
-    letterSpacing: -0.6,
+    // -0.6 collait les diacritiques (à, é) au glyphe précédent à cette
+    // taille — voir la même correction dans ExploreCard.tsx.
+    letterSpacing: -0.3,
   },
   track: {
     position: 'absolute',

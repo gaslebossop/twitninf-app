@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { colors, fonts, radius, withAlpha } from '../../../theme';
+import { colors, elevation, fonts, radius, withAlpha } from '../../../theme';
 // `displayNameFonts` n'est pas réexporté par le barrel `../../../theme` (seul
 // `fonts` l'est) : import direct depuis `theme/fonts`, comme le fait déjà le
 // reste du repo (NavbarOnboardingModal, ReportBugScreen, VideoEditorScreen…).
@@ -230,6 +230,13 @@ function ExploreCard({
   // chose : une Déclaration ou une Citation est l'objet lui-même.
   const showByline = format === 'photo' || format === 'bloc';
 
+  // Puce de compteur : un voile à 12 % de la couleur de TEXTE de la carte,
+  // pas une teinte fixe du thème — `palette.text` change avec `fill`
+  // (blanc sur `accent`, quasi-noir sur `contrast`, texte normal ailleurs),
+  // donc ce calcul reste lisible sur n'importe lequel des quatre fonds sans
+  // avoir besoin d'un cas par fond.
+  const likeChipBg = useMemo(() => withAlpha(palette.text, 0.12), [palette.text]);
+
   return (
     <Tappable
       style={[
@@ -241,46 +248,53 @@ function ExploreCard({
       scaleTo={0.97}
       accessibilityLabel={content || 'Tweet'}
     >
-      {/* `collapsable={false}` : sans lui, Android fusionne cette vue avec
-          son parent et `measureInWindow` n'a plus rien à mesurer. */}
-      <View ref={frameRef} collapsable={false}>
-        {body}
+      {/* Ombre et coins arrondis séparés en deux couches : `overflow:'hidden'`
+          (nécessaire pour rogner l'image d'une carte Photo aux coins ronds)
+          rogne aussi toute ombre posée sur la MÊME vue côté iOS — l'ombre
+          doit donc vivre sur `Tappable` (non rogné) et le rognage sur ce
+          conteneur interne. */}
+      <View style={styles.cardInner}>
+        {/* `collapsable={false}` : sans lui, Android fusionne cette vue avec
+            son parent et `measureInWindow` n'a plus rien à mesurer. */}
+        <View ref={frameRef} collapsable={false}>
+          {body}
 
-        {isNew && <View style={styles.newDot} pointerEvents="none" />}
+          {isNew && <View style={styles.newDot} pointerEvents="none" />}
 
-        <Animated.View pointerEvents="none" style={[styles.bigHeart, bigHeartStyle]}>
-          <Ionicons name="heart" size={wide ? 84 : 56} color={colors.white} />
-        </Animated.View>
-      </View>
+          <Animated.View pointerEvents="none" style={[styles.bigHeart, bigHeartStyle]}>
+            <Ionicons name="heart" size={wide ? 84 : 56} color={colors.white} />
+          </Animated.View>
+        </View>
 
-      {(showByline || showLikes) && (
-        <View style={styles.byline}>
-          {showByline && (
-            <Text
-              style={[styles.bylineText, { color: palette.dim }]}
-              numberOfLines={1}
-              maxFontSizeMultiplier={MAX_FONT_SCALE}
-            >
-              {author?.username ? `@${author.username}` : ''}
-            </Text>
-          )}
-          {showLikes && (
-            <View style={styles.likeChip}>
-              <Ionicons
-                name={isLiked ? 'heart' : 'heart-outline'}
-                size={12}
-                color={isLiked ? colors.like : palette.dim}
-              />
+        {(showByline || showLikes) && (
+          <View style={styles.byline}>
+            {showByline && (
               <Text
-                style={[styles.likeText, { color: palette.dim }]}
+                style={[styles.bylineText, { color: palette.dim }]}
+                numberOfLines={1}
                 maxFontSizeMultiplier={MAX_FONT_SCALE}
               >
-                {formatCompactCount(likes)}
+                {author?.username ? `@${author.username}` : ''}
               </Text>
-            </View>
-          )}
-        </View>
-      )}
+            )}
+            {showLikes && (
+              <View style={[styles.likeChip, { backgroundColor: likeChipBg }]}>
+                <Ionicons
+                  name={isLiked ? 'heart' : 'heart-outline'}
+                  size={12}
+                  color={isLiked ? colors.like : palette.dim}
+                />
+                <Text
+                  style={[styles.likeText, { color: palette.dim }]}
+                  maxFontSizeMultiplier={MAX_FONT_SCALE}
+                >
+                  {formatCompactCount(likes)}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
     </Tappable>
   );
 }
@@ -290,13 +304,20 @@ export default memo(ExploreCard);
 const styles = StyleSheet.create({
   card: {
     borderRadius: radius.lg,
+    ...elevation.card,
+  },
+  cardInner: {
+    borderRadius: radius.lg,
     overflow: 'hidden',
   },
   declarationBox: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 18 },
   declarationBoxWide: { paddingHorizontal: 24, paddingTop: 34, paddingBottom: 32 },
   declarationText: {
     fontFamily: displayNameFonts.poster,
-    letterSpacing: -0.4,
+    // -0.4 collait les diacritiques (à, é) au glyphe précédent dans une
+    // police déjà très condensée à cette taille — -0.2 garde le pincement
+    // « affiche » sans ce risque de collision.
+    letterSpacing: -0.2,
   },
   quoteBox: { paddingHorizontal: 15, paddingTop: 16, paddingBottom: 14 },
   citationBox: {
@@ -352,6 +373,13 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   bylineText: { flex: 1, fontSize: 11.5, fontFamily: fonts.semibold },
-  likeChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  likeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.md,
+  },
   likeText: { fontSize: 11, fontFamily: fonts.medium, fontVariant: ['tabular-nums'] },
 });
