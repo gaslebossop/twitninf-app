@@ -1352,7 +1352,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   body: { flex: 1, justifyContent: 'flex-end', padding: 20 },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: withAlpha('#000000', 0.42) },
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: withAlpha(colors.black, 0.42) },
   text: {
     color: colors.onAccent,
     fontFamily: displayNameFonts.poster,
@@ -1371,9 +1371,9 @@ const styles = StyleSheet.create({
     height: 2.5,
     borderRadius: 2,
     overflow: 'hidden',
-    backgroundColor: withAlpha('#FFFFFF', 0.28),
+    backgroundColor: withAlpha(colors.white, 0.28),
   },
-  segmentFull: { height: '100%', width: '100%', backgroundColor: '#FFFFFF' },
+  segmentFull: { height: '100%', width: '100%', backgroundColor: colors.white },
 });
 ```
 
@@ -1581,7 +1581,7 @@ function ExploreActionSheet({
 export default memo(ExploreActionSheet);
 
 const styles = StyleSheet.create({
-  backdrop: { backgroundColor: withAlpha('#000000', 0.45) },
+  backdrop: { backgroundColor: withAlpha(colors.black, 0.45) },
   sheet: {
     position: 'absolute',
     width: SHEET_WIDTH,
