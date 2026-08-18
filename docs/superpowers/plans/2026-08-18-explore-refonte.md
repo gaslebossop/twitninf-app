@@ -1821,7 +1821,7 @@ git commit -m "feat(explore): assemblage du mur, largeur réactive et pagination
 
 **Interfaces:**
 - Consumes: `ExploreWall`, `ExploreActionSheet`, `CardRect`
-- Produces: `ExploreGridProps` **inchangé** plus `lastVisitAt: number | null`, `isFollowing: (tweet) => boolean`, `onReply`, `onShare`, `onFollow`, `onInterest` ; réexporte `export type { CardRect }`
+- Produces: `ExploreGridProps` **inchangé** plus `lastVisitAt: number | null`, `isFollowing: (tweet: Tweet) => boolean`, `onFollow: (tweet: Tweet) => void`, `onShare: (tweetId: string) => void`, `onInterest: (tweet: Tweet, interested: boolean) => void` ; réexporte `export type { CardRect }`. **Pas de prop `onReply`** — `ExploreGrid` héberge `CommentSheet` et fabrique `handleReply` en interne.
 
 - [ ] **Step 1: Remplacer intégralement le fichier**
 
