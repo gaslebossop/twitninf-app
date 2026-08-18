@@ -50,8 +50,8 @@ export interface CardMeta {
  * (5 tweets vivants sur 977 ont une image), donc le rabaisser au calibre
  * d'une légende laissait des cartes vides autour de quelques mots.
  */
-export const TEXT_FONT_SIZE = 17;
-export const TEXT_LINE_HEIGHT = 23;
+export const TEXT_FONT_SIZE = 19;
+export const TEXT_LINE_HEIGHT = 25.5;
 /**
  * 6 lignes et non 7 : au-delà, une carte texte devient plus haute que deux
  * cartes voisines réunies et creuse un trou dans la colonne d'en face.
@@ -83,14 +83,14 @@ export const NEW_SINCE_FLOOR = 5;
  * Marges verticales du corps texte (haut + bas) et hauteur de la signature.
  *
  * `BYLINE_HEIGHT` suit la vignette d'auteur, qui est l'élément le plus haut de
- * la ligne : 22 px d'avatar + 3 en haut + 9 en bas (voir les styles `byline`
+ * la ligne : 26 px d'avatar + 3 en haut + 9 en bas (voir les styles `byline`
  * d'`ExploreCard`). Ces deux constantes doivent bouger AVEC ces styles —
  * c'est la seule dépendance de l'estimation de hauteur au rendu, et une
  * vignette agrandie sans toucher à cette valeur décale l'équilibrage des
  * colonnes de quelques pixels par carte.
  */
-const TEXT_PADDING_V = 26;
-const BYLINE_HEIGHT = 34;
+const TEXT_PADDING_V = 28;
+const BYLINE_HEIGHT = 38;
 
 export function formatOf(tweet: Tweet): CardFormat {
   // `hasVisual` gère le cas des vidéos, dont `media_urls` vaut
