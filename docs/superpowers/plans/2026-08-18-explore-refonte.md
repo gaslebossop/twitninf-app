@@ -1138,8 +1138,6 @@ export const HERO_COUNT = 5;
 
 /** Durée d'affichage d'un tweet avant enchaînement automatique. */
 const DWELL_MS = 4500;
-/** Distance de glissé au-delà de laquelle on change de tweet. */
-const SWIPE_THRESHOLD = 48;
 
 interface ExploreHeroProps {
   metas: CardMeta[];
@@ -1211,29 +1209,44 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
     return () => cancelAnimation(progress);
   }, [index, count, runProgress, progress]);
 
-  const pan = useMemo(
-    () => Gesture.Pan()
-      .activeOffsetX([-12, 12])
-      .onBegin(() => {
+  /**
+   * UN SEUL geste sur la bande : un `Tap`.
+   *
+   * ⚠️ Surtout PAS de `Gesture.Pan` horizontal ici. `TweetsScreen.tsx:411`
+   * enveloppe tout le fil — Explorer compris — dans un Pan horizontal
+   * (`activeOffsetX([-24, 24])`) qui change d'onglet. Un Pan imbriqué sans
+   * relation déclarée laisse les deux s'activer : on changerait d'onglet ET de
+   * tweet. Ce geste d'onglet est le code le plus délicat de l'écran et il n'a
+   * jamais été essayé à la main — on ne le met pas en risque pour un balayage
+   * manuel qui n'est qu'un bonus. La bande avance toute seule ; c'est sa
+   * promesse.
+   *
+   * Et pas d'`onTouchEnd` sur la vue non plus : un glissé se termine aussi par
+   * un « touch end », donc le moindre balayage ouvrirait la lecture.
+   *
+   * `onTouchesDown` se déclenche que le tap s'active ou non — poser le doigt
+   * met donc la barre en pause même si le geste finit par échouer. Et
+   * `onFinalize` reçoit `success` : on ne reprend la barre que si le tap n'a
+   * PAS abouti (sinon la lecture s'ouvre par-dessus, rien à reprendre).
+   */
+  const tap = useMemo(
+    () => Gesture.Tap()
+      .maxDistance(10)
+      .onTouchesDown(() => {
         'worklet';
-        // Pause nette : la valeur reste où elle est, elle n'est pas remise à 0.
+        // Pause nette : la valeur reste où elle est, jamais remise à 0.
         cancelAnimation(progress);
       })
-      .onUpdate((e) => {
+      .onEnd(() => {
         'worklet';
-        drift.value = e.translationX * 0.35;
+        scheduleOnRN(handlePress);
       })
-      .onEnd((e) => {
+      .onFinalize((_event, success) => {
         'worklet';
-        const shouldAdvance = Math.abs(e.translationX) > SWIPE_THRESHOLD;
-        drift.value = withTiming(0, { duration: duration.fast, easing: easing.out });
-        if (shouldAdvance) {
-          scheduleOnRN(goTo, e.translationX < 0 ? 1 : -1);
-        } else {
-          scheduleOnRN(runProgress, progress.value);
-        }
+        // Reprise sur la durée RESTANTE — d'où le passage de `progress.value`.
+        if (!success) scheduleOnRN(runProgress, progress.value, index + 1);
       }),
-    [drift, goTo, progress, runProgress],
+    [handlePress, index, progress, runProgress],
   );
 
   const bodyStyle = useAnimatedStyle(() => ({
@@ -1261,12 +1274,11 @@ function ExploreHero({ metas, onOpen }: ExploreHeroProps) {
   const type = declarationType(content.length);
 
   return (
-    <GestureDetector gesture={pan}>
+    <GestureDetector gesture={tap}>
       <View
         ref={frameRef}
         collapsable={false}
         style={[styles.band, { height: bandHeight, width: width - 24 }]}
-        onTouchEnd={handlePress}
       >
         <Animated.View style={[styles.body, bodyStyle]}>
           {media.hasVisual && media.coverUrl ? (
@@ -1367,7 +1379,7 @@ par un passage explicite de l'index suivant. Modifier la signature :
   }, [goTo, progress]);
 ```
 
-Et ses deux appels :
+Et son appel de démarrage :
 
 ```ts
   useEffect(() => {
@@ -1377,9 +1389,9 @@ Et ses deux appels :
   }, [index, count, runProgress, progress]);
 ```
 
-```ts
-          scheduleOnRN(runProgress, progress.value, index + 1);
-```
+L'autre appel — la reprise après une pause — est déjà écrit sous cette forme
+dans le `onFinalize` du geste `tap` ci-dessus : `scheduleOnRN(runProgress,
+progress.value, index + 1)`. Rien à changer là.
 
 - [ ] **Step 3: Vérifier les types**
 
@@ -2202,7 +2214,7 @@ npx expo start
 
 1. La bande d'entrée joue **dès l'ouverture** de l'onglet, sans toucher à rien.
 2. Poser le doigt dessus **met la barre en pause** ; relâcher la **reprend où elle était** (elle ne repart pas de zéro).
-3. Un glissé horizontal sur la bande change de tweet dans le bon sens.
+3. Un glissé horizontal **sur la bande** change bien d'ONGLET (le geste du fil), et n'ouvre jamais la lecture au passage.
 4. Le mur montre une rupture pleine largeur toutes les 7 cartes.
 5. Les deux colonnes finissent **à peu près à la même hauteur** dans chaque bloc.
 6. Le magenta apparaît environ 1 carte sur 5 parmi les Déclarations, jamais deux d'affilée.

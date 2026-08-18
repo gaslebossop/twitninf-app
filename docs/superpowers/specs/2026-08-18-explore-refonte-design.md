@@ -152,9 +152,16 @@ et sans chrome** : un tweet à la fois dans le traitement Déclaration poussé a
 maximum, enchaînement automatique toutes les **4,5 s**.
 
 - Barre de progression segmentée en 5.
-- Au toucher : l'auto-défilement se met en pause.
-- Au glissé horizontal : avance manuelle.
+- Au toucher : l'auto-défilement se met en pause, et reprend là où il en était.
 - Au tap : ouvre la lecture plein écran sur ce tweet.
+
+**Pas d'avance manuelle au glissé** (arbitré le 2026-08-18, à l'écriture du
+plan). `TweetsScreen.tsx:411` enveloppe tout le fil — Explorer compris — dans
+un `Gesture.Pan` horizontal qui change d'onglet. Un Pan imbriqué sans relation
+déclarée laisse les deux gestes s'activer : on changerait d'onglet **et** de
+tweet. Ce geste d'onglet est le code le plus délicat de l'écran et n'a jamais
+été essayé à la main ; on ne le met pas en risque pour un balayage qui n'est
+qu'un bonus. La bande avance toute seule — c'est précisément sa promesse.
 
 **Elle consomme les 5 premiers tweets du tirage ; le mur commence à l'index 5.**
 Ce n'est pas décoratif : la 6ᵉ passe fait déjà échantillonner les 6 premières
