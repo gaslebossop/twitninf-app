@@ -249,6 +249,39 @@ export default function TweetsScreen() {
   // Vrai quand un tirage neuf n'a plus rien apporté : coupe la relance
   // automatique en bas de page (voir `onExploreEndReached`).
   const exploreExhaustedRef = useRef(false);
+
+  /**
+   * Date de la dernière visite d'Explorer, pour marquer ce qui est arrivé
+   * depuis. `exclude_seen` retire déjà le déjà-vu côté serveur, mais en
+   * SILENCE : rien ne signale au lecteur que la page a changé, donc il n'a
+   * aucune raison de revenir demain. Ce marqueur rend le mécanisme visible.
+   */
+  const [lastExploreVisitAt, setLastExploreVisitAt] = useState<number | null>(null);
+  const exploreEnteredAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem('explore:lastVisitAt')
+      .then((raw) => { if (raw) setLastExploreVisitAt(Number(raw)); })
+      .catch(() => {});
+  }, []);
+
+  /**
+   * On mémorise l'instant d'ENTRÉE, pas celui de sortie : sinon tout ce qui
+   * paraît pendant la visite serait déjà compté comme « vu » au retour.
+   *
+   * L'état est avancé en même temps que le stockage : sans ça, une deuxième
+   * visite dans la MÊME session compterait encore depuis la date lue au
+   * démarrage, et annoncerait comme neufs des tweets déjà vus à la visite
+   * précédente.
+   */
+  const rememberExploreVisit = useCallback(() => {
+    const enteredAt = exploreEnteredAtRef.current;
+    if (!enteredAt) return;
+    exploreEnteredAtRef.current = null;
+    setLastExploreVisitAt(enteredAt);
+    AsyncStorage.setItem('explore:lastVisitAt', String(enteredAt)).catch(() => {});
+  }, []);
+
   // Index ouvert en lecture ; `null` = grille seule. `immersiveOrigin` est le
   // rectangle de la carte touchée : la lecture s'agrandit depuis lui.
   const [immersiveIndex, setImmersiveIndex] = useState<number | null>(null);
@@ -946,11 +979,21 @@ export default function TweetsScreen() {
     // touche jamais `tabCacheRef`/`tweets`, qui restent aux deux onglets du
     // fil linéaire.
     if (newTab === 'explore') {
+      exploreEnteredAtRef.current = Date.now();
       setActiveTab(newTab);
       animateTabSwitch(newTab);
       if (exploreTweets.length === 0) await fetchExplore(true);
       return;
     }
+
+    // Passé le retour ci-dessus, la cible n'est plus Explorer : si on en
+    // VIENT, la visite se termine maintenant. `rememberExploreVisit` se garde
+    // lui-même sur `exploreEnteredAtRef`, qui n'est posé qu'en ENTRANT dans
+    // Explorer, donc l'appel est sans effet depuis le fil linéaire. Le placer
+    // dans le `if (activeTab !== 'explore')` juste dessous ferait l'inverse de
+    // ce qu'on veut : il partirait en quittant le fil linéaire, et jamais en
+    // quittant Explorer.
+    rememberExploreVisit();
 
     // Mémoriser l'onglet quitté avant de basculer — seulement s'il fait
     // partie du fil linéaire, cible réelle de ce cache.
@@ -971,7 +1014,7 @@ export default function TweetsScreen() {
       if (newTab === 'forYou') await fetchRecommendations(undefined, true);
       else await fetchTweets(true);
     }
-  }, [activeTab, currentAlgorithm, trackCustomAction, animateTabSwitch, exploreTweets.length]);
+  }, [activeTab, currentAlgorithm, trackCustomAction, animateTabSwitch, exploreTweets.length, rememberExploreVisit]);
 
   // Rend la dernière version accessible au geste construit plus haut.
   handleTabChangeRef.current = handleTabChange;
@@ -1853,6 +1896,18 @@ export default function TweetsScreen() {
   }, [followingIds]);
 
   /**
+   * Même résolution d'auteur que `handleExploreFollow` juste au-dessus : sur un
+   * retweet, c'est l'auteur d'ORIGINE qu'on suit. Si le prédicat et l'action
+   * divergeaient ici, le panneau proposerait « suivre » quelqu'un qu'on suit
+   * déjà — sur tous les retweets.
+   */
+  const isFollowingExploreAuthor = useCallback((tweet: Tweet) => {
+    const author = (tweet as any)?.originalTweet?.author || tweet.author;
+    const authorId = author?.id ? String(author.id) : '';
+    return !!authorId && followingIds.has(authorId);
+  }, [followingIds]);
+
+  /**
    * Temps réellement passé sur un tweet en lecture plein écran.
    *
    * C'est le signal de goût le plus fiable dont dispose le classement, et le
@@ -2051,6 +2106,11 @@ export default function TweetsScreen() {
           onLikeTweet={handleGridDoubleTapLike}
           onRetry={onExploreRetry}
           onDrawMore={onExploreDrawMore}
+          lastVisitAt={lastExploreVisitAt}
+          isFollowing={isFollowingExploreAuthor}
+          onFollow={handleExploreFollow}
+          onShare={handleShare}
+          onInterest={handleExploreInterest}
         />
       ) : (
       <FlatList
