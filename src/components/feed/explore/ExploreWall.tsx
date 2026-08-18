@@ -69,6 +69,16 @@ function ExploreWall({
   const contentHeightRef = useRef(0);
   const layoutHeightRef = useRef(0);
   const scrollOffsetRef = useRef(0);
+  /**
+   * `contentHeightRef`/`layoutHeightRef` valent `0` par défaut avant leur
+   * première vraie mesure — un défaut, pas une mesure de contenu vide. Sans
+   * ces booléens, un appel de `checkEndReached()` avec une seule des deux
+   * refs déjà réelle (l'autre encore à son défaut `0`) peut faire paraître
+   * `distance` négative à tort et déclencher `onEndReached()` avant que le
+   * contenu réel ne soit connu. Voir le garde en tête de `checkEndReached`.
+   */
+  const layoutMeasuredRef = useRef(false);
+  const contentMeasuredRef = useRef(false);
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
 
   // `useWindowDimensions` et non `Dimensions.get()` : la largeur doit suivre
@@ -100,16 +110,24 @@ function ExploreWall({
    * de rester bloqué après le tout premier appel.
    *
    * Le cas dégénéré visé par ce correctif — contenu plus court que le
-   * viewport — n'a besoin d'aucun traitement particulier : `distance` est
-   * alors très négative (voire nulle tant que les deux mesures ne sont pas
-   * encore connues), donc toujours < seuil. Pas de division, pas de rapport,
-   * juste une soustraction qui reste vraie dans ce cas.
+   * viewport — n'a besoin d'aucun traitement particulier : une fois les deux
+   * mesures connues, `distance` est très négative, donc toujours < seuil. Pas
+   * de division, pas de rapport, juste une soustraction qui reste vraie dans
+   * ce cas.
    */
   const checkEndReached = useCallback(() => {
     if (!hasMore || loadingMore) {
       endReachedFiredRef.current = false;
       return;
     }
+    // Les deux mesures doivent être RÉELLES, pas leur défaut `0`. Avec la
+    // seule hauteur de viewport connue, `distance` vaudrait `-layoutHeight`,
+    // qui est inférieur à `layoutHeight * PREFETCH_SCREENS` pour TOUTE
+    // hauteur positive : `onEndReached()` partirait au montage sur n'importe
+    // quelle page, même très longue. On teste des booléens posés par les
+    // événements et non `=== 0`, pour qu'une liste réellement vide (hauteur
+    // de contenu nulle mais mesurée) puisse quand même paginer.
+    if (!layoutMeasuredRef.current || !contentMeasuredRef.current) return;
     const layoutHeight = layoutHeightRef.current;
     const distance = contentHeightRef.current - layoutHeight - scrollOffsetRef.current;
     if (distance < layoutHeight * PREFETCH_SCREENS) {
@@ -127,6 +145,9 @@ function ExploreWall({
     contentHeightRef.current = contentSize.height;
     layoutHeightRef.current = layoutMeasurement.height;
     scrollOffsetRef.current = contentOffset.y;
+    // Un événement de défilement porte les deux hauteurs d'un coup.
+    contentMeasuredRef.current = true;
+    layoutMeasuredRef.current = true;
     checkEndReached();
   }, [checkEndReached]);
 
@@ -137,11 +158,13 @@ function ExploreWall({
   // pour se déclencher.
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     contentHeightRef.current = height;
+    contentMeasuredRef.current = true;
     checkEndReached();
   }, [checkEndReached]);
 
   const handleLayout = useCallback((e: LayoutChangeEvent) => {
     layoutHeightRef.current = e.nativeEvent.layout.height;
+    layoutMeasuredRef.current = true;
     checkEndReached();
   }, [checkEndReached]);
 
