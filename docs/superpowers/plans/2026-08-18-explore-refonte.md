@@ -756,7 +756,6 @@ import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -764,7 +763,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
 
 import { colors, fonts, displayNameFonts, radius, withAlpha } from '../../../theme';
 import { Tappable } from '../../ui';
@@ -834,6 +832,8 @@ function ExploreCard({
   const lastTapRef = useRef(0);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameRef = useRef<View>(null);
+  /** Dernière position mesurée (voir `startMeasure` : la mesure est asynchrone). */
+  const rectRef = useRef<CardRect | null>(null);
   const bigHeart = useSharedValue(0);
 
   useEffect(() => () => {
@@ -847,13 +847,18 @@ function ExploreCard({
     }],
   }));
 
-  /** Mesure synchrone : le doigt est encore posé, la grille n'a pas bougé. */
-  const measure = useCallback((then: (rect: CardRect | null) => void) => {
-    let measured: CardRect | null = null;
+  /**
+   * ⚠️ `measureInWindow` rend son résultat par CALLBACK ASYNCHRONE. Lire la
+   * valeur juste après l'appel renvoie donc TOUJOURS `null` — c'est le piège
+   * qui rendait `CardRect` inutilisable. On lance la mesure au plus tôt (le
+   * doigt est encore posé, la grille n'a pas bougé) en écrivant dans un ref,
+   * et on la LIT plus tard, au moment de s'en servir.
+   */
+  const startMeasure = useCallback(() => {
+    rectRef.current = null;
     frameRef.current?.measureInWindow((x, y, width, height) => {
-      if (width > 0 && height > 0) measured = { x, y, width, height };
+      if (width > 0 && height > 0) rectRef.current = { x, y, width, height };
     });
-    then(measured);
   }, []);
 
   const handlePress = useCallback(() => {
@@ -871,33 +876,36 @@ function ExploreCard({
       return;
     }
 
-    measure((rect) => {
-      openTimerRef.current = setTimeout(() => {
-        openTimerRef.current = null;
-        onPress(tweet, rect);
-      }, OPEN_DELAY_MS);
-    });
-  }, [bigHeart, isLiked, measure, onLike, onPress, tweet]);
+    // La mesure part MAINTENANT et sera lue dans 260 ms — largement le temps
+    // que son callback ait écrit dans le ref. Le timer, lui, est créé tout de
+    // suite : différé, un second appui n'aurait rien à annuler.
+    startMeasure();
+    openTimerRef.current = setTimeout(() => {
+      openTimerRef.current = null;
+      onPress(tweet, rectRef.current);
+    }, OPEN_DELAY_MS);
+  }, [bigHeart, isLiked, onLike, onPress, startMeasure, tweet]);
 
   /**
-   * `Gesture.LongPress` plutôt que la prop `onLongPress` de Tappable : il faut
-   * la même horloge que le double-tap pour qu'un appui maintenu n'ouvre jamais
-   * la lecture en plus du panneau.
+   * `Tappable` compose DÉJÀ `Gesture.Exclusive(long, tap)` en interne : le
+   * maintien l'emporte, le tap ne part que si le doigt s'est relevé à temps.
+   * Emboîter un second `GestureDetector` par-dessus rouvrirait la question de
+   * la relation entre deux détecteurs imbriqués — inutile, et jamais éprouvée
+   * dans ce dépôt.
    *
-   * ⚠️ `scheduleOnRN`, pas `runOnJS` : appeler une fonction JS ordinaire
-   * directement depuis un worklet tue l'app SANS AUCUN LOG.
+   * Ici la mesure passe par le CALLBACK de `measureInWindow` plutôt que par le
+   * ref : il n'y a aucune course avec un second appui à gérer, donc autant
+   * lire la position à la source.
    */
-  const longPress = useMemo(
-    () => Gesture.LongPress().minDuration(350).onStart(() => {
-      'worklet';
-      scheduleOnRN(() => {
-        if (openTimerRef.current) { clearTimeout(openTimerRef.current); openTimerRef.current = null; }
-        feedback.tap();
-        measure((rect) => onLongPress(tweet, rect));
-      });
-    }),
-    [measure, onLongPress, tweet],
-  );
+  const handleLongPress = useCallback(() => {
+    if (openTimerRef.current) { clearTimeout(openTimerRef.current); openTimerRef.current = null; }
+    feedback.tap();
+    const node = frameRef.current;
+    if (!node) { onLongPress(tweet, null); return; }
+    node.measureInWindow((x, y, width, height) => {
+      onLongPress(tweet, width > 0 && height > 0 ? { x, y, width, height } : null);
+    });
+  }, [onLongPress, tweet]);
 
   const showLikes = shouldShowCount(likes);
   const showViews = shouldShowCount(views);
@@ -973,16 +981,16 @@ function ExploreCard({
   const showByline = format === 'photo' || format === 'bloc';
 
   return (
-    <GestureDetector gesture={longPress}>
-      <Tappable
-        style={[
-          styles.card,
-          { width: wide ? '100%' : cardWidth, backgroundColor: palette.background },
-        ]}
-        onPress={handlePress}
-        scaleTo={0.97}
-        accessibilityLabel={content || 'Tweet'}
-      >
+    <Tappable
+      style={[
+        styles.card,
+        { width: wide ? '100%' : cardWidth, backgroundColor: palette.background },
+      ]}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      scaleTo={0.97}
+      accessibilityLabel={content || 'Tweet'}
+    >
         {/* `collapsable={false}` : sans lui, Android fusionne cette vue avec
             son parent et `measureInWindow` n'a plus rien à mesurer. */}
         <View ref={frameRef} collapsable={false}>
@@ -1023,8 +1031,7 @@ function ExploreCard({
             )}
           </View>
         )}
-      </Tappable>
-    </GestureDetector>
+    </Tappable>
   );
 }
 
@@ -1059,7 +1066,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: radius.md,
-    backgroundColor: withAlpha('#000000', 0.55),
+    backgroundColor: withAlpha(colors.black, 0.55),
   },
   videoBadgeText: {
     color: colors.white,
