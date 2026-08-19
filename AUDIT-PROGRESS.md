@@ -29,7 +29,9 @@ F2-2 (`LiveViewerScreen`, chat du live), F2-3 (comparateurs `TweetRow` /
 bulles se re-rendent à chaque message), F2-5 (`ConversationThreadScreen` :
 dépendances trop étroites, l'accusé « Vu » n'apparaît pas en temps réel),
 F2-6 (`SearchScreen` : frappe re-rendant 40 résultats non virtualisés,
-+ 5 `Animated.View` inertes).
++ 5 `Animated.View` inertes), F2-7 (`CreateTweetScreen` : `Animated.sequence`
+de 200 ms relancée à chaque caractère + écran monolithe de 2 140 l. / 31
+`useState`).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -55,13 +57,16 @@ transverse de fin d'audit — ce n'est pas un constat F2 en soi.
   PAS un problème de release. Reste à confirmer en R3 que `NODE_ENV=production`
   est bien posé au build EAS.
 - `SearchScreen` n'appelle PAS le réseau à chaque frappe (`onSubmitEditing`).
+- `TweetCard` est un `memo` avec comparateur (`TweetCard.tsx:743`) — protégé.
+- `CreateTweetScreen` : ressorts focus/blur (tension 50 / friction 14) =
+  amortissement quasi critique, CONFORME à `CLAUDE.md`. Ne pas le signaler.
 
 **Note de chemin** : `TweetRowGutter.tsx` est dans
 `src/components/feed/paper2b/`, pas `src/components/feed/`.
 
 **Pistes NON encore explorées pour F2 :**
-- « État placé trop haut » : reste `CreateTweetScreen`, `ForgeScreen`,
-  `WalletScreen`, `TradingScreen`. (`SearchScreen` est fait → F2-6.)
+- « État placé trop haut » : reste `ForgeScreen`, `WalletScreen`,
+  `TradingScreen`. (`SearchScreen` → F2-6, `CreateTweetScreen` → F2-7.)
 - Les renderItem inline restants : `SendCoinsModal:236`,
   `ImageViewerPaper:334`, `FollowRequestsScreen:136`, `MyPassesScreen:358`,
   `EconomyManagementScreen:268/318`, `UserConnectionsScreen:140`,

@@ -724,3 +724,107 @@ ressentie, pour un changement local et sans risque.
   émettrait une trace sérialisée par tweet et par frappe. *Réserve* : la
   protection tient à ce que `NODE_ENV=production` soit bien positionné au
   moment du build EAS — non vérifié ici, à confirmer en R3.
+
+---
+
+## F2-7 — Composer un tweet : chaque caractère lance une animation de 200 ms et re-rend un écran de 2 140 lignes — MAJEUR
+
+`src/screens/CreateTweetScreen.tsx:317-334`
+
+```tsx
+const handleContentChange = (text: string) => {
+  setContent(text);
+  setCharCount(text.length);          // ← état dérivé, redondant avec `content`
+
+  // Animation lors de la saisie
+  Animated.sequence([                 // ← relancée à CHAQUE caractère
+    Animated.timing(inputScaleAnim, { toValue: 1.005, duration: 100, useNativeDriver: true }),
+    Animated.timing(inputScaleAnim, { toValue: 1,     duration: 100, useNativeDriver: true }),
+  ]).start();
+};
+```
+
+### Ce qui ne va pas
+
+1. **Une séquence d'animation de 200 ms est lancée par caractère tapé, et
+   jamais arrêtée.** À un rythme de frappe ordinaire — 5 à 8 caractères par
+   seconde sur mobile — chaque séquence est écrasée par la suivante bien avant
+   d'être arrivée à son terme. On n'obtient donc jamais l'effet visé (une
+   pulsation qui va à 1,005 puis revient à 1) : on obtient une file de
+   séquences qui se coupent l'une l'autre. Chaque `.start()` alloue deux
+   `Animated.timing`, une `Animated.sequence`, et envoie une configuration au
+   pilote natif.
+
+   L'amplitude est de **0,5 %** — invisible à l'œil sur un champ de saisie.
+   Autrement dit, tout ce coût est payé pour un effet que personne ne peut
+   percevoir, et qui de toute façon n'a pas le temps de se produire.
+
+2. **`charCount` duplique `content.length`.** Deux états là où un suffit
+   (`:88` et `:106`). React 18 regroupe bien les deux `setState` en un seul
+   rendu, donc ce n'est pas un rendu de plus — mais c'est un état à maintenir
+   synchronisé à la main, avec le risque de désynchronisation que ça implique
+   (le commentaire `:1619-1621` montre qu'il a déjà fallu router un autre
+   chemin d'écriture par `handleContentChange` exprès pour ne pas laisser le
+   compteur en arrière).
+
+3. **Tout ce que la frappe entraîne derrière.** L'écran est un composant
+   **unique de 2 140 lignes portant 31 `useState`**. Il n'est découpé en aucun
+   sous-composant : le champ de saisie, la grille d'images (`:1202`), le
+   panneau Spotify et ses résultats (`:1464`), l'aperçu de citation, la barre
+   d'outils et le compteur vivent tous dans le même rendu. Un caractère tapé
+   les repasse tous.
+
+### Effet concret pour l'utilisateur
+
+Écrire un tweet est l'action fondatrice de l'application, et c'est là que la
+frappe est la plus lourde de tout le dépôt. Le retard se voit surtout :
+
+- **quand des images sont jointes** — la grille d'aperçus (`:1202`) est
+  reconstruite à chaque caractère, en plus de l'animation ;
+- **sur un appareil modeste**, où 200 ms d'animation par caractère à 6
+  caractères/seconde signifient qu'il y a en permanence une animation en vol ;
+- **en fin de tweet long**, quand le champ multiligne a grandi.
+
+Le symptôme rapporté est en général « le clavier rame » ou « les lettres
+arrivent en retard », et l'utilisateur l'attribue au clavier, pas à
+l'application.
+
+### Correctif
+
+1. **Supprimer purement et simplement l'`Animated.sequence` de
+   `handleContentChange`** (`:321-333`). C'est une ligne de gain net : l'effet
+   est invisible (0,5 %), il ne s'achève jamais, et il coûte à chaque
+   caractère. `handleContentChange` se réduit alors à `setContent(text)`.
+
+2. **Supprimer l'état `charCount`** et le remplacer par `content.length` au
+   point d'usage (`:1074`, `:1116` et suivants). Un état de moins à
+   synchroniser.
+
+3. **Extraire un `TweetComposer`** qui détient `content` et n'informe le parent
+   qu'à la publication — même geste que pour `CommentSheet` (F2-1) et
+   `SearchScreen` (F2-6). C'est le correctif de fond : il sort la grille
+   d'images, le panneau Spotify et l'aperçu de citation du chemin de la frappe.
+   Plus gros chantier, à faire une fois les points 1 et 2 acquis.
+
+Les points 1 et 2 sont des suppressions de code, applicables immédiatement et
+sans risque de régression visuelle.
+
+### Ce que j'ai vérifié et trouvé SAIN sur cet écran
+
+- **Les ressorts de focus/blur sont correctement amortis.**
+  `Animated.spring(inputScaleAnim, { tension: 50, friction: 14 })` (`:1086`,
+  `:1094`) : l'amortissement critique tombe à `2 × √50 ≈ 14,14` pour une masse
+  de 1. Avec `friction: 14`, le ressort est à un cheveu du critique — il
+  n'oscille pas. C'est exactement ce que `CLAUDE.md` demande, et l'opposé du
+  `springify().damping(14)` explicitement rejeté. **Rien à corriger ici** : ces
+  deux ressorts ne se déclenchent qu'au focus et au blur, pas à la frappe.
+- `Animated` est bien celui de `react-native` (`:3-18`), pas Reanimated
+  renommé : le piège de nommage signalé dans `CLAUDE.md` pour `TweetsScreen`
+  n'existe pas dans ce fichier.
+- Toutes les animations de l'écran utilisent `useNativeDriver: true`.
+- L'aperçu du tweet cité passe par `<TweetCard tweet={quotedTweet} compact />`
+  (`:1108`), et `TweetCard` est un `memo` avec comparateur
+  (`src/components/TweetCard.tsx:743`). `quotedTweet` étant un état stable et
+  `compact` un littéral, la carte citée est **épargnée** par la frappe. Bon
+  point : c'est le sous-arbre le plus lourd de l'écran, et c'est le seul qui
+  soit protégé.
