@@ -15,8 +15,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | R2 | RAPIDITÉ — réseau | **TERMINÉE** | `AUDIT-R2.md` |
 | R3 | RAPIDITÉ — poids du bundle | **TERMINÉE** | `AUDIT-R3.md` |
 | S1 | SÉCURITÉ — secrets dans l'historique git | **TERMINÉE** | `AUDIT-S1.md` |
-| S2 | SÉCURITÉ — ce qui part en clair dans le bundle | **EN COURS** | `AUDIT-S2.md` |
-| S3 | SÉCURITÉ — appareil et chaîne de build | À FAIRE | — |
+| S2 | SÉCURITÉ — ce qui part en clair dans le bundle | **TERMINÉE** | `AUDIT-S2.md` |
+| S3 | SÉCURITÉ — appareil et chaîne de build | **EN COURS** | `AUDIT-S3.md` |
 
 ---
 
@@ -144,50 +144,72 @@ motifs recherchés sont listés dans `AUDIT-S1.md`.
 
 ---
 
-## Reprendre à — S2 (EN COURS)
+## S2 — TERMINÉE
 
-**Aucun constat écrit pour l'instant.** `AUDIT-S2.md` reste à créer.
+**6 variables `EXPO_PUBLIC_*`** recensées et jugées une par une. 0 critique,
+0 majeur, 1 modéré, 1 mineur, 1 informatif. `AUDIT-S2.md` — **détail au
+propriétaire, pas ici**.
 
-⚠️ **Le dépôt est PUBLIC** : dans `AUDIT-S2.md`, décompte et gravité
-uniquement. Le détail (quelles variables, quelles valeurs, quelle restriction
-manque) va dans le MESSAGE FINAL.
+La section a surtout trouvé une posture **délibérée et testée** :
+`resolveServerUrl` (HTTPS obligatoire + rejet des identifiants dans l'URL),
+`tests/security-config.test.js` qui relit le **manifeste généré**, durcissement
+Android complet. Tout est listé en SAIN dans `AUDIT-S2.md` — **ne pas le
+rouvrir**.
 
-### Matériel DÉJÀ VÉRIFIÉ pour S2 — ne pas le redécouvrir
+---
 
-`.env.example` a été lu intégralement en S1. Il déclare **5 variables
-`EXPO_PUBLIC_*`** — donc 5 valeurs inlinées par Metro et lisibles en clair par
-quiconque télécharge l'APK ou l'IPA :
+## Reprendre à — S3 (EN COURS)
 
-1. `EXPO_PUBLIC_API_URL` — serveur API principal.
-2. `EXPO_PUBLIC_STREAM_SERVER` — serveur de stream (RTMPS/HLS/chat live).
-3. `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY` — **le cas le plus intéressant** :
-   `.env.example` dit qu'elle doit être « restreinte à l'application Android
-   `com.gasleboss.TwitNin` ». Or une restriction Android se fait par
-   *package + empreinte SHA-1 du certificat de signature*. **À instruire** :
-   quelle empreinte est utilisée ? Si c'est celle du magasin de **débogage**
-   (identifié en S1 comme le fichier universel du SDK Android, donc public),
-   la restriction ne protège rien. C'est la vraie question de S2.
-   Voir aussi R3-1 : la carte est devenue une `WebView`, donc **cette clé ne
-   sert peut-être tout simplement plus à rien** — une clé publiée qui ne sert
-   plus est un risque sans contrepartie.
-4. `EXPO_PUBLIC_UPDATE_FEED_URL` — flux de mise à jour, renseigné par la CI.
-5. `EXPO_PUBLIC_BUILD_VERSION`.
+**Aucun constat écrit pour l'instant.** `AUDIT-S3.md` reste à créer.
+**Dernière section de l'audit.**
 
-### Plan S2
+⚠️ Dépôt PUBLIC : décompte et gravité seulement dans `AUDIT-S3.md`.
 
-1. Balayer tout `src/` sur `process.env.EXPO_PUBLIC_` : les 5 ci-dessus
-   sont-elles les seules réellement lues ? Y en a-t-il d'autres non
-   documentées dans `.env.example` ?
-2. Pour chacune : juger si la divulgation est acceptable, et si une
-   restriction existe **côté fournisseur** (c'est le seul vrai rempart — le
-   préfixe `EXPO_PUBLIC_` rend la valeur publique par construction).
-3. Vérifier `app.config.js` : d'autres valeurs y sont-elles injectées dans
-   `extra` ou dans le manifeste ?
-4. Vérifier `src/config/*.ts` (`adminConfig.ts`, `api.ts`,
-   `featureFlagKeys.ts`, `trading.ts`) — repérés en S1 comme fichiers de
-   configuration à lire.
-5. `tests/security-config.test.js` existe : le lire, il documente peut-être
-   déjà les invariants attendus.
+### Matériel DÉJÀ VÉRIFIÉ à router vers S3 — ne pas le redécouvrir
+
+- **`src/config/adminConfig.ts` (121 l.) — PISTE PRINCIPALE, déjà à moitié
+  instruite.** Le fichier expose `ADMIN_CONFIG.TEST_MODE: true`,
+  `DEFAULT_ROLE: 'admin'` et une liste `GRANTED_PERMISSIONS` accordant à
+  *tout* utilisateur `manage_users`, `ban_users`, `delete_content`, etc.
+  **MAIS** : `grep ADMIN_CONFIG|adminConfig|hasTestPermission|getTestRole` sur
+  tout `src/` (hors le fichier lui-même) ne renvoie **AUCUN** résultat —
+  le fichier est **importé par personne**. Ce n'est donc **pas** une faille
+  active : c'est une mine dormante + du code mort (à ajouter à R3-1).
+  **Ne PAS le présenter comme une vulnérabilité exploitable** — ce serait un
+  faux positif, et le brief insiste : un faux positif fait perdre la confiance
+  dans tout le rapport.
+- **La vraie logique de permissions** est `src/hooks/useAdminPermissions.ts`
+  (lit `user.role` via `AuthContext`) + `api.ts:584` (`hasPermission`) et
+  `api.ts:596` (`isAdmin`). **RESTE À INSTRUIRE** : ces contrôles ne gardent-ils
+  que l'affichage (légitime) ou servent-ils de seule barrière (à revérifier
+  côté serveur) ? C'est le cœur du point « contrôles côté client » du brief.
+- **Durcissement Android : déjà vérifié SAIN en S2** (`usesCleartextTraffic:
+  false`, `allowBackup: false`, `blockedPermissions`, ProGuard + shrinkResources
+  en R3) et **couvert par `tests/security-config.test.js`**. Ne pas refaire.
+- **Journaux : déjà répondu en R3.** `babel.config.js` retire les `console.*`
+  en production sauf `warn`/`error`. Le point routé depuis R2-5 est clos.
+- **Magasin de clés : déjà vérifié SAIN en S1** (magasin de débogage universel
+  du SDK Android, aucun magasin de release versionné).
+- **Manipulation des secrets par la CI : déjà vérifiée SAIN en S2.**
+
+### Plan S3 — ce qui reste vraiment à faire
+
+1. **Stockage sur l'appareil** : `src/services/tokenStore.ts` (repéré en S1),
+   `expo-secure-store` *est* dans les dépendances — vérifier si le jeton y va
+   ou dans `AsyncStorage` (non chiffré). Puis : quelles données personnelles
+   sont mises en cache, et **l'effacement à la déconnexion est-il réel** (toutes
+   les clés, ou seulement le jeton) ?
+2. **Contrôles côté client** : voir `useAdminPermissions` ci-dessus.
+3. **Workflows GitHub Actions sur dépôt public** — 5 fichiers :
+   `agent-task-trigger.yml`, `android-build.yml`, `android-publish.yml`,
+   `check-api.yml`, `ios-build.yml`. Chercher : déclencheur exploitable
+   (`pull_request_target`, `issue_comment`, `workflow_run`), **injection dans
+   un bloc `run:`** via `${{ github.event.* }}` non échappé, fuite de secret
+   dans les journaux. `agent-task-trigger.yml` est déclenché par « La Forge »
+   (voir `CLAUDE.md`) — **c'est le candidat n°1** : entrée utilisateur qui
+   atteint un workflow.
+4. Puis : **synthèse S3**, écrire `AUDIT TERMINÉ` en première ligne de ce
+   fichier, pousser, et signaler que la routine peut être désactivée.
 
 ## Rappels pour la prochaine exécution
 
