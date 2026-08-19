@@ -305,3 +305,129 @@ Le fichier fait par ailleurs deux choses justes :
 - `initialScrollIndex` (`:330`) ouvre directement sur l'image touchée, sans
   défilement de rattrapage. C'est précisément ce qui manque à
   `ConversationThreadScreen` en F3-2.
+
+---
+
+## F3-3 — Recensement complet : 15 listes sur 20 tournent sur les défauts RN — MAJEUR (cumulé)
+
+Recensement exhaustif des composants de liste virtualisée du dépôt
+(`<FlatList>`, `<Animated.FlatList>`, `<SectionList>`, `<VirtualizedList>`,
+`<FlashList>`) et de leur réglage de virtualisation.
+
+**5 listes sur 20 sont réglées. 15 ne le sont pas.**
+
+### Les 5 réglées — le réglage maison
+
+| Fichier | `initialNumToRender` | `maxToRenderPerBatch` | `windowSize` | `removeClippedSubviews` |
+|---|---|---|---|---|
+| `TweetsScreen.tsx:2131` | 6 | 5 | 7 | `Platform.OS === 'android'` |
+| `FeedGutterScreen.tsx:2276` | 6 | 5 | 7 | `Platform.OS === 'android'` |
+| `ProfileScreen.tsx:537` | 6 | 5 | 7 | `false` (justifié en commentaire, `:521`) |
+| `UserProfileScreen.tsx:700` | 6 | 5 | 7 | `false` |
+| `NotificationsScreen.tsx:522` | 8 | 6 | 7 | `Platform.OS === 'android'` |
+
+Toutes portent aussi `updateCellsBatchingPeriod={50}`. Le réglage est cohérent,
+délibéré, et `ProfileScreen:521` explique même pourquoi il y déroge sur
+`removeClippedSubviews`. **Il y a donc bien une norme maison** — c'est encore
+une fois le constat de F2 : elle existe, elle est bonne, elle n'a jamais quitté
+le fil d'accueil et les profils.
+
+### Les 15 non réglées
+
+Classées par ce qui détermine réellement le coût : la **taille maximale que
+peut atteindre la liste**.
+
+| Fichier | Plafond de la liste | Verdict |
+|---|---|---|
+| `twitninfvideo.tsx` | illimitée, éléments plein écran | **F3-1, CRITIQUE** |
+| `ConversationThreadScreen.tsx` | **aucune pagination** — historique entier | **F3-2, CRITIQUE** |
+| `MessagesScreen.tsx` | **aucune pagination** (`:109`, `/api/messages/conversations` nue) | **MAJEUR** |
+| `CommentSheet.tsx` | `limit: 100` commentaires, **réponses imbriquées incluses** (`:397`) | **MAJEUR** |
+| `UserConnectionsScreen.tsx` | infinie par pages de 30 (`PAGE_SIZE`, `:33`, `:48`) | **MODÉRÉ** |
+| `LiveViewerScreen.tsx` | croît avec la durée du live | MODÉRÉ |
+| `GoLiveScreen.tsx` | croît avec la durée du live | MODÉRÉ |
+| `LivesScreen.tsx` | nombre de lives en cours | mineur |
+| `MyPassesScreen.tsx` | passes de l'utilisateur | mineur |
+| `FollowRequestsScreen.tsx` | demandes en attente | mineur |
+| `CommunityCurrenciesScreen.tsx` | monnaies existantes | mineur |
+| `EconomyManagementScreen.tsx` | écran admin | mineur |
+| `CreateAdvertisementScreen.tsx` | formulaire | mineur |
+| `SendCoinsModal.tsx` | contacts | mineur |
+| `ImageViewerPaper.tsx` | **4 max** (`MAX_TWEET_IMAGES`) | **sain, voir plus bas** |
+
+### Les quatre qui méritent d'être traités
+
+**`MessagesScreen` — la liste des conversations, sans plafond.**
+`apiService.get('/api/messages/conversations')` (`:109`) est appelée sans
+`limit` ni `offset`, exactement comme dans `ConversationThreadScreen` (F3-2).
+Un compte actif depuis longtemps télécharge donc **toutes** ses conversations à
+chaque ouverture de l'onglet Messages, et les monte dans une liste non réglée.
+C'est un écran d'onglet, ouvert plusieurs fois par session.
+→ `initialNumToRender={8} maxToRenderPerBatch={6} windowSize={7}
+removeClippedSubviews={Platform.OS === 'android'}` (le réglage de
+`NotificationsScreen`, dont les lignes ont exactement le même gabarit :
+avatar + deux lignes de texte), **et** une pagination côté API.
+
+**`CommentSheet` — 100 commentaires plus leurs réponses.**
+`getTweetReplies(tweetId, { nested: true, limit: 100 })` (`:397`) : jusqu'à 100
+commentaires, chacun portant son tableau de réponses imbriquées. Sur les
+défauts RN, la fenêtre en garde une bonne part montée, et chaque `CommentRow`
+déplié rend en plus sa boucle `comment.replies.map(...)`.
+**C'est le multiplicateur de F2-1** : là où F2-1 explique que chaque frappe
+re-rend toutes les lignes montées, c'est ce réglage qui décide combien il y en
+a. Les deux se corrigent séparément, mais le gain de l'un dépend de l'autre.
+→ `initialNumToRender={8} maxToRenderPerBatch={6} windowSize={7}`, et
+pagination par pages de 20 plutôt qu'un bloc de 100.
+
+**`LiveViewerScreen` et `GoLiveScreen` — les chats de live.**
+Leur liste n'a pas de plafond : elle grandit tant que le live dure. Sur un
+direct d'une heure, le tableau `messages` atteint facilement plusieurs
+centaines d'entrées, toutes conservées. Aucune des deux listes ne règle quoi
+que ce soit, et aucune ne purge les anciens messages.
+→ En plus du réglage de fenêtre, **borner le tableau lui-même** :
+`setMessages((prev) => [...prev, msg].slice(-200))`. Un chat de live n'a aucune
+raison de garder l'intégralité de l'historique en mémoire — personne ne remonte
+une heure en arrière dans un chat de direct.
+
+Les huit dernières lignes du tableau (mineur) sont des listes courtes sur des
+écrans peu visités : leur régler la fenêtre est correct mais sans gain
+mesurable. **À ne pas traiter en priorité.**
+
+### Recommandation
+
+Plutôt que de recopier cinq props dans quinze fichiers — c'est précisément
+ainsi qu'on se retrouve avec cinq listes réglées sur vingt —, exporter le
+réglage en constante partagée :
+
+```ts
+// src/theme/listTuning.ts  (ou src/utils/)
+export const LIST_TUNING = {
+  initialNumToRender: 8,
+  maxToRenderPerBatch: 6,
+  updateCellsBatchingPeriod: 50,
+  windowSize: 7,
+  removeClippedSubviews: Platform.OS === 'android',
+} as const;
+
+// usage :  <FlatList {...LIST_TUNING} … />
+```
+
+Les deux cas plein écran (`twitninfvideo`, F3-1) et les chats de live gardent
+leurs valeurs propres — un objet partagé n'a de sens que pour les listes au
+gabarit ordinaire, qui sont l'écrasante majorité.
+
+### Réserve honnête
+
+Les défauts RN ne sont pas mauvais en soi : pour une liste de 20 éléments
+courts, ils ne coûtent rien de perceptible, et régler la fenêtre n'apporterait
+rien. **Ce constat ne dit pas « 15 listes sont mal réglées »** — il dit que 15
+listes n'ont jamais fait l'objet d'une décision, et que parmi elles quatre
+portent des listes qui peuvent grandir sans limite. C'est sur ces quatre-là que
+porte la recommandation ; les onze autres sont listées pour que le recensement
+soit vérifiable, pas pour être corrigées.
+
+*Erreur de méthode signalée pour mémoire* : mon premier recensement cherchait
+`<FlatList` et a manqué `FeedGutterScreen`, qui écrit `<Animated.FlatList` — il
+est correctement réglé. Le tableau ci-dessus est issu d'une recherche corrigée
+couvrant les variantes `Animated.*`, `SectionList`, `VirtualizedList` et
+`FlashList`.

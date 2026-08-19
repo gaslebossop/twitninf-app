@@ -38,25 +38,33 @@ le dépôt n'a **aucune configuration ESLint**, donc pas de
 **Constats écrits et poussés :** F3-1 (`twitninfvideo` : aucune prop de
 virtualisation, ~10 lecteurs vidéo instanciés à l'ouverture — CRITIQUE),
 F3-2 (`ConversationThreadScreen` : historique entier sans pagination, liste non
-`inverted`, cascade de `scrollToEnd` à l'ouverture — CRITIQUE).
+`inverted`, cascade de `scrollToEnd` à l'ouverture — CRITIQUE), F3-3
+(recensement exhaustif : 5 listes réglées sur 20 ; `MessagesScreen`,
+`CommentSheet` et les 2 chats de live à traiter).
 
-**Recensement fait, à exploiter** : sur les **20 fichiers** contenant une
-`<FlatList>`, seuls **4** règlent la virtualisation — `TweetsScreen`,
-`ProfileScreen`, `NotificationsScreen`, `UserProfileScreen`. Les **16 autres**
-tournent sur les défauts RN. Réglage maison à citer comme référence :
-`initialNumToRender 6-8 / maxToRenderPerBatch 5-6 /
-updateCellsBatchingPeriod 50 / windowSize 7 / removeClippedSubviews` par
-plateforme. Même schéma qu'en F2 : correctif trouvé une fois, jamais propagé.
+**Recensement FAIT et rédigé (F3-3)** — 5 listes réglées sur 20. ATTENTION :
+chercher `<FlatList` seul est INSUFFISANT, `FeedGutterScreen` écrit
+`<Animated.FlatList`. Utiliser :
+`grep -rlE "<(Animated\.)?(FlatList|SectionList|VirtualizedList)|<FlashList" src/`
 
 **Prochains constats F3 à rédiger, par priorité :**
-1. `SearchScreen:979-1043` — `ScrollView` + `.map()` sur ~40 résultats, aucune
-   virtualisation (déjà vérifié en F2-6, reste à rédiger côté F3).
-2. Chercher les AUTRES `ScrollView` montant des listes entières (`.map()` dans
-   un `ScrollView`) — pas encore recensé à l'échelle du dépôt.
-3. `MessagesScreen` — liste des conversations, aucun réglage ; vérifier s'il y
-   a une pagination.
-4. Constat groupé final pour les listes non réglées restantes (tableau), une
-   fois les cas individuels traités.
+1. **`ScrollView` montant des listes entières** — constat à rédiger (F3-4).
+   Déjà vérifié, prêt : `SearchScreen:979-1043` (~40 résultats, F2-6) et
+   `StoriesTray.tsx:216-278` (`ScrollView horizontal` + `feed.groups.map()`,
+   tous les `StoryRing` montés — en haut du fil d'accueil, donc chemin chaud).
+   Candidats restants à examiner : `UserStatsTab` (26 `.map`), `CasinoScreen`
+   (17), `ProfileCustomizationScreen` (11), `PredictiveAnalyticsScreen` (10).
+   Commande utilisée pour les trouver (ScrollView SANS FlatList dans le
+   fichier, triés par nombre de `.map(`) — la relancer si besoin.
+2. Puis : synthèse de section F3 et passage à F4.
+
+**ÉCARTÉ après vérification, ne pas y revenir (2)** : `TweetDetailScreen` —
+`replies.map()` dans un `ScrollView`, MAIS `getTweetReplies` est plafonné à
+`limit: 20` (`:504`) et `ReplyItem` est un `React.memo` (`:236`). Pas un
+constat F3. En revanche les réponses sont **plafonnées à 20 sans aucun moyen
+d'en charger plus** (`offset: 0` en dur, aucun `loadMore`) → à signaler en R2
+comme manque fonctionnel. Le `Promise.all` de `:502` est un BON point pour R2.
+`NewConversationScreen` / `GroupMembersScreen` : listes bornées (30-35). SAIN.
 
 **ÉCARTÉ après vérification, ne pas y revenir** : `ImageViewerPaper` — pages
 plein écran et aucune prop de fenêtre, MAIS une galerie est plafonnée à 4
