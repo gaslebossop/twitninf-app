@@ -317,3 +317,73 @@ Sans cette discipline, 15 familles × toutes leurs graisses auraient été
 résolues au lieu de 15 fichiers. C'est le meilleur exemple du dépôt de ce que
 la conclusion de F4 appelait « le dépôt ne manque pas de compétence » — ici, la
 compétence a même été documentée pour la suite.
+
+---
+
+## R3-4 — 191 fichiers importent les icônes par le baril, 3 par le chemin direct — MODÉRÉ
+
+`src/**` (191 occurrences), contre-exemple : `src/components/events/RewardIcon.tsx`
+
+### Ce qui est vérifié
+
+Décompte exact des formes d'import de `@expo/vector-icons` dans tout `src/` :
+
+| Forme | Occurrences |
+|---|---|
+| `import { Ionicons } from '@expo/vector-icons'` (baril) | **189** |
+| `import { Ionicons, MaterialIcons } from '@expo/vector-icons'` (baril) | 1 |
+| `import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'` (baril) | 1 |
+| `import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'` (**chemin direct**) | **3** |
+
+**191 contre 3.** Le bon chemin est connu du dépôt, employé trois fois, et
+absent des 191 autres.
+
+### L'effet concret
+
+`@expo/vector-icons` est un **baril** : son point d'entrée réexporte la
+quinzaine de familles d'icônes qu'il embarque (Ionicons, MaterialIcons,
+FontAwesome, Feather, AntDesign, Entypo, MaterialCommunityIcons, Octicons…).
+Chaque famille tire à sa suite sa table de glyphes — celle de
+`MaterialCommunityIcons` compte à elle seule **environ sept mille entrées**,
+chiffre donné par le dépôt lui-même (`RewardIcon.tsx:20`). Passer par le baril
+pour n'utiliser qu'`Ionicons` fait donc résoudre et évaluer **toutes** les
+familles, y compris celles que l'application n'affiche jamais.
+
+Combiné à `inlineRequires` (voir l'addendum de R3-2), cette évaluation se
+déclenche au **premier rendu d'icône** — c'est-à-dire dans le tout premier
+écran, puisque quasiment chaque écran en contient. C'est du travail
+JavaScript synchrone posé exactement là où le démarrage est déjà tendu (**R1**).
+
+### Le correctif
+
+Purement mécanique, sans changement de rendu :
+
+```diff
+-import { Ionicons } from '@expo/vector-icons';
++import Ionicons from '@expo/vector-icons/Ionicons';
+```
+
+C'est **exactement** ce que font déjà les 3 fichiers corrects du dépôt. Un
+`sed` sur les 189 fichiers, un `npm run typecheck`, et c'est fini — le type et
+l'API du composant sont identiques par les deux chemins.
+
+### Deux réserves à ne pas escamoter
+
+1. **Je n'ai pas pu inspecter `@expo/vector-icons`** (`node_modules/` absent,
+   et le brief l'interdit). Le mécanisme du baril et le contenu des tables de
+   glyphes viennent de la connaissance publique du paquet, pas d'une lecture
+   ici. Ce qui est **vérifié dans ce dépôt**, en revanche, c'est le décompte
+   191 / 3 et le fait que le chemin direct y est employé et documenté.
+2. **Le gain n'est pas en poids d'APK.** Les fichiers `.ttf` des familles sont
+   embarqués par le paquet quoi qu'il arrive ; ce que le chemin direct évite,
+   c'est l'**évaluation JavaScript** des tables de glyphes inutilisées au
+   démarrage. Gain de temps, pas de mégaoctets. Ne pas vendre ce correctif
+   comme un amaigrissement de l'application.
+
+C'est la **sixième** occurrence, sur cet audit, du schéma « le bon réflexe
+existe dans le dépôt, il n'a pas été propagé » (après F2-3, F3-3, F4-1, F4-2a,
+R2-5). À ce stade ce n'est plus une coïncidence : c'est le constat central de
+l'audit, et le remède n'est pas une correction de plus mais un garde-fou
+automatique — une règle ESLint `no-restricted-imports` interdisant le baril
+aurait rendu ces 191 occurrences impossibles à écrire. Le dépôt n'a **aucune
+configuration ESLint** (vérifié en F2).

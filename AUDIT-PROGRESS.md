@@ -110,7 +110,13 @@ pas le rouvrir.
 
 ## Reprendre à — R3 (EN COURS)
 
-**Constats écrits et poussés :** R3-3 (20 fichiers de police embarqués, dont
+**Constats écrits et poussés :** R3-4 (**191** fichiers importent
+`@expo/vector-icons` par le **baril**, 3 par le chemin direct — correctif `sed`
+mécanique ; gain en TEMPS d'évaluation, PAS en poids d'APK), addendum R3-2
+(`inlineRequires: true` est activé dans `metro.config.js` — bon réglage, mais
+il ne sort pas `CasinoScreen` du chemin de démarrage car la référence est
+consommée dans le JSX du navigateur ; `React.lazy`/`getComponent` reste le seul
+correctif), R3-3 (20 fichiers de police embarqués, dont
 17 pour une option cosmétique + 2 paquets `@expo-google-fonts` — `inter` et
 `plus-jakarta-sans` — jamais importés, à ajouter à R3-1. **SAIN et notable** :
 `fonts.ts` importe chaque graisse individuellement, défaut de tree-shaking
@@ -162,15 +168,22 @@ Code mort / doublons recensés au fil de F2, F4, R2 :
    en SDK 54 au profit d'`expo-video`/`expo-audio` (je ne peux pas le
    confirmer hors ligne — ne pas l'affirmer sans source).
    ~~polices~~ **FAIT (R3-3)**.
-2. Imports empêchant le tree-shaking. **Partiellement fait** : `theme/fonts.ts`
-   est vérifié et SAIN (R3-3). Reste à balayer : `import * as X` ailleurs,
-   `@expo/vector-icons` (importé en `{ Ionicons }` — vérifier si Metro tire
-   quand même tout le paquet), imports de barils `src/components/ui/index.ts`.
+2. ~~tree-shaking~~ **FAIT** : `fonts.ts` SAIN (R3-3), `@expo/vector-icons`
+   → R3-4. Les `import * as X` restants sont tous des modules Expo natifs
+   (`ImagePicker` ×7, `Network` ×4, `Notifications` ×3, `SecureStore`,
+   `Location`, `Device`, `WebBrowser`, `ScreenOrientation`, `Linking`,
+   `Battery`) : **forme normale et sans alternative** pour ces paquets, PAS un
+   défaut — vérifié, ne pas le rouvrir.
+   Reste éventuellement : le baril `src/components/ui/index.ts`.
 3. Ressources embarquées inutilement : croiser `assets/` (déjà mesuré en F1 —
    **relire `AUDIT-F1.md` plutôt que remesurer**) avec ce qui est réellement
    `require`/importé.
-4. Vérifier si Hermes et le tree-shaking Metro sont activés
-   (`app.config.js`, `metro.config.js`).
+4. ~~`metro.config.js`~~ **LU** : `inlineRequires: true` (bon réglage, voir
+   addendum R3-2). ~~`babel.config.js`~~ **LU** : `transform-remove-console`
+   actif en production avec `exclude: ['warn','error']` — **BON**, à citer en
+   SAIN, et cela **répond par avance** au point « journaux » routé vers S3
+   depuis R2-5. Reste : vérifier Hermes dans `app.config.js`.
+5. Puis : **doublon vidéo** (point 1 ci-dessus), synthèse R3, passage à S1.
 
 ### Matériel à ROUTER vers S3 (sécurité, plus tard)
 
