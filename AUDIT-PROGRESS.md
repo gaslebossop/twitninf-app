@@ -27,7 +27,9 @@ F2-2 (`LiveViewerScreen`, chat du live), F2-3 (comparateurs `TweetRow` /
 `TweetRowGutter` : `tweet.author` jamais comparé), F2-4
 (`ConversationThreadScreen` : `renderItem` dépend de `messages`, toutes les
 bulles se re-rendent à chaque message), F2-5 (`ConversationThreadScreen` :
-dépendances trop étroites, l'accusé « Vu » n'apparaît pas en temps réel).
+dépendances trop étroites, l'accusé « Vu » n'apparaît pas en temps réel),
+F2-6 (`SearchScreen` : frappe re-rendant 40 résultats non virtualisés,
++ 5 `Animated.View` inertes).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -41,22 +43,30 @@ dépendances trop étroites, l'accusé « Vu » n'apparaît pas en temps réel).
 
 **Aucun constat en attente de rédaction.** Tout ce qui était vérifié est écrit.
 
-**Piste ouverte par F2-5, à creuser** : vérifier si
-`eslint-plugin-react-hooks` / `exhaustive-deps` est actif dans ce dépôt et à
-quel niveau. Les omissions de F2-5 auraient dû être signalées à l'écriture ;
-si la règle est désactivée, le même défaut est probablement ailleurs.
+**Piste F2-5 — RÉSOLUE** : il n'y a **aucune configuration ESLint** dans ce
+dépôt (ni `.eslintrc*`, ni `eslint.config.*`, ni script `lint` dans
+`package.json`). La règle `exhaustive-deps` ne tourne donc jamais : la classe
+de bugs de F2-5 n'a aucun filet automatique. À reprendre en R3 ou en note
+transverse de fin d'audit — ce n'est pas un constat F2 en soi.
+
+**Vérifié au passage (à réutiliser, ne pas refaire)** :
+- `babel.config.js` applique bien `transform-remove-console` en production
+  (`exclude: ['warn','error']`). Les 323 `console.log` de `src/` ne sont donc
+  PAS un problème de release. Reste à confirmer en R3 que `NODE_ENV=production`
+  est bien posé au build EAS.
+- `SearchScreen` n'appelle PAS le réseau à chaque frappe (`onSubmitEditing`).
 
 **Note de chemin** : `TweetRowGutter.tsx` est dans
 `src/components/feed/paper2b/`, pas `src/components/feed/`.
 
 **Pistes NON encore explorées pour F2 :**
+- « État placé trop haut » : reste `CreateTweetScreen`, `ForgeScreen`,
+  `WalletScreen`, `TradingScreen`. (`SearchScreen` est fait → F2-6.)
 - Les renderItem inline restants : `SendCoinsModal:236`,
   `ImageViewerPaper:334`, `FollowRequestsScreen:136`, `MyPassesScreen:358`,
   `EconomyManagementScreen:268/318`, `UserConnectionsScreen:140`,
   `CommunityCurrenciesScreen:103`, `LivesScreen:171`, `twitninfvideo:545`,
   `GoLiveScreen:455`.
-- « État placé trop haut » : `SearchScreen`, `CreateTweetScreen`,
-  `ForgeScreen`, `WalletScreen`, `TradingScreen` non examinés.
 - Gros composants non-liste : `UserStatsTab` (2379 l.),
   `ProfileDecoration` (1521 l.), `NavbarOnboardingModal` (1121 l.).
 

@@ -606,3 +606,121 @@ pas une dépendance transitive de `renderItem` ; pas d'`extraData`). Chacun de
 ces trois maillons est vérifié individuellement dans le fichier, mais le
 symptôme lui-même n'a pas été reproduit sur appareil. À confirmer d'un coup
 d'œil avant de refondre — c'est trente secondes à deux téléphones.
+
+---
+
+## F2-6 — Recherche : chaque frappe re-rend les 40 résultats, tous montés d'un coup — MAJEUR
+
+`src/screens/SearchScreen.tsx:46`, `:760`, `:846`, `:979-1043`
+
+Le même défaut que F2-1, dans une forme plus aiguë : ici il n'y a même pas de
+liste virtualisée pour limiter la casse.
+
+```tsx
+const [searchQuery, setSearchQuery] = useState('');           // :46  — MÊME composant
+
+const renderUserItem  = (user: User, index: number) => ( … );  // :760 — fonction nue
+const renderTweetItem = (tweet: Tweet, index: number) => { … };// :846 — fonction nue
+
+<TextInput value={searchQuery} onChangeText={…} />             // :920-925
+
+<ScrollView …>                                                 // :979
+  {searchResults.users.map(renderUserItem)}                    // :1033
+  {searchResults.tweets.map(renderTweetItem)}                  // :1043
+</ScrollView>
+```
+
+### Ce qui ne va pas — quatre défauts empilés
+
+1. **`searchQuery` vit dans le composant qui rend les résultats** (`:46`). Une
+   frappe = un rendu de `SearchScreen` = un ré-appel de `renderUserItem` et
+   `renderTweetItem` pour **chaque** résultat.
+
+2. **Aucune virtualisation.** Ce sont des `.map()` dans un `ScrollView`
+   (`:979`), pas une `FlatList`. Tous les résultats sont donc montés en même
+   temps, et tous re-rendus. Avec `limit: 20` par type (`:333`, `:343`,
+   `:353`), le filtre « tout » monte jusqu'à **40 lignes simultanées** —
+   chacune avec son `Avatar`, son `PremiumDisplayName` et son badge. Le
+   pendant `FlatList` de ce point revient en F3 ; ici seul compte le fait
+   qu'aucune cellule n'est jamais démontée.
+
+3. **`renderUserItem` et `renderTweetItem` sont des fonctions nues, pas des
+   composants.** Ce ne sont pas des éléments React distincts que React
+   pourrait comparer : leur JSX est reconstruit et réconcilié à chaque rendu du
+   parent. Aucun `React.memo` n'est possible tant qu'ils restent des fonctions
+   appelées par `.map()` — il faut d'abord en faire de vrais composants.
+
+4. **`renderTweetItem` fabrique un objet neuf à chaque appel** (`:848-855`) :
+   ```tsx
+   const tweetWithInteractions = { ...tweet, user_interaction: { … } };
+   ```
+   Deux objets neufs par tweet et par frappe. Si ce tweet est ensuite passé à
+   un composant mémoïsé, la nouvelle référence annule la mémoïsation ; et dans
+   tous les cas c'est de la pression inutile sur le ramasse-miettes.
+
+À quoi s'ajoute un cinquième point, purement gratuit celui-là :
+
+5. **Chaque ligne est enveloppée dans une `Animated.View` qui n'anime rien.**
+   `fadeAnim` vaut `1` et `slideAnim` vaut `0` (`:102-103`), et — vérifié par
+   recherche sur tout le fichier — il n'existe **aucun** `Animated.timing`,
+   `Animated.parallel` ni `Animated.spring` dans `SearchScreen.tsx`. Ces deux
+   valeurs ne sont jamais animées. Chaque résultat paie donc un nœud
+   `Animated.View` et un `transform: [{ translateY: 0 }]` — donc une couche de
+   composition côté natif — pour une opacité de 1 et un décalage de 0. C'est du
+   coût pur, sans le moindre effet visuel. Même chose aux lignes `:912` et
+   `:943` pour l'en-tête et la barre de filtres.
+
+### Effet concret pour l'utilisateur
+
+Après une première recherche, l'utilisateur affine sa requête — c'est le geste
+normal : on tape « mar », on regarde, on complète en « marie ». À partir de là,
+**chaque caractère ajouté ou effacé** reconstruit les 40 lignes de résultats
+déjà à l'écran. Le champ de saisie retarde, et le retard est proportionnel au
+nombre de résultats trouvés : plus la recherche a réussi, plus corriger la
+requête devient pénible.
+
+La correction d'une faute de frappe est le pire cas : effacer trois caractères
+puis en retaper trois, c'est six reconstructions complètes de la liste.
+
+### Correctif
+
+Par ordre de gain sur effort :
+
+1. **Supprimer les cinq `Animated.View` inertes** (`:761`, `:863`, `:911`,
+   `:942`) et les remplacer par des `View`. Suppression de code mort, aucun
+   changement visuel possible puisque les valeurs sont constantes. Le geste le
+   moins risqué du rapport.
+
+2. **Isoler le champ de saisie.** Extraire la barre de recherche dans un
+   `SearchBar` qui détient `searchQuery` et ne remonte au parent que la
+   requête validée (`onSubmit`). La frappe cesse alors de re-rendre les
+   résultats — c'est ce qui supprime le symptôme, et ça ne demande de toucher
+   ni aux lignes ni aux données. La recherche partant déjà sur
+   `onSubmitEditing` (`:926`) et non à la frappe, aucun comportement réseau ne
+   change.
+
+3. **Faire de `renderUserItem` et `renderTweetItem` de vrais composants
+   mémoïsés** (`const UserResultRow = memo(({ user, onPress }) => …)`), avec
+   des handlers stables, et calculer `tweetWithInteractions` dans un `useMemo`
+   au niveau des données plutôt qu'au rendu.
+
+4. Passer à une `FlatList` (traité en F3), ce qui rend le point 2 moins
+   critique sans le remplacer.
+
+Les points 1 et 2 pris ensemble suffisent à faire disparaître la saccade
+ressentie, pour un changement local et sans risque.
+
+### Ce que j'ai vérifié et trouvé SAIN
+
+- **La recherche n'est pas relancée à chaque frappe.** `onChangeText` ne fait
+  que `setSearchQuery` (`:925`) ; l'appel réseau part sur `onSubmitEditing`
+  (`:926`) ou sur un changement de filtre. Le problème est donc bien un
+  problème de rendu, pas de réseau — l'un des deux soupçons naturels est écarté.
+- **Le `console.log` par tweet rendu (`:856-860`) ne coûte rien en release.**
+  `babel.config.js` applique `transform-remove-console` quand
+  `NODE_ENV === 'production'`, avec `exclude: ['warn', 'error']`. Les 323
+  `console.log` du dossier `src/` disparaissent donc du bundle publié. C'est un
+  vrai point fort du dépôt et il mérite d'être dit : sans lui, ce fichier
+  émettrait une trace sérialisée par tweet et par frappe. *Réserve* : la
+  protection tient à ce que `NODE_ENV=production` soit bien positionné au
+  moment du build EAS — non vérifié ici, à confirmer en R3.
