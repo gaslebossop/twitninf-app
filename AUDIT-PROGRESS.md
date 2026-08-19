@@ -93,7 +93,8 @@ SAIN et à ne pas rouvrir : les 8 « gates » (délai de décantation + `if visi
 
 **Constats écrits et poussés :** R2-1 (badge messages : toute la liste des
 conversations + `getCurrentUser()` en série, toutes les 30 s, sur tous les
-écrans — CRITIQUE).
+écrans — CRITIQUE), R2-2 (sur-récupération : `limit: 500` de profils complets
+pour un Set d'ids, + `getCurrentUser()` sur 16 sites).
 
 ### `api.ts` (2 904 l.) — INSTRUIT, résultat clé
 
@@ -143,12 +144,25 @@ lire la 21e réponse d'un tweet.
 paralléliser tweet + réponses. Et `getNotificationsUnreadCount`
 (`unreadService.ts:48`) — endpoint dédié, le serveur compte. Patron à recopier.
 
-### RESTE À INSTRUIRE
-- **Le fil d'accueil côté RÉSEAU** (`TweetsScreen` / `FeedGutterScreen`) :
-  priorité n°1 du brief pour R2, PAS encore regardé sous cet angle.
-- Absence d'annulation quand on quitte un écran (le socle est établi
-  ci-dessus, reste à trouver les cas concrets qui en souffrent).
-- Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
+### FIL D'ACCUEIL — INSTRUIT, et c'est SAIN. Ne pas rouvrir.
+
+L'orchestration réseau de `TweetsScreen` est bonne : `Promise.allSettled` /
+`Promise.all` pour les appels indépendants (avec commentaires expliquant le
+choix), cache par onglet (`tabCacheRef`), garde `if (followingIds.size === 0)`,
+repli sur cache (`servedFromCacheRef`), Explorer isolé. Détaillé dans le
+« SAIN » de R2-2. **Seul reproche : le volume d'UNE requête (limit 500).**
+
+### RESTE À INSTRUIRE POUR R2
+1. Constat groupé « ni cache ni déduplication » (socle `api.ts` déjà établi
+   plus haut) + la chaîne messagerie (preuves A/B déjà réunies).
+2. `TradingScreen:72-78` — `setInterval` 30 s non suspendu hors focus, alors
+   que `useForegroundInterval` existe dans le dépôt. Constat facile.
+3. Pagination absente (preuves C) + manque fonctionnel réponses (preuve D).
+4. Absence d'annulation quand on quitte un écran (socle établi, reste à
+   trouver les cas concrets qui en souffrent).
+5. Puis synthèse R2 et passage à R3.
+
+Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
 
 ### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
 
