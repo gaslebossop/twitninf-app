@@ -69,8 +69,19 @@ function withSigningGradle(config) {
     //    `signingConfig signingConfigs.debug` dans le bloc release — c'est
     //    exactement cette ligne qu'il faut reprendre, et seulement celle du
     //    bloc release (celle du bloc debug doit rester).
+    //
+    // L'ancre DOIT partir de `buildTypes {`, pas de `release {` seul : l'étape
+    // 1 vient d'insérer un bloc nommé `release {` DANS `signingConfigs {}`,
+    // avant `buildTypes` dans le fichier. Un `[\s\S]*?` non ancré trouvait ce
+    // bloc-là en premier, puis consommait tout jusqu'à la prochaine
+    // occurrence de `signingConfig signingConfigs.debug` — celle du bloc
+    // DEBUG de `buildTypes`, pas celle du bloc release. Résultat observé en
+    // prod : `buildTypes.debug` redirigé vers la clé permanente et
+    // `buildTypes.release` laissé sur le keystore de debug committé, donc un
+    // APK "release" signé avec une clé fixe et identique à chaque run
+    // (voir [[gstore-signature-derive]]).
     contents = contents.replace(
-      /(release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/,
+      /(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/,
       '$1signingConfig signingConfigs.release'
     );
 
