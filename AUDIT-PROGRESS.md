@@ -35,20 +35,33 @@ le dépôt n'a **aucune configuration ESLint**, donc pas de
 
 ## Reprendre à — F3 (EN COURS)
 
-**Aucun constat encore rédigé.** `AUDIT-F3.md` reste à créer.
+**Constats écrits et poussés :** F3-1 (`twitninfvideo` : aucune prop de
+virtualisation, ~10 lecteurs vidéo instanciés à l'ouverture — CRITIQUE).
 
-### Matériel DÉJÀ VÉRIFIÉ pendant F2 — prêt à rédiger, ne pas re-chercher
+**Recensement fait, à exploiter** : sur les **20 fichiers** contenant une
+`<FlatList>`, seuls **4** règlent la virtualisation — `TweetsScreen`,
+`ProfileScreen`, `NotificationsScreen`, `UserProfileScreen`. Les **16 autres**
+tournent sur les défauts RN. Réglage maison à citer comme référence :
+`initialNumToRender 6-8 / maxToRenderPerBatch 5-6 /
+updateCellsBatchingPeriod 50 / windowSize 7 / removeClippedSubviews` par
+plateforme. Même schéma qu'en F2 : correctif trouvé une fois, jamais propagé.
 
-- `twitninfvideo.tsx:533` — la `FlatList` du fil vidéo ne règle NI `windowSize`,
-  NI `initialNumToRender`, NI `maxToRenderPerBatch`, NI `removeClippedSubviews`.
-  Défauts RN : `initialNumToRender: 10`, `windowSize: 21`. Chaque carte fait une
-  hauteur d'écran ET monte un `<Video>` expo-av en permanence (`:272`, seul
-  `shouldPlay` varie) → ~10 lecteurs vidéo instanciés à l'ouverture de l'onglet.
-  Probablement le constat F3 le plus lourd. Vérifié, prêt à rédiger.
+**Prochains constats F3 à rédiger, par priorité :**
+1. `ImageViewerPaper` — pages plein écran, mêmes défauts que F3-1 (il a
+   `getItemLayout`, mais aucune prop de fenêtre). À vérifier puis rédiger.
+2. `ConversationThreadScreen:1601` + `MessagesScreen` — listes potentiellement
+   longues, aucun réglage.
+3. Constat groupé pour les 16 listes non réglées (tableau).
+4. `SearchScreen:979-1043` — `ScrollView` + `.map()` sur ~40 résultats, aucune
+   virtualisation (déjà vérifié en F2-6, reste à rédiger côté F3).
+5. Chercher les autres `ScrollView` montant des listes entières.
+
+### Matériel DÉJÀ VÉRIFIÉ pendant F2 — ne pas re-chercher
+
 - `SearchScreen.tsx:979-1043` — `ScrollView` + `.map()` pour jusqu'à 40
   résultats (`limit: 20` par type), aucune virtualisation. Vérifié en F2-6.
-- `MessagesScreen.tsx` — `keyExtractor` inline (mineur).
-- `ConversationThreadScreen.tsx:1601` — vérifier le réglage de fenêtre aussi.
+- `MessagesScreen.tsx` + `ConversationThreadScreen.tsx` — `keyExtractor` inline
+  (mineur, signalé en F2-9).
 
 ## Rappels pour la prochaine exécution
 
