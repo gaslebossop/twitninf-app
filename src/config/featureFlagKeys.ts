@@ -51,6 +51,23 @@ export const FLAGS = {
    * afficher à qui n'y a pas accès, pas juste la pose.
    */
   SUPER_HEART: 'fil.supercoeur',
+
+  /**
+   * Refonte du fil « 2B — Gouttiere » : palette papier, engagement sorti du
+   * texte et remonte dans une gouttiere tactile, navbar en pilule flottante a
+   * quatre entrees.
+   *
+   * Pose le 2026-08-19 a 1 %, SANS montee automatique : c'est une refonte
+   * visuelle qu'on regarde avant de l'elargir, pas une fonctionnalite qui
+   * monte toute seule. Conditionne TOUT l'ecran d'accueil et la barre de
+   * navigation — les originaux (`TweetsScreen`, `BottomTabNavigator`) sont
+   * intacts et servis a tous les autres.
+   *
+   * A retirer avec `screens/FeedGutterScreen.tsx`,
+   * `components/feed/TweetRowGutter.tsx`, `navigation/BottomTabNavigator2B.tsx`
+   * et `theme/paper2b.ts` — que le test soit adopte ou abandonne.
+   */
+  FEED_2B: 'fil.refonte2b',
 } as const;
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS];

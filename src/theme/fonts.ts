@@ -31,6 +31,12 @@ import { Archivo_700Bold } from '@expo-google-fonts/archivo/700Bold';
 import { Orbitron_700Bold } from '@expo-google-fonts/orbitron/700Bold';
 import { Caveat_700Bold } from '@expo-google-fonts/caveat/700Bold';
 import { Cinzel_700Bold } from '@expo-google-fonts/cinzel/700Bold';
+// Deux graisses supplementaires servant UNIQUEMENT au fil « 2B — Gouttiere »
+// (test sous drapeau `fil.refonte2b`, voir `theme/paper2b.ts`). Elles sont
+// chargees ici parce que les polices sont chargees une seule fois au demarrage,
+// avant que le drapeau ne soit connu ; a retirer avec le test.
+import { Archivo_600SemiBold } from '@expo-google-fonts/archivo/600SemiBold';
+import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono/400Regular';
 
 /** Noms de familles utilisés partout dans le thème. */
 export const fonts = {
@@ -112,6 +118,9 @@ export const fontAssets = {
   [displayNameFonts.techno]: Orbitron_700Bold,
   [displayNameFonts.handwritten]: Caveat_700Bold,
   [displayNameFonts.roman]: Cinzel_700Bold,
+  // Fil « 2B — Gouttiere » (drapeau `fil.refonte2b`).
+  'Archivo-SemiBold': Archivo_600SemiBold,
+  'SpaceMono-Regular': SpaceMono_400Regular,
 };
 
 export type FontToken = keyof typeof fonts;

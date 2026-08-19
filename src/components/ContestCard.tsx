@@ -32,7 +32,14 @@ import {
  * est redemandé à chaque fois que la FlatList recycle la ligne — c'est-à-dire
  * à chaque aller-retour de défilement.
  */
-const cache = new Map<string, Contest>();
+/**
+ * Exporte parce que la variante « papier » du test 2B
+ * (`feed/paper2b/ContestCardPaper.tsx`) doit partager CE cache : avec un
+ * second cache local, `invalidateContestCache()` ne toucherait que la carte
+ * d'origine et la variante resterait sur un concours perime apres une
+ * participation. A refermer en `const` le jour ou le test 2B est retire.
+ */
+export const contestCache = new Map<string, Contest>();
 
 interface Props {
   tweetId: string;
@@ -41,7 +48,7 @@ interface Props {
 }
 
 export default function ContestCard({ tweetId, onOpen }: Props) {
-  const [contest, setContest] = useState<Contest | null>(cache.get(tweetId) ?? null);
+  const [contest, setContest] = useState<Contest | null>(contestCache.get(tweetId) ?? null);
   const [, forceTick] = useState(0);
   const mounted = useRef(true);
 
@@ -53,15 +60,15 @@ export default function ContestCard({ tweetId, onOpen }: Props) {
   }, []);
 
   useEffect(() => {
-    if (cache.has(tweetId)) {
-      setContest(cache.get(tweetId)!);
+    if (contestCache.has(tweetId)) {
+      setContest(contestCache.get(tweetId)!);
       return;
     }
     let cancelled = false;
     fetchByTweet(tweetId)
       .then((result) => {
         if (cancelled || !mounted.current || !result) return;
-        cache.set(tweetId, result);
+        contestCache.set(tweetId, result);
         setContest(result);
       })
       .catch(() => {
@@ -166,8 +173,8 @@ function resolveState(contest: Contest, timeLeft: string | null) {
 /** Vide le cache d'un concours après une participation, pour que la carte
  *  reflète le nouvel état sans attendre un redémarrage. */
 export function invalidateContestCache(tweetId?: string) {
-  if (tweetId) cache.delete(tweetId);
-  else cache.clear();
+  if (tweetId) contestCache.delete(tweetId);
+  else contestCache.clear();
 }
 
 const S = StyleSheet.create({

@@ -68,4 +68,45 @@ export function withoutOrphanReplies(list: Tweet[]): Tweet[] {
   return out;
 }
 
+/**
+ * Profondeur maximale d'un fil de discussion à l'écran.
+ *
+ * Alignée sur `MAX_THREAD_DEPTH` du recommandeur Rust (`shape_feed`), qui ne
+ * sert jamais une chaîne plus longue : quatre tweets, donc des rangs 0 à 3.
+ */
+export const MAX_THREAD_DEPTH = 4;
+
+/**
+ * Rang d'un tweet dans son fil de discussion : 0 pour une racine, 1 pour sa
+ * réponse, 2 pour la réponse de sa réponse…
+ *
+ * ── Pourquoi ça se calcule et ne se lit pas ──
+ * Le fil ne transporte pas la chaîne d'ancêtres : l'API ne sérialise
+ * `thread_ancestors` que sur le DÉTAIL d'un tweet, jamais dans la liste. Mais
+ * `withoutOrphanReplies` (ci-dessus) garantit qu'une réponse gardée suit
+ * IMMÉDIATEMENT son parent — le rang se lit donc en remontant la liste tant
+ * que la chaîne tient, sans requête supplémentaire.
+ *
+ * ── À quoi ça sert à l'écran ──
+ * Sans lui, une réponse de réponse se dessine exactement comme une réponse
+ * simple : un fil de quatre paraît plat et on ne voit plus qui répond à qui.
+ * C'est ce rang qui fait croître le retrait.
+ *
+ * Borné à `MAX_THREAD_DEPTH - 1` : la boucle fait au pire trois tours, ce qui
+ * la rend sûre dans le chemin chaud du rendu d'une liste.
+ */
+export function threadDepthAt(list: Tweet[], index: number): number {
+  let depth = 0;
+
+  for (let i = index; i > 0 && depth < MAX_THREAD_DEPTH - 1; i--) {
+    const child = list[i] as any;
+    const above = list[i - 1];
+    if (!child?.parent_tweet_id || !above) break;
+    if (String(child.parent_tweet_id) !== String(above.id)) break;
+    depth += 1;
+  }
+
+  return depth;
+}
+
 export default withoutOrphanReplies;

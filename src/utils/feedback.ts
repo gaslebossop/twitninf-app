@@ -74,6 +74,23 @@ export function refuseFeedback() {
   play([0, 45], 1);
 }
 
+/**
+ * Cœur ou repost posé depuis le fil.
+ *
+ * Seule entrée qui vibre sur iOS pour un geste courant, et c'est un choix
+ * assumé qui va contre la règle de l'en-tête : le fil « 2B » remonte
+ * l'engagement dans une gouttière où le doigt masque l'icône qu'il touche —
+ * sans retour tactile, on ne sait pas si le geste est passé.
+ *
+ * ⚠️ Sur iOS, la secousse est celle du système (~400 ms perçue) : il n'existe
+ * pas de tap léger sans `expo-haptics`, qui imposerait un rebuild natif. Si
+ * elle s'avère trop lourde à l'usage, passer le second argument à 0 la rend
+ * muette sur iOS sans toucher à Android.
+ */
+export function likeFeedback() {
+  play([0, 22], 1);
+}
+
 /** Un gain vient de tomber (casino, quête, récompense). */
 export function rewardFeedback() {
   play([0, 14, 40, 14, 40, 40], 3);
@@ -81,6 +98,7 @@ export function rewardFeedback() {
 
 export const feedback = {
   tap: tapFeedback,
+  like: likeFeedback,
   select: selectFeedback,
   success: successFeedback,
   error: errorFeedback,

@@ -117,10 +117,25 @@ import CalibrationScreen from '../screens/CalibrationScreen';
 import ShadowbanAdminScreen from '../screens/ShadowbanAdminScreen';
 import { navigationRef } from './NavigationService';
 import { colors } from '../theme';
+import BottomTabNavigator2B from './BottomTabNavigator2B';
+import NotificationsScreen from '../screens/NotificationsScreen';
+import { useFlag } from '../contexts/FeatureFlagContext';
+import { FLAGS } from '../config/featureFlagKeys';
 
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  /**
+   * Notifications dans la PILE.
+   *
+   * Elles n'existaient que comme onglet. Le fil « 2B » (drapeau
+   * `fil.refonte2b`) remonte la cloche dans son en-tête et retire l'onglet :
+   * sans cette route, la cloche n'aurait nulle part où aller.
+   *
+   * L'ancienne barre garde son onglet du même nom — les deux ne sont jamais
+   * montées ensemble, donc `navigate('Notifications')` reste sans ambiguïté.
+   */
+  Notifications: undefined;
   UserProfile: {
     userId?: string;
     username?: string;
@@ -325,6 +340,15 @@ function MainNavigatorInner() {
     }
   };
 
+  /**
+   * 🧪 Test « 2B — Gouttière » (voir `FLAGS.FEED_2B`).
+   *
+   * Lu ICI et nulle part ailleurs. Changer de valeur remonte le navigateur
+   * d'onglets — ce qui n'arrive qu'au démarrage ou juste après un changement
+   * de compte, jamais pendant que l'utilisateur navigue.
+   */
+  const feed2B = useFlag(FLAGS.FEED_2B);
+
   return (
     <>
       <MainStack.Navigator
@@ -342,9 +366,15 @@ function MainNavigatorInner() {
         }}
         initialRouteName="MainTabs"
       >
+      {/* 🧪 Le seul aiguillage du test « 2B — Gouttière ».
+          Tout tient dans le composant monté sous `MainTabs` : ni l'ancienne
+          barre ni l'ancien fil ne sont modifiés, et repasser le palier à 0 %
+          suffit à tout rendre à l'état d'avant, sans publier de version.
+          Le drapeau vaut « éteint » tant qu'il n'a pas répondu : le fil
+          d'origine est donc toujours ce qui s'affiche par défaut. */}
       <MainStack.Screen 
         name="MainTabs" 
-        component={BottomTabNavigator}
+        component={feed2B ? BottomTabNavigator2B : BottomTabNavigator}
         options={{
           gestureEnabled: false,
         }}
@@ -849,6 +879,19 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="Messages"
         component={MessagesScreen}
+        options={{
+          presentation: 'card',
+          headerShown: false,
+        }}
+      />
+
+      {/* Cible de la cloche de l'en-tête du fil « 2B ». Enregistrée pour tout
+          le monde, pas seulement sous le drapeau : une route conditionnelle
+          disparaîtrait de la pile au moment même où un lien profond ou une
+          notification poussée essaie de l'ouvrir. */}
+      <MainStack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
         options={{
           presentation: 'card',
           headerShown: false,

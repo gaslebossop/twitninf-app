@@ -44,6 +44,18 @@ const FIXED_TABS: Array<{ label: string; icon: keyof typeof Ionicons.glyphMap }>
   { label: 'Profil', icon: 'person-outline' },
 ];
 
+/**
+ * Socle du fil « 2B » : Notifications en sort (la cloche est dans l'en-tête du
+ * fil) et Messages y entre. L'aperçu doit montrer CE socle-là, sinon il promet
+ * une barre que l'utilisateur ne verra pas.
+ */
+const FIXED_TABS_2B: Array<{ label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { label: 'Accueil', icon: 'home-outline' },
+  { label: 'Recherche', icon: 'search-outline' },
+  { label: 'Messages', icon: 'chatbubble-outline' },
+  { label: 'Profil', icon: 'person-outline' },
+];
+
 /** Variante pleine de l'icône, comme dans la vraie navbar une fois l'onglet actif. */
 const solid = (icon: string) => icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap;
 
@@ -142,21 +154,26 @@ function NavbarPreview({
   selectedTabs,
   animate,
   compact = false,
+  slotCount,
+  fixedTabs,
 }: {
   selectedTabs: Array<(typeof OPTIONAL_TABS)[number]>;
   animate: boolean;
   compact?: boolean;
+  /** Nombre d'emplacements de la barre — dépend du fil servi, voir `maxTabs`. */
+  slotCount: number;
+  /** Socle affiché — il diffère entre l'ancienne barre et celle de « 2B ». */
+  fixedTabs: typeof FIXED_TABS;
 }) {
   const slots = useMemo(
-    () =>
-      Array.from({ length: MAX_OPTIONAL_TABS }, (_, i) => selectedTabs[i] ?? null),
-    [selectedTabs],
+    () => Array.from({ length: slotCount }, (_, i) => selectedTabs[i] ?? null),
+    [selectedTabs, slotCount],
   );
 
   return (
     <View style={[styles.previewBar, compact && styles.previewBarCompact]}>
       <View style={styles.previewSection}>
-        {FIXED_TABS.map((tab) => (
+        {fixedTabs.map((tab) => (
           <View key={tab.label} style={styles.fixedSlot}>
             <Ionicons name={tab.icon} size={18} color={colors.textMuted} />
           </View>
@@ -353,9 +370,19 @@ export default function NavbarOnboardingModal({
    * fonctionnalité côté API, qui répond 404.
    */
   const nfMapEnabled = useFlag(FLAGS.NF_MAP);
+  const feed2B = useFlag(FLAGS.FEED_2B);
+  const fixedTabs = feed2B ? FIXED_TABS_2B : FIXED_TABS;
+
   const availableTabs = useMemo(
-    () => OPTIONAL_TABS.filter((tab) => !tab.flag || (tab.flag === FLAGS.NF_MAP && nfMapEnabled)),
-    [nfMapEnabled],
+    () =>
+      OPTIONAL_TABS.filter((tab) => {
+        if (tab.flag && !(tab.flag === FLAGS.NF_MAP && nfMapEnabled)) return false;
+        // Sous « 2B », Messages est dans le socle : le proposer en raccourci
+        // donnerait un doublon dans la barre.
+        if (feed2B && tab.key === 'messages') return false;
+        return true;
+      }),
+    [nfMapEnabled, feed2B],
   );
 
   const selectedTabs = useMemo(
@@ -367,9 +394,39 @@ export default function NavbarOnboardingModal({
   );
 
   const hiddenTabs = availableTabs.filter((tab) => !selected.includes(tab.key));
-  const atCap = selected.length >= MAX_OPTIONAL_TABS;
+
+  /**
+   * Nombre d'emplacements libres, selon la barre que verra l'utilisateur.
+   *
+   * Le fil « 2B » (drapeau `fil.refonte2b`) tient deux raccourcis, pas cinq :
+   * sa barre a des cibles plus larges et un bouton « Publier » au centre, donc
+   * moins de colonnes. Proposer cinq choix à quelqu'un qui n'en verrait que
+   * deux serait un mensonge de l'interface.
+   *
+   * Les 99 % restants gardent `MAX_OPTIONAL_TABS` — le test ne change rien
+   * pour eux.
+   */
+  const maxTabs = feed2B ? 2 : MAX_OPTIONAL_TABS;
+
+  /**
+   * Nombre MINIMUM de raccourcis, sous le fil « 2B ».
+   *
+   * Sa barre n'a que trois entrées de socle (Accueil, Recherche, Profil) : à
+   * zéro raccourci elle se retrouve à trois icônes plus le bouton, quatre
+   * colonnes sur toute la largeur de l'écran. C'est vide et ça ne ressemble
+   * plus à une barre de navigation. On impose donc de remplir les deux
+   * emplacements — c'est deux, ou on ne valide pas.
+   *
+   * Les 99 % restants gardent l'ancien comportement, où ne rien choisir est un
+   * choix valable : leur socle compte déjà quatre entrées, Notifications
+   * comprise.
+   */
+  const minTabs = feed2B ? 2 : 0;
+  const atCap = selected.length >= maxTabs;
+  const belowFloor = selected.length < minTabs;
 
   /** Refuser en silence est un cul-de-sac : on montre pourquoi ça ne prend pas. */
+  /** Secousse de refus — plafond atteint, ou plancher pas encore atteint. */
   const rejectAtCap = useCallback(() => {
     capShake.setValue(0);
     Animated.sequence([
@@ -389,7 +446,7 @@ export default function NavbarOnboardingModal({
         setSelected((current) => current.filter((k) => k !== key));
         return;
       }
-      if (selected.length >= MAX_OPTIONAL_TABS) {
+      if (selected.length >= maxTabs) {
         rejectAtCap();
         return;
       }
@@ -410,6 +467,12 @@ export default function NavbarOnboardingModal({
   }, [stepAnim]);
 
   const handleValidate = () => {
+    // Refuser en silence est un cul-de-sac : la jauge dit déjà ce qui manque,
+    // la secousse relie le geste au message.
+    if (belowFloor) {
+      rejectAtCap();
+      return;
+    }
     if (mode === 'onboarding' && hiddenTabs.length > 0) {
       goToTutorial();
       return;
@@ -417,11 +480,14 @@ export default function NavbarOnboardingModal({
     onComplete(selected);
   };
 
+  const missing = minTabs - selected.length;
   const meterMessage = atCap
     ? 'Barre complète — retire un raccourci pour en changer'
-    : selected.length === 0
-      ? 'Aucun raccourci — ta barre gardera seulement le socle'
-      : `${selected.length} sur ${MAX_OPTIONAL_TABS} emplacements utilisés`;
+    : belowFloor
+      ? `Encore ${missing} raccourci${missing > 1 ? 's' : ''} à choisir`
+      : selected.length === 0
+        ? 'Aucun raccourci — ta barre gardera seulement le socle'
+        : `${selected.length} sur ${maxTabs} emplacement${maxTabs > 1 ? 's' : ''} utilisé${maxTabs > 1 ? 's' : ''}`;
 
   const stepTranslate = stepAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
 
@@ -468,7 +534,7 @@ export default function NavbarOnboardingModal({
               </Text>
               <Text style={styles.subtitle}>
                 Le socle — Accueil, Recherche, Notifications, Profil — ne bouge jamais. À toi de
-                remplir les {MAX_OPTIONAL_TABS} emplacements restants avec ce que tu ouvres le plus.
+                remplir les {maxTabs} emplacements restants avec ce que tu ouvres le plus.
               </Text>
 
               {/* ------- Aperçu en direct ------- */}
@@ -488,7 +554,7 @@ export default function NavbarOnboardingModal({
                   <Text style={styles.previewHeaderLabel}>APERÇU EN DIRECT</Text>
                 </View>
 
-                <NavbarPreview selectedTabs={selectedTabs} animate={interacted} />
+                <NavbarPreview selectedTabs={selectedTabs} animate={interacted} slotCount={maxTabs} fixedTabs={fixedTabs} />
 
                 <View style={styles.legendRow}>
                   <View style={styles.legendItem}>
@@ -519,7 +585,7 @@ export default function NavbarOnboardingModal({
                 ]}
               >
                 <View style={styles.meterTrack}>
-                  {Array.from({ length: MAX_OPTIONAL_TABS }, (_, i) => (
+                  {Array.from({ length: maxTabs }, (_, i) => (
                     <View
                       key={i}
                       style={[styles.meterPip, i < selected.length && styles.meterPipOn]}
@@ -553,8 +619,15 @@ export default function NavbarOnboardingModal({
               </ScrollView>
 
               <Pressable
-                style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  pressed && styles.primaryBtnPressed,
+                  // Éteint mais TAPABLE : un bouton inerte ne dit pas pourquoi
+                  // il l'est. Celui-ci secoue la jauge, qui porte le message.
+                  belowFloor && styles.primaryBtnMuted,
+                ]}
                 onPress={handleValidate}
+                accessibilityState={{ disabled: belowFloor }}
               >
                 <Text style={styles.primaryBtnText}>
                   {mode === 'onboarding' && hiddenTabs.length > 0 ? 'Continuer' : 'Enregistrer ma barre'}
@@ -591,7 +664,7 @@ export default function NavbarOnboardingModal({
                   <Ionicons name="checkmark-circle" size={12} color={colors.accent} />
                   <Text style={styles.previewHeaderLabel}>TA BARRE</Text>
                 </View>
-                <NavbarPreview selectedTabs={selectedTabs} animate={false} compact />
+                <NavbarPreview selectedTabs={selectedTabs} animate={false} compact slotCount={maxTabs} fixedTabs={fixedTabs} />
               </View>
 
               <Text style={styles.sectionLabel}>RANGÉ DANS LES RÉGLAGES</Text>
@@ -980,6 +1053,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 15,
     ...glow(colors.accent, 12),
+  },
+  primaryBtnMuted: {
+    opacity: 0.45,
   },
   primaryBtnPressed: {
     backgroundColor: colors.accentPressed,
