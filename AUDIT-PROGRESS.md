@@ -94,7 +94,9 @@ SAIN et à ne pas rouvrir : les 8 « gates » (délai de décantation + `if visi
 **Constats écrits et poussés :** R2-1 (badge messages : toute la liste des
 conversations + `getCurrentUser()` en série, toutes les 30 s, sur tous les
 écrans — CRITIQUE), R2-2 (sur-récupération : `limit: 500` de profils complets
-pour un Set d'ids, + `getCurrentUser()` sur 16 sites).
+pour un Set d'ids, + `getCurrentUser()` sur 16 sites), R2-3 (ni cache ni
+déduplication dans `api.ts` ; `/api/messages/conversations` téléchargée 3 fois ;
++ `TradingScreen` qui sonde hors focus).
 
 ### `api.ts` (2 904 l.) — INSTRUIT, résultat clé
 
@@ -152,15 +154,15 @@ choix), cache par onglet (`tabCacheRef`), garde `if (followingIds.size === 0)`,
 repli sur cache (`servedFromCacheRef`), Explorer isolé. Détaillé dans le
 « SAIN » de R2-2. **Seul reproche : le volume d'UNE requête (limit 500).**
 
-### RESTE À INSTRUIRE POUR R2
-1. Constat groupé « ni cache ni déduplication » (socle `api.ts` déjà établi
-   plus haut) + la chaîne messagerie (preuves A/B déjà réunies).
-2. `TradingScreen:72-78` — `setInterval` 30 s non suspendu hors focus, alors
-   que `useForegroundInterval` existe dans le dépôt. Constat facile.
-3. Pagination absente (preuves C) + manque fonctionnel réponses (preuve D).
-4. Absence d'annulation quand on quitte un écran (socle établi, reste à
-   trouver les cas concrets qui en souffrent).
-5. Puis synthèse R2 et passage à R3.
+### RESTE À INSTRUIRE POUR R2 — il ne reste qu'UN constat
+1. **Pagination absente** (preuves C ci-dessus) + **manque fonctionnel des
+   réponses** (preuve D : `TweetDetailScreen:504`, `offset: 0` en dur, la 21e
+   réponse est inatteignable). À rédiger en un constat groupé « R2-4 ».
+   Tout est déjà vérifié, il n'y a plus qu'à écrire.
+2. Puis synthèse R2 et passage à R3.
+
+Déjà traités : `TradingScreen` (dans R2-3), annulation à la sortie d'écran
+(dans R2-3, correctif 3), cache/déduplication (R2-3).
 
 Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
 

@@ -301,3 +301,179 @@ Autrement dit : **la pagination, la parallélisation, le cache par onglet et le
 repli hors ligne sont tous en place sur le fil.** Le seul reproche que je puisse
 lui faire est le volume d'une requête, pas la façon dont elles sont
 orchestrées.
+
+---
+
+## R2-3 — Aucun cache, aucune déduplication : la messagerie télécharge trois fois la même liste — MAJEUR
+
+`src/services/api.ts:314-341` (le socle) et
+`unreadService.ts:24` / `MessagesScreen.tsx:109` /
+`ConversationThreadScreen.tsx:699` (les conséquences)
+
+### Le socle : `apiService` n'a ni cache ni déduplication
+
+Recherche faite sur l'intégralité de `src/services/api.ts` (2 904 lignes) pour
+`cache`, `dedup`, `inFlight`, `pending`, `AbortController` :
+
+- **aucun cache de réponse**, à aucun niveau ;
+- **aucune déduplication des requêtes en vol** — deux appels identiques lancés
+  à une seconde d'intervalle partent deux fois ;
+- **aucune annulation pilotée par l'appelant**. L'unique `AbortController`
+  (`:325-328`) est créé par requête et n'est branché qu'au **timeout**, avec
+  un commentaire qui explique clairement ce rôle :
+  > « `AbortController` plutôt que `Promise.race` : sans lui, la requête
+  > continuait en arrière-plan après le timeout et alimentait pour rien les
+  > compteurs de cadence côté anti-fraude. »
+
+  C'est juste, et c'est un bon réflexe — mais `makeRequest` (`:341`) n'accepte
+  pas de `signal` de l'appelant. **Quitter un écran n'annule donc rien** : les
+  requêtes en vol vont jusqu'au bout, et leurs `setState` retombent sur des
+  composants démontés.
+
+Chaque appel part donc au réseau, à chaque fois, sans exception.
+
+### La conséquence la plus visible : `/api/messages/conversations`
+
+Cette route — qui renvoie **toutes** les conversations, sans pagination
+(établi en F3-3) — est appelée depuis **trois endroits distincts** :
+
+| Appelant | Ce qu'il en veut | Fréquence |
+|---|---|---|
+| `unreadService.ts:24` | un compteur (R2-1) | **toutes les 30 s** |
+| `MessagesScreen.tsx:109` | la liste elle-même — **usage légitime** | à chaque ouverture de l'onglet |
+| `ConversationThreadScreen.tsx:699` | **uniquement les participants d'UNE conversation** | à chaque ouverture d'une conversation |
+
+Le parcours le plus banal de la messagerie — ouvrir l'onglet Messages, puis
+toucher une conversation — déclenche donc **le téléchargement complet de la
+liste des conversations deux fois en l'espace de quelques secondes**, plus une
+troisième fois si le sondage de 30 s tombe entre les deux. Rien ne les
+mutualise.
+
+Le troisième appel est le plus discutable. `ConversationThreadScreen` charge
+tout l'annuaire des conversations pour y **retrouver** celle qu'il vient
+d'ouvrir et en extraire les participants :
+
+```tsx
+const convRes = await apiService.get('/api/messages/conversations');       // :699
+if (convRes?.success && Array.isArray(convRes?.conversations)) {
+  const conv = convRes.conversations.find((c) => c?.id === conversationId); // ← un seul élément retenu
+  …
+}
+// … puis SEULEMENT après :
+const res = await apiService.get(`/api/messages/conversations/${conversationId}/messages`);  // :729
+```
+
+**Et les deux appels sont en série.** Le second n'attend pourtant rien du
+premier : l'identifiant de conversation est connu depuis la navigation. Ce sont
+donc deux allers-retours réseau consécutifs avant que le premier message ne
+puisse s'afficher, dont le premier est une liste complète dont on ne garde
+qu'une entrée.
+
+### Effet concret pour l'utilisateur
+
+Ouvrir une conversation est lent, et d'autant plus lent qu'on a de
+conversations — alors que le nombre de conversations n'a aucun rapport avec
+celle qu'on ouvre. C'est cumulatif avec **F3-2** (l'historique complet chargé
+sans pagination, puis parcouru en défilement) : ces deux constats décrivent le
+même écran, et leurs coûts s'additionnent sur le même chemin.
+
+S'y ajoute la consommation de données : la liste des conversations est
+retéléchargée à chaque navigation dans la messagerie, plus 120 fois par heure
+pour le badge.
+
+### Correctif
+
+**1. Le plus simple et le plus rentable — supprimer le premier appel de
+`ConversationThreadScreen`.** Les participants d'une conversation devraient
+venir soit avec les messages (`GET …/:id/messages` peut les joindre), soit
+d'une route unitaire `GET /api/messages/conversations/:id`. Dans les deux cas
+on passe de deux allers-retours en série à un seul. **C'est le gain le plus
+direct sur l'ouverture d'une conversation.**
+
+En attendant la route, un repli immédiat côté mobile : les paramètres de
+navigation portent déjà de quoi afficher l'en-tête (titre, avatar) —
+`MessagesScreen` les a lus juste avant. Les passer en paramètres de route
+permet d'afficher l'écran tout de suite et de ne demander que les messages.
+
+**2. Un cache court dans `apiService`.** Les trois appels visent la même URL à
+quelques secondes d'intervalle. Un cache mémoire de courte durée sur les `GET`
+suffirait à en supprimer deux :
+
+```ts
+const cache = new Map<string, { at: number; data: any }>();
+const inFlight = new Map<string, Promise<any>>();
+
+async function cachedGet(endpoint: string, ttlMs = 10_000) {
+  const hit = cache.get(endpoint);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.data;      // cache
+  const flying = inFlight.get(endpoint);
+  if (flying) return flying;                                     // déduplication
+  const p = makeRequest(endpoint)
+    .then((data) => { cache.set(endpoint, { at: Date.now(), data }); return data; })
+    .finally(() => inFlight.delete(endpoint));
+  inFlight.set(endpoint, p);
+  return p;
+}
+```
+
+La **déduplication des requêtes en vol** (la `Map` `inFlight`) est la moitié la
+plus précieuse : elle ne périme jamais rien, ne peut pas servir de donnée
+obsolète, et supprime à elle seule les doublons simultanés. Elle peut être
+adoptée sans le cache, et **c'est ce que je recommanderais en premier** — un
+cache mal réglé sur une messagerie afficherait des messages périmés, la
+déduplication ne le peut pas.
+
+*Précaution* : n'appliquer cache et déduplication qu'aux `GET`, jamais aux
+écritures.
+
+**3. Accepter un `signal` dans `makeRequest`**, pour que les écrans puissent
+annuler à la sortie :
+
+```ts
+private async makeRequest(endpoint, options: { …; signal?: AbortSignal } = {}) { … }
+// combiné au signal du timeout via AbortSignal.any([timeoutSignal, options.signal])
+```
+
+Côté écran : `useEffect(() => { const ac = new AbortController(); load(ac.signal); return () => ac.abort(); }, [...])`.
+Bénéfice double — la bande passante est rendue à l'écran suivant, et les
+`setState` sur composant démonté disparaissent.
+
+### Constat voisin, petit et immédiat : un sondage qui ne se suspend pas
+
+`src/screens/TradingScreen.tsx:72-78`
+
+```tsx
+const interval = setInterval(() => { loadMarketData(true); }, 30000);
+return () => clearInterval(interval);
+```
+
+Le nettoyage au démontage est correct, mais l'écran reste **monté** tant qu'il
+est dans la pile de navigation : le sondage continue donc à tourner toutes les
+30 secondes alors que l'utilisateur est parti ailleurs, et même quand
+l'application passe en arrière-plan.
+
+Le dépôt a exactement l'outil qu'il faut, déjà écrit et déjà utilisé par la
+barre d'onglets : **`useForegroundInterval`**, qui suspend le sondage hors
+premier plan. Le correctif est un remplacement d'une ligne :
+
+```tsx
+useForegroundInterval(React.useCallback(() => { loadMarketData(true); }, [timeframe]), 30000);
+```
+
+Idéalement combiné à `useIsFocused()` pour suspendre aussi quand l'écran est
+seulement masqué par un autre. **Cinquième occurrence du schéma « l'outil
+existe, il n'a pas été propagé ».**
+
+### Ce que j'ai vérifié et trouvé SAIN
+
+- L'`AbortController` du timeout (`api.ts:325-328`) est un vrai bon réflexe,
+  motivé par un problème réel côté anti-fraude. Le manque n'est pas
+  l'annulation en soi, c'est qu'elle ne soit pas exposée à l'appelant.
+- `MessagesScreen.tsx:109` est un usage **parfaitement légitime** de la route :
+  c'est l'écran qui affiche cette liste. Il n'est cité que comme l'un des
+  trois appelants, pas comme un défaut.
+- `TweetDetailScreen.tsx:502` fait l'inverse du défaut décrit ici : un
+  `Promise.all` qui charge le tweet et ses réponses **en parallèle**. À citer
+  en exemple.
+- `useForegroundInterval` existe, suspend correctement en arrière-plan, et est
+  utilisé aux deux endroits de la barre d'onglets.
