@@ -170,3 +170,207 @@ Les deux se renforcent et méritent d'être traités ensemble : R1-1 raccourcit
 l'attente, F1-1 rend supportable ce qu'on voit pendant. Corriger l'un sans
 l'autre laisse soit une attente longue devant une animation propre, soit une
 animation qui saccade brièvement — corriger les deux supprime la question.
+
+---
+
+## R1-2 — Deux attentes indépendantes mises bout à bout : polices, PUIS authentification — CRITIQUE
+
+`App.tsx:127-135` puis `src/navigation/AppNavigator.tsx:42-44`,
+`src/contexts/AuthContext.tsx:285-292` et `:305-322`
+
+`AppLoadingScreen` est affiché **deux fois de suite**, par deux gardes
+différents, pour deux raisons sans aucun rapport l'une avec l'autre.
+
+### La chaîne complète du démarrage à froid
+
+```
+┌─ PHASE 1 ── App.tsx:127 ─ `if (!fontsReady)` ──────────────────────────┐
+│  chargement des 20 polices                          → jusqu'à 4 000 ms │
+└────────────────────────────────────────────────────────────────────────┘
+                                  ↓  (rien n'a démarré en parallèle)
+                    montage des 13 fournisseurs
+                                  ↓
+┌─ PHASE 2 ── AppNavigator.tsx:42 ─ `if (isLoading)` ────────────────────┐
+│  AuthContext.tsx:285-292, QUATRE étapes strictement en série :         │
+│    1. await tokenStore.migrateLegacyStorage()      → lecture stockage  │
+│    2. await migrateLegacyAccounts()                → lecture stockage  │
+│    3. await loadAccounts()                         → lecture stockage  │
+│    4. await checkAuthStatus()                                          │
+│         ├ await tokenStore.getAccessToken()        → lecture SecureStore│
+│         ├ await apiService.getCurrentUser()        → ALLER-RETOUR RÉSEAU│
+│         └ si échec : refreshToken() puis getCurrentUser() à nouveau     │
+│                                              → 2 ALLERS-RETOURS de plus │
+└────────────────────────────────────────────────────────────────────────┘
+                                  ↓
+                   montage du navigateur, puis de TweetsScreen
+                                  ↓
+                      1er appel réseau du fil  →  1er tweet à l'écran
+```
+
+### Ce qui ne va pas
+
+**Le défaut central : les deux phases n'ont rien à voir l'une avec l'autre, et
+elles sont pourtant en série.**
+
+Charger des fichiers de police depuis le bundle et vérifier un jeton auprès du
+serveur sont deux opérations totalement indépendantes : aucune n'a besoin du
+résultat de l'autre. Rien n'empêche techniquement de les mener **en même
+temps**. Aujourd'hui, la seconde ne peut pas commencer avant que la première
+soit finie, parce que `App.tsx:127` retourne avant même de monter
+`AuthProvider`. **Le temps de démarrage est la somme des deux au lieu du plus
+long des deux.**
+
+**Trois défauts secondaires**, tous dans la phase 2 :
+
+1. **Trois lectures de stockage en série avant la première requête réseau**
+   (`AuthContext.tsx:287-289`). Les deux premières sont des **migrations de
+   données héritées** — du travail qui, pour l'immense majorité des
+   utilisateurs, n'a rien à faire. `migrateLegacyStorage` sort d'ailleurs
+   immédiatement sur un drapeau (`tokenStore.ts:116`), mais **cette sortie
+   coûte quand même une lecture AsyncStorage**, et elle bloque les trois étapes
+   suivantes. Chaque lecture AsyncStorage est un aller-retour par le pont natif
+   ; trois d'affilée, c'est quelques dizaines de millisecondes prises sur le
+   chemin critique pour, le plus souvent, ne rien faire.
+
+2. **Jusqu'à trois allers-retours réseau séquentiels** avant que le navigateur
+   ne soit monté. Le cas nominal en fait un (`getCurrentUser`). Le cas d'un
+   jeton d'accès expiré — c'est-à-dire **le cas ordinaire de quiconque n'a pas
+   ouvert l'app depuis un moment**, donc précisément un lancement à froid — en
+   fait trois : `getCurrentUser` échoue, `refreshToken`, puis `getCurrentUser`
+   à nouveau (`:322`, `:330-333`). Sur un réseau mobile médiocre, trois
+   allers-retours en série, c'est facilement plus d'une seconde pendant
+   laquelle l'écran ne montre rien d'autre que le logo.
+
+3. **Le fil ne commence à charger qu'après tout cela**, puisque `TweetsScreen`
+   n'est monté que par le navigateur. La requête du fil est donc le cinquième
+   maillon d'une chaîne entièrement séquentielle.
+
+### Effet concret pour l'utilisateur
+
+Au lancement à froid, l'utilisateur voit le logo pulser pendant :
+**temps des 20 polices + 3 lectures de stockage + 1 à 3 allers-retours réseau**,
+avant que la première requête du fil ne parte. Le premier tweet arrive encore
+un aller-retour plus tard.
+
+Rien de tout cela n'est visible comme une erreur : l'application « met du temps
+à s'ouvrir », sans qu'aucune étape ne paraisse fautive isolément. C'est
+précisément ce qui rend ce genre de chaîne difficile à attaquer sans la
+dessiner — et c'est aussi ce qui fait qu'elle s'allonge tranquillement à chaque
+ajout.
+
+Le cas le plus pénalisé est le plus courant : **l'utilisateur qui rouvre
+l'application après quelques heures**. Son jeton d'accès a expiré, il paie donc
+les trois allers-retours, en plus des polices.
+
+### Correctif
+
+**1. Mener les polices et l'authentification en parallèle** — c'est le geste
+principal, et il n'exige aucun changement de logique.
+
+Il suffit de ne plus retourner avant `AuthProvider`, mais de laisser l'arbre se
+monter et de n'afficher l'écran de chargement qu'en surimpression :
+
+```tsx
+// App.tsx — au lieu de `if (!fontsReady) return <AppLoadingScreen/>`
+return (
+  <GestureHandlerRootView style={{ flex: 1 }}>
+    <SafeAreaProvider>
+      <ToastProvider>…<AuthProvider>      {/* monté TOUT DE SUITE : l'auth part */}
+        …
+        <AppNavigator />
+        …
+      </AuthProvider>…</ToastProvider>
+      {/* Le voile ne masque que l'affichage, il n'empêche plus le travail. */}
+      {!fontsReady && <AppLoadingScreen style={StyleSheet.absoluteFill} />}
+    </SafeAreaProvider>
+  </GestureHandlerRootView>
+);
+```
+
+Le temps de démarrage devient `max(polices, auth)` au lieu de
+`polices + auth`. Combiné à **R1-1** (ne bloquer que sur les 3 polices de
+marque), la phase 1 devient quasi instantanée et disparaît de fait du chemin
+critique.
+
+**2. Paralléliser ce qui peut l'être dans `AuthContext`** :
+
+```tsx
+useEffect(() => {
+  (async () => {
+    // La migration des jetons ne conditionne pas celle des comptes :
+    // les deux peuvent partir ensemble.
+    await Promise.all([tokenStore.migrateLegacyStorage(), migrateLegacyAccounts()]);
+    await loadAccounts();          // dépend de migrateLegacyAccounts
+    await checkAuthStatus();
+  })();
+}, []);
+```
+
+Gain modeste — quelques dizaines de millisecondes — mais gratuit.
+
+**3. Le vrai gain de la phase 2 : ne pas faire attendre le navigateur pour
+`getCurrentUser`.** Le jeton présent en stockage suffit à savoir qu'on est
+authentifié ; `getCurrentUser` ne fait que **rafraîchir le profil**. On peut
+donc lever `isLoading` dès la lecture du jeton, monter le navigateur, et
+laisser `getCurrentUser` se résoudre en arrière-plan :
+
+```tsx
+const token = await tokenStore.getAccessToken();
+if (!token) { setUser(null); setIsAuthenticated(false); return; }
+
+await apiService.setSessionAccessToken(token);
+setIsAuthenticated(true);        // ← le navigateur peut monter MAINTENANT
+setIsLoading(false);             //    le fil part en parallèle du profil
+
+apiService.getCurrentUser().then((u) => { if (u) setUser(u); });
+```
+
+**Le chemin critique perd alors un à trois allers-retours réseau complets**, et
+la requête du fil part au moment où on lit le jeton en stockage, pas après un
+échange avec le serveur. C'est de loin le plus gros gain des trois.
+
+**Précaution indispensable** : les écrans qui lisent `user` doivent tolérer un
+`user` momentanément nul alors qu'`isAuthenticated` est vrai. Le gestionnaire
+de session perdue est déjà en place (`AuthContext.tsx:297-300`,
+`setSessionExpiredHandler`) et couvre le cas d'un jeton refusé — le repli
+existe donc déjà, c'est ce qui rend ce changement raisonnable. **À vérifier
+écran par écran avant d'appliquer** ; c'est le seul des trois correctifs qui
+demande une revue, et c'est aussi celui qui rapporte le plus.
+
+### Réserves honnêtes
+
+- Aucun chronométrage. Les durées ne sont pas mesurées : ce constat décrit une
+  **structure séquentielle** vérifiée dans le code, pas des millisecondes
+  observées. Un profil de démarrage (Hermes / Systrace) dirait lequel des cinq
+  maillons domine réellement. **Il vaut la peine de le mesurer avant
+  d'appliquer le correctif 3**, qui est le plus invasif.
+- Le correctif 1 (chargement en surimpression) suppose qu'aucun des 13
+  fournisseurs ne lit une police à son montage. Rien de tel n'a été observé,
+  mais je ne l'ai pas vérifié pour les 13.
+
+### Ce que j'ai vérifié et trouvé SAIN sur le chemin de démarrage
+
+- **Les 8 « gates » de démarrage sont exemplaires et ne sont PAS un problème.**
+  C'est ce que je cherchais en ouvrant cette piste, et c'est l'inverse qui est
+  vrai. Chacun attend un délai de décantation avant de lancer sa requête —
+  `STARTUP_SETTLE_MS` vaut 250 ms dans `ConsentGate:22`, 300 ms dans
+  `SleepGate:70`, 400 ms dans `UpdateAvailableGate:39` — et chacun ne charge
+  ses données que `if (visible)` (`ConsentGate:68`,
+  `FollowOnboardingGate:74`). Aucun ne tire sur le réseau au montage. Ils sont
+  en outre coordonnés par une file d'attente dédiée
+  (`StartupPopupContext` / `useStartupPopupSlot`) pour ne pas se superposer.
+  **Ce mécanisme mérite d'être cité en exemple** : c'est exactement la
+  discipline qui manque au chargement des polices.
+- `EventsProvider` est la source de vérité unique des événements, et les trois
+  fournisseurs qui le suivent « ne tiennent plus d'état et n'interrogent plus
+  le réseau » (commentaire `App.tsx:190-193`). Cette consolidation a déjà été
+  faite : quatre fournisseurs, un seul chargement.
+- `PatchNotesModal` ne lit qu'AsyncStorage (`last_seen_version`), pas le
+  réseau.
+- Le repli sur erreur de police (`fontError`) est correct : il ne fige pas
+  l'application.
+- `apiService.setSessionExpiredHandler` (`AuthContext.tsx:297`) est le **seul**
+  chemin de déconnexion automatique, et le commentaire précise qu'« une simple
+  panne réseau ne déclenche rien ». Un démarrage hors ligne ne déconnecte donc
+  pas l'utilisateur — c'est le bon comportement, et c'est ce qui rend le
+  correctif 3 envisageable.

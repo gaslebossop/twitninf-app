@@ -76,7 +76,9 @@ partagée, activer ESLint) aux corrections ponctuelles.
 ## Reprendre à — R1 (EN COURS)
 
 **Constats écrits et poussés :** R1-1 (20 polices chargées AVANT le premier
-écran, dont 17 pour une option cosmétique — CRITIQUE).
+écran, dont 17 pour une option cosmétique — CRITIQUE), R1-2 (polices PUIS
+authentification : deux attentes indépendantes en série, + jusqu'à 3
+allers-retours réseau avant le montage du navigateur — CRITIQUE).
 
 ### `App.tsx` A ÉTÉ LU EN ENTIER (215 l.) — ne pas le relire, voici tout
 
@@ -84,39 +86,31 @@ partagée, activer ESLint) aux corrections ponctuelles.
 `<AppLoadingScreen/>` et RIEN d'autre (`:127-135`) → filet `forceReady` à 4 s
 (`:59`). Donc bloquant 0-4 s. → C'est R1-1.
 
-**PISTES R1 RESTANTES, toutes vues dans `App.tsx`, à instruire :**
+**ÉCARTÉ après vérification — ne pas y revenir :**
+- **Les 8 « gates » de démarrage sont SAINS**, et c'est même le meilleur
+  mécanisme du dépôt sur ce plan : chacun a un `STARTUP_SETTLE_MS`
+  (250 ms `ConsentGate:22`, 300 ms `SleepGate:70`, 400 ms
+  `UpdateAvailableGate:39`) et ne charge que `if (visible)`. Aucun ne tire sur
+  le réseau au montage. Coordonnés par `StartupPopupContext`. Documenté dans
+  le « SAIN » de R1-2.
+- Les 4 fournisseurs d'événements : consolidés, un seul charge (`App.tsx:190`).
+- `PatchNotesModal` : AsyncStorage seulement, pas de réseau.
+- `AppLoadingScreen` anime `icon.png` 1920×1920 → **DÉJÀ ÉCRIT en F1-1**,
+  cross-référencé dans R1-1. NE PAS LE RECOMPTER.
 
-1. **13 fournisseurs imbriqués** montés d'un coup (`:138-200`) : Toast,
-   Confirm, ActionSheet, Prompt, Reward, Auth, FeatureFlag, Offline,
-   ReadingLanguage, StartupPopup, Events, Event, EventTheme, FunctionalEvent.
-   → QUESTION À INSTRUIRE : combien font un appel réseau ou une lecture
-   AsyncStorage à leur montage ? C'est LE constat R1 suivant le plus probable.
-   Note : `EventsProvider` est la source de vérité et les 3 suivants ne sont
-   plus que des adaptateurs « qui n'interrogent plus le réseau » (commentaire
-   `:190-193`) — donc ce point a DÉJÀ été travaillé une fois. Vérifier.
+**PISTE R1 RESTANTE — la dernière :**
+1. **Notifications push au démarrage** (`App.tsx:64-126`) :
+   `registerForPushNotifications` PUIS `await setupFranceDailyLocalNotifications()`
+   en SÉRIE, puis une boucle `tryRegisterDevice` qui sonde `apiService.token`
+   par `setTimeout` toutes les secondes jusqu'à 10 fois (`:111-118`) au lieu
+   d'attendre un événement d'auth. Motif fragile ET travail au démarrage.
+   VÉRIFIÉ COMME EXISTANT, reste à instruire et rédiger. Nuance à creuser :
+   c'est dans un `useEffect` non bloquant, donc l'impact est à pondérer — ce
+   n'est probablement PAS un constat critique, plutôt modéré.
+2. Puis : synthèse de section R1 et passage à R2.
 
-2. **8 « gates » montés à la racine** (`:181-199`) : `ReadingLanguageGate`,
-   `ProfileCompletionGate`, `ConsentGate`, `SleepGate`,
-   `FollowOnboardingGate`, `UpdateAvailableGate`, `PatchNotesModal`.
-   → Chacun peut déclencher un appel réseau au montage, EN MÊME TEMPS que le
-   fil charge. À vérifier un par un. `StartupPopupContext` gère une file
-   d'attente d'affichage — mais ordonne-t-il les REQUÊTES ou seulement
-   l'affichage ?
-
-3. **Notifications push au démarrage** (`:64-126`) : `registerForPushNotifications`
-   PUIS `await setupFranceDailyLocalNotifications()` en SÉRIE, puis une boucle
-   `tryRegisterDevice` qui sonde `apiService.token` toutes les secondes
-   jusqu'à 10 fois (`:111-118`). Ce sondage par `setTimeout` au lieu d'attendre
-   un événement d'auth est un motif fragile ET du travail au démarrage.
-
-4. `AppLoadingScreen` anime `icon.png` en 1920×1920 → **DÉJÀ ÉCRIT en F1-1**,
-   cross-référencé dans R1-1. NE PAS LE RECOMPTER.
-
-**Autres éléments déjà connus, utiles pour R1 :**
-- Les 9 fournisseurs de `src/contexts/` ont tous une valeur mémoïsée (vérifié
-  en F2) — mais leur coût de MONTAGE n'a pas été regardé.
-- `ScreenSkeleton` / `TweetSkeleton` existent et sont utilisés (bon pour la
-  perception du démarrage).
+**Autre élément utile :** `ScreenSkeleton` / `TweetSkeleton` sont utilisés
+(bon pour la perception du démarrage).
 
 ### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
 
