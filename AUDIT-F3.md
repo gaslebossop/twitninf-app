@@ -431,3 +431,149 @@ soit vérifiable, pas pour être corrigées.
 est correctement réglé. Le tableau ci-dessus est issu d'une recherche corrigée
 couvrant les variantes `Animated.*`, `SectionList`, `VirtualizedList` et
 `FlashList`.
+
+---
+
+## F3-4 — Les deux vraies listes rendues dans un `ScrollView` — MAJEUR
+
+Un `ScrollView` monte **tous** ses enfants et n'en démonte **aucun**. Employé
+là où il faudrait une liste virtualisée, il transforme « afficher N éléments »
+en « construire N éléments avant le premier pixel, et les garder pour toujours ».
+
+Recensement fait sur tout `src/` : les fichiers qui contiennent un
+`ScrollView` **sans** aucune liste virtualisée, triés par nombre de `.map()`.
+Sur les vingt premiers candidats, **deux seulement** rendent une véritable
+liste de données. Les autres sont écartés plus bas, et c'est important : le
+motif `.map()` dans un `ScrollView` est parfaitement légitime pour une
+énumération figée.
+
+### `SearchScreen` — jusqu'à 40 résultats, aucun démontage
+
+`src/screens/SearchScreen.tsx:979`, `:1033`, `:1043`
+
+```tsx
+<ScrollView …>                                    // :979
+  {searchResults.users.map(renderUserItem)}       // :1033 — jusqu'à 20
+  {searchResults.tweets.map(renderTweetItem)}     // :1043 — jusqu'à 20
+</ScrollView>
+```
+
+Le filtre « tout » demande `limit: 20` par type (`:333`, `:343`, `:353`), soit
+**jusqu'à 40 lignes montées simultanément**, chacune avec son `Avatar`, son
+`PremiumDisplayName` et son badge de certification — et pour les tweets, tout
+le contenu de la carte.
+
+**Effet concret** : le résultat d'une recherche met d'autant plus de temps à
+s'afficher que la recherche a bien marché. Les 40 lignes sont construites avant
+que la première n'apparaisse ; il n'y a pas d'affichage progressif, juste un
+temps mort puis tout d'un coup. Et rien n'est jamais libéré tant qu'on reste
+sur l'écran.
+
+**Correctif** : une `FlatList` avec deux sections (ou une `SectionList`, qui
+correspond exactement à la forme « utilisateurs » puis « tweets »), plus le
+réglage maison :
+
+```tsx
+<SectionList
+  sections={[
+    { title: 'Comptes', data: searchResults.users },
+    { title: 'Tweets',  data: searchResults.tweets },
+  ]}
+  initialNumToRender={8}
+  maxToRenderPerBatch={6}
+  updateCellsBatchingPeriod={50}
+  windowSize={7}
+  removeClippedSubviews={Platform.OS === 'android'}
+  …
+/>
+```
+
+C'est un remaniement de la structure de rendu de l'écran, pas un ajout de
+props. **Cumulatif avec F2-6** (chaque frappe re-rend ces 40 lignes) : la
+virtualisation réduit le nombre de lignes montées, l'isolation du champ de
+saisie supprime le déclencheur. Les deux ensemble, l'écran devient normal ;
+l'un sans l'autre, il reste à moitié lourd. Si l'on ne doit en faire qu'un,
+**faire d'abord F2-6**, qui est local et sans risque.
+
+### `StoriesTray` — la barre de stories, en haut du fil d'accueil
+
+`src/components/StoriesTray.tsx:216-278`
+
+```tsx
+<ScrollView horizontal …>          // :216-217
+  …
+  {feed.groups.map((group, index) => (      // :260
+    <TouchableOpacity …>
+      <StoryRing size={AVATAR_SIZE} uri={…} hasStory seen={!group.has_unseen} … />
+      <Text …>{group.user?.username}</Text>
+    </TouchableOpacity>
+  ))}
+</ScrollView>
+```
+
+`storiesService.getFeed()` appelle `/api/stories/feed` **sans aucun `limit`**
+(`src/services/storiesService.ts:99-107`) : le nombre de groupes est celui que
+renvoie le serveur, sans plafond côté client. Chaque groupe monte un
+`StoryRing` — un avatar avec son anneau — et tous restent montés, y compris
+ceux qui sont hors de l'écran à droite.
+
+**Ce qui rend ce cas plus sérieux qu'il n'en a l'air** : ce composant est en
+tête du **fil d'accueil**, l'écran le plus ouvert de l'application. Son coût
+est payé à chaque ouverture de l'onglet, avant le premier tweet, et par tout le
+monde. Un compte qui suit beaucoup de gens actifs — c'est-à-dire précisément un
+utilisateur engagé — a le plus d'anneaux à monter, donc l'ouverture la plus
+lente. C'est le mauvais sens.
+
+**Correctif** : `FlatList horizontal`. C'est un remplacement direct, la barre
+n'a pas d'autre enfant que la liste des groupes et le bouton « Ajouter » (qui
+devient `ListHeaderComponent`) :
+
+```tsx
+<FlatList
+  horizontal
+  data={feed.groups}
+  ListHeaderComponent={AddStoryButton}
+  keyExtractor={(g, i) => String(g.user?.id ?? `group-${i}`)}
+  renderItem={renderStoryGroup}          // en useCallback
+  showsHorizontalScrollIndicator={false}
+  initialNumToRender={6}
+  maxToRenderPerBatch={6}
+  windowSize={5}
+  removeClippedSubviews={Platform.OS === 'android'}
+  getItemLayout={(_, i) => ({ length: ITEM_W, offset: ITEM_W * i, index: i })}
+/>
+```
+
+`getItemLayout` est exact ici : tous les éléments ont la même largeur
+(`styles.item` + `AVATAR_SIZE` constants).
+
+**Réserve honnête** : je n'ai pas de mesure du nombre réel de groupes en
+production. Si l'API en renvoie systématiquement une dizaine, le gain est
+faible et ce constat est surdimensionné. Ce qui est certain et vérifiable,
+c'est qu'**aucune limite n'est posée** ni par le client ni dans l'appel : le
+coût n'est donc pas borné par construction. C'est ce qui justifie de le
+corriger même si la valeur courante est confortable.
+
+### Écartés après vérification — le motif est légitime
+
+Les autres gros consommateurs de `.map()` dans un `ScrollView` ont été
+examinés et **ne sont pas des listes de données** : ce sont des énumérations
+figées, dont le nombre d'éléments est écrit dans le code.
+
+| Fichier | Ce que `.map()` rend réellement | Verdict |
+|---|---|---|
+| `UserStatsTab.tsx` (26 `.map`) | graduations de graphique, libellés d'axe, cartes de métriques, options de période | énumérations fixes — **sain** |
+| `CasinoScreen.tsx` (17) | segments de la roue, pièces de confetti, rangées de jeu | listes constantes — **sain** |
+| `ProfileCustomizationScreen.tsx` (11) | `FAMILIES`, `ACCENT_PRESETS`, `PROFILE_THEMES`, `THEME_INTENSITIES`, `PROFILE_EFFECTS` | constantes de module — **sain** |
+| `TweetDetailScreen.tsx` (7) | `replies.map()` — mais plafonné à `limit: 20` (`:504`) et `ReplyItem` est un `React.memo` (`:236`) | **sain** pour F3 |
+| `NewConversationScreen`, `GroupMembersScreen` | listes d'utilisateurs bornées à 30-35 par l'appel API | **sain** |
+
+Virtualiser une énumération de huit préréglages de couleur serait une
+complication pure. **Le motif `.map()` dans un `ScrollView` n'est pas un défaut
+en soi** ; il ne le devient que lorsque le nombre d'éléments dépend de données
+serveur non bornées. C'est le cas pour les deux constats ci-dessus, et pour eux
+seuls.
+
+`CasinoScreen.tsx:212` (`CONFETTI.map`) est en revanche à regarder en **F4** :
+un ensemble de pièces animées simultanément relève des animations, pas des
+listes.

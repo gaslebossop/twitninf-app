@@ -40,7 +40,8 @@ virtualisation, ~10 lecteurs vidéo instanciés à l'ouverture — CRITIQUE),
 F3-2 (`ConversationThreadScreen` : historique entier sans pagination, liste non
 `inverted`, cascade de `scrollToEnd` à l'ouverture — CRITIQUE), F3-3
 (recensement exhaustif : 5 listes réglées sur 20 ; `MessagesScreen`,
-`CommentSheet` et les 2 chats de live à traiter).
+`CommentSheet` et les 2 chats de live à traiter), F3-4 (`SearchScreen` et
+`StoriesTray` : vraies listes rendues dans un `ScrollView`).
 
 **Recensement FAIT et rédigé (F3-3)** — 5 listes réglées sur 20. ATTENTION :
 chercher `<FlatList` seul est INSUFFISANT, `FeedGutterScreen` écrit
@@ -48,15 +49,16 @@ chercher `<FlatList` seul est INSUFFISANT, `FeedGutterScreen` écrit
 `grep -rlE "<(Animated\.)?(FlatList|SectionList|VirtualizedList)|<FlashList" src/`
 
 **Prochains constats F3 à rédiger, par priorité :**
-1. **`ScrollView` montant des listes entières** — constat à rédiger (F3-4).
-   Déjà vérifié, prêt : `SearchScreen:979-1043` (~40 résultats, F2-6) et
-   `StoriesTray.tsx:216-278` (`ScrollView horizontal` + `feed.groups.map()`,
-   tous les `StoryRing` montés — en haut du fil d'accueil, donc chemin chaud).
-   Candidats restants à examiner : `UserStatsTab` (26 `.map`), `CasinoScreen`
-   (17), `ProfileCustomizationScreen` (11), `PredictiveAnalyticsScreen` (10).
-   Commande utilisée pour les trouver (ScrollView SANS FlatList dans le
-   fichier, triés par nombre de `.map(`) — la relancer si besoin.
-2. Puis : synthèse de section F3 et passage à F4.
+1. Balayage `ScrollView` TERMINÉ (F3-4). `UserStatsTab`, `CasinoScreen`,
+   `ProfileCustomizationScreen`, `TweetDetailScreen`, `NewConversationScreen`,
+   `GroupMembersScreen` sont ÉCARTÉS et documentés comme sains dans F3-4 —
+   énumérations figées ou listes bornées. Ne pas les rouvrir.
+2. Il reste éventuellement : `getItemLayout` absent sur les listes à hauteur
+   fixe, et clés non uniques (`keyExtractor`) — non encore recensés.
+3. Puis : synthèse de section F3 et passage à F4.
+
+**NOTÉ POUR F4 (ne pas le redécouvrir)** : `CasinoScreen.tsx:212` —
+`CONFETTI.map()`, un ensemble de pièces animées simultanément.
 
 **ÉCARTÉ après vérification, ne pas y revenir (2)** : `TweetDetailScreen` —
 `replies.map()` dans un `ScrollView`, MAIS `getTweetReplies` est plafonné à
