@@ -13,8 +13,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | F4 | FLUIDITÉ — animations et thread UI | **TERMINÉE** | `AUDIT-F4.md` |
 | R1 | RAPIDITÉ — démarrage | **TERMINÉE** | `AUDIT-R1.md` |
 | R2 | RAPIDITÉ — réseau | **TERMINÉE** | `AUDIT-R2.md` |
-| R3 | RAPIDITÉ — poids du bundle | **EN COURS** | `AUDIT-R3.md` |
-| S1 | SÉCURITÉ — secrets dans l'historique git | À FAIRE | — |
+| R3 | RAPIDITÉ — poids du bundle | **TERMINÉE** | `AUDIT-R3.md` |
+| S1 | SÉCURITÉ — secrets dans l'historique git | **EN COURS** | `AUDIT-S1.md` |
 | S2 | SÉCURITÉ — ce qui part en clair dans le bundle | À FAIRE | — |
 | S3 | SÉCURITÉ — appareil et chaîne de build | À FAIRE | — |
 
@@ -108,97 +108,58 @@ pas le rouvrir.
 
 ---
 
-## Reprendre à — R3 (EN COURS)
+## R3 — TERMINÉE
 
-**Constats écrits et poussés :** R3-5 (doublon vidéo : `expo-av` 11 fichiers
-*et* `react-native-video` 2 fichiers, ce dernier pour la seule prop `filter`
-d'un seul écran — et cette prop est **iOS-seule**, sans garde `Platform.OS` :
-sur Android l'aperçu de filtre est inerte alors que le rendu serveur, lui,
-filtre bien), R3-4 (**191** fichiers importent
-`@expo/vector-icons` par le **baril**, 3 par le chemin direct — correctif `sed`
-mécanique ; gain en TEMPS d'évaluation, PAS en poids d'APK), addendum R3-2
-(`inlineRequires: true` est activé dans `metro.config.js` — bon réglage, mais
-il ne sort pas `CasinoScreen` du chemin de démarrage car la référence est
-consommée dans le JSX du navigateur ; `React.lazy`/`getComponent` reste le seul
-correctif), R3-3 (20 fichiers de police embarqués, dont
-17 pour une option cosmétique + 2 paquets `@expo-google-fonts` — `inter` et
-`plus-jakarta-sans` — jamais importés, à ajouter à R3-1. **SAIN et notable** :
-`fonts.ts` importe chaque graisse individuellement, défaut de tree-shaking
-déjà évité sciemment), R3-2 (83 imports d'écrans **statiques** dans
-`MainNavigator`, **aucun `React.lazy`/`Suspense` dans tout le dépôt** ;
-`three`+`expo-three`+`expo-gl` évalués au démarrage pour le seul
-`SlotReel3D.tsx` — piège du correctif : l'export nommé `cellForSymbol` doit
-être déplacé), R3-1 (6 dépendances déclarées et jamais
-importées ; seule `react-native-maps` coûte vraiment — module natif autolinké
-dans l'APK. Les 5 autres ne pèsent rien dans le bundle : Metro n'empaquette pas
-ce qu'aucun import n'atteint — **ce point de précision est important, ne pas le
-perdre**).
+5 constats (`AUDIT-R3.md`) : 2 MAJEURS (R3-1 dépendances mortes dont
+`react-native-maps` natif ; R3-2 `three` évalué au démarrage), 3 modérés
+(R3-3 polices, R3-4 baril d'icônes, R3-5 doublon vidéo). Synthèse, « vérifié
+SAIN » et **limites de couverture** en fin de `AUDIT-R3.md` — **la lire avant
+de rouvrir quoi que ce soit sur R3**.
 
-**Avertissement de méthode noté en tête de `AUDIT-R3.md`** : `node_modules/`
-n'est PAS installé sur la machine d'audit → aucun poids de dépendance n'a pu
-être mesuré. Ne pas prétendre le contraire dans les constats suivants.
+Idée-force à reprendre en conclusion : **trois coûts distincts** (poids du
+binaire / temps de démarrage / maintenance) ; les confondre fait dire des
+choses fausses. Et **le casino est le point lourd unique** du dépôt (`three`
++ 618 Ko d'atlas = 44 % d'`assets/`).
 
-### Matériel DÉJÀ VÉRIFIÉ dans les passes précédentes — ne pas le redécouvrir
+**Mesure manquante et prioritaire** : `node_modules/` n'était pas installé →
+aucun poids n'a pu être mesuré. Faire une mesure d'APK avant/après avant
+d'agir sur R3-1, R3-3, R3-5.
 
-Code mort / doublons recensés au fil de F2, F4, R2 :
+---
 
-- `src/components/TopNavbar.tsx` — importé NULLE PART.
-- `src/components/PremiumUsernameGlow.tsx` — importé NULLE PART (2 boucles).
-- `src/components/PremiumBadges.tsx` — importé NULLE PART (3 boucles).
-- **CINQ** barres de navigation basse coexistent : `navigation/BottomTabNavigator`
-  (la vraie), `components/BottomTabNavigator`, `components/ModernBottomNavbar`,
-  `components/UnifiedBottomNavbar`, `components/EnhancedBottomTabNavigator`.
-- `VerifiedBadge.tsx:10-12` importe `BlurView`, `MaskedView`, `Svg` sans jamais
-  les rendre → **imports lourds jamais utilisés, cible directe de R3**.
-- `clampWorklet` dupliqué à l'identique (`ImageViewer.tsx:57`,
-  `ImageViewerPaper.tsx:73`) alors que `utils/gesture.ts:66` exporte `clamp`.
-- `SearchScreen` : `startAnimations = () => {}` vide, et 5 `Animated.View`
-  inertes (F2-6).
-- `TweetDetailScreen:344-484`, `:773`, `:1376-1400` — ~130 lignes de code mort
-  (`currentAlgorithm === 'progressive'` inatteignable, aucune écriture de cette
-  valeur dans tout `src/`). Détail et réserves dans R2-5.
-- **Aucune configuration ESLint** dans le dépôt (ni `.eslintrc*`, ni
-  `eslint.config.*`, ni script `lint`) — donc aucun garde-fou contre les
-  imports morts.
+## FLUIDITÉ + RAPIDITÉ (F1-F4, R1-R3) — TERMINÉES. Priorités n°1 et n°2 du brief entièrement couvertes.
 
-### Plan R3 — ce qu'il reste à faire
+---
 
-1. ~~dépendances mortes~~ **FAIT (R3-1)**. ~~three/lazy~~ **FAIT (R3-2)**.
-   Reste : **doublon de rôle vidéo** — `expo-av` (11 fichiers, dont
-   `Video`+`Audio`) *et* `react-native-video` (2 fichiers :
-   `VideoEditorScreen.tsx:18` pour son `FilterType` iOS, `videoFilters.ts:1`
-   pour le type seul). **Deux piles vidéo natives dans l'APK pour une seule
-   fonctionnalité d'un seul écran.** Vérifier aussi si `expo-av` est déprécié
-   en SDK 54 au profit d'`expo-video`/`expo-audio` (je ne peux pas le
-   confirmer hors ligne — ne pas l'affirmer sans source).
-   ~~polices~~ **FAIT (R3-3)**.
-2. ~~tree-shaking~~ **FAIT** : `fonts.ts` SAIN (R3-3), `@expo/vector-icons`
-   → R3-4. Les `import * as X` restants sont tous des modules Expo natifs
-   (`ImagePicker` ×7, `Network` ×4, `Notifications` ×3, `SecureStore`,
-   `Location`, `Device`, `WebBrowser`, `ScreenOrientation`, `Linking`,
-   `Battery`) : **forme normale et sans alternative** pour ces paquets, PAS un
-   défaut — vérifié, ne pas le rouvrir.
-   Reste éventuellement : le baril `src/components/ui/index.ts`.
-3. Ressources embarquées inutilement : croiser `assets/` (déjà mesuré en F1 —
-   **relire `AUDIT-F1.md` plutôt que remesurer**) avec ce qui est réellement
-   `require`/importé.
-4. ~~`metro.config.js`~~ **LU** : `inlineRequires: true` (bon réglage, voir
-   addendum R3-2). ~~`babel.config.js`~~ **LU** : `transform-remove-console`
-   actif en production avec `exclude: ['warn','error']` — **BON**, à citer en
-   SAIN, et cela **répond par avance** au point « journaux » routé vers S3
-   depuis R2-5. Reste : vérifier Hermes dans `app.config.js`.
-5. ~~doublon vidéo~~ **FAIT (R3-5)**.
-6. Reste : Hermes dans `app.config.js`, `assets/` (**déjà mesuré en F1 — relire
-   `AUDIT-F1.md`, ne pas remesurer** ; noter seulement l'angle bundle : les
-   618 Ko d'`assets/casino/` = 44 % de tout `assets/` (1,4 Mo) pour le SEUL
-   composant qui tire aussi `three` — cf. R3-2), puis **synthèse R3** et
-   passage à **S1**.
+## Reprendre à — S1 (EN COURS)
 
-### Matériel à ROUTER vers S3 (sécurité, plus tard)
+**Aucun constat écrit pour l'instant.** `AUDIT-S1.md` reste à créer.
 
-- `TweetDetailScreen` `loadProgressiveInfo` journalise les réponses réseau
-  complètes en clair (`console.log`, `:356/362/366/375`). Vérifier si les
-  `console.log` sont retirés en production.
+⚠️ **RAPPEL CRITIQUE — le dépôt est PUBLIC.** Dans `AUDIT-S1.md` et dans ce
+fichier : **uniquement le décompte et la gravité**. Jamais un secret, jamais un
+chemin exact, jamais un commit précis, jamais une méthode. Le détail va dans le
+MESSAGE FINAL, que seul le propriétaire lit.
+
+### Plan S1 — historique git complet
+
+Le dépôt est passé de privé à public : **tout secret ayant existé dans
+l'historique est compromis**, même supprimé depuis.
+
+1. `git log --all --oneline | wc -l` pour dimensionner.
+2. `git log -S` sur les motifs usuels (`api_key`, `secret`, `token`,
+   `password`, `Bearer `, `-----BEGIN`, `AIza`, `sk_`, `ghp_`, `xox`).
+3. `git log --all --diff-filter=A --name-only` pour les fichiers ajoutés puis
+   supprimés (`.env`, `*.keystore`, `*.p8`, `*.p12`, `google-services.json`,
+   `serviceAccount*.json`).
+4. `git rev-list --all` + recherche dans les objets non atteignables si le
+   temps le permet.
+5. Vérifier `.gitignore` et `.env.example` (ce dernier ne doit contenir que
+   des valeurs factices).
+
+**Piste déjà connue à instruire ici** : `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`
+(citée dans `plugins/withGoogleMapsApiKey.js` et `.env.example`) — le préfixe
+`EXPO_PUBLIC_` la publie de toute façon (→ **S2**), mais vérifier si une valeur
+réelle a transité dans l'historique.
 
 ## Rappels pour la prochaine exécution
 

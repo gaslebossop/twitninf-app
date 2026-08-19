@@ -464,3 +464,98 @@ une lecture de `react-native-video` (interdite ici). Si une version récente a
 ajouté un équivalent Android, la moitié « expérience » de ce constat tombe —
 la moitié « deux piles natives pour un écran » reste vraie dans tous les cas.
 À vérifier en une minute sur la documentation du paquet avant d'agir.
+
+---
+
+# Synthèse R3 — section TERMINÉE
+
+**5 constats.** Par gain décroissant :
+
+| # | Constat | Gravité |
+|---|---|---|
+| R3-1 | 6 dépendances déclarées, 0 utilisée — dont `react-native-maps`, module **natif** autolinké dans chaque APK pour une carte devenue une `WebView` | **MAJEUR** |
+| R3-2 | 83 imports d'écrans statiques, aucun `React.lazy` ; `three`+`expo-three`+`expo-gl` évalués au démarrage pour un seul composant de casino | **MAJEUR** |
+| R3-3 | 20 fichiers de police embarqués, 17 pour une option cosmétique ; 2 paquets `@expo-google-fonts` jamais importés | modéré |
+| R3-4 | 191 fichiers importent les icônes par le **baril**, 3 par le chemin direct | modéré |
+| R3-5 | Deux piles vidéo natives ; l'aperçu de filtre est **inerte sur Android** | modéré |
+
+## Ce que la section apprend, au-delà de la liste
+
+**1. Distinguer trois coûts, sous peine de dire des choses fausses.** React
+Native n'a pas de découpage de bundle : « alléger » veut dire trois choses
+différentes, et elles ne se corrigent pas de la même façon.
+
+| Coût | Ce qui l'aggrave ici | Constats |
+|---|---|---|
+| **Poids du binaire** (ce que l'utilisateur télécharge) | modules **natifs** liés par autolinking, `assets/` embarqués | R3-1 (`react-native-maps`), R3-5 (2e pile vidéo), R3-3 (17 polices) |
+| **Temps de démarrage** (évaluation JS) | modules lourds atteints depuis le chemin du premier rendu | R3-2 (`three`), R3-4 (baril d'icônes), R3-3 (polices, cf. R1-1) |
+| **Coût de maintenance** (installation, CI, sécurité) | dépendances mortes | R3-1 (5 paquets inertes dans le bundle mais bien réels dans `package-lock.json`) |
+
+Les 5 dépendances mortes non natives de R3-1 ne coûtent **rien** à
+l'utilisateur : le dire clairement évite de faire passer un ménage de
+`package.json` pour un gain de performance. À l'inverse, `react-native-maps`
+coûte des mégaoctets à tout le monde sans qu'aucune ligne de JavaScript ne le
+touche — c'est exactement le coût qu'un audit de bundle « à la lecture des
+imports » manquerait.
+
+**2. Le casino est le point lourd unique de l'application.** Trois constats
+distincts convergent sur `src/components/casino/SlotReel3D.tsx` : il tire
+`three` + `expo-three` + `expo-gl` (R3-2), et ses deux atlas de textures pèsent
+**618 Ko, soit 44 % de tout le dossier `assets/`** (1,4 Mo — mesuré ; les atlas
+eux-mêmes ont été jugés SAINS en **F1**, leur format est bon). Un seul écran, et
+de loin le premier poste de poids du dépôt. C'est aussi le plus facile à
+différer : personne n'ouvre le casino au lancement.
+
+**3. Le sixième « le bon réflexe existe, il n'a pas été propagé ».** Voir R3-4.
+Le dépôt connaît le chemin d'import direct (3 fichiers), l'import de police par
+graisse (`fonts.ts`, avec la raison écrite), `inlineRequires`, ProGuard. Chaque
+bonne pratique est présente **une fois** et absente partout ailleurs. Le remède
+utile n'est plus une correction : c'est **ESLint avec
+`no-restricted-imports`**, qui rendrait les 191 mauvais imports impossibles à
+écrire. Le dépôt n'a aucune configuration ESLint.
+
+## Ce que j'ai vérifié et trouvé SAIN — ne pas rouvrir
+
+- **`babel.config.js`** : `transform-remove-console` actif **uniquement en
+  production**, avec `exclude: ['warn', 'error']` — les traces bavardes
+  disparaissent en release, les diagnostics de crash restent. Le commentaire
+  cite même le vrai motif (« api.ts en contient à lui seul plus de 150 »).
+  Cela **répond par avance** au point « journaux » que R2-5 routait vers S3 :
+  les `console.log` de `loadProgressiveInfo` ne partent pas en production.
+- **`metro.config.js`** : `inlineRequires: true`, avec la raison commentée.
+  Bon réglage (voir la nuance en addendum de R3-2).
+- **`app.config.js:166-201`** : `enableProguardInReleaseBuilds: true` **et**
+  `enableShrinkResources: true` — minification et élagage des ressources actifs
+  en release, avec un `extraProguardRules` ciblé pour slf4j. C'est la
+  configuration que beaucoup de projets Expo oublient.
+- **Moteur JS** : aucun `jsEngine` n'est forcé, donc **Hermes** (défaut du SDK
+  54) — le bon choix, rien à faire.
+- **`src/theme/fonts.ts`** : import par graisse individuelle, avec le motif
+  écrit en tête de fichier. Le défaut de tree-shaking le plus classique, déjà
+  évité sciemment (R3-3).
+- **Les 11 `import * as X`** restants sont tous des modules Expo natifs
+  (`ImagePicker`, `Network`, `Notifications`, `SecureStore`, `Location`,
+  `Device`, `WebBrowser`, `ScreenOrientation`, `Linking`, `Battery`) : c'est la
+  forme d'import normale et sans alternative pour ces paquets. **Pas un
+  défaut.**
+- **`assets/`** : 1,4 Mo au total, dont 618 Ko de casino et 356 Ko de police de
+  marque. Les icônes d'application (`icon.png`, `adaptive-icon.png`,
+  `splash-icon.png`, 124 Ko chacune) sont analysées en **F1** — s'y reporter.
+
+## Limites de la couverture R3 — ce que je n'ai PAS pu faire
+
+- **Aucun poids de dépendance n'a été mesuré.** `node_modules/` n'est pas
+  installé sur la machine d'audit et le brief interdit de l'explorer. Tous les
+  ordres de grandeur donnés dans cette section viennent des tailles publiées
+  des paquets et sont signalés comme tels. **La première chose à faire avant
+  d'agir sur R3-1, R3-3 ou R3-5 est une mesure d'APK avant/après** — elle
+  transformera ces estimations en chiffres et classera les trois correctifs
+  dans le bon ordre.
+- **Aucune analyse du bundle produit** (`npx expo export` + inspection de la
+  source map) : c'est l'outil qui donnerait le poids réel par module, et il
+  demande une installation complète. C'est le complément naturel de cette
+  section.
+- `android/` et `ios/` non explorés (interdits par le brief) : les réserves de
+  R3-1 sur le retrait de `react-native-maps` en découlent.
+- Je n'ai pas audité le poids des **dépendances transitives** ni cherché de
+  doublons de version dans `package-lock.json`.
