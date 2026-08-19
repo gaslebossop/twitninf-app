@@ -12,8 +12,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | F3 | FLUIDITÉ — listes | **TERMINÉE** | `AUDIT-F3.md` |
 | F4 | FLUIDITÉ — animations et thread UI | **TERMINÉE** | `AUDIT-F4.md` |
 | R1 | RAPIDITÉ — démarrage | **TERMINÉE** | `AUDIT-R1.md` |
-| R2 | RAPIDITÉ — réseau | **EN COURS** | `AUDIT-R2.md` |
-| R3 | RAPIDITÉ — poids du bundle | À FAIRE | — |
+| R2 | RAPIDITÉ — réseau | **TERMINÉE** | `AUDIT-R2.md` |
+| R3 | RAPIDITÉ — poids du bundle | **EN COURS** | `AUDIT-R3.md` |
 | S1 | SÉCURITÉ — secrets dans l'historique git | À FAIRE | — |
 | S2 | SÉCURITÉ — ce qui part en clair dans le bundle | À FAIRE | — |
 | S3 | SÉCURITÉ — appareil et chaîne de build | À FAIRE | — |
@@ -89,107 +89,32 @@ SAIN et à ne pas rouvrir : les 8 « gates » (délai de décantation + `if visi
 
 ---
 
-## Reprendre à — R2 (EN COURS)
+## R2 — TERMINÉE
 
-**Constats écrits et poussés :** R2-4 (pagination : 4 listes sans bornes +
-`TweetDetailScreen:504` `offset: 0` en dur, la 21e réponse est inatteignable —
-MAJEUR), R2-1 (badge messages : toute la liste des
-conversations + `getCurrentUser()` en série, toutes les 30 s, sur tous les
-écrans — CRITIQUE), R2-2 (sur-récupération : `limit: 500` de profils complets
-pour un Set d'ids, + `getCurrentUser()` sur 16 sites), R2-3 (ni cache ni
-déduplication dans `api.ts` ; `/api/messages/conversations` téléchargée 3 fois ;
-+ `TradingScreen` qui sonde hors focus).
+5 constats (`AUDIT-R2.md`) : 1 CRITIQUE (R2-1), 3 MAJEURS (R2-2, R2-3, R2-4),
+1 mineur latent (R2-5). Synthèse, « vérifié SAIN » et **limites de couverture**
+en fin de `AUDIT-R2.md` — **la lire avant de rouvrir quoi que ce soit sur R2**.
 
-### `api.ts` (2 904 l.) — INSTRUIT, résultat clé
+Fil rouge : 3 constats sur 5 sont le même défaut — le client redemande ce qu'il
+a déjà. **Une** brique manquante (déduplication des `GET` en vol dans
+`makeRequest`) éteint l'essentiel de R2-1 et R2-3.
 
-Recherche faite sur `cache|dedup|inFlight|pending|AbortController` :
-**il n'y a NI cache, NI déduplication de requêtes en vol, NI annulation
-pilotée par l'appelant.** L'unique `AbortController` (`:322-328`) sert
-uniquement au **timeout**, jamais à annuler quand on quitte un écran.
-`makeRequest` (`:341`) va droit au réseau à chaque appel. → C'est le socle du
-constat groupé R2-x « ni cache ni déduplication » qui reste à rédiger.
+Le **fil d'accueil est SAIN** côté réseau (le mieux orchestré du dépôt) — ne
+pas le rouvrir.
 
-### PREUVES DÉJÀ RÉUNIES pour les constats R2 suivants — ne pas re-chercher
+---
 
-**A. Même donnée demandée plusieurs fois :**
-- `/api/messages/conversations` appelé depuis **3 endroits** :
-  `unreadService.ts:24` (badge), `MessagesScreen.tsx:109` (la liste),
-  `ConversationThreadScreen.tsx:699` (juste pour les participants d'UNE
-  conversation). Route **sans pagination**. Ouvrir Messages puis une
-  conversation = la liste complète téléchargée 2 fois en quelques secondes.
-- `getCurrentUser()` : **16 sites d'appel** (5 dans `AuthContext`, puis
-  `GroupMembersScreen` ×2, `NewConversationScreen`, `MessagesScreen`,
-  `ConversationThreadScreen`, `CommentSheet`) — alors que `AuthContext` tient
-  déjà `user`. Chaque appel est un aller-retour pour une donnée locale.
+## RAPIDITÉ (R1-R2) — priorité n°2 du brief couverte pour le démarrage et le réseau.
 
-**B. Requêtes en série parallélisables :**
-- `ConversationThreadScreen:699` puis `:729` — toute la liste des
-  conversations PUIS les messages, en série. 2 allers-retours avant le 1er
-  message affiché.
-- `unreadService.ts:23` puis `:24` — liste PUIS `getCurrentUser()`, en série.
-- `App.tsx:80` puis `:83` (push) — déjà écrit en R1-3, ne pas redoubler.
+---
 
-**C. Pagination absente** (établi en F3-3) : messages d'une conversation,
-liste des conversations, commentaires (`CommentSheet:397`, plafond brut 100),
-stories (`storiesService.ts:99`).
+## Reprendre à — R3 (EN COURS)
 
-**D. Manque fonctionnel** : `TweetDetailScreen:504` — réponses plafonnées à
-`limit: 20` avec `offset: 0` EN DUR et aucun « charger plus ». Impossible de
-lire la 21e réponse d'un tweet.
+**Aucun constat écrit pour l'instant.** `AUDIT-R3.md` reste à créer.
 
-**E. Sondages périodiques recensés :**
-- `BottomTabNavigator:97` — badges, 30 s (R2-1).
-- `BottomTabNavigator:70-81` — `liveService.getLives()`, 30 s.
-- `TradingScreen:72-78` — 30 s, **non suspendu quand l'écran perd le focus**.
-- `useForegroundInterval` existe et suspend en arrière-plan : BON outil, déjà
-  utilisé par la navbar. `TradingScreen` ne s'en sert pas → constat facile.
+### Matériel DÉJÀ VÉRIFIÉ dans les passes précédentes — ne pas le redécouvrir
 
-**F. BON point à citer** : `TweetDetailScreen:502` — `Promise.all` pour
-paralléliser tweet + réponses. Et `getNotificationsUnreadCount`
-(`unreadService.ts:48`) — endpoint dédié, le serveur compte. Patron à recopier.
-
-### FIL D'ACCUEIL — INSTRUIT, et c'est SAIN. Ne pas rouvrir.
-
-L'orchestration réseau de `TweetsScreen` est bonne : `Promise.allSettled` /
-`Promise.all` pour les appels indépendants (avec commentaires expliquant le
-choix), cache par onglet (`tabCacheRef`), garde `if (followingIds.size === 0)`,
-repli sur cache (`servedFromCacheRef`), Explorer isolé. Détaillé dans le
-« SAIN » de R2-2. **Seul reproche : le volume d'UNE requête (limit 500).**
-
-### RESTE À INSTRUIRE POUR R2
-
-R2-4 (pagination) et R2-5 (chaîne progressive) : **ÉCRITS ET POUSSÉS**.
-
-Reste : **synthèse R2**, passage de R2 à TERMINÉE, puis R3.
-
-À ROUTER vers R3 depuis R2-5 : `TweetDetailScreen:344-484`, `:773`,
-`:1376-1400` = ~130 lignes de code mort (`currentAlgorithm === 'progressive'`
-est inatteignable — aucune écriture de cette valeur dans tout `src/`).
-À ROUTER vers S3 : `loadProgressiveInfo` journalise les réponses réseau
-complètes (`console.log`, `:356/362/366/375`).
-
-Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
-
-### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
-
-- `ConversationThreadScreen:725` — `loadMessages` récupère TOUTE la liste des
-  conversations juste pour trouver les participants d'UNE conversation, EN
-  SÉRIE avant de demander les messages. 2 allers-retours séquentiels avant le
-  premier message.
-- **4 listes sans pagination** : messages d'une conversation, liste des
-  conversations (`MessagesScreen:109`), commentaires (`CommentSheet:397`,
-  plafond brut de 100), stories (`storiesService.ts:99`).
-- `TweetDetailScreen:504` — réponses plafonnées à `limit: 20` avec
-  `offset: 0` EN DUR et aucun « charger plus » : impossible de lire la 21e
-  réponse. Manque fonctionnel.
-- `TweetDetailScreen:502` — `Promise.all` pour paralléliser tweet + réponses.
-  BON point, à citer en exemple.
-- `TradingScreen:72-78` — `setInterval` de 30 s qui n'est PAS suspendu quand
-  l'écran perd le focus.
-- Chiffre de volume réel : **~977 tweets vivants en prod**
-  (`ExploreWall.tsx:191`). Seule donnée de volume du dépôt.
-
-### Matériel déjà vérifié, à ROUTER vers R3 (bundle) — code mort recensé
+Code mort / doublons recensés au fil de F2, F4, R2 :
 
 - `src/components/TopNavbar.tsx` — importé NULLE PART.
 - `src/components/PremiumUsernameGlow.tsx` — importé NULLE PART (2 boucles).
@@ -198,15 +123,35 @@ Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
   (la vraie), `components/BottomTabNavigator`, `components/ModernBottomNavbar`,
   `components/UnifiedBottomNavbar`, `components/EnhancedBottomTabNavigator`.
 - `VerifiedBadge.tsx:10-12` importe `BlurView`, `MaskedView`, `Svg` sans jamais
-  les rendre.
+  les rendre → **imports lourds jamais utilisés, cible directe de R3**.
 - `clampWorklet` dupliqué à l'identique (`ImageViewer.tsx:57`,
   `ImageViewerPaper.tsx:73`) alors que `utils/gesture.ts:66` exporte `clamp`.
 - `SearchScreen` : `startAnimations = () => {}` vide, et 5 `Animated.View`
   inertes (F2-6).
+- `TweetDetailScreen:344-484`, `:773`, `:1376-1400` — ~130 lignes de code mort
+  (`currentAlgorithm === 'progressive'` inatteignable, aucune écriture de cette
+  valeur dans tout `src/`). Détail et réserves dans R2-5.
 - **Aucune configuration ESLint** dans le dépôt (ni `.eslintrc*`, ni
-  `eslint.config.*`, ni script `lint`).
+  `eslint.config.*`, ni script `lint`) — donc aucun garde-fou contre les
+  imports morts.
 
----
+### Plan R3 — ce qu'il reste à faire
+
+1. `package.json` : lire les dépendances, repérer les **lourdes** et les
+   **doublons de rôle** (deux bibliothèques d'icônes, deux de dates, etc.).
+2. Imports empêchant le tree-shaking : `import * as X`, imports de barils
+   (`lodash` entier vs `lodash/xxx`), `react-native-vector-icons` en entier.
+3. Ressources embarquées inutilement : croiser `assets/` (déjà mesuré en F1 —
+   **relire `AUDIT-F1.md` plutôt que remesurer**) avec ce qui est réellement
+   `require`/importé.
+4. Vérifier si Hermes et le tree-shaking Metro sont activés
+   (`app.config.js`, `metro.config.js`).
+
+### Matériel à ROUTER vers S3 (sécurité, plus tard)
+
+- `TweetDetailScreen` `loadProgressiveInfo` journalise les réponses réseau
+  complètes en clair (`console.log`, `:356/362/366/375`). Vérifier si les
+  `console.log` sont retirés en production.
 
 ## Rappels pour la prochaine exécution
 

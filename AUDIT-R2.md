@@ -696,3 +696,81 @@ qui garde les inconvénients des deux.
 Au passage, `loadProgressiveInfo` journalise les réponses complètes en clair
 (`console.log('📡 Réponse getAlgorithmInfo:', response)`, `:356`, `:362`,
 `:366`, `:375`) — à revoir avec le point « journaux » de la section S3.
+
+---
+
+# Synthèse R2 — section TERMINÉE
+
+**5 constats.** Par gain décroissant :
+
+| # | Constat | Gravité |
+|---|---|---|
+| R2-1 | Badge messages : toute la liste des conversations + `getCurrentUser()` en série, toutes les 30 s, sur **tous** les écrans | **CRITIQUE** |
+| R2-2 | Sur-récupération : `limit: 500` de profils complets pour n'en tirer qu'un `Set` d'identifiants ; `getCurrentUser()` sur 16 sites | **MAJEUR** |
+| R2-3 | Ni cache, ni déduplication, ni annulation dans `api.ts` ; `/api/messages/conversations` téléchargée 3 fois ; `TradingScreen` sonde hors focus | **MAJEUR** |
+| R2-4 | 4 listes sans pagination ; `offset: 0` en dur → la 21e réponse d'un tweet est inatteignable | **MAJEUR** |
+| R2-5 | Chaîne de 4 requêtes en série rejouée à chaque « j'aime » — inatteignable aujourd'hui, latente sur les anciens appareils | mineur |
+
+## Le fil rouge de la section
+
+Trois des cinq constats sont **le même défaut vu sous trois angles** : le
+client redemande au serveur ce qu'il possède déjà, ou ce qu'il vient tout juste
+de demander. `getCurrentUser()` alors qu'`AuthContext` tient `user` (R2-2),
+`/api/messages/conversations` trois fois (R2-1, R2-3), aucune déduplication des
+requêtes en vol (R2-3). Ce n'est pas cinq corrections à faire, c'est **une
+brique manquante** : une couche de déduplication au niveau de `makeRequest`.
+Elle est sans risque (elle ne périme rien, contrairement à un cache), elle
+tient en une trentaine de lignes, et elle éteint à elle seule la majeure partie
+de R2-1 et de R2-3.
+
+Recommandation d'ordre, si le temps est compté :
+
+1. **Déduplication des `GET` en vol** dans `api.ts` — le meilleur rapport
+   gain/risque de toute la section.
+2. **`getCurrentUser()` → `useAuth().user`** sur les 16 sites — mécanique, sans
+   risque, supprime 16 allers-retours pour une donnée locale.
+3. **`offset` variable + `onEndReached`** sur les réponses d'un tweet — c'est
+   un manque fonctionnel, pas une lenteur : des réponses écrites par de vrais
+   utilisateurs ne sont aujourd'hui affichables par personne.
+4. Le reste (pagination des messages, `limit: 500`, `TradingScreen`) suit.
+
+## Ce que j'ai vérifié et trouvé SAIN — ne pas rouvrir
+
+- **Le fil d'accueil (`TweetsScreen`), l'écran le plus regardé, est le mieux
+  orchestré du dépôt** : `Promise.allSettled` / `Promise.all` sur les appels
+  indépendants avec commentaires justifiant le choix, cache par onglet
+  (`tabCacheRef`), garde `if (followingIds.size === 0)`, repli sur cache
+  (`servedFromCacheRef`), Explorer isolé. Seul reproche : le volume d'**une**
+  requête (`limit: 500`, R2-2). Le brief demandait de regarder le fil en
+  priorité — c'est fait, et c'est la bonne nouvelle de la section.
+- `TweetDetailScreen:502` — `Promise.all` tweet + réponses, avec un commentaire
+  expliquant pourquoi. Patron de référence du dépôt.
+- `unreadService.ts:48` (`getNotificationsUnreadCount`) — endpoint dédié où le
+  serveur fait le comptage. Exactement ce qui manque au badge messages
+  (R2-1) : le correctif de R2-1, c'est recopier ce patron.
+- `useForegroundInterval` — existe, suspend correctement hors premier plan,
+  correctement employé aux deux endroits de la barre d'onglets.
+- L'`AbortController` de `api.ts:325-328` — vrai bon réflexe, motivé par un
+  problème réel. Le manque n'est pas l'annulation, c'est qu'elle ne soit pas
+  exposée à l'appelant.
+- `MessagesScreen.tsx:109` — usage légitime de la route (c'est l'écran qui
+  affiche cette liste) ; cité comme l'un des trois appelants, pas comme un
+  défaut.
+
+## Limites de la couverture R2 — ce que je n'ai PAS instruit
+
+Pour qu'une passe suivante sache où creuser sans refaire l'existant :
+
+- **Les temps de réponse réels du serveur** : tout ce rapport raisonne sur le
+  **nombre** et le **volume** des requêtes, jamais sur leur latence mesurée.
+  Aucune mesure n'a été prise, aucune ne pouvait l'être depuis le code.
+- **Le comportement hors ligne et la reprise après coupure réseau** : non
+  audités.
+- **Les téléversements** (images, vidéos) et leur compression : non audités
+  côté réseau.
+- **Les écrans économie / trading / casino** au-delà du seul `setInterval` de
+  `TradingScreen` : non instruits.
+- **Le volume réel des collections** : une seule donnée existe dans tout le
+  dépôt (**~977 tweets vivants en production**, `ExploreWall.tsx:191`). Toute
+  priorisation dépendant du volume est donc une estimation prudente, jamais
+  une mesure — c'est dit explicitement là où ça compte (R2-4).
