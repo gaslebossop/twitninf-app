@@ -11,8 +11,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | F2 | FLUIDITÉ — rendus inutiles | **TERMINÉE** | `AUDIT-F2.md` |
 | F3 | FLUIDITÉ — listes | **TERMINÉE** | `AUDIT-F3.md` |
 | F4 | FLUIDITÉ — animations et thread UI | **TERMINÉE** | `AUDIT-F4.md` |
-| R1 | RAPIDITÉ — démarrage | **EN COURS** | `AUDIT-R1.md` |
-| R2 | RAPIDITÉ — réseau | À FAIRE | — |
+| R1 | RAPIDITÉ — démarrage | **TERMINÉE** | `AUDIT-R1.md` |
+| R2 | RAPIDITÉ — réseau | **EN COURS** | `AUDIT-R2.md` |
 | R3 | RAPIDITÉ — poids du bundle | À FAIRE | — |
 | S1 | SÉCURITÉ — secrets dans l'historique git | À FAIRE | — |
 | S2 | SÉCURITÉ — ce qui part en clair dans le bundle | À FAIRE | — |
@@ -73,44 +73,37 @@ partagée, activer ESLint) aux corrections ponctuelles.
 
 ---
 
-## Reprendre à — R1 (EN COURS)
+## R1 — TERMINÉE
 
-**Constats écrits et poussés :** R1-1 (20 polices chargées AVANT le premier
-écran, dont 17 pour une option cosmétique — CRITIQUE), R1-2 (polices PUIS
-authentification : deux attentes indépendantes en série, + jusqu'à 3
-allers-retours réseau avant le montage du navigateur — CRITIQUE).
+3 constats (`AUDIT-R1.md`) : 2 CRITIQUES (R1-1 polices, R1-2 polices+auth en
+série), 1 modéré (R1-3 push). `App.tsx` a été lu EN ENTIER — tout ce qui compte
+est dans le rapport, ne pas le relire.
 
-### `App.tsx` A ÉTÉ LU EN ENTIER (215 l.) — ne pas le relire, voici tout
+**Le démarrage est une chaîne séquentielle de 5 maillons** :
+20 polices → 3 lectures de stockage → 1 à 3 appels réseau d'auth → montage du
+navigateur → 1er appel du fil. Trois pourraient avancer ensemble.
 
-**Chemin de démarrage** : `useFonts(fontAssets)` (`:56`) → si pas prêt, rend
-`<AppLoadingScreen/>` et RIEN d'autre (`:127-135`) → filet `forceReady` à 4 s
-(`:59`). Donc bloquant 0-4 s. → C'est R1-1.
+SAIN et à ne pas rouvrir : les 8 « gates » (délai de décantation + `if visible`
++ file `StartupPopupContext`), les 4 fournisseurs d'événements (consolidés),
+`PatchNotesModal` (AsyncStorage seul).
 
-**ÉCARTÉ après vérification — ne pas y revenir :**
-- **Les 8 « gates » de démarrage sont SAINS**, et c'est même le meilleur
-  mécanisme du dépôt sur ce plan : chacun a un `STARTUP_SETTLE_MS`
-  (250 ms `ConsentGate:22`, 300 ms `SleepGate:70`, 400 ms
-  `UpdateAvailableGate:39`) et ne charge que `if (visible)`. Aucun ne tire sur
-  le réseau au montage. Coordonnés par `StartupPopupContext`. Documenté dans
-  le « SAIN » de R1-2.
-- Les 4 fournisseurs d'événements : consolidés, un seul charge (`App.tsx:190`).
-- `PatchNotesModal` : AsyncStorage seulement, pas de réseau.
-- `AppLoadingScreen` anime `icon.png` 1920×1920 → **DÉJÀ ÉCRIT en F1-1**,
-  cross-référencé dans R1-1. NE PAS LE RECOMPTER.
+---
 
-**PISTE R1 RESTANTE — la dernière :**
-1. **Notifications push au démarrage** (`App.tsx:64-126`) :
-   `registerForPushNotifications` PUIS `await setupFranceDailyLocalNotifications()`
-   en SÉRIE, puis une boucle `tryRegisterDevice` qui sonde `apiService.token`
-   par `setTimeout` toutes les secondes jusqu'à 10 fois (`:111-118`) au lieu
-   d'attendre un événement d'auth. Motif fragile ET travail au démarrage.
-   VÉRIFIÉ COMME EXISTANT, reste à instruire et rédiger. Nuance à creuser :
-   c'est dans un `useEffect` non bloquant, donc l'impact est à pondérer — ce
-   n'est probablement PAS un constat critique, plutôt modéré.
-2. Puis : synthèse de section R1 et passage à R2.
+## Reprendre à — R2 (EN COURS)
 
-**Autre élément utile :** `ScreenSkeleton` / `TweetSkeleton` sont utilisés
-(bon pour la perception du démarrage).
+**Aucun constat encore rédigé.** `AUDIT-R2.md` reste à créer.
+
+R2 = requêtes en chaîne parallélisables, même donnée demandée plusieurs fois,
+absence de cache/déduplication, sur-récupération, pagination absente, absence
+d'annulation à la sortie d'écran. **En priorité le fil d'accueil.**
+
+### PISTE PRIORITAIRE non encore instruite
+
+`src/services/api.ts` n'a PAS encore été lu (c'est le point d'entrée réseau,
+`apiService.*`). Y chercher : cache, déduplication, `AbortController`,
+`makeRequest`. C'est le point de départ de R2.
+`TweetsScreen` / `FeedGutterScreen` : leur chargement de fil n'a pas été
+instruit côté RÉSEAU (seulement côté rendu en F2/F3).
 
 ### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
 

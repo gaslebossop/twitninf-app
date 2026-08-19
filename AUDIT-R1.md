@@ -374,3 +374,209 @@ demande une revue, et c'est aussi celui qui rapporte le plus.
   panne réseau ne déclenche rien ». Un démarrage hors ligne ne déconnecte donc
   pas l'utilisateur — c'est le bon comportement, et c'est ce qui rend le
   correctif 3 envisageable.
+
+---
+
+## R1-3 — Notifications push au démarrage : deux appels en série, puis un sondage par `setTimeout` — MODÉRÉ
+
+`App.tsx:64-126` et `src/services/push.ts:39-70`
+
+Contrairement aux deux constats précédents, **ce travail ne bloque pas
+l'affichage** : il vit dans un `useEffect` qui part après le premier rendu.
+D'où le classement en modéré. Il entre néanmoins en concurrence directe avec le
+chargement du fil, sur le réseau comme sur le thread JS, à l'instant précis où
+l'application a le plus besoin des deux.
+
+### Ce qui se passe
+
+```tsx
+useEffect(() => {
+  (async () => {
+    const token = await registerForPushNotifications(projectId);   // :80
+    await setupFranceDailyLocalNotifications();                    // :83  ← EN SÉRIE
+    if (token) {
+      let retryCount = 0;
+      const tryRegisterDevice = async () => {
+        if (apiService?.token) {
+          await fetch(`${…}/api/notifications/register-device`, { … });   // :95
+        } else if (retryCount < maxRetries) {                             // :111
+          retryCount++;
+          setTimeout(tryRegisterDevice, 1000);      // ← sondage, jusqu'à 10 fois
+        }
+      };
+      tryRegisterDevice();
+    }
+  })();
+}, []);
+```
+
+**Trois remarques, par ordre d'importance.**
+
+**1. Le sondage de `apiService.token` est un motif fragile** (`:111-118`).
+La fonction ne sait pas quand l'authentification aboutira, alors elle **regarde
+toutes les secondes, jusqu'à dix fois**. Deux conséquences :
+
+- si l'authentification prend plus de 10 secondes — réseau très lent, exactement
+  le cas où l'on tient à ses notifications — **l'appareil n'est jamais
+  enregistré**, silencieusement (`:117`, un `console.error` supprimé en
+  release par `transform-remove-console`). L'utilisateur ne reçoit alors
+  aucune notification push, sans que rien ne le signale ;
+- si elle aboutit vite, on a quand même attendu jusqu'à une seconde pleine pour
+  rien, puisque le sondage ne se réveille qu'au prochain battement.
+
+Le contexte d'authentification sait exactement quand le jeton arrive. Le
+correctif naturel est de **réagir** plutôt que de sonder :
+
+```tsx
+// dans un composant sous AuthProvider
+const { isAuthenticated } = useAuth();
+useEffect(() => {
+  if (!isAuthenticated || !expoPushToken) return;
+  apiService.registerDevice(expoPushToken);      // part exactement quand il faut
+}, [isAuthenticated, expoPushToken]);
+```
+
+Plus de délai, plus de plafond de 10 essais, plus d'échec silencieux.
+
+**2. Les deux préparatifs sont en série sans nécessité** (`:80` et `:83`).
+`setupFranceDailyLocalNotifications()` programme des rappels **locaux** : il ne
+dépend en rien du jeton push distant. Les deux peuvent partir ensemble :
+
+```tsx
+const [token] = await Promise.all([
+  registerForPushNotifications(projectId),
+  setupFranceDailyLocalNotifications(),
+]);
+```
+
+**3. La permission de notification est demandée au tout premier lancement,
+pendant que le fil charge.** `registerForPushNotifications` appelle
+`Notifications.requestPermissionsAsync()` dès que le statut n'est pas
+`granted` (`push.ts:61-65`). Sur un premier lancement, la boîte de dialogue
+système s'ouvre donc **avant que l'utilisateur ait vu quoi que ce soit de
+l'application**.
+
+C'est moins une question de rapidité que d'à-propos, mais l'effet est mesurable :
+une demande de permission posée avant toute valeur montrée se solde
+habituellement par un refus, et un refus de notification est **définitif** —
+l'utilisateur devra aller dans les réglages système pour revenir dessus. Le
+dépôt sait pourtant faire mieux : les 8 « gates » de démarrage utilisent une
+file d'attente (`StartupPopupContext`) précisément pour poser leurs questions
+au bon moment. **La demande de permission push gagnerait à passer par le même
+mécanisme**, après le premier fil affiché.
+
+*Cette troisième remarque déborde le cadre de R1 — elle est signalée parce
+qu'elle se trouve sur le même chemin de code, pas parce qu'elle relève de la
+rapidité.*
+
+### Effet concret pour l'utilisateur
+
+Modéré et diffus : au lancement, une requête vers les serveurs Expo (obtention
+du jeton) et une écriture de programmation de notifications locales
+s'exécutent pendant que le fil essaie de charger. Sur un réseau contraint,
+c'est de la bande passante et des connexions prises à la seule requête qui
+intéresse l'utilisateur à cet instant.
+
+Le vrai défaut visible est ailleurs : **sur une connexion lente, les
+notifications push ne fonctionnent tout simplement pas**, parce que le sondage
+abandonne au bout de 10 secondes sans que personne ne le sache.
+
+### Correctif
+
+Par ordre de gain : le point 1 (réagir au lieu de sonder) corrige un bug
+fonctionnel réel ; le point 2 est gratuit ; le point 3 est un arbitrage
+produit à trancher.
+
+Un quatrième geste, gratuit lui aussi : différer tout ce bloc après le premier
+rendu utile, avec le même délai de décantation que les « gates »
+(`setTimeout(…, 400)`). Le fil part alors seul sur le réseau, et les
+notifications s'installent une fois la première image affichée.
+
+### Vérifié au passage
+
+- `registerForPushNotifications` sort immédiatement si `!Device.isDevice`
+  (`push.ts:46-49`) : aucun coût en simulateur.
+- Le bloc entier est enveloppé dans un `try/catch` (`App.tsx:122`) : un échec
+  des notifications ne peut pas faire tomber le démarrage.
+- Les nombreux `console.log` de `push.ts` disparaissent en release
+  (`transform-remove-console`) — mais c'est aussi ce qui rend l'échec du
+  sondage totalement muet en production.
+
+---
+
+# R1 — SYNTHÈSE DE SECTION
+
+## Les constats
+
+| # | Où | Défaut | Gravité |
+|---|---|---|---|
+| R1-2 | `App.tsx:127` → `AppNavigator.tsx:42` | polices PUIS authentification : deux attentes indépendantes en série, + 1 à 3 allers-retours réseau avant le montage du navigateur | **CRITIQUE** |
+| R1-1 | `App.tsx:56`, `theme/fonts.ts:102` | 20 polices bloquent le premier écran, dont 17 pour une option cosmétique | **CRITIQUE** |
+| R1-3 | `App.tsx:64-126` | 2 appels en série + sondage `setTimeout` de l'authentification (échec silencieux au-delà de 10 s) | MODÉRÉ |
+
+*(Rappel : `AppLoadingScreen` anime une image de 1920 × 1920 px — c'est **F1-1**,
+déjà écrit, sur ce même chemin de démarrage. Ne pas le recompter, mais le
+traiter avec R1-1 : les deux concernent le même écran.)*
+
+## Ce qu'il faut en retenir
+
+**Le démarrage est une chaîne entièrement séquentielle de cinq maillons**, là
+où trois d'entre eux pourraient avancer ensemble :
+
+```
+20 polices → 3 lectures de stockage → 1 à 3 appels réseau d'auth
+          → montage du navigateur → 1er appel réseau du fil → 1er tweet
+```
+
+Aucun de ces maillons n'est aberrant pris isolément. C'est leur **mise bout à
+bout** qui coûte, et c'est ce qui rend le problème invisible en relecture de
+code : il faut dessiner la chaîne pour le voir.
+
+**Les trois correctifs de R1-2 se composent** et attaquent chacun un maillon
+différent :
+
+1. monter l'arbre tout de suite et n'afficher le chargement qu'en
+   surimpression → les polices ne sont plus **avant** l'authentification ;
+2. ne bloquer que sur les 3 polices de marque (R1-1) → le maillon « polices »
+   devient négligeable ;
+3. lever `isLoading` dès la lecture du jeton en stockage → **un à trois
+   allers-retours réseau quittent le chemin critique**, et la requête du fil
+   part presque immédiatement.
+
+Le premier et le deuxième sont mécaniques et sans risque. **Le troisième est le
+plus rentable et le seul qui demande une revue** (les écrans doivent tolérer un
+`user` momentanément nul) — c'est celui à mesurer avant d'appliquer.
+
+## Ce que j'ai vérifié et trouvé SAIN
+
+- **Les 8 « gates » de démarrage** — délai de décantation individuel
+  (250/300/400 ms), chargement `if (visible)` seulement, coordination par
+  `StartupPopupContext`. Aucun ne tire sur le réseau au montage. **C'est le
+  meilleur mécanisme de démarrage du dépôt**, et il montre que la discipline
+  existe : elle n'a simplement pas été appliquée aux polices ni à
+  l'authentification.
+- **Les 4 fournisseurs d'événements** ont été consolidés : `EventsProvider`
+  est seul à charger, les trois autres « ne tiennent plus d'état et
+  n'interrogent plus le réseau » (`App.tsx:190-193`).
+- **Les 13 fournisseurs sont tous mémoïsés** (vérifié en F2) — leur montage ne
+  provoque pas de cascade de rendus.
+- `PatchNotesModal` ne lit qu'AsyncStorage, jamais le réseau.
+- Le repli sur échec de police (`fontError`) n'immobilise pas l'application.
+- La déconnexion automatique passe par un **seul** chemin
+  (`setSessionExpiredHandler`, `AuthContext.tsx:297`) et une panne réseau ne la
+  déclenche pas : un démarrage hors ligne ne déconnecte pas l'utilisateur.
+- `TweetSkeleton` / `ScreenSkeleton` sont utilisés pendant les chargements —
+  la perception du démarrage est soignée, même quand la durée ne l'est pas.
+
+## Limites de cette section
+
+- **Aucun chronométrage, aucun profil de démarrage.** Toute la section décrit
+  une structure séquentielle lue dans le code. Elle ne dit pas lequel des cinq
+  maillons domine réellement — un profil Hermes le dirait en une passe, et
+  vaut la peine d'être fait avant le correctif 3 de R1-2, qui est le plus
+  invasif.
+- Le poids des 17 polices Google n'est pas mesuré (règle de l'audit :
+  `node_modules/` interdit). Seul leur **nombre** est vérifié.
+- Le coût de montage des 13 fournisseurs a été instruit par la recherche
+  d'appels réseau et AsyncStorage dans leurs `useEffect` ; leur coût de rendu
+  propre (travail synchrone au montage) n'a pas été mesuré.
