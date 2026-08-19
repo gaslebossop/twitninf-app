@@ -182,6 +182,48 @@ du correctif, et il est facile à manquer.
 écrans peu fréquentés qui tirent du natif lourd. À faire avec une mesure du
 temps de démarrage avant/après, pas à l'aveugle.
 
+### Addendum — `inlineRequires` est activé, et ça ne sauve pas ce cas
+
+Découvert **après** la rédaction de ce constat, en lisant `metro.config.js` :
+
+```js
+config.transformer.getTransformOptions = async () => ({
+  transform: { experimentalImportSupport: false, inlineRequires: true },
+});
+```
+
+avec un commentaire qui vise exactement le problème décrit ici :
+« `inlineRequires` diffère l'évaluation de chaque module jusqu'à son premier
+usage réel. C'est ce qui rend supportable le fait que MainNavigator importe
+statiquement une quarantaine d'écrans ».
+
+C'est un **très bon réglage**, et il faut le porter au crédit du dépôt. Il
+change la mécanique : sans lui, les 83 écrans seraient évalués au **chargement
+du module** `MainNavigator` ; avec lui, chaque `require` est déplacé à son
+premier usage réel.
+
+**Mais il ne déplace pas l'usage hors du chemin de démarrage**, et c'est le
+point qui compte : le premier usage de `CasinoScreen` est
+`component={CasinoScreen}` (`MainNavigator.tsx:623`), à l'intérieur du JSX du
+navigateur. Ce JSX est évalué au **premier rendu** de `MainNavigator`,
+c'est-à-dire au démarrage. Le `require` inliné se déclenche donc là, et la
+chaîne `CasinoScreen → SlotReel3D → three` s'exécute quand même avant le
+premier écran utile. React Navigation ne *rend* pas l'écran, mais il doit
+**évaluer la référence** au composant pour la passer en prop.
+
+Trois conséquences :
+
+1. Le constat R3-2 **tient**, mais pour une raison plus précise que celle
+   écrite plus haut : ce n'est pas l'`import` statique en soi, c'est que la
+   référence au composant est consommée dans le rendu du navigateur.
+2. `React.lazy` reste le bon correctif — c'est même le **seul** qui marche ici,
+   puisque `inlineRequires`, déjà activé, ne suffit pas. Un `getComponent={() =>
+   require('../screens/CasinoScreen').default}` (accepté par React Navigation)
+   fait la même chose sans `Suspense`.
+3. Le commentaire de `metro.config.js` dit « une quarantaine d'écrans » ; ils
+   sont **83**. L'écart mérite d'être signalé : le réglage a été posé quand le
+   navigateur faisait la moitié de sa taille actuelle.
+
 ### Ce que j'ai vérifié et trouvé SAIN sur ce point
 
 `SlotReel3D.tsx` ne fait **aucun travail lourd au niveau du module** : ses
