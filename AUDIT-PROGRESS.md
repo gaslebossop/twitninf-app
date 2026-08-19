@@ -9,8 +9,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 |---|---|---|---|
 | F1 | FLUIDITÉ — poids réel des images | **TERMINÉE** | `AUDIT-F1.md` |
 | F2 | FLUIDITÉ — rendus inutiles | **TERMINÉE** | `AUDIT-F2.md` |
-| F3 | FLUIDITÉ — listes | **EN COURS** | `AUDIT-F3.md` |
-| F4 | FLUIDITÉ — animations et thread UI | À FAIRE | — |
+| F3 | FLUIDITÉ — listes | **TERMINÉE** | `AUDIT-F3.md` |
+| F4 | FLUIDITÉ — animations et thread UI | **EN COURS** | `AUDIT-F4.md` |
 | R1 | RAPIDITÉ — démarrage | À FAIRE | — |
 | R2 | RAPIDITÉ — réseau | À FAIRE | — |
 | R3 | RAPIDITÉ — poids du bundle | À FAIRE | — |
@@ -33,52 +33,57 @@ le dépôt n'a **aucune configuration ESLint**, donc pas de
 
 ---
 
-## Reprendre à — F3 (EN COURS)
+## F3 — TERMINÉE
 
-**Constats écrits et poussés :** F3-1 (`twitninfvideo` : aucune prop de
-virtualisation, ~10 lecteurs vidéo instanciés à l'ouverture — CRITIQUE),
-F3-2 (`ConversationThreadScreen` : historique entier sans pagination, liste non
-`inverted`, cascade de `scrollToEnd` à l'ouverture — CRITIQUE), F3-3
-(recensement exhaustif : 5 listes réglées sur 20 ; `MessagesScreen`,
-`CommentSheet` et les 2 chats de live à traiter), F3-4 (`SearchScreen` et
-`StoriesTray` : vraies listes rendues dans un `ScrollView`).
+4 constats (`AUDIT-F3.md`), dont 2 CRITIQUES (`twitninfvideo`,
+`ConversationThreadScreen`). Synthèse et « vérifié SAIN » en fin de fichier —
+**la lire avant de rouvrir quoi que ce soit sur F3**.
 
-**Recensement FAIT et rédigé (F3-3)** — 5 listes réglées sur 20. ATTENTION :
-chercher `<FlatList` seul est INSUFFISANT, `FeedGutterScreen` écrit
-`<Animated.FlatList`. Utiliser :
-`grep -rlE "<(Animated\.)?(FlatList|SectionList|VirtualizedList)|<FlashList" src/`
+Fil rouge dégagé, à reprendre en R2 : **quatre listes chargent sans aucune
+pagination** — messages d'une conversation, liste des conversations,
+commentaires (plafond brut de 100), stories. Le sujet est côté API.
 
-**Prochains constats F3 à rédiger, par priorité :**
-1. Balayage `ScrollView` TERMINÉ (F3-4). `UserStatsTab`, `CasinoScreen`,
-   `ProfileCustomizationScreen`, `TweetDetailScreen`, `NewConversationScreen`,
-   `GroupMembersScreen` sont ÉCARTÉS et documentés comme sains dans F3-4 —
-   énumérations figées ou listes bornées. Ne pas les rouvrir.
-2. Il reste éventuellement : `getItemLayout` absent sur les listes à hauteur
-   fixe, et clés non uniques (`keyExtractor`) — non encore recensés.
-3. Puis : synthèse de section F3 et passage à F4.
+---
 
-**NOTÉ POUR F4 (ne pas le redécouvrir)** : `CasinoScreen.tsx:212` —
-`CONFETTI.map()`, un ensemble de pièces animées simultanément.
+## Reprendre à — F4 (EN COURS)
 
-**ÉCARTÉ après vérification, ne pas y revenir (2)** : `TweetDetailScreen` —
-`replies.map()` dans un `ScrollView`, MAIS `getTweetReplies` est plafonné à
-`limit: 20` (`:504`) et `ReplyItem` est un `React.memo` (`:236`). Pas un
-constat F3. En revanche les réponses sont **plafonnées à 20 sans aucun moyen
-d'en charger plus** (`offset: 0` en dur, aucun `loadMore`) → à signaler en R2
-comme manque fonctionnel. Le `Promise.all` de `:502` est un BON point pour R2.
-`NewConversationScreen` / `GroupMembersScreen` : listes bornées (30-35). SAIN.
+**Aucun constat encore rédigé.** `AUDIT-F4.md` reste à créer.
 
-**ÉCARTÉ après vérification, ne pas y revenir** : `ImageViewerPaper` — pages
-plein écran et aucune prop de fenêtre, MAIS une galerie est plafonnée à 4
-images (`MAX_TWEET_IMAGES = 4`, `CreateTweetScreen.tsx:62`), donc les défauts
-RN n'ont aucun effet. Documenté en fin de `AUDIT-F3.md` comme SAIN.
+### Matériel DÉJÀ VÉRIFIÉ pendant F2/F3 — ne pas re-chercher
 
-### Matériel DÉJÀ VÉRIFIÉ pendant F2 — ne pas re-chercher
+**Pistes à creuser, vérifiées comme existantes :**
+- `CasinoScreen.tsx:212` — `CONFETTI.map()`, pièces animées simultanément.
+- `SearchScreen.tsx:102-103`, `:761`, `:863`, `:911`, `:942` — 5
+  `Animated.View` dont les valeurs (`fadeAnim`=1, `slideAnim`=0) ne sont
+  JAMAIS animées : aucun `Animated.timing/spring/parallel` dans le fichier.
+  Déjà écrit en F2-6, à ne PAS redoubler en F4 — juste citer.
+- `CreateTweetScreen.tsx:317-334` — `Animated.sequence` par caractère
+  (écrit en F2-7, ne pas redoubler).
+- `src/theme/motion.ts` — contient les bonnes valeurs maison
+  (`duration.fast/base`, `easing.out`, `spring`) : à utiliser comme référence
+  pour juger les autres animations.
+- `scrollEventThrottle` : à recenser (le brief cible la valeur 16 sur écran
+  120 Hz). `ConversationThreadScreen:1608` est à 160.
+- `onScroll` en JS vs `useAnimatedScrollHandler` : à recenser.
+- Appels d'une fonction JS ordinaire depuis un worklet SANS `runOnJS` : à
+  chercher (tue l'app sans journal). `ImageViewerPaper` fait ça correctement,
+  c'est la bonne référence.
 
-- `SearchScreen.tsx:979-1043` — `ScrollView` + `.map()` pour jusqu'à 40
-  résultats (`limit: 20` par type), aucune virtualisation. Vérifié en F2-6.
-- `MessagesScreen.tsx` + `ConversationThreadScreen.tsx` — `keyExtractor` inline
-  (mineur, signalé en F2-9).
+**DÉJÀ VÉRIFIÉ SAIN pour F4, ne pas relire :**
+- `src/utils/litPulse.ts` — horloge singleton de module, pilote natif, UNE
+  seule `Animated.loop` pour toute l'app. Excellent.
+- `AnimatedNameFill` (`ProfileDecoration.tsx:619`) — `useDrift` coupé quand
+  l'effet est `none` : pas de boucle par ligne de fil.
+- `ConversationThreadScreen:1341-1345` — `entering={FadeInDown}` gardé par
+  `justArrivedIdsRef` (Set purgé à 700 ms). Garde-fou CLAUDE.md respecté.
+- `CreateTweetScreen:1086`, `:1094` — ressorts focus/blur tension 50 /
+  friction 14 = amortissement quasi critique. CONFORME.
+- `twitninfvideo:543-544` — `onViewableItemsChanged`/`viewabilityConfig` en
+  `ref` (RN lève une exception sinon). Correct.
+- `ImageViewerPaper` — `runOnJS` systématique, `applyZoom` appelé aux bornes
+  du geste seulement, pas par image.
+
+---
 
 ## Rappels pour la prochaine exécution
 

@@ -577,3 +577,89 @@ seuls.
 `CasinoScreen.tsx:212` (`CONFETTI.map`) est en revanche à regarder en **F4** :
 un ensemble de pièces animées simultanément relève des animations, pas des
 listes.
+
+---
+
+# F3 — SYNTHÈSE DE SECTION
+
+## Les constats, par gain décroissant
+
+| # | Où | Défaut | Gravité |
+|---|---|---|---|
+| F3-1 | `twitninfvideo.tsx:533` | aucune prop de virtualisation sur un fil plein écran → ~10 lecteurs vidéo instanciés à l'ouverture | **CRITIQUE** |
+| F3-2 | `ConversationThreadScreen.tsx` | historique entier sans pagination, liste non `inverted`, cascade de `scrollToEnd` | **CRITIQUE** |
+| F3-4 | `SearchScreen.tsx:979` | jusqu'à 40 résultats montés dans un `ScrollView` | **MAJEUR** |
+| F3-4 | `StoriesTray.tsx:216` | tous les anneaux de story montés dans un `ScrollView`, en tête du fil d'accueil | **MAJEUR** |
+| F3-3 | `MessagesScreen.tsx:109` | conversations sans pagination, liste non réglée | **MAJEUR** |
+| F3-3 | `CommentSheet.tsx:397` | 100 commentaires + réponses imbriquées, liste non réglée | **MAJEUR** |
+| F3-3 | `LiveViewerScreen`, `GoLiveScreen` | chat de live sans plafond ni purge | MODÉRÉ |
+| F3-3 | `UserConnectionsScreen.tsx` | pagination infinie par 30, liste non réglée | MODÉRÉ |
+| F3-3 | 8 écrans secondaires | listes courtes non réglées | mineur |
+
+## Ce qu'il faut en retenir
+
+**Le même diagnostic qu'en F2, sur un autre plan.** Il existe une norme maison
+de virtualisation — `initialNumToRender 6-8 / maxToRenderPerBatch 5-6 /
+updateCellsBatchingPeriod 50 / windowSize 7 / removeClippedSubviews` par
+plateforme — appliquée avec discernement à **5 listes sur 20**, et jamais
+propagée. Ce sont les cinq listes de tweets. Les quinze autres, dont les quatre
+qui peuvent grandir sans limite, n'ont jamais fait l'objet d'une décision.
+
+**Trois écrans concentrent l'essentiel du gain** : le fil vidéo (F3-1), la
+conversation (F3-2) et la recherche (F3-4). Les deux premiers sont
+**critiques** et se corrigent sans toucher à la logique métier — le premier ne
+demande littéralement que cinq props.
+
+**Un fil rouge, plus important que les réglages** : quatre listes chargent des
+données **sans aucune pagination** — messages d'une conversation, liste des
+conversations, commentaires (plafond brut de 100), stories. Aucune prop de
+virtualisation ne compense un chargement non borné : la liste se protège du
+rendu, pas du réseau ni de la mémoire. **Le vrai sujet est côté API**, et il
+déborde de F3 vers R2.
+
+## Ce que j'ai vérifié et trouvé SAIN
+
+- **L'unicité des clés dans les deux fils est traitée, et remarquablement.**
+  `TweetsScreen:1636-1642` et `FeedGutterScreen:1744` : les entrées
+  publicitaires réutilisent le **vrai id** du tweet promu et échappent
+  volontairement à la déduplication (une même campagne peut légitimement
+  occuper plusieurs emplacements). Le `keyExtractor` en tient compte et renvoie
+  `ad-${ad_data.id}-${index}` pour les publicités, `String(item.id)` sinon —
+  avec un commentaire (`:1633-1635`) qui explique que sans cela « deux entrées
+  avec la même clé React font disparaître silencieusement l'une des deux ».
+  C'est exactement le défaut « clés non uniques » que cette section devait
+  chercher : il a été rencontré, compris et réglé. **Rien à signaler.**
+- `mergeUniqueTweets` (`FeedGutterScreen:202`, `TweetsScreen`) documente sur
+  trente lignes pourquoi la déduplication se fait par id de tweet en épargnant
+  les publicités, et quelle version antérieure du correctif était fausse. C'est
+  le genre de commentaire qui évite une régression deux ans plus tard.
+- **`ImageViewerPaper`** : `getItemLayout` exact, `initialScrollIndex` pour
+  ouvrir directement sur la bonne image, galerie plafonnée à 4 (`MAX_TWEET_IMAGES`).
+  Les défauts RN n'y ont aucun effet. Sain — détail plus haut.
+- **`StoriesTray` est mémoïsé en `ListHeaderComponent`**
+  (`TweetsScreen:1645-1652`), après avoir été écrit en JSX inline dans la prop —
+  le commentaire précise qu'il était « reconstruit à chaque like, chaque page
+  chargée, chaque changement d'état sans rapport ». Le défaut de re-rendu est
+  donc réglé ; le constat F3-4 qui le concerne porte sur autre chose (tous ses
+  enfants sont montés d'un coup), et les deux sont indépendants.
+- **`TweetDetailScreen`** : `replies.map()` dans un `ScrollView`, mais plafonné
+  à 20 par l'appel API et `ReplyItem` correctement mémoïsé. Sain pour F3.
+- **Le motif `.map()` dans un `ScrollView` est majoritairement légitime dans ce
+  dépôt** : sur les six plus gros consommateurs, quatre ne rendent que des
+  énumérations figées (préréglages, graduations, segments de roue). Détail et
+  tableau en F3-4.
+
+## Limites de cette section
+
+- Aucune mesure sur appareil. Les nombres cités (« ~10 lecteurs vidéo »,
+  « 40 résultats ») sont déduits des valeurs par défaut documentées de
+  `VirtualizedList` et des `limit` lus dans les appels API, pas chronométrés.
+- La cascade de `scrollToEnd` décrite en F3-2 est un raisonnement sur le
+  fonctionnement de `VirtualizedList`, pas une observation. Les trois faits qui
+  la fondent sont, eux, vérifiés dans le fichier.
+- Le nombre réel de groupes renvoyés par `/api/stories/feed` est inconnu : si
+  l'API en renvoie peu, F3-4 est surdimensionné sur ce point. Ce qui est
+  certain, c'est qu'aucune limite n'est posée.
+- `getItemLayout` n'a pas été recensé systématiquement sur les listes à hauteur
+  fixe. Il est signalé là où il manque et serait exact (F3-1, F3-4/`StoriesTray`) ;
+  ailleurs, les hauteurs sont variables et il n'est pas applicable.
