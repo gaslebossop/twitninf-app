@@ -24,7 +24,9 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 
 **Constats déjà écrits et poussés :** F2-1 (`CommentSheet`),
 F2-2 (`LiveViewerScreen`, chat du live), F2-3 (comparateurs `TweetRow` /
-`TweetRowGutter` : `tweet.author` jamais comparé).
+`TweetRowGutter` : `tweet.author` jamais comparé), F2-4
+(`ConversationThreadScreen` : `renderItem` dépend de `messages`, toutes les
+bulles se re-rendent à chaque message).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -36,11 +38,15 @@ F2-2 (`LiveViewerScreen`, chat du live), F2-3 (comparateurs `TweetRow` /
 - `TweetRowGutter` : comparateur complet sur ses 11 props, exclusion de
   `stats.views` documentée et justifiée. Sain.
 
-**Pistes vérifiées, constats restant à RÉDIGER :**
-1. `src/screens/ConversationThreadScreen.tsx:1291` — pas de composant
-   `MessageBubble` mémoïsé ; `renderItem` dépend de `messages` et
-   `expandedMessageId`, donc toute nouvelle bulle re-rend toutes les bulles
-   montées. ← PROCHAIN CONSTAT À RÉDIGER, à re-vérifier dans le code d'abord.
+**Constat VÉRIFIÉ, restant à RÉDIGER (prochain) :**
+1. `ConversationThreadScreen.tsx:1499-1507` — le tableau de dépendances de
+   `renderItem` OMET `seenReaders`, `hasBeenSeen`, `seenLabel`, `avatarUri` et
+   `conversationUsername`, tous lus dans la rangée « Vu » (`:1468-1496`).
+   `seenReaders` dépend de `readByUser` (`:1210`), que l'événement socket
+   `read:update` (`:820-828`) met à jour SEUL, sans toucher `messages`.
+   Conséquence vérifiée : l'accusé de lecture « Vu » n'apparaît pas tant qu'un
+   message n'est pas envoyé ou reçu. Revers exact de F2-4 (dépendances trop
+   larges) : ici elles sont trop étroites.
 
 **Note de chemin** : `TweetRowGutter.tsx` est dans
 `src/components/feed/paper2b/`, pas `src/components/feed/`.

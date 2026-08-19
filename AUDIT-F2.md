@@ -351,3 +351,145 @@ corrigent.
   `TweetRowGutter`, avec une justification écrite (`TweetRowGutter.tsx:732` :
   2B n'affiche plus les vues). Les deux choix sont corrects : **rien à signaler
   de ce côté.**
+
+---
+
+## F2-4 — Conversation : chaque message reçu re-rend toutes les bulles montées — MAJEUR
+
+`src/screens/ConversationThreadScreen.tsx:1291-1507`
+
+Cet écran a fait **la moitié** du chemin, et c'est ce qui rend le constat
+subtil. Le `renderItem` est bien mémoïsé, avec un commentaire qui nomme
+précisément le piège (`:1286-1289`) :
+
+> « Mémoïsé : une closure recréée à chaque rendu invalide la mémoïsation
+> interne de la FlatList, si bien que toutes les bulles montées se re-rendaient
+> à chaque frappe dans le compositeur. »
+
+C'est exact, et **la frappe est effectivement corrigée** : taper dans le
+compositeur change un état qui n'est dans aucune dépendance, `renderItem` garde
+son identité, les bulles sont épargnées. Vérifié.
+
+Mais le tableau de dépendances (`:1499-1507`) est celui-ci :
+
+```tsx
+}, [
+  messages,              // ← change à CHAQUE message envoyé ou reçu
+  participantMap,
+  myId,
+  isGroup,
+  expandedMessageId,     // ← change à chaque appui sur une bulle
+  openImageViewer,
+  lastOutgoingMessageId, // ← change à chaque message envoyé
+  sendReaction,
+]);
+```
+
+### Ce qui ne va pas
+
+`messages` est dans les dépendances — et il ne peut pas en sortir tel quel :
+`renderItem` lit `messages[index - 1]` et `messages[index + 1]` (`:1296-1297`)
+pour décider du groupage Instagram (coins resserrés au sein d'une salve,
+séparateur d'horodatage). La mémoïsation est donc **structurellement annulée par
+le seul événement qui compte** : l'arrivée d'un message.
+
+Et il n'y a pas de deuxième ligne de défense. Le corps de la bulle est du JSX
+**inline** dans `renderItem` — il n'existe aucun composant `MessageBubble`
+mémoïsé. Contrairement au fil, où `TweetRow` est un `memo` avec comparateur
+(qui rattraperait un `renderItem` instable), ici rien n'arrête la propagation :
+`renderItem` change d'identité → le `CellRenderer` de `VirtualizedList`, qui
+est une `PureComponent`, re-rend **toutes** les cellules montées.
+
+Trois déclencheurs, tous fréquents :
+
+| Déclencheur | Dépendance touchée | Fréquence |
+|---|---|---|
+| Un message arrive (socket) | `messages` | plusieurs par minute en conversation vive |
+| L'utilisateur envoie | `messages` + `lastOutgoingMessageId` | à chaque envoi |
+| Appui sur une bulle (horodatage) | `expandedMessageId` | à chaque appui |
+
+Chaque bulle re-rendue reconstruit, selon son contenu : une
+`Reanimated.View`, l'`Image` d'avatar de l'expéditeur (`:1389`), la bulle et son
+texte, l'`Image` de pièce jointe le cas échéant (`:1417`), la boucle
+`groupedReactions.map(...)` (`:1446`), et la rangée « Vu » avec ses jusqu'à
+trois `Image` d'avatars (`:1481-1490`).
+
+### Effet concret pour l'utilisateur
+
+Le symptôme est le plus visible au pire moment : **une conversation animée**.
+Quand l'interlocuteur enchaîne trois ou quatre messages, chaque arrivée fait
+repasser la vingtaine de bulles montées par le rendu React et la
+réconciliation. Le fil tressaute au lieu de faire glisser la nouvelle bulle, et
+l'auto-scroll vers le bas (`handleContentSizeChange:1281`) part sur une liste
+en cours de re-rendu — d'où le défilement qui « accroche » juste après un
+message reçu.
+
+L'appui sur une bulle pour voir son heure a le même coût : un geste qui devrait
+ne toucher qu'une bulle en re-rend vingt.
+
+À noter que le prix par bulle est ici plus élevé que dans le chat du live
+(F2-2) : les bulles portent des images, des réactions et des rayons calculés,
+là où une ligne de chat live est presque purement textuelle.
+
+### Correctif
+
+Extraire un `MessageBubble` mémoïsé et **précalculer le groupage hors du
+rendu**, ce qui règle les deux problèmes d'un coup :
+
+```tsx
+// 1. Le groupage devient une donnée, calculée une fois par changement de liste.
+const decorated = useMemo(
+  () => messages.map((m, i) => {
+    const senderId = String(m.sender_id || m?.sender?.id || '');
+    const prev = messages[i - 1], next = messages[i + 1];
+    return {
+      msg: m,
+      senderId,
+      isFirstOfGroup: String(prev?.sender_id || prev?.sender?.id || '') !== senderId,
+      isLastOfGroup:  String(next?.sender_id || next?.sender?.id || '') !== senderId,
+      showSeparator:  /* … même calcul qu'aujourd'hui … */,
+    };
+  }),
+  [messages],
+);
+
+// 2. renderItem ne lit plus `messages` : il n'a plus besoin des voisins.
+const renderItem = useCallback(
+  ({ item }: { item: Decorated }) => <MessageBubble entry={item} … />,
+  [/* plus de `messages` */],
+);
+
+// 3. La bulle se défend elle-même.
+const MessageBubble = memo(function MessageBubble({ entry, … }) { … });
+```
+
+`data={decorated}` remplace `data={messages}`.
+
+Après ce changement, l'arrivée d'un message recalcule `decorated` (coût : une
+passe `O(n)` sur un tableau, sans rendu), et seules les bulles dont
+`isFirstOfGroup`/`isLastOfGroup` ont réellement basculé se re-rendent — en
+pratique **la nouvelle bulle et sa voisine immédiate**, soit 2 rendus au lieu
+de ~20.
+
+`expandedMessageId` doit sortir des dépendances par le même geste : le passer à
+la bulle sous forme de booléen `expanded` déjà résolu, calculé dans le
+`renderItem` à partir d'une `ref` — ou plus simplement laisser le comparateur
+de `MessageBubble` filtrer, puisque seule la bulle concernée verra son
+`expanded` changer.
+
+### Ce que j'ai vérifié et trouvé SAIN sur cet écran
+
+- **L'animation d'entrée est correctement gardée.** `entering={FadeInDown…}`
+  (`:1341-1345`) n'est appliqué que si `justArrivedIdsRef.current.has(id)`, un
+  `Set` alimenté à l'arrivée du message et purgé après 700 ms (`:629-634`).
+  C'est exactement le garde-fou exigé par `CLAUDE.md` contre l'animation
+  rejouée au recyclage — et la lecture du `Set` pendant le rendu est pure,
+  comme le commentaire le revendique. Rien à redire.
+- Pas de ressort sous-amorti : `FadeInDown.duration(200).easing(Easing.out(…))`
+  respecte la règle des 140–200 ms.
+- Les `Image` portent toutes `cachePolicy="memory-disk"`, `transition={0}` et
+  un `recyclingKey` (`:1389`, `:1417`, `:1472`, `:1484`) — le recyclage d'image
+  est traité sérieusement.
+- `handleListScroll` et `handleContentSizeChange` sont en `useCallback` à
+  dépendances vides, avec `isAtBottomRef` en `ref` plutôt qu'en état : aucun
+  rendu déclenché par le défilement. Bon réflexe.
