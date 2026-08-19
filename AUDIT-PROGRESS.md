@@ -1,3 +1,5 @@
+AUDIT TERMINÉ — les 10 sections sont TERMINÉES. La routine peut être désactivée.
+
 # AUDIT twitninf-app — suivi d'avancement
 
 Routine automatisée. Elle reprend TOUJOURS à la première section qui n'est pas
@@ -16,7 +18,7 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | R3 | RAPIDITÉ — poids du bundle | **TERMINÉE** | `AUDIT-R3.md` |
 | S1 | SÉCURITÉ — secrets dans l'historique git | **TERMINÉE** | `AUDIT-S1.md` |
 | S2 | SÉCURITÉ — ce qui part en clair dans le bundle | **TERMINÉE** | `AUDIT-S2.md` |
-| S3 | SÉCURITÉ — appareil et chaîne de build | **EN COURS** | `AUDIT-S3.md` |
+| S3 | SÉCURITÉ — appareil et chaîne de build | **TERMINÉE** | `AUDIT-S3.md` |
 
 ---
 
@@ -158,58 +160,88 @@ rouvrir**.
 
 ---
 
-## Reprendre à — S3 (EN COURS)
+## S3 — TERMINÉE
 
-**Aucun constat écrit pour l'instant.** `AUDIT-S3.md` reste à créer.
-**Dernière section de l'audit.**
+0 critique, 0 majeur, 3 mineurs (rémanence après déconnexion · code mort
+dangereux · durcissement CI). `AUDIT-S3.md` — **détail au propriétaire**.
 
-⚠️ Dépôt PUBLIC : décompte et gravité seulement dans `AUDIT-S3.md`.
+**SAIN et remarquable** : les jetons vivent dans le keystore (`expo-secure-store`)
+avec migration et **refus délibéré du repli sur AsyncStorage** ; aucun
+déclencheur GitHub Actions exploitable par un tiers (pas de
+`pull_request_target`/`issue_comment`/`workflow_run`) ; aucune injection dans un
+bloc `run:`.
 
-### Matériel DÉJÀ VÉRIFIÉ à router vers S3 — ne pas le redécouvrir
+**LIMITE LA PLUS IMPORTANTE DE TOUT L'AUDIT** : le code serveur n'est pas dans
+ce dépôt. La question « les routes d'administration revérifient-elles le rôle
+côté serveur ? » ne peut PAS être tranchée d'ici. **C'est la vérification n°1
+à faire après cet audit**, dans le dépôt de l'API.
 
-- **`src/config/adminConfig.ts` (121 l.) — PISTE PRINCIPALE, déjà à moitié
-  instruite.** Le fichier expose `ADMIN_CONFIG.TEST_MODE: true`,
-  `DEFAULT_ROLE: 'admin'` et une liste `GRANTED_PERMISSIONS` accordant à
-  *tout* utilisateur `manage_users`, `ban_users`, `delete_content`, etc.
-  **MAIS** : `grep ADMIN_CONFIG|adminConfig|hasTestPermission|getTestRole` sur
-  tout `src/` (hors le fichier lui-même) ne renvoie **AUCUN** résultat —
-  le fichier est **importé par personne**. Ce n'est donc **pas** une faille
-  active : c'est une mine dormante + du code mort (à ajouter à R3-1).
-  **Ne PAS le présenter comme une vulnérabilité exploitable** — ce serait un
-  faux positif, et le brief insiste : un faux positif fait perdre la confiance
-  dans tout le rapport.
-- **La vraie logique de permissions** est `src/hooks/useAdminPermissions.ts`
-  (lit `user.role` via `AuthContext`) + `api.ts:584` (`hasPermission`) et
-  `api.ts:596` (`isAdmin`). **RESTE À INSTRUIRE** : ces contrôles ne gardent-ils
-  que l'affichage (légitime) ou servent-ils de seule barrière (à revérifier
-  côté serveur) ? C'est le cœur du point « contrôles côté client » du brief.
-- **Durcissement Android : déjà vérifié SAIN en S2** (`usesCleartextTraffic:
-  false`, `allowBackup: false`, `blockedPermissions`, ProGuard + shrinkResources
-  en R3) et **couvert par `tests/security-config.test.js`**. Ne pas refaire.
-- **Journaux : déjà répondu en R3.** `babel.config.js` retire les `console.*`
-  en production sauf `warn`/`error`. Le point routé depuis R2-5 est clos.
-- **Magasin de clés : déjà vérifié SAIN en S1** (magasin de débogage universel
-  du SDK Android, aucun magasin de release versionné).
-- **Manipulation des secrets par la CI : déjà vérifiée SAIN en S2.**
+---
 
-### Plan S3 — ce qui reste vraiment à faire
+# CONCLUSION GÉNÉRALE — les 10 sections sont TERMINÉES
 
-1. **Stockage sur l'appareil** : `src/services/tokenStore.ts` (repéré en S1),
-   `expo-secure-store` *est* dans les dépendances — vérifier si le jeton y va
-   ou dans `AsyncStorage` (non chiffré). Puis : quelles données personnelles
-   sont mises en cache, et **l'effacement à la déconnexion est-il réel** (toutes
-   les clés, ou seulement le jeton) ?
-2. **Contrôles côté client** : voir `useAdminPermissions` ci-dessus.
-3. **Workflows GitHub Actions sur dépôt public** — 5 fichiers :
-   `agent-task-trigger.yml`, `android-build.yml`, `android-publish.yml`,
-   `check-api.yml`, `ios-build.yml`. Chercher : déclencheur exploitable
-   (`pull_request_target`, `issue_comment`, `workflow_run`), **injection dans
-   un bloc `run:`** via `${{ github.event.* }}` non échappé, fuite de secret
-   dans les journaux. `agent-task-trigger.yml` est déclenché par « La Forge »
-   (voir `CLAUDE.md`) — **c'est le candidat n°1** : entrée utilisateur qui
-   atteint un workflow.
-4. Puis : **synthèse S3**, écrire `AUDIT TERMINÉ` en première ligne de ce
-   fichier, pousser, et signaler que la routine peut être désactivée.
+**24 constats** au total sur les 10 sections.
+
+| Priorité du brief | Sections | Constats | Les plus graves |
+|---|---|---|---|
+| **1 — FLUIDITÉ** | F1-F4 | 17+ | 2 listes non virtualisées (F3), `VerifiedBadge` (F4-1) |
+| **2 — RAPIDITÉ** | R1-R3 | 13 | démarrage en chaîne (R1-1/2), badge messages toutes les 30 s (R2-1) |
+| **3 — SÉCURITÉ** | S1-S3 | 6 mineurs, **0 critique, 0 majeur** | aucun secret dans l'historique (S1) |
+
+## Le constat central, qui traverse les 10 sections
+
+**Sept fois** au cours de cet audit, le même schéma est revenu : *le bon
+réflexe existe déjà dans le dépôt, écrit une fois, souvent avec la raison
+expliquée en commentaire — et il n'a été propagé nulle part ailleurs.*
+
+F2-3, F3-3, F4-1, F4-2a, R2-5, R3-4, S3-3. Sept occurrences ne sont pas une
+coïncidence : c'est **le** problème du dépôt.
+
+Et le corollaire compte autant : **ce dépôt ne manque pas de compétence.** Les
+diagnostics y sont justes, les commentaires excellents et souvent supérieurs à
+ce qu'on lit dans des projets professionnels — `fonts.ts` explique pourquoi il
+importe par graisse, `tokenStore.ts` explique pourquoi il refuse un repli,
+`security-config.test.js` explique pourquoi il cherche `tools:node="remove"`.
+Ce qui manque n'est pas le savoir : c'est le **mécanisme de diffusion**.
+
+**D'où la recommandation n°1 de tout l'audit, qui n'est aucun des 24 constats :
+installer ESLint.** Le dépôt n'a **aucune** configuration ESLint — ni
+`.eslintrc*`, ni `eslint.config.*`, ni script `lint`. Avec
+`react-hooks/exhaustive-deps` et `no-restricted-imports`, une bonne partie des
+constats de F2, F4 et R3 serait devenue **impossible à écrire**. Corriger 191
+imports une fois ne sert à rien si le 192e peut encore être écrit demain.
+
+## Les 5 actions à plus fort rendement, tous domaines confondus
+
+1. **Vérifier côté serveur** que chaque route d'administration revérifie le
+   rôle (S3 — la seule chose que cet audit ne pouvait pas faire).
+2. **Installer ESLint** (transverse — voir ci-dessus).
+3. **Dédupliquer les `GET` en vol** dans le client HTTP (R2 — éteint à lui seul
+   l'essentiel de R2-1 et R2-3, sans risque de données périmées).
+4. **Paralléliser le démarrage** (R1-1/R1-2 — trois maillons d'une chaîne de
+   cinq peuvent avancer ensemble).
+5. **Retirer les dépendances mortes et différer `three`** (R3-1, R3-2 — après
+   une mesure d'APK avant/après).
+
+## Ce que cet audit n'a PAS pu faire — à lire avant de le prolonger
+
+- **Aucune mesure.** Pas de profilage de fluidité, pas de chronométrage de
+  démarrage, pas de latence réseau, pas de poids d'APK, pas d'analyse de
+  bundle. `node_modules/` n'était pas installé sur la machine d'audit. **Tout
+  classement par gain est un raisonnement, pas une mesure** — et c'est dit
+  explicitement à chaque endroit où ça compte.
+- **Le code serveur** n'est pas dans ce dépôt (limite de S3, et de R2 pour la
+  pagination).
+- **`android/` et `ios/`** non explorés (interdit par le brief).
+- **Une seule donnée de volume réel existe dans tout le dépôt** : ~977 tweets
+  vivants en production. Toute priorisation dépendant du volume est une
+  estimation prudente.
+
+Chaque fichier `AUDIT-*.md` se termine par sa propre section « limites de la
+couverture » : **les lire avant de rouvrir une section**, elles bornent
+précisément ce qui a été instruit et ce qui ne l'a pas été.
+
+---
 
 ## Rappels pour la prochaine exécution
 
