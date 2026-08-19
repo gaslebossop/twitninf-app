@@ -1069,13 +1069,16 @@ et classés par gain réel.
 |---|---|---|---|
 | `GoLiveScreen.tsx` | `:450`, `:455` | frappe du diffuseur **et** message reçu | **MAJEUR** |
 | `SendCoinsModal.tsx` | `:232`, `:236` | frappe dans la recherche de destinataire | **MODÉRÉ** |
+| `ImageViewerPaper.tsx` | `:332`, `:334` | glissé entre images, début/fin de zoom | **MODÉRÉ** |
 | `LivesScreen.tsx` | `:162`, `:171` | rafraîchissement de la liste des lives | mineur |
 | `UserConnectionsScreen.tsx` | `:139`, `:140` | suivre / ne plus suivre | mineur |
 | `MyPassesScreen.tsx` | `:357`, `:358` | rafraîchissement | mineur |
 | `FollowRequestsScreen.tsx` | `:126`, `:136` | accepter / refuser | mineur |
 | `CommunityCurrenciesScreen.tsx` | `:95`, `:103` | rafraîchissement | mineur |
+| `EconomyManagementScreen.tsx` | 2 listes | rafraîchissement (écran admin) | mineur |
+| `CreateAdvertisementScreen.tsx` | `:—` | saisie du formulaire | mineur |
 
-Les cinq derniers sont des listes courtes sur des écrans peu visités, dont
+Les six derniers sont des listes courtes sur des écrans peu visités, dont
 l'état ne change que sur une action explicite de l'utilisateur : le correctif
 est le même `useCallback` mécanique, mais le gain est théorique. **Ils sont
 listés pour exhaustivité, pas pour être traités en priorité.** Les deux
@@ -1155,11 +1158,43 @@ note), qui re-rendent la liste eux aussi alors qu'elle n'est plus regardée.
 destinataire en `memo`, et idéalement isoler `query`, `amount` et `note` dans
 leurs sous-composants respectifs.
 
+### `ImageViewerPaper` — la visionneuse plein écran
+
+`src/components/feed/paper2b/ImageViewerPaper.tsx:260-261`, `:332-342`
+
+`index` et `anyZoomed` vivent dans le composant qui rend le pager. `renderItem`
+et `keyExtractor` étant inline, chaque glissé d'une image à l'autre
+(`setIndex`) et chaque début ou fin de zoom (`setAnyZoomed`) re-rend **toutes**
+les `ZoomablePage` montées — c'est-à-dire, en pagination plein écran, plusieurs
+images complètes.
+
+**Effet concret** : le passage d'une photo à la suivante et la sortie de zoom
+accrochent, dans un écran qui ne sert qu'à regarder des images en grand.
+
+**Correctif** : `useCallback` sur `renderItem`/`keyExtractor` et
+`ZoomablePage` en `memo` (ses props sont déjà toutes stables sauf
+`onZoomChange`, à passer en `useCallback`).
+
+**Vérifié et rassurant** : `applyZoom` (`:107-113`) n'est appelé que depuis les
+bornes des gestes (`runOnJS(applyZoom)` aux lignes `:129`, `:133`, `:183`,
+`:196`), **pas à chaque image du pincement**. Le déclencheur est donc de l'ordre
+de deux fois par geste, pas soixante. Sans cela le constat serait critique.
+Le fichier applique par ailleurs correctement `runOnJS` pour tout retour d'un
+worklet vers React, avec un commentaire d'en-tête qui l'explique (`:32`) —
+c'est précisément le piège que F4 doit traquer, et il est évité ici.
+
 ### Ce que j'ai vérifié et trouvé SAIN
 
-- Ce tableau est **exhaustif** pour le dépôt à la date de l'audit : recherche
-  de `renderItem={` et `keyExtractor={` sur tout `src/`, tous les résultats
-  sont soit traités dans un constat F2-1…F2-9, soit déjà mémoïsés.
+- Ce tableau est **exhaustif** pour le dépôt à la date de l'audit, et il a été
+  reconstruit par une recherche `renderItem={` / `keyExtractor={` sur tout
+  `src/` plutôt que repris d'une liste antérieure — laquelle omettait
+  `CreateAdvertisementScreen`. Tous les résultats sont désormais soit traités
+  dans un constat F2-1…F2-9, soit déjà mémoïsés.
+- Deux résultats de cette recherche ne sont **pas** des défauts et ne figurent
+  donc pas au tableau : `MessagesScreen` et `ConversationThreadScreen` n'ont
+  qu'un `keyExtractor` inline, leur `renderItem` étant correctement mémoïsé.
+  L'impact d'un `keyExtractor` inline seul est négligeable — il n'entre pas
+  dans la comparaison du `CellRenderer` — et se corrige en une ligne au passage.
 - Les écrans les plus fréquentés — `TweetsScreen`, `NotificationsScreen`,
   `MessagesScreen`, `ProfileScreen`, `UserProfileScreen`, `FeedGutterScreen` —
   ont tous des `renderItem` et `keyExtractor` correctement mémoïsés. Le défaut
