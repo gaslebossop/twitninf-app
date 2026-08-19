@@ -23,7 +23,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 ## Reprendre à — F2
 
 **Constats déjà écrits et poussés :** F2-1 (`CommentSheet`),
-F2-2 (`LiveViewerScreen`, chat du live).
+F2-2 (`LiveViewerScreen`, chat du live), F2-3 (comparateurs `TweetRow` /
+`TweetRowGutter` : `tweet.author` jamais comparé).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -39,10 +40,10 @@ F2-2 (`LiveViewerScreen`, chat du live).
 1. `src/screens/ConversationThreadScreen.tsx:1291` — pas de composant
    `MessageBubble` mémoïsé ; `renderItem` dépend de `messages` et
    `expandedMessageId`, donc toute nouvelle bulle re-rend toutes les bulles
-   montées.
-2. `TweetRow.tsx:748` et `TweetRowGutter.tsx:736` — le comparateur ne compare
-   pas `tweet.author` (avatar, pseudo, `premium`, `verified` sont pourtant
-   rendus). Interface figée après changement d'avatar / achat premium.
+   montées. ← PROCHAIN CONSTAT À RÉDIGER, à re-vérifier dans le code d'abord.
+
+**Note de chemin** : `TweetRowGutter.tsx` est dans
+`src/components/feed/paper2b/`, pas `src/components/feed/`.
 
 **Pistes NON encore explorées pour F2 :**
 - Les renderItem inline restants : `SendCoinsModal:236`,

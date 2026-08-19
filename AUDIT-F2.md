@@ -199,3 +199,155 @@ rejoue pas au re-rendu, seulement au montage : ce n'est donc **pas** le
 troisième défaut d'animation listé dans `CLAUDE.md`. Elle reste néanmoins
 exposée au recyclage de cellule si `keyExtractor` produisait un jour des clés
 non uniques — point traité en F3.
+
+---
+
+## F2-3 — Comparateurs du fil : `tweet.author` n'est jamais comparé — l'avatar, le pseudo et le badge restent figés — MAJEUR
+
+`src/components/feed/TweetRow.tsx:748-770` et
+`src/components/feed/paper2b/TweetRowGutter.tsx:736-758`
+
+Les deux lignes du fil (l'actuelle et la variante « 2B — Gouttière ») ont un
+comparateur `areEqual` soigné, commenté, et **incomplet au même endroit** :
+
+```tsx
+function areEqual(prev: TweetRowProps, next: TweetRowProps) {
+  const a = prev.tweet;
+  const b = next.tweet;
+  return (
+    a.id === b.id &&
+    a.stats?.likes === b.stats?.likes &&
+    a.stats?.retweets === b.stats?.retweets &&
+    a.stats?.replies === b.stats?.replies &&
+    a.stats?.views === b.stats?.views &&
+    a.user_interaction?.is_liked === b.user_interaction?.is_liked &&
+    a.user_interaction?.is_retweeted === b.user_interaction?.is_retweeted &&
+    a.user_interaction?.is_super_liked === b.user_interaction?.is_super_liked &&
+    a.content === b.content &&
+    /* … puis uniquement des props de mise en page et des identités de callbacks */
+  );
+}
+```
+
+`a.author` n'y figure pas. Pas une seule de ses sous-propriétés.
+
+### Ce qui ne va pas
+
+L'auteur est pourtant l'élément le plus visible de la ligne. `TweetRow` en lit
+**huit champs distincts**, tous rendus à l'écran :
+
+| Champ lu | Ligne | Ce qu'il pilote à l'écran |
+|---|---|---|
+| `avatar` | `TweetRow.tsx:444`, `:448` | la photo de profil |
+| `username` | `:481` | le `@pseudo` |
+| `full_name` | `:458` | le nom affiché |
+| `premium` | `:460` | l'habillage premium du nom |
+| `subscription_tier` | `:461` | le palier d'abonnement |
+| `profile_customization` | `:465` | la couleur du nom certifié |
+| `verified` | `:466`, `:469` | la présence de la pastille |
+| `verification_style` | `:467`, `:474` | la teinte de la pastille |
+
+`TweetRowGutter` lit exactement les mêmes (`:568`, `:572`, `:584`, `:586`,
+`:587`, `:592`, `:593`), plus `profile_customization` une deuxième fois dans un
+`useMemo` (`:279-283`).
+
+Le comparateur renvoyant `true` dès que l'identifiant, les compteurs et le
+texte sont inchangés, **`React.memo` bloque le re-rendu** : la ligne continue
+d'afficher les anciennes valeurs. Ce n'est pas un rendu superflu, c'est
+l'inverse — un rendu manquant. C'est le premier des deux travers listés dans le
+cahier des charges de cette section : « un champ en moins = interface figée ».
+
+Vérifié : aucun garde-fou ne rattrape le coup. `TweetsScreen` et
+`FeedGutterScreen` ne passent **pas** d'`extraData` à leur `FlatList`, et le
+composant `Avatar` n'a aucun mécanisme de version ni de cache-busting d'URL.
+Rien ne force donc le re-rendu par un autre chemin.
+
+### Effet concret pour l'utilisateur
+
+Le scénario le plus courant est celui de l'utilisateur qui change **sa propre**
+photo de profil :
+
+1. il ouvre `EditProfileScreen`, change son avatar, valide ;
+2. il revient au fil et tire pour rafraîchir ;
+3. le serveur renvoie bien le nouvel `author.avatar` ;
+4. **ses tweets affichent toujours l'ancienne photo.**
+
+Elle ne se corrigera que si la ligne quitte la fenêtre de virtualisation puis y
+revient — c'est-à-dire en défilant assez loin pour que la cellule soit démontée,
+puis en remontant. D'où le symptôme le plus déroutant : un défilement rapide de
+va-et-vient « répare » l'affichage, ce qui rend le bug impossible à reproduire
+de façon fiable pour qui le signale.
+
+Les mêmes trois étapes valent pour :
+
+- l'**achat d'un premium** — le nom ne prend pas son habillage, le compte vient
+  pourtant de payer ; c'est la première chose qu'il va vérifier ;
+- l'obtention de la **certification** — la pastille n'apparaît pas ;
+- un **changement de pseudo ou de nom** — le sien comme celui d'un autre
+  compte : le fil garde l'ancien pendant toute la session.
+
+Ce sont exactement les changements qu'un utilisateur vient de payer ou de
+demander, et donc ceux dont l'absence se remarque le plus.
+
+### Correctif
+
+Ajouter la comparaison de l'auteur aux deux comparateurs, champ par champ (pas
+d'égalité de référence sur `a.author` : le fil reconstruit ses objets à chaque
+réponse serveur, `a.author !== b.author` serait vrai en permanence et ferait
+re-rendre toutes les lignes à chaque rafraîchissement — le travers exactement
+opposé, et plus coûteux que le bug actuel).
+
+```tsx
+function sameAuthor(a: any, b: any) {
+  if (a === b) return true;                 // court-circuit du cas fréquent
+  if (!a || !b) return !a === !b;
+  return (
+    a.id === b.id &&
+    a.avatar === b.avatar &&
+    a.username === b.username &&
+    a.full_name === b.full_name &&
+    a.premium === b.premium &&
+    a.subscription_tier === b.subscription_tier &&
+    a.verified === b.verified &&
+    a.verification_style === b.verification_style &&
+    a.profile_customization === b.profile_customization
+  );
+}
+```
+
+puis, dans les deux `areEqual` :
+
+```tsx
+sameAuthor(a.author, b.author) &&
+sameAuthor((a as any).originalTweet?.author, (b as any).originalTweet?.author) &&
+```
+
+La deuxième ligne n'est pas facultative : sur un retweet pur, l'auteur affiché
+est celui du tweet d'origine (`TweetRow.tsx:162`), pas celui de la ligne.
+
+`profile_customization` est un objet : la comparaison par référence suffit tant
+qu'il vient tel quel de la réponse et n'est pas reconstruit ligne à ligne — à
+vérifier côté `apiService`. Dans le doute, comparer la ou les clés réellement
+lues plutôt que la référence.
+
+Coût : neuf comparaisons de primitives par ligne montée, soit un surcoût
+négligeable devant le rendu qu'elles évitent — et devant le bug qu'elles
+corrigent.
+
+### Réserves honnêtes
+
+- **Ce n'est pas un gain de fluidité, c'est une correction de fraîcheur.** Le
+  correctif *ajoute* des rendus (uniquement quand l'auteur a réellement changé).
+  Il est classé ici parce que la section couvre explicitement les comparateurs
+  incomplets, et parce qu'il touche l'écran le plus regardé.
+- Deux autres champs manquent aussi aux deux comparateurs — `media_urls`
+  (`TweetRow.tsx:190`) et `paid_content.has_access` (`:229-232`). Ils sont
+  laissés hors du constat principal : les médias d'un tweet publié ne changent
+  pas, et le déverrouillage d'un contenu payant ouvre le tweet en plein écran
+  plutôt que de mettre la ligne à jour sur place (`:568`), ce qui contourne le
+  problème. Le retour au fil après achat reste théoriquement exposé — non
+  reproduit, signalé pour mémoire seulement.
+- `stats.views` est présent dans `TweetRow` et volontairement absent de
+  `TweetRowGutter`, avec une justification écrite (`TweetRowGutter.tsx:732` :
+  2B n'affiche plus les vues). Les deux choix sont corrects : **rien à signaler
+  de ce côté.**
