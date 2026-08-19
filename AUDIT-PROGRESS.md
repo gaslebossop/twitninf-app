@@ -75,22 +75,48 @@ partagée, activer ESLint) aux corrections ponctuelles.
 
 ## Reprendre à — R1 (EN COURS)
 
-**Aucun constat encore rédigé.** `AUDIT-R1.md` reste à créer.
+**Constats écrits et poussés :** R1-1 (20 polices chargées AVANT le premier
+écran, dont 17 pour une option cosmétique — CRITIQUE).
 
-R1 = ce qui est chargé/exécuté avant le premier écran utile : polices,
-contextes, travail synchrone, appels réseau en cascade au montage.
+### `App.tsx` A ÉTÉ LU EN ENTIER (215 l.) — ne pas le relire, voici tout
 
-### Matériel déjà vu, utile pour R1 — ne pas re-chercher
+**Chemin de démarrage** : `useFonts(fontAssets)` (`:56`) → si pas prêt, rend
+`<AppLoadingScreen/>` et RIEN d'autre (`:127-135`) → filet `forceReady` à 4 s
+(`:59`). Donc bloquant 0-4 s. → C'est R1-1.
 
-- `App.tsx` n'a PAS encore été lu. C'est le point de départ évident.
-- **9 fournisseurs de contexte** dans `src/contexts/` (tous mémoïsés, vérifié
-  en F2) — mais leur COÛT DE MONTAGE n'a pas été regardé : combien font un
-  appel réseau ou une lecture AsyncStorage au démarrage ?
-- `AuthContext.tsx` = état utilisateur courant, monté très tôt.
-- `babel.config.js` : `transform-remove-console` actif en production. À
-  confirmer en R3 que `NODE_ENV=production` est bien posé au build EAS.
-- `ScreenSkeleton` / `TweetSkeleton` existent et sont utilisés (bon signe pour
-  la perception de démarrage).
+**PISTES R1 RESTANTES, toutes vues dans `App.tsx`, à instruire :**
+
+1. **13 fournisseurs imbriqués** montés d'un coup (`:138-200`) : Toast,
+   Confirm, ActionSheet, Prompt, Reward, Auth, FeatureFlag, Offline,
+   ReadingLanguage, StartupPopup, Events, Event, EventTheme, FunctionalEvent.
+   → QUESTION À INSTRUIRE : combien font un appel réseau ou une lecture
+   AsyncStorage à leur montage ? C'est LE constat R1 suivant le plus probable.
+   Note : `EventsProvider` est la source de vérité et les 3 suivants ne sont
+   plus que des adaptateurs « qui n'interrogent plus le réseau » (commentaire
+   `:190-193`) — donc ce point a DÉJÀ été travaillé une fois. Vérifier.
+
+2. **8 « gates » montés à la racine** (`:181-199`) : `ReadingLanguageGate`,
+   `ProfileCompletionGate`, `ConsentGate`, `SleepGate`,
+   `FollowOnboardingGate`, `UpdateAvailableGate`, `PatchNotesModal`.
+   → Chacun peut déclencher un appel réseau au montage, EN MÊME TEMPS que le
+   fil charge. À vérifier un par un. `StartupPopupContext` gère une file
+   d'attente d'affichage — mais ordonne-t-il les REQUÊTES ou seulement
+   l'affichage ?
+
+3. **Notifications push au démarrage** (`:64-126`) : `registerForPushNotifications`
+   PUIS `await setupFranceDailyLocalNotifications()` en SÉRIE, puis une boucle
+   `tryRegisterDevice` qui sonde `apiService.token` toutes les secondes
+   jusqu'à 10 fois (`:111-118`). Ce sondage par `setTimeout` au lieu d'attendre
+   un événement d'auth est un motif fragile ET du travail au démarrage.
+
+4. `AppLoadingScreen` anime `icon.png` en 1920×1920 → **DÉJÀ ÉCRIT en F1-1**,
+   cross-référencé dans R1-1. NE PAS LE RECOMPTER.
+
+**Autres éléments déjà connus, utiles pour R1 :**
+- Les 9 fournisseurs de `src/contexts/` ont tous une valeur mémoïsée (vérifié
+  en F2) — mais leur coût de MONTAGE n'a pas été regardé.
+- `ScreenSkeleton` / `TweetSkeleton` existent et sont utilisés (bon pour la
+  perception du démarrage).
 
 ### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
 
