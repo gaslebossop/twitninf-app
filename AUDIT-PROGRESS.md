@@ -91,19 +91,64 @@ SAIN et à ne pas rouvrir : les 8 « gates » (délai de décantation + `if visi
 
 ## Reprendre à — R2 (EN COURS)
 
-**Aucun constat encore rédigé.** `AUDIT-R2.md` reste à créer.
+**Constats écrits et poussés :** R2-1 (badge messages : toute la liste des
+conversations + `getCurrentUser()` en série, toutes les 30 s, sur tous les
+écrans — CRITIQUE).
 
-R2 = requêtes en chaîne parallélisables, même donnée demandée plusieurs fois,
-absence de cache/déduplication, sur-récupération, pagination absente, absence
-d'annulation à la sortie d'écran. **En priorité le fil d'accueil.**
+### `api.ts` (2 904 l.) — INSTRUIT, résultat clé
 
-### PISTE PRIORITAIRE non encore instruite
+Recherche faite sur `cache|dedup|inFlight|pending|AbortController` :
+**il n'y a NI cache, NI déduplication de requêtes en vol, NI annulation
+pilotée par l'appelant.** L'unique `AbortController` (`:322-328`) sert
+uniquement au **timeout**, jamais à annuler quand on quitte un écran.
+`makeRequest` (`:341`) va droit au réseau à chaque appel. → C'est le socle du
+constat groupé R2-x « ni cache ni déduplication » qui reste à rédiger.
 
-`src/services/api.ts` n'a PAS encore été lu (c'est le point d'entrée réseau,
-`apiService.*`). Y chercher : cache, déduplication, `AbortController`,
-`makeRequest`. C'est le point de départ de R2.
-`TweetsScreen` / `FeedGutterScreen` : leur chargement de fil n'a pas été
-instruit côté RÉSEAU (seulement côté rendu en F2/F3).
+### PREUVES DÉJÀ RÉUNIES pour les constats R2 suivants — ne pas re-chercher
+
+**A. Même donnée demandée plusieurs fois :**
+- `/api/messages/conversations` appelé depuis **3 endroits** :
+  `unreadService.ts:24` (badge), `MessagesScreen.tsx:109` (la liste),
+  `ConversationThreadScreen.tsx:699` (juste pour les participants d'UNE
+  conversation). Route **sans pagination**. Ouvrir Messages puis une
+  conversation = la liste complète téléchargée 2 fois en quelques secondes.
+- `getCurrentUser()` : **16 sites d'appel** (5 dans `AuthContext`, puis
+  `GroupMembersScreen` ×2, `NewConversationScreen`, `MessagesScreen`,
+  `ConversationThreadScreen`, `CommentSheet`) — alors que `AuthContext` tient
+  déjà `user`. Chaque appel est un aller-retour pour une donnée locale.
+
+**B. Requêtes en série parallélisables :**
+- `ConversationThreadScreen:699` puis `:729` — toute la liste des
+  conversations PUIS les messages, en série. 2 allers-retours avant le 1er
+  message affiché.
+- `unreadService.ts:23` puis `:24` — liste PUIS `getCurrentUser()`, en série.
+- `App.tsx:80` puis `:83` (push) — déjà écrit en R1-3, ne pas redoubler.
+
+**C. Pagination absente** (établi en F3-3) : messages d'une conversation,
+liste des conversations, commentaires (`CommentSheet:397`, plafond brut 100),
+stories (`storiesService.ts:99`).
+
+**D. Manque fonctionnel** : `TweetDetailScreen:504` — réponses plafonnées à
+`limit: 20` avec `offset: 0` EN DUR et aucun « charger plus ». Impossible de
+lire la 21e réponse d'un tweet.
+
+**E. Sondages périodiques recensés :**
+- `BottomTabNavigator:97` — badges, 30 s (R2-1).
+- `BottomTabNavigator:70-81` — `liveService.getLives()`, 30 s.
+- `TradingScreen:72-78` — 30 s, **non suspendu quand l'écran perd le focus**.
+- `useForegroundInterval` existe et suspend en arrière-plan : BON outil, déjà
+  utilisé par la navbar. `TradingScreen` ne s'en sert pas → constat facile.
+
+**F. BON point à citer** : `TweetDetailScreen:502` — `Promise.all` pour
+paralléliser tweet + réponses. Et `getNotificationsUnreadCount`
+(`unreadService.ts:48`) — endpoint dédié, le serveur compte. Patron à recopier.
+
+### RESTE À INSTRUIRE
+- **Le fil d'accueil côté RÉSEAU** (`TweetsScreen` / `FeedGutterScreen`) :
+  priorité n°1 du brief pour R2, PAS encore regardé sous cet angle.
+- Absence d'annulation quand on quitte un écran (le socle est établi
+  ci-dessus, reste à trouver les cas concrets qui en souffrent).
+- Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
 
 ### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
 
