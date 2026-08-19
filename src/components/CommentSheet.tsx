@@ -23,6 +23,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { ease, springs } from '../utils/gesture';
+import { LIST_TUNING } from '../utils/listTuning';
 import useSheetGesture from '../hooks/useSheetGesture';
 // `expo-image` plutôt que `Image` de React Native : cache disque et décodage
 // hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
@@ -33,6 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOffline } from '../contexts/OfflineContext';
 import apiService from '../services/api';
 import { Tweet } from '../types/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -196,19 +198,48 @@ const replyStyles = StyleSheet.create({
 
 // ─── Comment Row ───────────────────────────────────────────────────────────────
 
-const CommentRow = ({
+/**
+ * Handler unique et stable, sur le modèle de `TweetRowAction`
+ * (`components/feed/TweetRow.tsx`) : quatre closures par ligne et par rendu
+ * (`onLike`, `onReplyLike`, `onReplyPress`, `onToggleReplies`) rendaient tout
+ * `React.memo` posé sur `CommentRow` inopérant, puisque les props changeraient
+ * quand même à chaque rendu de `CommentSheet`.
+ */
+export type CommentRowAction =
+  | { type: 'like'; commentId: string }
+  | { type: 'replyLike'; commentId: string; replyId: string }
+  | { type: 'reply'; username: string; commentId: string }
+  | { type: 'toggleReplies'; commentId: string };
+
+function commentRowsEqual(
+  prev: { comment: Comment; onAction: (action: CommentRowAction) => void },
+  next: { comment: Comment; onAction: (action: CommentRowAction) => void },
+) {
+  const a = prev.comment;
+  const b = next.comment;
+  return (
+    a.id === b.id &&
+    a.likes === b.likes &&
+    a.liked === b.liked &&
+    a.repliesExpanded === b.repliesExpanded &&
+    // Référence, pas longueur : `handleLikeComment` ne construit un nouveau
+    // tableau `replies` QUE pour le commentaire dont une réponse a changé
+    // (`c.replies.map(...)`) ; les autres gardent la même référence. Une
+    // comparaison sur `.length` laisserait passer le like d'une réponse sans
+    // que la ligne se re-rende.
+    a.replies === b.replies &&
+    a.text === b.text &&
+    prev.onAction === next.onAction
+  );
+}
+
+const CommentRow = React.memo(function CommentRow({
   comment,
-  onLike,
-  onReplyLike,
-  onReplyPress,
-  onToggleReplies,
+  onAction,
 }: {
   comment: Comment;
-  onLike: () => void;
-  onReplyLike: (replyId: string) => void;
-  onReplyPress: (username: string, commentId: string) => void;
-  onToggleReplies: () => void;
-}) => {
+  onAction: (action: CommentRowAction) => void;
+}) {
   const scale = useSharedValue(1);
   const heartStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }] as const,
@@ -219,7 +250,7 @@ const CommentRow = ({
       withTiming(1.5, { duration: 120, easing: ease.out }),
       withSpring(1, springs.snappy),
     );
-    onLike();
+    onAction({ type: 'like', commentId: comment.id });
   };
 
   return (
@@ -241,7 +272,10 @@ const CommentRow = ({
             <Text style={commentStyles.time}>{comment.createdAt}</Text>
           </View>
           <Text style={commentStyles.text}>{comment.text}</Text>
-          <TouchableOpacity onPress={() => onReplyPress(comment.user.username, comment.id)} style={commentStyles.replyBtn}>
+          <TouchableOpacity
+            onPress={() => onAction({ type: 'reply', username: comment.user.username, commentId: comment.id })}
+            style={commentStyles.replyBtn}
+          >
             <Text style={commentStyles.replyBtnText}>Répondre</Text>
           </TouchableOpacity>
         </View>
@@ -255,7 +289,10 @@ const CommentRow = ({
 
       {/* Replies toggle */}
       {comment.replies.length > 0 && (
-        <TouchableOpacity style={commentStyles.repliesToggle} onPress={onToggleReplies}>
+        <TouchableOpacity
+          style={commentStyles.repliesToggle}
+          onPress={() => onAction({ type: 'toggleReplies', commentId: comment.id })}
+        >
           <View style={commentStyles.repliesLine} />
           <Text style={commentStyles.repliesToggleText}>
             {comment.repliesExpanded
@@ -275,13 +312,24 @@ const CommentRow = ({
         <ReplyRow
           key={reply.id}
           reply={reply}
-          onLike={() => onReplyLike(reply.id)}
-          onReplyPress={onReplyPress}
+          onLike={() => onAction({ type: 'replyLike', commentId: comment.id, replyId: reply.id })}
+          // `commentId: comment.id` (la racine), PAS l'id de la réponse que
+          // `ReplyRow` transmet dans son deuxième argument. Comportement
+          // hérité : dans l'ancien code, `onReplyPress` partagé par les deux
+          // composants était `(username) => handleReplyPress(username,
+          // item.id)` — une fonction n'acceptant qu'un seul paramètre, donc le
+          // second argument que `ReplyRow` lui passait (`reply.id`) était
+          // silencieusement ignoré par JavaScript. Répondre à une réponse
+          // attribuait donc déjà la réponse au commentaire racine, jamais à la
+          // réponse elle-même. Le reproduire à l'identique évite d'activer sans
+          // le vouloir la branche « réponse à une réponse » de
+          // `appendLocalComment`, qui n'a jamais été exercée jusqu'ici.
+          onReplyPress={(username) => onAction({ type: 'reply', username, commentId: comment.id })}
         />
       ))}
     </View>
   );
-};
+}, commentRowsEqual);
 
 const commentStyles = StyleSheet.create({
   wrapper: { paddingHorizontal: 16, marginBottom: 12, marginTop: 10 },
@@ -302,6 +350,43 @@ const commentStyles = StyleSheet.create({
   repliesToggleText: { color: '#4F7CFF', fontSize: 13, fontWeight: '600' },
 });
 
+// Sortis au niveau module : une flèche inline donnerait un TYPE neuf à chaque
+// rendu de `CommentSheet`. React compare les composants par identité, donc
+// `FlatList` démontait puis remontait le séparateur et le message vide à
+// chaque frappe dans le compositeur, au lieu de les laisser en place.
+/**
+ * Plafond de commentaires demandé au serveur.
+ *
+ * Ce n'est PAS une taille de page : la feuille reçoit une liste plate de
+ * réponses imbriquées et reconstruit l'arbre elle-même (chaque réponse remonte
+ * la chaîne de ses parents jusqu'à sa racine). Paginer cette liste orphelinerait
+ * toute réponse dont la racine tomberait sur une autre page — descendre le
+ * plafond aggraverait donc le problème au lieu de le corriger.
+ *
+ * La vraie pagination doit venir du serveur, sur les commentaires RACINES,
+ * avec leurs réponses attachées. En attendant, le plafond reste à 100 mais
+ * il ne tronque plus en silence : voir `truncated` ci-dessous.
+ */
+const COMMENTS_FETCH_LIMIT = 100;
+
+/** Se dit quand le serveur a plus de réponses que le plafond n'en a demandé. */
+const TruncatedNotice = () => (
+  <View style={sheetStyles.truncatedNotice}>
+    <Text style={sheetStyles.truncatedNoticeText}>
+      Seuls les {COMMENTS_FETCH_LIMIT} premiers commentaires sont affichés.
+    </Text>
+  </View>
+);
+
+const Separator = () => <View style={sheetStyles.separator} />;
+const EmptyComments = () => (
+  <View style={{ padding: 40, alignItems: 'center' }}>
+    <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+      Soyez le premier à commenter !
+    </Text>
+  </View>
+);
+
 // ─── CommentSheet ──────────────────────────────────────────────────────────────
 
 interface CommentSheetProps {
@@ -320,6 +405,7 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
   tweetAuthorUsername,
 }) => {
   const [comments, setComments] = useState<Comment[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [currentUser, setCurrentUser] = useState<CommentUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -361,25 +447,22 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
     setCurrentCount(totalCount);
   }, [totalCount]);
 
-  // Récupérer l'utilisateur actuel pour l'avatar
+  // L'utilisateur actuel, pour l'avatar du composeur.
+  /**
+   * `useAuth()` plutôt qu'un `getCurrentUser()` réseau : `AuthContext` détient
+   * déjà l'utilisateur courant, et ce composant en est un descendant. C'était
+   * un aller-retour complet, à chaque ouverture, pour une donnée en mémoire.
+   */
+  const { user: authUser } = useAuth();
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const user = await apiService.getCurrentUser();
-        if (user) {
-          setCurrentUser({
-            id: user.id,
-            username: user.username,
-            avatar: user.avatar,
-            verified: user.verified,
-          });
-        }
-      } catch (err) {
-        console.log('Erreur fetch user:', err);
-      }
-    };
-    fetchUser();
-  }, []);
+    if (!authUser?.id) return;
+    setCurrentUser({
+      id: authUser.id,
+      username: authUser.username,
+      avatar: (authUser as any)?.avatar,
+      verified: authUser.verified,
+    });
+  }, [authUser]);
 
   // Montée à l'ouverture. La descente, elle, est déclenchée par `close()` :
   // elle doit précéder le changement de `visible`, pas le suivre.
@@ -394,8 +477,14 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
     if (!tweetId) return;
     setLoading(true);
     try {
-      const response = await apiService.getTweetReplies(tweetId, { nested: true, limit: 100 });
+      const response = await apiService.getTweetReplies(tweetId, {
+        nested: true,
+        limit: COMMENTS_FETCH_LIMIT,
+      });
       if (response.success && response.data) {
+        // `pagination.hasMore` était reçu, typé, et jeté : au-delà du plafond,
+        // la feuille affichait une vue tronquée sans jamais le dire.
+        setTruncated(!!response.data.pagination?.hasMore);
         const allReplies = response.data.replies;
         
         // Formater tous les tweets reçus
@@ -614,6 +703,38 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
     }));
   }, []);
 
+  /**
+   * Handler unique et stable pour `CommentRow`, sur le modèle de
+   * `TweetRow`/`TweetRowGutter`. Les quatre handlers ci-dessus sont eux-mêmes
+   * déjà stables (`useCallback` à dépendances vides ou stables), donc CE
+   * handler l'est aussi — `React.memo(CommentRow, commentRowsEqual)` compare
+   * `onAction` par référence, et cette référence ne change jamais entre deux
+   * rendus de `CommentSheet`.
+   */
+  const handleCommentAction = useCallback((action: CommentRowAction) => {
+    switch (action.type) {
+      case 'like':
+        handleLikeComment(action.commentId);
+        break;
+      case 'replyLike':
+        handleLikeReply(action.commentId, action.replyId);
+        break;
+      case 'reply':
+        handleReplyPress(action.username, action.commentId);
+        break;
+      case 'toggleReplies':
+        handleToggleReplies(action.commentId);
+        break;
+    }
+  }, [handleLikeComment, handleLikeReply, handleReplyPress, handleToggleReplies]);
+
+  const renderComment = useCallback(
+    ({ item }: { item: Comment }) => <CommentRow comment={item} onAction={handleCommentAction} />,
+    [handleCommentAction],
+  );
+
+  const commentKeyExtractor = useCallback((item: Comment) => item.id, []);
+
   const clearReply = () => {
     setReplyingTo(null);
     setReplyingToCommentId(null);
@@ -668,28 +789,21 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
             ) : (
               <FlatList
                 data={comments}
-                keyExtractor={item => item.id}
+                keyExtractor={commentKeyExtractor}
                 style={{ flex: 1 }}
-                renderItem={({ item }) => (
-                  <CommentRow
-                    comment={item}
-                    onLike={() => handleLikeComment(item.id)}
-                    onReplyLike={(replyId) => handleLikeReply(item.id, replyId)}
-                    onReplyPress={(username) => handleReplyPress(username, item.id)}
-                    onToggleReplies={() => handleToggleReplies(item.id)}
-                  />
-                )}
+                renderItem={renderComment}
+                // La requête demande jusqu'à 100 commentaires d'un bloc, chacun
+                // portant ses réponses imbriquées. Sur les défauts de React
+                // Native la fenêtre en gardait une bonne part montée — c'est ce
+                // réglage qui décide combien de lignes une frappe fait
+                // travailler, et donc ce qui borne le coût.
+                {...LIST_TUNING}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingTop: windowWidth < 360 ? 8 : 12, paddingBottom: insets.bottom + 20 }}
                 keyboardShouldPersistTaps="handled"
-                ItemSeparatorComponent={() => <View style={sheetStyles.separator} />}
-                ListEmptyComponent={() => (
-                  <View style={{ padding: 40, alignItems: 'center' }}>
-                    <Text style={{ color: colors.textMuted, fontSize: 13 }}>
-                      Soyez le premier à commenter !
-                    </Text>
-                  </View>
-                )}
+                ItemSeparatorComponent={Separator}
+                ListEmptyComponent={EmptyComments}
+                ListFooterComponent={truncated ? TruncatedNotice : null}
               />
             )}
 
@@ -739,6 +853,16 @@ export const CommentSheet: React.FC<CommentSheetProps> = ({
 };
 
 const sheetStyles = StyleSheet.create({
+  truncatedNotice: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  truncatedNoticeText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',

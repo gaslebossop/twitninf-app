@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { fonts, radius } from '../theme';
 import { ScreenBackground, ScreenSkeleton, EmptyState } from '../components/ui';
 import SceneCanvas, { SceneReveal, useSceneReveal } from '../components/SceneCanvas';
@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Animated,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -36,6 +35,182 @@ import { toast } from '../components/ui/Toast';
 
 type SearchRouteProp = RouteProp<{ Search: { query?: string; searchType?: string } }, 'Search'>;
 
+/** Ne capture rien : au niveau module, elle sert aussi aux lignes mémoïsées. */
+function formatNumber(num: number) {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
+  return num.toString();
+}
+
+/**
+ * Ligne de résultat « compte », mémoïsée.
+ *
+ * C'était une fonction nue appelée par `.map()` : pas un élément React que
+ * React puisse comparer, donc son JSX — `Avatar`, `PremiumDisplayName`,
+ * `VerifiedBadge` — était reconstruit et réconcilié à chaque rendu de l'écran,
+ * pour les vingt lignes à la fois. Et l'écran se re-rend aussi pendant que le
+ * résumé IA arrive caractère par caractère, pas seulement à la frappe.
+ *
+ * Les résultats vivent dans un `ScrollView` : rien n'est jamais démonté. La
+ * mémoïsation est donc ce qui borne réellement le coût ici, tant que la
+ * virtualisation n'est pas faite.
+ */
+const UserResultRow = memo(function UserResultRow({
+  user,
+  isFollowing,
+  isFollowLoading,
+  onPress,
+  onFollowToggle,
+}: {
+  user: User;
+  isFollowing: boolean;
+  isFollowLoading: boolean;
+  onPress: (user: User) => void;
+  onFollowToggle: (user: User) => void;
+}) {
+  return (
+    <View style={styles.userItem}>
+      <TouchableOpacity
+        style={styles.userContent}
+        onPress={() => onPress(user)}
+        activeOpacity={0.7}
+      >
+        <Avatar
+          size={56}
+          username={user.username || 'U'}
+          uri={(user as any)?.avatar}
+          style={styles.userAvatar}
+        />
+
+        <View style={styles.userInfo}>
+          <View style={styles.userNameRow}>
+            <PremiumDisplayName
+              text={user.full_name || 'Utilisateur'}
+              baseStyle={styles.userFullName}
+              isPremium={!!(user as any)?.premium}
+              subscriptionTierRaw={(user as any)?.subscription_tier}
+              fontId="system"
+              effectId="none"
+              numberOfLines={1}
+              customization={(user as any)?.profile_customization as ProfileCustomization | undefined}
+              verified={!!user.verified}
+              verificationStyle={(user.verification_style as any) || 'default'}
+            />
+            {user.verified && (
+              <View style={{ marginLeft: 6 }}>
+                <VerifiedBadge
+                  verificationStyle={(user.verification_style as any) || 'default'}
+                  size={16}
+                  tint={
+                    certifiedNameColors(
+                      (user.verification_style as any) || 'default',
+                      (user as any)?.profile_customization as ProfileCustomization | undefined,
+                    ).from
+                  }
+                />
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.userUsername} numberOfLines={1}>
+            @{user.username || 'username'}
+          </Text>
+
+          <View style={styles.userStats}>
+            <Text style={styles.userStat}>
+              {formatNumber(user.stats?.followers || 0)} abonnés
+            </Text>
+            <Text style={styles.statSeparator}>·</Text>
+            <Text style={styles.userStat}>
+              {formatNumber(user.stats?.following || 0)} abonnements
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.followButton, isFollowing && styles.followingButton]}
+          onPress={() => onFollowToggle(user)}
+          disabled={isFollowLoading}
+        >
+          {isFollowLoading ? (
+            <ActivityIndicator size="small" color={isFollowing ? colors.textSecondary : colors.onAccent} />
+          ) : (
+            <Text style={[styles.followButtonText, isFollowing && styles.followingButtonText]}>
+              {isFollowing ? 'Suivi' : 'Suivre'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+/**
+ * Barre de recherche isolée : la requête en cours de frappe vit ici, et nulle
+ * part ailleurs.
+ *
+ * Elle vivait dans `SearchScreen`, si bien que chaque caractère tapé
+ * reconstruisait les lignes de résultats déjà à l'écran — et elles ne sont pas
+ * virtualisées, donc toutes montées, jusqu'à 40 à la fois. Corriger une faute
+ * de frappe coûtait autant de reconstructions complètes que de caractères.
+ *
+ * Le parent n'apprend que la requête VALIDÉE. Le réseau ne change pas d'un
+ * iota : la recherche partait déjà de `onSubmitEditing`, jamais de la frappe.
+ * Conséquence assumée en revanche, et c'est la seule : changer de filtre
+ * pendant qu'on tape relance la recherche sur la dernière requête validée, et
+ * non sur le texte en cours de saisie — ce qui accorde enfin le libellé
+ * « Rien pour « … » » avec les résultats réellement affichés.
+ */
+const SearchBar = memo(function SearchBar({
+  seed,
+  onSubmit,
+}: {
+  /** Requête poussée de l'extérieur : lien profond, appui sur un hashtag, effacement. */
+  seed: string;
+  onSubmit: (query: string) => void;
+}) {
+  const [draft, setDraft] = useState(seed);
+
+  // Recalage sur une requête venue de l'extérieur. Un `setState` pendant le
+  // rendu du MÊME composant est le motif prévu par React pour ça : il relance
+  // le rendu aussitôt, sans afficher la valeur intermédiaire ni toucher au
+  // parent — là où un `useEffect` laisserait passer une image.
+  const lastSeed = useRef(seed);
+  if (lastSeed.current !== seed) {
+    lastSeed.current = seed;
+    setDraft(seed);
+  }
+
+  const clear = useCallback(() => {
+    setDraft('');
+    onSubmit('');
+  }, [onSubmit]);
+
+  return (
+    <View style={styles.searchBarContainer}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
+
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher"
+          placeholderTextColor={colors.textMuted}
+          value={draft}
+          onChangeText={(text) => setDraft(text.replace(/^#+/, '#'))}
+          onSubmitEditing={() => onSubmit(draft)}
+          returnKeyType="search"
+        />
+
+        {draft.length > 0 && (
+          <TouchableOpacity onPress={clear} style={styles.clearButton}>
+            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+});
+
 export default function SearchScreen() {
   const navigation = useNavigation();
   const route = useRoute<SearchRouteProp>();
@@ -43,6 +218,7 @@ export default function SearchScreen() {
   const { styles: eventStyles, theme: currentTheme } = useEventStyles();
   const { top: headerTopInset } = useHeaderMetrics();
 
+  /** La requête VALIDÉE, pas celle en cours de frappe : celle-ci vit dans `SearchBar`. */
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ users: User[]; tweets: Tweet[] }>({ users: [], tweets: [] });
   const [loading, setLoading] = useState(false);
@@ -97,10 +273,6 @@ export default function SearchScreen() {
     
     refreshToken();
   }, [user?.id]); // Se déclenche quand l'utilisateur change
-
-  // Animations subtiles et professionnelles
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Animation d'entrée douce
@@ -439,11 +611,18 @@ export default function SearchScreen() {
     return () => clearTimeout(t);
   }, [route.params?.query, route.params?.searchType, navigation]);
 
-  const handleSearch = () => {
-    if (searchQuery.trim()) {
-      performSearch(searchQuery);
+  /**
+   * Stable (`useCallback` sans dépendance) : une identité neuve à chaque rendu
+   * ferait re-rendre `SearchBar`, et l'isoler n'aurait servi à rien.
+   * `performSearchRef` est réaffecté à chaque rendu, il porte donc toujours la
+   * version courante — c'est déjà le motif retenu ailleurs dans ce fichier.
+   */
+  const handleSubmitQuery = useCallback((query: string) => {
+    setSearchQuery(query);
+    if (query.trim()) {
+      performSearchRef.current(query);
     }
-  };
+  }, []);
 
   const handleFilterChange = (filter: 'all' | 'users' | 'tweets' | 'trends') => {
     setActiveFilter(filter);
@@ -459,18 +638,33 @@ export default function SearchScreen() {
     performSearch(`#${cleanTag}`, 'tweets');
   };
 
-  const handleUserPress = (user: User) => {
+  const handleUserPress = useCallback((user: User) => {
     if (user.id) {
       (navigation as any).navigate('UserProfile', {
         userId: user.id,
         username: user.username
       });
     }
-  };
+  }, [navigation]);
 
-  const handleFollowToggle = async (targetUser: User) => {
-    if (!targetUser.id || followLoading[targetUser.id]) return;
-    const isFollowing = followingUsers[targetUser.id] || false;
+  /**
+   * Même motif de ref-latch que pour les interactions de tweet plus bas : la
+   * ligne de résultat est mémoïsée, et un handler recréé à chaque rendu la
+   * ferait re-rendre malgré tout — notamment pendant que le résumé IA arrive
+   * caractère par caractère.
+   */
+  const followingUsersRef = useRef(followingUsers);
+  const followLoadingRef = useRef(followLoading);
+  useEffect(() => {
+    followingUsersRef.current = followingUsers;
+  }, [followingUsers]);
+  useEffect(() => {
+    followLoadingRef.current = followLoading;
+  }, [followLoading]);
+
+  const handleFollowToggle = useCallback(async (targetUser: User) => {
+    if (!targetUser.id || followLoadingRef.current[targetUser.id]) return;
+    const isFollowing = followingUsersRef.current[targetUser.id] || false;
     setFollowLoading((prev) => ({ ...prev, [targetUser.id]: true }));
     try {
       const res = isFollowing
@@ -486,7 +680,7 @@ export default function SearchScreen() {
     } finally {
       setFollowLoading((prev) => ({ ...prev, [targetUser.id]: false }));
     }
-  };
+  }, []);
 
   /**
    * Handlers d'identité stable : le comparateur de `TweetCard` compare les
@@ -748,139 +942,50 @@ export default function SearchScreen() {
     toast.success('Cet utilisateur a été bloqué');
   };
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
-    return num.toString();
-  };
-
   /* Le decor de l'etat vide : le bloc n'apparait qu'une fois la pluie prete. */
   const { pret: pluiePrete, onSettled: onDecorPluie } = useSceneReveal();
 
   const renderUserItem = (user: User, index: number) => (
-    <Animated.View
+    <UserResultRow
       key={user.id || index}
-      style={[
-        styles.userItem,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }
-      ]}
-    >
-      <TouchableOpacity 
-        style={styles.userContent}
-        onPress={() => handleUserPress(user)}
-        activeOpacity={0.7}
-      >
-        <Avatar 
-          size={56} 
-          username={user.username || 'U'} 
-          uri={(user as any)?.avatar}
-          style={styles.userAvatar}
-        />
-        
-        <View style={styles.userInfo}>
-          <View style={styles.userNameRow}>
-            <PremiumDisplayName
-              text={user.full_name || 'Utilisateur'}
-              baseStyle={styles.userFullName}
-              isPremium={!!(user as any)?.premium}
-              subscriptionTierRaw={(user as any)?.subscription_tier}
-              fontId="system"
-              effectId="none"
-              numberOfLines={1}
-              customization={(user as any)?.profile_customization as ProfileCustomization | undefined}
-              verified={!!user.verified}
-              verificationStyle={(user.verification_style as any) || 'default'}
-            />
-            {user.verified && (
-              <View style={{ marginLeft: 6 }}>
-                <VerifiedBadge
-                  verificationStyle={(user.verification_style as any) || 'default'}
-                  size={16}
-                  animated={true}
-                  tint={
-                    certifiedNameColors(
-                      (user.verification_style as any) || 'default',
-                      (user as any)?.profile_customization as ProfileCustomization | undefined,
-                    ).from
-                  }
-                />
-              </View>
-            )}
-          </View>
-          
-          <Text style={styles.userUsername} numberOfLines={1}>
-            @{user.username || 'username'}
-          </Text>
-          
-          <View style={styles.userStats}>
-            <Text style={styles.userStat}>
-              {formatNumber(user.stats?.followers || 0)} abonnés
-            </Text>
-            <Text style={styles.statSeparator}>·</Text>
-            <Text style={styles.userStat}>
-              {formatNumber(user.stats?.following || 0)} abonnements
-            </Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.followButton, followingUsers[user.id] && styles.followingButton]}
-          onPress={() => handleFollowToggle(user)}
-          disabled={followLoading[user.id]}
-        >
-          {followLoading[user.id] ? (
-            <ActivityIndicator size="small" color={followingUsers[user.id] ? colors.textSecondary : colors.onAccent} />
-          ) : (
-            <Text style={[styles.followButtonText, followingUsers[user.id] && styles.followingButtonText]}>
-              {followingUsers[user.id] ? 'Suivi' : 'Suivre'}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Animated.View>
+      user={user}
+      isFollowing={!!followingUsers[user.id]}
+      isFollowLoading={!!followLoading[user.id]}
+      onPress={handleUserPress}
+      onFollowToggle={handleFollowToggle}
+    />
   );
 
-  const renderTweetItem = (tweet: Tweet, index: number) => {
-    // Préparer le tweet avec les interactions utilisateur
-    const tweetWithInteractions = {
-      ...tweet,
-      user_interaction: {
-        is_liked: likedTweets[tweet.id] || false,
-        is_retweeted: retweetedTweets[tweet.id] || false,
-      }
-    };
-
-    console.log(`🎨 Rendu du tweet ${tweet.id}:`, {
-      original_interaction: tweet.user_interaction,
-      current_interaction: tweetWithInteractions.user_interaction,
-      stats: tweet.stats
-    });
-
-    return (
-    <Animated.View
-      key={tweet.id || index}
-      style={[
-        styles.tweetItem,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }
-      ]}
-    >
-        <TweetCard
-          tweet={tweetWithInteractions}
-          onLike={handleLike}
-          onRetweet={handleRetweet}
-          onReply={handleReply}
-          onShare={handleShare}
-          compact={false}
-        />
-    </Animated.View>
+  /**
+   * Les interactions sont fusionnées au niveau des DONNÉES, plus au rendu :
+   * l'ancienne version fabriquait deux objets neufs par tweet et par rendu de
+   * l'écran — donc aussi à chaque caractère du résumé IA qui arrive en
+   * flux — et traçait une ligne de console par tweet au passage.
+   */
+  const tweetsWithInteractions = useMemo(
+    () =>
+      (searchResults.tweets || []).map((tweet) => ({
+        ...tweet,
+        user_interaction: {
+          is_liked: likedTweets[tweet.id] || false,
+          is_retweeted: retweetedTweets[tweet.id] || false,
+        },
+      })),
+    [searchResults.tweets, likedTweets, retweetedTweets],
   );
-  };
+
+  const renderTweetItem = (tweet: Tweet, index: number) => (
+    <View key={tweet.id || index} style={styles.tweetItem}>
+      <TweetCard
+        tweet={tweet}
+        onLike={handleLike}
+        onRetweet={handleRetweet}
+        onReply={handleReply}
+        onShare={handleShare}
+        compact={false}
+      />
+    </View>
+  );
 
   return (
     <ScreenBackground>
@@ -905,46 +1010,10 @@ export default function SearchScreen() {
         </View>
 
       {/* Barre de recherche */}
-      <Animated.View 
-        style={[
-          styles.searchBarContainer,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
-          
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher"
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={(text) => setSearchQuery(text.replace(/^#+/, '#'))}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-          
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
+      <SearchBar seed={searchQuery} onSubmit={handleSubmitQuery} />
 
       {/* Filtres */}
-      <Animated.View 
-        style={[
-          styles.filtersContainer,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
+      <View style={styles.filtersContainer}>
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
@@ -973,7 +1042,7 @@ export default function SearchScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
-      </Animated.View>
+      </View>
 
       {/* Contenu principal */}
       <ScrollView
@@ -1040,7 +1109,7 @@ export default function SearchScreen() {
                 <Text style={styles.sectionTitle}>
                   Publications ({searchResults.tweets.length})
                 </Text>
-                {searchResults.tweets.map(renderTweetItem)}
+                {tweetsWithInteractions.map(renderTweetItem)}
               </View>
             )}
 

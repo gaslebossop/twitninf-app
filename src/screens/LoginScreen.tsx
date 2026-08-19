@@ -247,10 +247,11 @@ const LoginScreen: React.FC = () => {
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          {/* Logo */}
-          <Image 
-            source={require('../../assets/icon.png')} 
-            style={{ width: 80, height: 80 }} 
+          {/* Logo — `brand-mark-lg.png` (288×288), pas `icon.png` (1920×1920) :
+              affiché à 80 pt (240 px @3x) dans une entrée animée au montage. */}
+          <Image
+            source={require('../../assets/brand-mark-lg.png')}
+            style={{ width: 80, height: 80 }}
             resizeMode="contain"
           />
 

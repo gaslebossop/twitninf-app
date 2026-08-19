@@ -166,7 +166,6 @@ export default function AdTweetCard({
                   <VerifiedBadge
                     verificationStyle={(tweet.author.verification_style as any) || 'default'}
                     size={16}
-                    animated={true}
                     tint={
                       certifiedNameColors(
                         (tweet.author.verification_style as any) || 'default',

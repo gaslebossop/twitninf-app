@@ -1,7 +1,7 @@
 import { colors, fonts, glow, withAlpha } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput, Animated, LayoutAnimation, UIManager, Modal, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput, Animated, ActivityIndicator, LayoutAnimation, UIManager, Modal, KeyboardAvoidingView } from 'react-native';
 // La version de react-native (core) ne pose aucun inset sur Android — seule
 // celle de react-native-safe-area-context protège le haut de l'écran partout.
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -154,7 +154,6 @@ function ReplyItemBase({
                                       <VerifiedBadge
                                         verificationStyle={(reply.author as any)?.verification_style || 'default'}
                                         size={14}
-                                        animated={true}
                                         tint={
                                           certifiedNameColors(
                                             (reply.author as any)?.verification_style,
@@ -233,6 +232,9 @@ function ReplyItemBase({
   );
 }
 
+/** Taille de page des réponses — la même au premier chargement et à la suite. */
+const REPLIES_PAGE_SIZE = 20;
+
 const ReplyItem = React.memo(ReplyItemBase);
 
 export default function TweetDetailScreen() {
@@ -243,6 +245,25 @@ export default function TweetDetailScreen() {
   const { tweetId, isThread } = route.params as unknown as RouteParams;
   const [tweet, setTweet] = useState<Tweet | null>(null);
   const [replies, setReplies] = useState<Tweet[]>([]);
+  /**
+   * Pagination des réponses.
+   *
+   * L'écran demandait `{ limit: 20, offset: 0 }` avec un `offset` écrit en
+   * dur, et aucun chemin de code — quel que soit le geste de l'utilisateur —
+   * ne pouvait demander la 21e. Sur un tweet populaire, les réponses
+   * existaient, le serveur savait les servir, et l'application ne les
+   * demandait jamais. Ce n'était pas une lenteur : c'était un manque.
+   *
+   * Le serveur renvoie déjà `data.pagination.hasMore` — l'information était
+   * reçue, typée (`PaginationInfo`), et jetée.
+   *
+   * `replyOffset` est tenu à part de `replies.length` : publier une réponse
+   * l'ajoute en tête localement, et compter les éléments affichés ferait alors
+   * sauter une réponse du serveur à la page suivante.
+   */
+  const [replyOffset, setReplyOffset] = useState(0);
+  const [hasMoreReplies, setHasMoreReplies] = useState(false);
+  const [loadingMoreReplies, setLoadingMoreReplies] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const [isRetweeting, setIsRetweeting] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
@@ -357,22 +378,24 @@ export default function TweetDetailScreen() {
       console.log('📡 Réponse getAlgorithmInfo:', response);
       
       if (response && response.success) {
-        // Récupérer les statistiques utilisateur
-        const userStats = await progressiveRecommendationService.getUserInteractionStats();
+        // Les trois appels ne partagent que `tweet.id`, connu d'avance : aucun
+        // n'attend le résultat d'un autre. Enchaînés en `await`, ils faisaient
+        // trois allers-retours consécutifs là où un seul temps d'attente
+        // suffit — c'est l'exact inverse du `Promise.all` écrit 70 lignes plus
+        // bas dans ce même fichier.
+        const [userStats, tweetStats, progressiveRecommendations] = await Promise.all([
+          progressiveRecommendationService.getUserInteractionStats(),
+          progressiveRecommendationService.getTweetViralityStats(tweet.id),
+          progressiveRecommendationService.getProgressiveRecommendations({
+            limit: 1,
+            offset: 0,
+            includeUser: true,
+            includeStats: true,
+            group: 'auto'
+          }),
+        ]);
         console.log('📊 User stats:', userStats);
-        
-        // Récupérer les statistiques du tweet
-        const tweetStats = await progressiveRecommendationService.getTweetViralityStats(tweet.id);
         console.log('📈 Tweet stats:', tweetStats);
-        
-        // Récupérer les recommandations progressives pour obtenir le groupe utilisateur
-        const progressiveRecommendations = await progressiveRecommendationService.getProgressiveRecommendations({
-          limit: 1,
-          offset: 0,
-          includeUser: true,
-          includeStats: true,
-          group: 'auto'
-        });
         console.log('🚀 Progressive recommendations:', progressiveRecommendations);
         
         const progressiveData = {
@@ -476,12 +499,23 @@ export default function TweetDetailScreen() {
     }
   };
 
-  // Charger les informations progressives quand l'algorithme change
+  /**
+   * Charger les informations progressives quand l'algorithme change.
+   *
+   * La dépendance est l'IDENTIFIANT du tweet, plus l'objet. `handleLike` et
+   * `handleRetweet` construisent chacun un objet `tweet` neuf en mise à jour
+   * optimiste — et un second pour revenir en arrière en cas d'échec. Chaque
+   * « j'aime » relançait donc toute la chaîne de requêtes, et un échec réseau
+   * la relançait deux fois : aimer puis retweeter déclenchait huit
+   * allers-retours que personne n'avait demandés.
+   */
+  const tweetId_progressive = tweet?.id;
   useEffect(() => {
-    if (currentAlgorithm === 'progressive' && tweet) {
+    if (currentAlgorithm === 'progressive' && tweetId_progressive) {
       loadProgressiveInfo();
     }
-  }, [currentAlgorithm, tweet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAlgorithm, tweetId_progressive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -491,6 +525,8 @@ export default function TweetDetailScreen() {
     // deux branches de conversation.
     setTweet(null);
     setReplies([]);
+    setReplyOffset(0);
+    setHasMoreReplies(false);
     setSimilarTweets([]);
     setThreadAncestors([]);
 
@@ -501,7 +537,7 @@ export default function TweetDetailScreen() {
       // doublait l'attente avant d'avoir la page complète.
       const [res, rep] = await Promise.all([
         apiService.getTweet(tweetId),
-        apiService.getTweetReplies(tweetId, { limit: 20, offset: 0 }),
+        apiService.getTweetReplies(tweetId, { limit: REPLIES_PAGE_SIZE, offset: 0 }),
       ]);
 
       if (cancelled) return;
@@ -523,7 +559,11 @@ export default function TweetDetailScreen() {
         }
       }
 
-      if (rep?.success && rep.data?.replies) setReplies(rep.data.replies);
+      if (rep?.success && rep.data?.replies) {
+        setReplies(rep.data.replies);
+        setReplyOffset(rep.data.replies.length);
+        setHasMoreReplies(!!rep.data.pagination?.hasMore);
+      }
     })();
 
     return () => {
@@ -616,6 +656,33 @@ export default function TweetDetailScreen() {
    * Identité stable : ces deux handlers descendent dans chaque `ReplyItem`
    * mémoïsé. L'état courant est lu par référence.
    */
+  const loadMoreReplies = useCallback(async () => {
+    if (loadingMoreReplies || !hasMoreReplies) return;
+    setLoadingMoreReplies(true);
+    try {
+      const rep = await apiService.getTweetReplies(tweetId, {
+        limit: REPLIES_PAGE_SIZE,
+        offset: replyOffset,
+      });
+      const page: Tweet[] = rep?.success ? (rep.data?.replies ?? []) : [];
+      if (page.length) {
+        // Dédoublonnage : une réponse publiée à l'instant vit déjà en tête de
+        // la liste locale, et le serveur la renverra elle aussi.
+        setReplies((prev) => {
+          const seen = new Set(prev.map((r) => String(r.id)));
+          return [...prev, ...page.filter((r) => !seen.has(String(r.id)))];
+        });
+        setReplyOffset((offset) => offset + page.length);
+      }
+      setHasMoreReplies(!!rep?.data?.pagination?.hasMore);
+    } catch {
+      // Un échec ne doit pas verrouiller le bouton : `hasMoreReplies` reste
+      // vrai, l'utilisateur peut réessayer.
+    } finally {
+      setLoadingMoreReplies(false);
+    }
+  }, [tweetId, replyOffset, hasMoreReplies, loadingMoreReplies]);
+
   const repliesRef = useRef(replies);
   const replyLikingRef = useRef(replyLiking);
   const replyRetweetingRef = useRef(replyRetweeting);
@@ -1269,6 +1336,25 @@ export default function TweetDetailScreen() {
                     retweetAnim={getReplyRetweetAnim(reply.id)}
                   />
                 ))}
+
+                {/* Un bouton plutôt qu'un `onEndReached` : les réponses vivent
+                    dans le `ScrollView` de la page, qui porte encore les
+                    tweets similaires en dessous. Un déclenchement au
+                    défilement se serait armé en traversant cette section. */}
+                {hasMoreReplies && (
+                  <TouchableOpacity
+                    style={styles.loadMoreReplies}
+                    onPress={loadMoreReplies}
+                    disabled={loadingMoreReplies}
+                    activeOpacity={0.7}
+                  >
+                    {loadingMoreReplies ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : (
+                      <Text style={styles.loadMoreRepliesText}>Afficher plus de réponses</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 
@@ -1873,6 +1959,21 @@ const styles = StyleSheet.create({
   },
   repliesSection: {
     flex: 1,
+  },
+  loadMoreReplies: {
+    marginHorizontal: 20,
+    marginVertical: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  loadMoreRepliesText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
   repliesHeader: {
     flexDirection: 'row',

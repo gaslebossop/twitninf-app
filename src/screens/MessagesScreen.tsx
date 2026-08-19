@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, fonts , statusBarStyle} from '../theme';
 import { AppStatusBar, ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
+import { LIST_TUNING } from '../utils/listTuning';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -23,6 +24,7 @@ import BanAlertBanner from '../components/BanAlertBanner';
 import StoriesTray from '../components/StoriesTray';
 import StoryRing from '../components/StoryRing';
 import storiesService from '../services/storiesService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ConvItem {
   id: string;
@@ -100,11 +102,25 @@ export default function MessagesScreen({ navigation }: any) {
   const [unseenStoryUserIds, setUnseenStoryUserIds] = useState<Set<string>>(new Set());
   const [storiesRefresh, setStoriesRefresh] = useState(0);
 
+  /**
+   * L'utilisateur courant vient d'`AuthContext`, plus d'un `getCurrentUser()`
+   * réseau : cet écran en est un descendant, et c'était un aller-retour complet
+   * EN TÊTE du chargement — donc strictement sur le chemin critique — pour une
+   * donnée déjà en mémoire.
+   */
+  const { user: authUser } = useAuth();
+  const meId = authUser?.id ? String(authUser.id) : null;
+
+  useEffect(() => {
+    setMe(
+      authUser
+        ? { id: meId || undefined, username: authUser.username, avatar: (authUser as any)?.avatar }
+        : null,
+    );
+  }, [authUser, meId]);
+
   const loadConversations = useCallback(async () => {
     try {
-      const current = await apiService.getCurrentUser();
-      const meId = current?.id ? String(current.id) : null;
-      setMe(current ? { id: meId || undefined, username: current.username, avatar: (current as any)?.avatar } : null);
 
       const convRes = await apiService.get('/api/messages/conversations');
       const list: any[] = convRes?.success ? convRes.conversations || [] : [];
@@ -178,7 +194,7 @@ export default function MessagesScreen({ navigation }: any) {
     } catch {
       setConversations([]);
     }
-  }, []);
+  }, [meId]);
 
   const loadInvitations = useCallback(async () => {
     try {
@@ -336,7 +352,6 @@ export default function MessagesScreen({ navigation }: any) {
               <VerifiedBadge
                 verificationStyle={item.verificationStyle as any}
                 size={13}
-                animated
                 tint={certifiedNameColors(item.verificationStyle as any, item.customization).from}
               />
             )}
@@ -406,6 +421,11 @@ export default function MessagesScreen({ navigation }: any) {
           data={visibleConversations}
           keyExtractor={(item) => item.id}
           renderItem={renderConversation}
+          // La route `/api/messages/conversations` ne pagine pas côté serveur :
+          // un compte ancien télécharge TOUTES ses conversations à chaque
+          // ouverture de l'onglet. Le réglage de fenêtre borne au moins ce qui
+          // est monté ; le plafonnement de la réponse reste à faire côté API.
+          {...LIST_TUNING}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}

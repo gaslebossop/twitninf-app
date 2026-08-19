@@ -92,7 +92,6 @@ export default function AccountManagerScreen() {
                     <VerifiedBadge 
                       verificationStyle={acc.verification_style || 'default'}
                       size={14} 
-                      animated={true}
                       style={{ marginLeft: 6 }}
                     />
                   )}

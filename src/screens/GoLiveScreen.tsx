@@ -1,5 +1,5 @@
 import { colors, fonts, glow } from '../theme';
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -84,6 +84,64 @@ interface LiveChatMessage {
   mine?: boolean;
 }
 
+/**
+ * Ligne de chat mémoïsée, comme côté spectateur (`LiveViewerScreen`). Le
+ * déclencheur est ici DOUBLE — la frappe du diffuseur et l'arrivée d'un
+ * message — et il tombe pendant la capture et l'encodage du flux : le thread
+ * JS qu'on encombrait est celui-là même qui pilote la diffusion. `setMessages`
+ * conserve la référence des messages déjà là, donc la comparaison par défaut
+ * de `memo` suffit.
+ */
+const ChatRow = memo(function ChatRow({ item }: { item: LiveChatMessage }) {
+  return (
+    <View style={styles.chatRow}>
+      <Avatar size={26} uri={item.avatar} username={item.user} style={styles.chatAvatar} />
+      <View style={styles.chatBody}>
+        <Text style={[styles.chatAuthor, item.mine && styles.chatAuthorMine]} numberOfLines={1}>
+          {item.user}
+          {item.verified ? ' ✓' : ''}
+        </Text>
+        <Text style={styles.chatText}>{item.text}</Text>
+      </View>
+    </View>
+  );
+});
+
+/**
+ * Composeur isolé : le brouillon vivait dans l'écran, si bien que chaque
+ * caractère tapé re-rendait le chat entier — pendant la diffusion. L'état de
+ * saisie ne sort plus d'ici ; l'écran n'apprend le texte qu'à l'envoi.
+ */
+const LiveComposer = memo(function LiveComposer({ onSend }: { onSend: (text: string) => void }) {
+  const [draft, setDraft] = useState('');
+
+  const submit = useCallback(() => {
+    const text = draft.trim();
+    if (!text) return;
+    onSend(text);
+    setDraft('');
+  }, [draft, onSend]);
+
+  return (
+    <View style={styles.composer}>
+      <TextInput
+        style={styles.composerInput}
+        value={draft}
+        onChangeText={setDraft}
+        placeholder="Répondre à ton public…"
+        placeholderTextColor={colors.textMuted}
+        onSubmitEditing={submit}
+        returnKeyType="send"
+        blurOnSubmit={false}
+        maxLength={500}
+      />
+      <TouchableOpacity onPress={submit} style={styles.composerSend}>
+        <Ionicons name="send" size={18} color={colors.textPrimary} />
+      </TouchableOpacity>
+    </View>
+  );
+});
+
 export default function GoLiveScreen() {
   const navigation = useNavigation<any>();
   const isFocused = useIsFocused();
@@ -96,7 +154,6 @@ export default function GoLiveScreen() {
   const [viewers, setViewers] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<LiveChatMessage[]>([]);
-  const [draft, setDraft] = useState('');
   const [torchOn, setTorchOn] = useState(false);
   const [beautyOn, setBeautyOn] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -184,8 +241,12 @@ export default function GoLiveScreen() {
     };
   }, [isStreaming, liveId]);
 
-  const sendMessage = useCallback(() => {
-    const text = draft.trim();
+  /**
+   * Le texte arrive du composeur plutôt que d'un état de l'écran : la fonction
+   * ne dépend donc plus du brouillon, et garde son identité d'une frappe à
+   * l'autre.
+   */
+  const sendMessage = useCallback((text: string) => {
     if (!text || !liveId) return;
     socket.emit('chatMessage', { liveId, message: text });
     // Le serveur rediffuse à tout le monde SAUF l'auteur : sans cet ajout
@@ -194,8 +255,16 @@ export default function GoLiveScreen() {
       ...prev.slice(-79),
       { id: `local-${Date.now()}`, text, user: 'Toi', mine: true },
     ]);
-    setDraft('');
-  }, [draft, liveId]);
+  }, [liveId]);
+
+  /**
+   * Stables, et pas des flèches anonymes : une identité neuve à chaque rendu
+   * suffirait à faire re-rendre toutes les lignes montées par le
+   * `CellRenderer` de la FlatList, `ChatRow` mémoïsé ou non.
+   */
+  const renderChatRow = useCallback(({ item }: { item: LiveChatMessage }) => <ChatRow item={item} />, []);
+  const chatKeyExtractor = useCallback((item: LiveChatMessage) => item.id, []);
+  const scrollChatToEnd = useCallback(() => chatListRef.current?.scrollToEnd({ animated: true }), []);
 
   // Callback stable : un `hybridRef` qui change d'identité entre deux rendus
   // fait rouvrir/refermer la caméra en boucle (piège documenté de la lib).
@@ -447,41 +516,15 @@ export default function GoLiveScreen() {
             <FlatList
               ref={chatListRef}
               data={messages}
-              keyExtractor={(item) => item.id}
+              keyExtractor={chatKeyExtractor}
               style={styles.chatList}
               contentContainerStyle={styles.chatListContent}
               showsVerticalScrollIndicator={false}
-              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
-              renderItem={({ item }) => (
-                <View style={styles.chatRow}>
-                  <Avatar size={26} uri={item.avatar} username={item.user} style={styles.chatAvatar} />
-                  <View style={styles.chatBody}>
-                    <Text style={[styles.chatAuthor, item.mine && styles.chatAuthorMine]} numberOfLines={1}>
-                      {item.user}
-                      {item.verified ? ' ✓' : ''}
-                    </Text>
-                    <Text style={styles.chatText}>{item.text}</Text>
-                  </View>
-                </View>
-              )}
+              onContentSizeChange={scrollChatToEnd}
+              renderItem={renderChatRow}
             />
 
-            <View style={styles.composer}>
-              <TextInput
-                style={styles.composerInput}
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Répondre à ton public…"
-                placeholderTextColor={colors.textMuted}
-                onSubmitEditing={sendMessage}
-                returnKeyType="send"
-                blurOnSubmit={false}
-                maxLength={500}
-              />
-              <TouchableOpacity onPress={sendMessage} style={styles.composerSend}>
-                <Ionicons name="send" size={18} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
+            <LiveComposer onSend={sendMessage} />
           </View>
         )}
 

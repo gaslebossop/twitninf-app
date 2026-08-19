@@ -32,7 +32,22 @@ interface VerifiedBadgeProps {
 function VerifiedBadge({
   verificationStyle = 'default',
   size = 20,
-  animated = true,
+  /**
+   * Faux par DÉFAUT, et c'est le sens qui compte.
+   *
+   * Un badge animé lance de 2 à 5 `Animated.loop` infinies selon le style
+   * (`gray` 2, `gold` 3, `rose` 5), qui ne s'arrêtent qu'au démontage. Le fil
+   * d'accueil passait déjà `animated={false}` avec le commentaire qui explique
+   * pourquoi — mais le garde-fou n'était posé qu'à quatre endroits sur
+   * quatorze, et manquait précisément là où le badge est en liste : lignes de
+   * profil, chat de live, liste des conversations, notifications.
+   *
+   * Avec le défaut inversé, un oubli donne un badge STATIQUE — un défaut
+   * cosmétique — au lieu de cinq boucles natives permanentes. L'animation se
+   * demande donc explicitement, et seulement là où le badge est seul à
+   * l'écran : en-tête de profil, détail d'un tweet, écran de choix du style.
+   */
+  animated = false,
   showRing = false,
   premium = false,
   tint,

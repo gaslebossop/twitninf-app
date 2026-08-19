@@ -2119,8 +2119,10 @@ export default function FeedGutterScreen() {
           le seul chemin vers les notifications pour les comptes du test. */}
       <View style={S.header}>
         <View style={S.headerTopRow}>
+          {/* `brand-mark.png` (192×192), pas `icon.png` (1920×1920) : même
+              raison qu'en 2A, voir `TweetsScreen.tsx`. */}
           <Image
-            source={require('../../assets/icon.png')}
+            source={require('../../assets/brand-mark.png')}
             style={S.brandMark}
             resizeMode="contain"
           />

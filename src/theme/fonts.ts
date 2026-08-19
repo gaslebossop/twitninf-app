@@ -7,7 +7,8 @@
  * qu'en italique), donc Bold sert de graisse la plus lourde partout où
  * l'ancien duo demandait ExtraBold ou SemiBold — voir `twitninf-sans/*.otf`.
  *
- * Les polices sont chargées une seule fois dans App.tsx via `fontAssets`.
+ * Les polices de l'interface sont chargées dans App.tsx via `coreFontAssets` ;
+ * celles du nom premium arrivent après le premier écran (`displayNameFontAssets`).
  * On référence toujours une FAMILLE PRÉCISE (un fichier = un poids) car
  * React Native ne synthétise pas les graisses avec des polices custom.
  */
@@ -98,11 +99,41 @@ export const displayNameFonts = {
   roman: 'Cinzel-Bold',
 } as const;
 
-/** Map passée à `useFonts` / `Font.loadAsync`. */
-export const fontAssets = {
+/**
+ * Polices dont le PREMIER ÉCRAN a besoin — les seules sur lesquelles le
+ * démarrage bloque.
+ *
+ * Les trois premières sont locales (`require`), donc résolues depuis le bundle
+ * sans réseau : leur chargement est rapide et prévisible. Elles portent toute
+ * la typographie de l'interface (voir `fonts` ci-dessus).
+ *
+ * Les deux dernières sont celles du fil « 2B — Gouttière ». Elles restent ici
+ * alors qu'elles ne servent qu'à un test sous drapeau : quand le drapeau est
+ * levé, ce fil EST le premier écran, et il les emploie à 39 endroits. Les
+ * différer y ferait donc clignoter toute la typographie du fil à chaque
+ * démarrage à froid — un rattrapage bien plus visible que sur un nom premium.
+ * À retirer avec le test.
+ */
+export const coreFontAssets = {
   'TwitninfSans-Book': require('../../assets/fonts/TwitninfSans-Book.otf'),
   'TwitninfSans-Medium': require('../../assets/fonts/TwitninfSans-Medium.otf'),
   'TwitninfSans-Bold': require('../../assets/fonts/TwitninfSans-Bold.otf'),
+  'Archivo-SemiBold': Archivo_600SemiBold,
+  'SpaceMono-Regular': SpaceMono_400Regular,
+};
+
+/**
+ * Les quinze familles du nom affiché premium — chargées APRÈS le premier
+ * écran, sans bloquer.
+ *
+ * Elles ne sont consommées que par `PremiumDisplayName`, et seulement quand un
+ * compte a choisi une police pour son nom : une option cosmétique, pour une
+ * fraction des comptes, qui retardait le démarrage de tout le monde. Un
+ * `fontFamily` pas encore chargé retombe sur la police système au lieu de
+ * planter : le nom prend sa police à l'arrivée, c'est un rattrapage et non
+ * une attente.
+ */
+export const displayNameFontAssets = {
   [displayNameFonts.poster]: Anton_400Regular,
   [displayNameFonts.editorial]: PlayfairDisplay_700Bold,
   [displayNameFonts.serif]: Lora_700Bold,
@@ -118,9 +149,15 @@ export const fontAssets = {
   [displayNameFonts.techno]: Orbitron_700Bold,
   [displayNameFonts.handwritten]: Caveat_700Bold,
   [displayNameFonts.roman]: Cinzel_700Bold,
-  // Fil « 2B — Gouttiere » (drapeau `fil.refonte2b`).
-  'Archivo-SemiBold': Archivo_600SemiBold,
-  'SpaceMono-Regular': SpaceMono_400Regular,
+};
+
+/**
+ * L'ensemble des polices. Gardé pour qui voudrait tout charger d'un coup —
+ * mais le démarrage, lui, ne bloque QUE sur `coreFontAssets` (voir App.tsx).
+ */
+export const fontAssets = {
+  ...coreFontAssets,
+  ...displayNameFontAssets,
 };
 
 export type FontToken = keyof typeof fonts;

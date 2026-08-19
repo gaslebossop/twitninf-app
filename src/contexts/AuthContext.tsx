@@ -284,8 +284,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Vérifier le statut d'authentification au démarrage
   useEffect(() => {
     (async () => {
-      await tokenStore.migrateLegacyStorage();
-      await migrateLegacyAccounts();
+      // Les deux migrations sont indépendantes — l'une porte sur les jetons,
+      // l'autre sur les comptes — et chacune est un aller-retour par le pont
+      // natif qui, pour l'immense majorité des comptes, ne fait rien du tout.
+      // Les enchaîner mettait ce néant deux fois sur le chemin critique.
+      await Promise.all([tokenStore.migrateLegacyStorage(), migrateLegacyAccounts()]);
+      // `loadAccounts` dépend, lui, de `migrateLegacyAccounts` : il reste après.
       await loadAccounts();
       await checkAuthStatus();
     })();

@@ -37,7 +37,7 @@ const Tab = createBottomTabNavigator();
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function BottomTabNavigator() {
-  const { isUserBanned, isUserSuspended } = useAuth();
+  const { isUserBanned, isUserSuspended, user } = useAuth();
   /** Sert au badge de l'onglet Live, plus à décider de son existence. */
   const [activeLiveCount, setActiveLiveCount] = React.useState(0);
   // Onglets optionnels choisis à l'onboarding (voir NavbarPrefsContext) — les
@@ -85,16 +85,28 @@ export default function BottomTabNavigator() {
   const [notificationCount, setNotificationCount] = React.useState(0);
   const [messageCount, setMessageCount] = React.useState(0);
 
+  const currentUserId = user?.id ? String(user.id) : null;
   const refreshCounts = React.useCallback(async () => {
     const [notifCount, msgCount] = await Promise.all([
       unreadService.getNotificationsUnreadCount(),
-      unreadService.getMessagesUnreadCount(),
+      // L'identifiant vient d'ici, plus d'un `getCurrentUser()` : voir le
+      // commentaire de `getMessagesUnreadCount`.
+      unreadService.getMessagesUnreadCount(currentUserId),
     ]);
     setNotificationCount(notifCount);
     setMessageCount(msgCount);
-  }, []);
+  }, [currentUserId]);
 
-  useForegroundInterval(refreshCounts, 30000);
+  /**
+   * Trois minutes, et non trente secondes.
+   *
+   * Le sondage n'est qu'un FILET : le rafraîchissement immédiat existe déjà —
+   * `unreadService.subscribe` juste en dessous permet à un écran de forcer la
+   * mise à jour dès qu'il marque quelque chose comme lu. Trente secondes,
+   * c'était 120 réveils radio par heure, sur tous les écrans, dont le plus
+   * cher retélécharge toute la liste des conversations pour un seul entier.
+   */
+  useForegroundInterval(refreshCounts, 180000);
 
   // Rafraîchissement immédiat quand un écran signale une lecture.
   React.useEffect(() => unreadService.subscribe(refreshCounts), [refreshCounts]);

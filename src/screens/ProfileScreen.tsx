@@ -927,7 +927,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                   <VerifiedBadge
                     verificationStyle={(acc.verification_style as any) || 'default'}
                     size={14}
-                    animated
                   />
                 )}
               </TouchableOpacity>

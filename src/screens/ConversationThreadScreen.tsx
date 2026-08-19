@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -51,6 +51,7 @@ import storiesService, { StoryGroup, resolveStoryMedia } from '../services/stori
 import { certifiedNameColors, nameIsLit, type ProfileCustomization } from '../services/profileCustomizationService';
 import { API_CONFIG } from '../config/api';
 import { toast } from '../components/ui/Toast';
+import { useAuth } from '../contexts/AuthContext';
 
 interface MessageItem {
   id: string;
@@ -131,6 +132,24 @@ const CANCEL_SEND_DISTANCE = -90;
 const MIC_SPRING = { damping: 24, stiffness: 260, mass: 1 } as const;
 /** Au-delà de 15 min entre deux messages, Instagram insère un séparateur. */
 const TIME_SEPARATOR_GAP_MS = 15 * 60 * 1000;
+
+/**
+ * Nombre de messages chargés à l'ouverture.
+ *
+ * La route serveur plafonne DÉJÀ à 30 par défaut (100 au maximum) : contrairement
+ * à ce qu'on pourrait croire en lisant l'appel nu, l'historique entier n'est
+ * jamais téléchargé. Le dire explicitement ici sert à deux choses : le `limit`
+ * de la requête et l'`initialNumToRender` de la liste ne peuvent plus se
+ * désaccorder, et si le défaut serveur bouge un jour, les deux suivent ensemble.
+ *
+ * Pourquoi l'accord compte : la liste tournait sur `initialNumToRender: 10`,
+ * donc la hauteur de contenu mesurée au premier rendu ne valait qu'un tiers de
+ * la vraie. `scrollToEnd` visait cette fausse fin, le défilement montait le lot
+ * suivant, la hauteur augmentait, `scrollToEnd` repartait — l'écran PARCOURAIT
+ * l'historique par à-coups au lieu de s'ouvrir dessus. En montant les 30 d'un
+ * coup, la première mesure est la bonne et un seul défilement suffit.
+ */
+const MESSAGE_PAGE_SIZE = 30;
 
 function normalizeMessageMetadata(value: unknown): MessageItem['metadata'] | undefined {
   let raw: any = value;
@@ -565,6 +584,284 @@ function formatSeparator(value?: string) {
   return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
 }
 
+/**
+ * ─── Une bulle, et rien qu'une bulle ────────────────────────────────────────
+ *
+ * Le corps du message était du JSX inline dans `renderItem`, dont les
+ * dépendances contenaient `messages` : il lisait ses voisins pour décider du
+ * groupage Instagram. La mémoïsation était donc annulée par le seul événement
+ * qui compte — l'arrivée d'un message — et rien n'arrêtait la propagation, le
+ * `CellRenderer` de la FlatList (une `PureComponent`) re-rendant TOUTES les
+ * bulles montées faute de composant mémoïsé en dessous.
+ *
+ * Deux gestes le corrigent ensemble :
+ *  1. le groupage devient une donnée précalculée (`DecoratedMessage`), donc
+ *     `renderItem` n'a plus besoin de `messages` ;
+ *  2. la bulle se défend elle-même par `React.memo`, si bien que même quand
+ *     `renderItem` change encore d'identité (appui sur une bulle, accusé de
+ *     lecture reçu), seules les bulles réellement touchées se re-rendent.
+ *
+ * Le second geste répare du même coup l'accusé de lecture « Vu », qui
+ * n'apparaissait jamais à temps : la rangée lisait six valeurs du composant
+ * dont cinq manquaient aux dépendances de `renderItem`, et restait donc figée
+ * dans une closure périmée jusqu'au message suivant. Elle arrive désormais par
+ * des props ordinaires (`showSeen`, `seenLabel`, `seenAvatars`), que le
+ * comparateur de `memo` voit changer.
+ */
+
+/** Le message, plus tout ce qui dépend de ses VOISINS — calculé hors du rendu. */
+interface DecoratedMessage {
+  msg: MessageItem;
+  sender: SenderLike;
+  fromMe: boolean;
+  isFirstOfGroup: boolean;
+  isLastOfGroup: boolean;
+  showSeparator: boolean;
+}
+
+/** Un avatar de la rangée « Vu », déjà résolu par l'écran. */
+interface SeenAvatar {
+  key: string;
+  uri: string | null;
+  initial: string;
+  /** En groupe les avatars se chevauchent ; en tête-à-tête il n'y en a qu'un. */
+  overlap: boolean;
+}
+
+/**
+ * Constantes de module, et non des littéraux recréés à chaque rendu : toutes
+ * les bulles sauf la dernière sortante les reçoivent, et c'est une prop
+ * identique d'un rendu à l'autre qui permet à `memo` de les épargner quand un
+ * accusé de lecture arrive.
+ */
+const NO_SEEN_AVATARS: SeenAvatar[] = [];
+const NO_SENDER: SenderLike = {};
+const SEEN_AVATAR_OVERLAP = { marginLeft: -5 } as const;
+
+interface MessageBubbleProps {
+  entry: DecoratedMessage;
+  isGroup: boolean;
+  myId: string | null;
+  expanded: boolean;
+  /** Faux sur toutes les bulles sauf la dernière sortante, une fois vue. */
+  showSeen: boolean;
+  seenLabel: string;
+  seenAvatars: SeenAvatar[];
+  /** Une ref, donc une identité stable : lue au rendu, jamais écrite ici. */
+  freshIdsRef: React.MutableRefObject<Set<string>>;
+  onOpenImage: (url: string) => void;
+  onToggleExpanded: (messageId: string) => void;
+  onLongPress: (messageId: string, x: number, y: number) => void;
+  onReact: (messageId: string, emoji: string) => void;
+}
+
+const MessageBubble = memo(function MessageBubble({
+  entry,
+  isGroup,
+  myId,
+  expanded,
+  showSeen,
+  seenLabel,
+  seenAvatars,
+  freshIdsRef,
+  onOpenImage,
+  onToggleExpanded,
+  onLongPress,
+  onReact,
+}: MessageBubbleProps) {
+  const { msg: item, sender, fromMe, isFirstOfGroup, isLastOfGroup, showSeparator } = entry;
+  const messageId = String(item.id);
+
+  // Rayons Instagram : le coin côté interlocuteur se resserre au sein d'une
+  // même salve de messages pour former un bloc continu.
+  const big = 20;
+  const small = 6;
+  const bubbleRadius = fromMe
+    ? {
+        borderTopLeftRadius: big,
+        borderBottomLeftRadius: big,
+        borderTopRightRadius: isFirstOfGroup ? big : small,
+        borderBottomRightRadius: isLastOfGroup ? big : small,
+      }
+    : {
+        borderTopRightRadius: big,
+        borderBottomRightRadius: big,
+        borderTopLeftRadius: isFirstOfGroup ? big : small,
+        borderBottomLeftRadius: isLastOfGroup ? big : small,
+      };
+
+  const senderAvatar = getAvatarUri(sender?.avatar || null);
+  const attachmentType = item.metadata?.attachment_type;
+  const attachmentUrl = item.metadata?.attachment_url;
+  const groupedReactions = groupReactions(item.reactions);
+
+  // Lecture pure (aucune mutation ici) : `freshIdsRef` est alimenté à
+  // l'arrivée du message, pas au rendu. Fondu-glissé court et SANS ressort :
+  // le message se pose, il ne rebondit pas.
+  const isFreshMessage = freshIdsRef.current.has(messageId);
+
+  return (
+    <Reanimated.View
+      style={{ marginBottom: isLastOfGroup ? 10 : 2 }}
+      entering={
+        isFreshMessage
+          ? FadeInDown.duration(200).easing(Easing.out(Easing.cubic))
+          : undefined
+      }
+    >
+      {showSeparator && (
+        <View style={styles.separator}>
+          <Text style={styles.separatorText}>{formatSeparator(item.created_at || item.createdAt)}</Text>
+        </View>
+      )}
+
+      {isGroup && !fromMe && isFirstOfGroup && (
+        <View style={styles.groupSenderRow}>
+          <Text
+            style={[
+              styles.groupSenderName,
+              nameIsLit(sender?.profile_customization) && {
+                color: certifiedNameColors(
+                  sender?.verification_style as any,
+                  sender?.profile_customization,
+                ).from,
+              },
+            ]}
+          >
+            {sender?.username || 'user'}
+          </Text>
+          {!!sender?.verified && (
+            <VerifiedBadge
+              verificationStyle={(sender?.verification_style as any) || 'default'}
+              size={10}
+              tint={
+                certifiedNameColors(
+                  sender?.verification_style as any,
+                  sender?.profile_customization,
+                ).from
+              }
+            />
+          )}
+        </View>
+      )}
+
+      <View style={[styles.msgRow, fromMe ? styles.msgRowRight : styles.msgRowLeft]}>
+        {!fromMe && (
+          <View style={styles.avatarSlot}>
+            {isLastOfGroup &&
+              (senderAvatar ? (
+                <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
+              ) : (
+                <View style={[styles.rowAvatar, styles.rowAvatarFallback]}>
+                  <Text style={styles.rowAvatarText}>
+                    {String(sender?.username || 'U').slice(0, 1).toUpperCase()}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        )}
+
+        <View style={[styles.messageColumn, fromMe && styles.messageColumnMine]}>
+          <StoryReplyReference message={item} fromMe={fromMe} />
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() =>
+              attachmentType === 'image' && attachmentUrl
+                ? onOpenImage(attachmentUrl)
+                : onToggleExpanded(messageId)
+            }
+            onLongPress={(evt) => {
+              const { pageX, pageY } = evt.nativeEvent;
+              onLongPress(messageId, pageX, pageY);
+            }}
+            delayLongPress={280}
+            style={styles.bubbleTouch}
+          >
+            {attachmentType === 'image' && attachmentUrl ? (
+              <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, bubbleRadius]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
+            ) : attachmentType === 'audio' && attachmentUrl ? (
+              <VoiceMessageBubble
+                uri={attachmentUrl}
+                durationMs={item.metadata?.duration_ms}
+                waveform={item.metadata?.waveform}
+                fromMe={fromMe}
+                bubbleRadius={bubbleRadius}
+              />
+            ) : fromMe ? (
+              <LinearGradient
+                colors={MY_BUBBLE_GRADIENT as unknown as [string, string]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.bubble, bubbleRadius]}
+              >
+                <Text style={styles.bubbleTextMe}>{item.content}</Text>
+              </LinearGradient>
+            ) : (
+              <View style={[styles.bubble, styles.bubbleOther, bubbleRadius]}>
+                <Text style={styles.bubbleTextOther}>{item.content}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {groupedReactions.length > 0 && (
+            <View
+              style={[styles.reactionPillRow, fromMe ? styles.reactionPillRowMine : styles.reactionPillRowOther]}
+            >
+              {groupedReactions.map((g) => (
+                <ReactionPill
+                  key={g.emoji}
+                  emoji={g.emoji}
+                  count={g.count}
+                  mine={!!item.reactions?.some(
+                    (r) => r.emoji === g.emoji && String(r.user_id) === String(myId),
+                  )}
+                  onPress={() => onReact(messageId, g.emoji)}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+
+      {expanded && (
+        <Text style={[styles.messageTime, fromMe ? styles.messageTimeRight : styles.messageTimeLeft]}>
+          {formatTime(item.created_at || item.createdAt)}
+        </Text>
+      )}
+
+      {showSeen && (
+        <View style={styles.seenRow}>
+          {seenAvatars.map((a) =>
+            a.uri ? (
+              <Image
+                key={a.key}
+                source={{ uri: a.uri }}
+                style={a.overlap ? [styles.seenAvatar, SEEN_AVATAR_OVERLAP] : styles.seenAvatar}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={0}
+                recyclingKey={a.uri}
+              />
+            ) : (
+              <View
+                key={a.key}
+                style={
+                  a.overlap
+                    ? [styles.seenAvatar, styles.rowAvatarFallback, SEEN_AVATAR_OVERLAP]
+                    : [styles.seenAvatar, styles.rowAvatarFallback]
+                }
+              >
+                <Text style={styles.seenAvatarText}>{a.initial}</Text>
+              </View>
+            ),
+          )}
+          <Text style={styles.seenLabel}>{seenLabel}</Text>
+        </View>
+      )}
+    </Reanimated.View>
+  );
+});
+
 export default function ConversationThreadScreen({ navigation, route }: any) {
   const conversationId = route?.params?.conversationId as string;
   const conversationTitle = route?.params?.title as string;
@@ -689,14 +986,48 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     [conversationId],
   );
 
+  /**
+   * L'identifiant courant vient d'`AuthContext`, plus d'un `getCurrentUser()`
+   * réseau : cet écran en est un descendant, et c'était un aller-retour complet
+   * pour une donnée déjà en mémoire — ici en tête d'un chargement, donc
+   * strictement sur le chemin critique de l'ouverture de l'écran.
+   */
+  const { user: authUser } = useAuth();
+  const authUserId = authUser?.id ? String(authUser.id) : null;
+
   const loadMessages = useCallback(async () => {
     if (!conversationId) return;
     setLoading(true);
     try {
-      const me = await apiService.getCurrentUser();
-      setMyId(me?.id || null);
+      setMyId(authUserId);
 
-      const convRes = await apiService.get('/api/messages/conversations');
+      /*
+       * Les DEUX requêtes partent ensemble.
+       *
+       * Elles étaient en série, et la première ne conditionnait rien : elle
+       * télécharge l'annuaire COMPLET des conversations pour n'en retenir
+       * qu'une — celle qu'on vient d'ouvrir — et en extraire les participants
+       * et l'horodatage de lecture. L'identifiant de la conversation, lui, est
+       * connu depuis la navigation. C'étaient donc deux allers-retours
+       * consécutifs avant le premier message affiché, dont l'un s'allonge avec
+       * le nombre de conversations — qui n'a aucun rapport avec celle qu'on lit.
+       *
+       * `allSettled` et non `all` : l'annuaire n'est qu'un décor (avatars,
+       * accusés de lecture). S'il échoue, les messages doivent quand même
+       * s'afficher — c'est le même arbitrage que sur le fil d'accueil.
+       *
+       * Le vrai correctif reste côté serveur : joindre les participants à la
+       * réponse des messages, ou ouvrir `GET /api/messages/conversations/:id`.
+       * On passerait alors de deux requêtes à une.
+       */
+      const [convSettled, msgSettled] = await Promise.allSettled([
+        apiService.get('/api/messages/conversations'),
+        apiService.get(
+          `/api/messages/conversations/${conversationId}/messages?limit=${MESSAGE_PAGE_SIZE}`,
+        ),
+      ]);
+      const convRes = convSettled.status === 'fulfilled' ? convSettled.value : null;
+
       let myPrevReadAt: string | null = null;
       if (convRes?.success && Array.isArray(convRes?.conversations)) {
         const conv = convRes.conversations.find((c: any) => c?.id === conversationId);
@@ -720,23 +1051,23 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           (Array.isArray(conv?.participant_reads) ? conv.participant_reads : []).forEach((r: any) => {
             if (r?.user_id && r?.last_read_at) {
               persistedReads[String(r.user_id)] = String(r.last_read_at);
-              if (String(r.user_id) === String(me?.id || '')) myPrevReadAt = String(r.last_read_at);
+              if (String(r.user_id) === String(authUserId || '')) myPrevReadAt = String(r.last_read_at);
             }
           });
           setReadByUser((prev) => ({ ...persistedReads, ...prev }));
         }
       }
 
-      const res = await apiService.get(`/api/messages/conversations/${conversationId}/messages`);
+      const res = msgSettled.status === 'fulfilled' ? msgSettled.value : null;
       const list = res?.success ? res.messages || [] : [];
       const safeList = Array.isArray(list) ? list : [];
       const normalizedList = safeList.map(normalizeMessage).filter((message) => message.id);
       setMessages(dedupeMessagesById(normalizedList));
-      await markReadIfNeeded(normalizedList, me?.id || null, myPrevReadAt);
+      await markReadIfNeeded(normalizedList, authUserId, myPrevReadAt);
     } finally {
       setLoading(false);
     }
-  }, [conversationId, markReadIfNeeded]);
+  }, [conversationId, markReadIfNeeded, authUserId]);
 
   useEffect(() => {
     loadMessages();
@@ -1284,228 +1615,133 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   }, []);
 
   /**
+   * Groupage Instagram (coins resserrés au sein d'une salve, séparateur
+   * d'horodatage) précalculé une fois par changement de liste. Il vivait dans
+   * `renderItem`, qui devait donc lire `messages[index ± 1]` — et changer
+   * d'identité à chaque message reçu. Une passe `O(n)` sans rendu remplace le
+   * re-rendu de toutes les bulles montées.
+   */
+  const decorated = useMemo<DecoratedMessage[]>(
+    () =>
+      messages.map((msg, index) => {
+        const senderId = String(msg.sender_id || msg?.sender?.id || '');
+        const prevMsg = index > 0 ? messages[index - 1] : null;
+        const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
+        const currentTs = new Date(msg.created_at || msg.createdAt || 0).getTime();
+        const prevTs = new Date(prevMsg?.created_at || prevMsg?.createdAt || 0).getTime();
+        return {
+          msg,
+          // `NO_SENDER` plutôt qu'un `{}` littéral : un objet neuf à chaque
+          // passe ferait échouer la comparaison de `memo` sur les messages
+          // dont l'expéditeur n'est pas encore connu.
+          sender: msg?.sender || participantMap[senderId] || NO_SENDER,
+          fromMe: !!(myId && senderId && String(myId) === senderId),
+          isFirstOfGroup: String(prevMsg?.sender_id || prevMsg?.sender?.id || '') !== senderId,
+          isLastOfGroup: String(nextMsg?.sender_id || nextMsg?.sender?.id || '') !== senderId,
+          showSeparator:
+            index === 0 ||
+            (Number.isFinite(currentTs) &&
+              Number.isFinite(prevTs) &&
+              currentTs - prevTs > TIME_SEPARATOR_GAP_MS),
+        };
+      }),
+    [messages, participantMap, myId],
+  );
+
+  /**
+   * Avatars de la rangée « Vu », résolus ici plutôt que dans la bulle : celle-ci
+   * n'a ainsi besoin ni de `participantMap`, ni de l'avatar de l'interlocuteur,
+   * ni du pseudo. Seule la dernière bulle sortante reçoit ce tableau ; toutes
+   * les autres reçoivent `NO_SEEN_AVATARS`, dont l'identité ne change jamais.
+   */
+  const seenAvatars = useMemo<SeenAvatar[]>(() => {
+    if (!hasBeenSeen) return NO_SEEN_AVATARS;
+    if (!isGroup) {
+      return [
+        {
+          key: 'peer',
+          uri: avatarUri,
+          initial: String(conversationUsername || 'U').slice(0, 1).toUpperCase(),
+          overlap: false,
+        },
+      ];
+    }
+    return seenReaders.slice(0, 3).map(([uid]) => ({
+      key: String(uid),
+      uri: getAvatarUri(participantMap[String(uid)]?.avatar || null),
+      initial: String(participantMap[String(uid)]?.username || 'U').slice(0, 1).toUpperCase(),
+      overlap: true,
+    }));
+  }, [hasBeenSeen, isGroup, avatarUri, conversationUsername, seenReaders, participantMap]);
+
+  /**
+   * Poignées stables passées aux bulles mémoïsées. Une prop de callback
+   * recréée à chaque rendu casserait `memo` aussi sûrement qu'une dépendance
+   * de trop — et `sendReaction` lit `messages`, donc change d'identité à
+   * chaque message reçu. Il passe par une ref : la bulle n'en sait rien.
+   */
+  const sendReactionRef = useRef(sendReaction);
+  useEffect(() => {
+    sendReactionRef.current = sendReaction;
+  }, [sendReaction]);
+
+  const handleBubbleReact = useCallback((messageId: string, emoji: string) => {
+    sendReactionRef.current(messageId, emoji);
+  }, []);
+
+  const handleBubbleToggleExpanded = useCallback((messageId: string) => {
+    setExpandedMessageId((prev) => (prev === messageId ? null : messageId));
+  }, []);
+
+  const handleBubbleLongPress = useCallback((messageId: string, x: number, y: number) => {
+    setReactionBarFor({ messageId, x, y });
+  }, []);
+
+  /**
    * Mémoïsé : une closure recréée à chaque rendu invalide la mémoïsation
    * interne de la FlatList, si bien que toutes les bulles montées se
    * re-rendaient à chaque frappe dans le compositeur.
+   *
+   * `messages` n'y figure plus — le groupage est précalculé dans `decorated` —
+   * donc un message reçu ne recrée plus cette fonction. Les dépendances qui
+   * restent (appui sur une bulle, accusé de lecture) la recréent encore, mais
+   * `MessageBubble` est mémoïsé : seule la bulle réellement touchée se re-rend.
    */
-  const renderItem = useCallback(({ item, index }: { item: MessageItem; index: number }) => {
-    const senderId = String(item.sender_id || item?.sender?.id || '');
-    const sender = item?.sender || participantMap[senderId] || {};
-    const fromMe = !!(myId && senderId && String(myId) === senderId);
-    const currentTs = new Date(item.created_at || item.createdAt || 0).getTime();
-
-    const prevMsg = index > 0 ? messages[index - 1] : null;
-    const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
-    const prevTs = new Date(prevMsg?.created_at || prevMsg?.createdAt || 0).getTime();
-    const prevSenderId = String(prevMsg?.sender_id || prevMsg?.sender?.id || '');
-    const nextSenderId = String(nextMsg?.sender_id || nextMsg?.sender?.id || '');
-
-    const isFirstOfGroup = prevSenderId !== senderId;
-    const isLastOfGroup = nextSenderId !== senderId;
-    const showSeparator =
-      index === 0 ||
-      (Number.isFinite(currentTs) && Number.isFinite(prevTs) && currentTs - prevTs > TIME_SEPARATOR_GAP_MS);
-
-    // Rayons Instagram : le coin côté interlocuteur se resserre au sein
-    // d'une même salve de messages pour former un bloc continu.
-    const big = 20;
-    const small = 6;
-    const bubbleRadius = fromMe
-      ? {
-          borderTopLeftRadius: big,
-          borderBottomLeftRadius: big,
-          borderTopRightRadius: isFirstOfGroup ? big : small,
-          borderBottomRightRadius: isLastOfGroup ? big : small,
-        }
-      : {
-          borderTopRightRadius: big,
-          borderBottomRightRadius: big,
-          borderTopLeftRadius: isFirstOfGroup ? big : small,
-          borderBottomLeftRadius: isLastOfGroup ? big : small,
-        };
-
-    const senderAvatar = getAvatarUri(sender?.avatar || null);
-    const isLastOutgoing = fromMe && lastOutgoingMessageId === String(item.id);
-    const expanded = expandedMessageId === String(item.id);
-    const attachmentType = item.metadata?.attachment_type;
-    const attachmentUrl = item.metadata?.attachment_url;
-    const groupedReactions = groupReactions(item.reactions);
-
-    // Lecture pure (aucune mutation ici) : `justArrivedIdsRef` est alimenté à
-    // l'arrivée du message, pas au rendu. Fondu-glissé court et SANS ressort :
-    // le message se pose, il ne rebondit pas.
-    const isFreshMessage = justArrivedIdsRef.current.has(String(item.id));
-
-    return (
-      <Reanimated.View
-        style={{ marginBottom: isLastOfGroup ? 10 : 2 }}
-        entering={
-          isFreshMessage
-            ? FadeInDown.duration(200).easing(Easing.out(Easing.cubic))
-            : undefined
-        }
-      >
-        {showSeparator && (
-          <View style={styles.separator}>
-            <Text style={styles.separatorText}>{formatSeparator(item.created_at || item.createdAt)}</Text>
-          </View>
-        )}
-
-        {isGroup && !fromMe && isFirstOfGroup && (
-          <View style={styles.groupSenderRow}>
-            <Text
-              style={[
-                styles.groupSenderName,
-                nameIsLit(sender?.profile_customization) && {
-                  color: certifiedNameColors(
-                    sender?.verification_style as any,
-                    sender?.profile_customization,
-                  ).from,
-                },
-              ]}
-            >
-              {sender?.username || 'user'}
-            </Text>
-            {!!sender?.verified && (
-              <VerifiedBadge
-                verificationStyle={(sender?.verification_style as any) || 'default'}
-                size={10}
-                tint={
-                  certifiedNameColors(
-                    sender?.verification_style as any,
-                    sender?.profile_customization,
-                  ).from
-                }
-              />
-            )}
-          </View>
-        )}
-
-        <View style={[styles.msgRow, fromMe ? styles.msgRowRight : styles.msgRowLeft]}>
-          {!fromMe && (
-            <View style={styles.avatarSlot}>
-              {isLastOfGroup &&
-                (senderAvatar ? (
-                  <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
-                ) : (
-                  <View style={[styles.rowAvatar, styles.rowAvatarFallback]}>
-                    <Text style={styles.rowAvatarText}>
-                      {String(sender?.username || 'U').slice(0, 1).toUpperCase()}
-                    </Text>
-                  </View>
-                ))}
-            </View>
-          )}
-
-          <View style={[styles.messageColumn, fromMe && styles.messageColumnMine]}>
-            <StoryReplyReference message={item} fromMe={fromMe} />
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() =>
-                attachmentType === 'image' && attachmentUrl
-                  ? openImageViewer(attachmentUrl)
-                  : setExpandedMessageId(expanded ? null : String(item.id))
-              }
-              onLongPress={(evt) => {
-                const { pageX, pageY } = evt.nativeEvent;
-                setReactionBarFor({ messageId: String(item.id), x: pageX, y: pageY });
-              }}
-              delayLongPress={280}
-              style={styles.bubbleTouch}
-            >
-              {attachmentType === 'image' && attachmentUrl ? (
-                <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, bubbleRadius]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
-              ) : attachmentType === 'audio' && attachmentUrl ? (
-                <VoiceMessageBubble
-                  uri={attachmentUrl}
-                  durationMs={item.metadata?.duration_ms}
-                  waveform={item.metadata?.waveform}
-                  fromMe={fromMe}
-                  bubbleRadius={bubbleRadius}
-                />
-              ) : fromMe ? (
-                <LinearGradient
-                  colors={MY_BUBBLE_GRADIENT as unknown as [string, string]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.bubble, bubbleRadius]}
-                >
-                  <Text style={styles.bubbleTextMe}>{item.content}</Text>
-                </LinearGradient>
-              ) : (
-                <View style={[styles.bubble, styles.bubbleOther, bubbleRadius]}>
-                  <Text style={styles.bubbleTextOther}>{item.content}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {groupedReactions.length > 0 && (
-              <View
-                style={[styles.reactionPillRow, fromMe ? styles.reactionPillRowMine : styles.reactionPillRowOther]}
-              >
-                {groupedReactions.map((g) => (
-                  <ReactionPill
-                    key={g.emoji}
-                    emoji={g.emoji}
-                    count={g.count}
-                    mine={!!item.reactions?.some(
-                      (r) => r.emoji === g.emoji && String(r.user_id) === String(myId),
-                    )}
-                    onPress={() => sendReaction(String(item.id), g.emoji)}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        </View>
-
-        {expanded && (
-          <Text style={[styles.messageTime, fromMe ? styles.messageTimeRight : styles.messageTimeLeft]}>
-            {formatTime(item.created_at || item.createdAt)}
-          </Text>
-        )}
-
-        {isLastOutgoing && hasBeenSeen && (
-          <View style={styles.seenRow}>
-            {!isGroup ? (
-              avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.seenAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={avatarUri} />
-              ) : (
-                <View style={[styles.seenAvatar, styles.rowAvatarFallback]}>
-                  <Text style={styles.seenAvatarText}>
-                    {String(conversationUsername || 'U').slice(0, 1).toUpperCase()}
-                  </Text>
-                </View>
-              )
-            ) : (
-              seenReaders.slice(0, 3).map(([uid]) => {
-                const uri = getAvatarUri(participantMap[String(uid)]?.avatar || null);
-                return uri ? (
-                  <Image key={uid} source={{ uri }} style={[styles.seenAvatar, { marginLeft: -5 }]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
-                ) : (
-                  <View key={uid} style={[styles.seenAvatar, styles.rowAvatarFallback, { marginLeft: -5 }]}>
-                    <Text style={styles.seenAvatarText}>
-                      {String(participantMap[String(uid)]?.username || 'U').slice(0, 1).toUpperCase()}
-                    </Text>
-                  </View>
-                );
-              })
-            )}
-            <Text style={styles.seenLabel}>{seenLabel}</Text>
-          </View>
-        )}
-      </Reanimated.View>
-    );
-  }, [
-    messages,
-    participantMap,
-    myId,
-    isGroup,
-    expandedMessageId,
-    openImageViewer,
-    lastOutgoingMessageId,
-    sendReaction,
-  ]);
+  const renderItem = useCallback(
+    ({ item }: { item: DecoratedMessage }) => {
+      const messageId = String(item.msg.id);
+      const showSeen = item.fromMe && lastOutgoingMessageId === messageId && hasBeenSeen;
+      return (
+        <MessageBubble
+          entry={item}
+          isGroup={isGroup}
+          myId={myId}
+          expanded={expandedMessageId === messageId}
+          showSeen={showSeen}
+          seenLabel={showSeen ? seenLabel : ''}
+          seenAvatars={showSeen ? seenAvatars : NO_SEEN_AVATARS}
+          freshIdsRef={justArrivedIdsRef}
+          onOpenImage={openImageViewer}
+          onToggleExpanded={handleBubbleToggleExpanded}
+          onLongPress={handleBubbleLongPress}
+          onReact={handleBubbleReact}
+        />
+      );
+    },
+    [
+      isGroup,
+      myId,
+      expandedMessageId,
+      lastOutgoingMessageId,
+      hasBeenSeen,
+      seenLabel,
+      seenAvatars,
+      openImageViewer,
+      handleBubbleToggleExpanded,
+      handleBubbleLongPress,
+      handleBubbleReact,
+    ],
+  );
 
   const typingLabel = useMemo(() => {
     if (typingUsers.length === 0) return '';
@@ -1601,8 +1837,8 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           >
             <FlatList
               ref={flatListRef}
-              data={messages}
-              keyExtractor={(item) => String(item.id)}
+              data={decorated}
+              keyExtractor={(item) => String(item.msg.id)}
               renderItem={renderItem}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
@@ -1610,6 +1846,19 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               onScroll={handleListScroll}
               scrollEventThrottle={160}
               onContentSizeChange={handleContentSizeChange}
+              // Accordé à la taille de page : tout ce que le serveur envoie est
+              // monté au premier rendu, donc `scrollToEnd` connaît la vraie
+              // hauteur du contenu dès le premier appel (voir MESSAGE_PAGE_SIZE).
+              initialNumToRender={MESSAGE_PAGE_SIZE}
+              // Les suivants sont ceux qui s'accumulent pendant la session, à
+              // mesure que la conversation vit.
+              maxToRenderPerBatch={10}
+              updateCellsBatchingPeriod={50}
+              windowSize={11}
+              // `removeClippedSubviews` reste à `false`, comme sur ProfileScreen :
+              // les bulles ont une hauteur variable et portent des animations
+              // d'entrée, et le clipping est connu pour y faire disparaître des
+              // vues. Le gain serait marginal sur 30 éléments.
               ListHeaderComponent={
                 <View style={styles.threadIntro}>
                   <StoryRing

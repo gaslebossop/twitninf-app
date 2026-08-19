@@ -44,6 +44,7 @@ import { toast } from '../ui/Toast';
 import feedback from '../../utils/feedback';
 import { useFlag } from '../../contexts/FeatureFlagContext';
 import { FLAGS } from '../../config/featureFlagKeys';
+import { sameAuthor } from '../../utils/sameAuthor';
 
 /** Anneau « déjà vu » : gris neutre, comme dans la barre de stories. */
 const SEEN_STORY_RING = ['#3A3A3A', '#3A3A3A'] as const;
@@ -758,6 +759,12 @@ function areEqual(prev: TweetRowProps, next: TweetRowProps) {
     a.user_interaction?.is_retweeted === b.user_interaction?.is_retweeted &&
     a.user_interaction?.is_super_liked === b.user_interaction?.is_super_liked &&
     a.content === b.content &&
+    // L'auteur peut changer d'habillage (avatar, pseudo, premium, pastille)
+    // sans que le tweet change d'identité. Sur un retweet pur, l'auteur
+    // affiché est celui du tweet d'origine (voir `displayAuthor`) : les deux
+    // sont donc à comparer.
+    sameAuthor(a.author, b.author) &&
+    sameAuthor((a as any).originalTweet?.author, (b as any).originalTweet?.author) &&
     prev.index === next.index &&
     prev.isThreadParent === next.isThreadParent &&
     prev.isThreadChild === next.isThreadChild &&

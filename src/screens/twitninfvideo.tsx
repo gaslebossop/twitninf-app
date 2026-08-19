@@ -102,7 +102,17 @@ interface VideoCardProps {
   cardHeight: number; // ✅ hauteur responsive passée par le parent
 }
 
-const VideoCard: React.FC<VideoCardProps> = ({ tweet, isActive, onSheetToggle, cardHeight }) => {
+// `React.memo` (comparaison par défaut, référence des props) : sans lui, le
+// `CellRenderer` de la `FlatList` (une `PureComponent`) propage à TOUTES les
+// cartes montées le moindre re-rendu de l'écran — dont `activeVideoId`, qui
+// change à CHAQUE glissé. Une carte porte un `<Video>` expo-av monté en
+// permanence dès que `videoUrl` existe : c'est le re-rendu le plus coûteux du
+// dépôt. `setVideos` préserve les références des tweets déjà chargés
+// (`[...prev, ...newTweets]`), donc `tweet` reste stable d'un rendu à l'autre
+// pour une carte qui n'a pas changé — la comparaison par défaut est donc
+// suffisante ici, contrairement à `TweetRow` qui a besoin d'un comparateur
+// dédié.
+const VideoCard: React.FC<VideoCardProps> = React.memo(function VideoCard({ tweet, isActive, onSheetToggle, cardHeight }) {
   const [liked, setLiked] = useState<boolean>(
     tweet.user_interaction?.is_liked ?? false
   );
@@ -374,7 +384,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ tweet, isActive, onSheetToggle, c
       />
     </View>
   );
-};
+});
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
 
@@ -511,6 +521,25 @@ const TwitNinfVideo: React.FC = () => {
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 });
 
+  // Trois références stables : sans elles, le `React.memo` de `VideoCard`
+  // ci-dessus ne sert à rien — `renderItem` change d'identité à chaque rendu
+  // de l'écran (donc à chaque glissé, `activeVideoId` changeant), et le
+  // `CellRenderer` de la `FlatList` re-rend TOUTES les cartes montées, avec
+  // leur lecteur vidéo, qu'elles aient changé ou non.
+  const handleSheetToggle = useCallback((isVisible: boolean) => setIsScrollEnabled(!isVisible), []);
+  const videoKeyExtractor = useCallback((item: Tweet) => item.id, []);
+  const renderVideo = useCallback(
+    ({ item }: { item: Tweet }) => (
+      <VideoCard
+        tweet={item}
+        isActive={activeVideoId === item.id && isFocused}
+        onSheetToggle={handleSheetToggle}
+        cardHeight={cardHeight}
+      />
+    ),
+    [activeVideoId, isFocused, handleSheetToggle, cardHeight],
+  );
+
   if (initialLoading) {
     return (
       <View style={styles.container}>
@@ -532,7 +561,7 @@ const TwitNinfVideo: React.FC = () => {
       ) : (
         <FlatList
           data={videos}
-          keyExtractor={item => item.id}
+          keyExtractor={videoKeyExtractor}
           pagingEnabled
           showsVerticalScrollIndicator={false}
           // ✅ snapToInterval utilise cardHeight (responsive) et non height (brut)
@@ -542,15 +571,36 @@ const TwitNinfVideo: React.FC = () => {
           scrollEnabled={isScrollEnabled}
           onViewableItemsChanged={onViewableItemsChanged.current}
           viewabilityConfig={viewabilityConfig.current}
-          renderItem={({ item }) => (
-            <VideoCard
-              tweet={item}
-              isActive={activeVideoId === item.id && isFocused}
-              onSheetToggle={(isVisible) => setIsScrollEnabled(!isVisible)}
-              cardHeight={cardHeight} // ✅ passé en prop
-            />
-          )}
+          renderItem={renderVideo}
           disableIntervalMomentum
+          /**
+           * Réglage de virtualisation. Sans lui, la liste tournait sur les
+           * défauts de React Native — `initialNumToRender: 10`,
+           * `windowSize: 21` — calibrés pour des lignes de fil, pas pour des
+           * pages plein écran : l'ouverture de l'onglet demandait au système
+           * d'instancier une dizaine de lecteurs `<Video>` pour en afficher
+           * UN. Sur un appareil modeste, le nombre de décodeurs matériels est
+           * limité à quelques flux : au-delà, la vidéo saccade ou reste noire.
+           *
+           * On ne recopie PAS le réglage maison des quatre listes de contenu
+           * (`initialNumToRender={6}` / `windowSize={7}`) : il vise des lignes,
+           * pas des écrans. Ici, le strict nécessaire est la carte active et
+           * une voisine de chaque côté.
+           *
+           * `windowSize={3}` réduit le préchargement de la vidéo suivante ;
+           * si un glissé très rapide tombait sur une carte pas encore prête,
+           * `5` (deux de chaque côté) reste très loin des 21 d'origine. Ne pas
+           * descendre en dessous de 3.
+           */
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          updateCellsBatchingPeriod={50}
+          windowSize={3}
+          removeClippedSubviews={Platform.OS === 'android'}
+          // Gratuit et exact : toutes les cartes font `cardHeight`, la valeur
+          // est déjà celle du `snapToInterval`. Évite de mesurer les cellules
+          // à la volée et fiabilise le calage de la pagination.
+          getItemLayout={(_, i) => ({ length: cardHeight, offset: cardHeight * i, index: i })}
           onRefresh={() => fetchVideos(true)}
           refreshing={refreshing}
           // ✅ padding dynamique = ce qui est "caché" sous la tab bar (ou,

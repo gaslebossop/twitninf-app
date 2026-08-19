@@ -1,5 +1,5 @@
 import { fonts } from '../theme';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -53,6 +53,43 @@ interface SendCoinsModalProps {
 function fmt(value: number, maxDigits = 2) {
   return value.toLocaleString('fr-FR', { maximumFractionDigits: maxDigits });
 }
+
+/**
+ * Ligne de destinataire mémoïsée. Elle était du JSX inline dans un `renderItem`
+ * anonyme : chaque caractère tapé dans la recherche reconstruisait toute la
+ * liste des contacts, `Avatar` et `PremiumDisplayName` compris. C'est un écran
+ * d'envoi d'argent — l'à-coup y est mal ressenti, parce qu'on y est déjà
+ * attentif et hésitant.
+ */
+const RecipientRow = memo(function RecipientRow({
+  user,
+  onPick,
+}: {
+  user: User;
+  onPick: (user: User) => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.userRow} onPress={() => onPick(user)} activeOpacity={0.7}>
+      <Avatar size={44} username={user.username} uri={user.avatar} />
+      <View style={styles.userInfo}>
+        <PremiumDisplayName
+          text={user.full_name || user.username}
+          baseStyle={styles.userName}
+          isPremium={!!(user as any)?.premium}
+          subscriptionTierRaw={(user as any)?.subscription_tier}
+          fontId="system"
+          effectId="none"
+          numberOfLines={1}
+          customization={(user as any)?.profile_customization as ProfileCustomization | undefined}
+          verified={!!user.verified}
+          verificationStyle={(user.verification_style as any) || 'default'}
+        />
+        <Text style={styles.userHandle} numberOfLines={1}>@{user.username}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </TouchableOpacity>
+  );
+});
 
 export default function SendCoinsModal({ visible, onClose, currencyId, symbol, balance, eurCurrencyId = null, eurBalance = null, price = null, onSent }: SendCoinsModalProps) {
   const insets = useSafeAreaInsets();
@@ -121,11 +158,22 @@ export default function SendCoinsModal({ visible, onClose, currencyId, symbol, b
   const willAutoConvert = unit === 'EUR' && validAmount && !insufficient && (eurBalance ?? 0) < numericAmount;
   const canSend = Boolean(selected) && validAmount && !insufficient && !sending && Boolean(activeCurrencyId);
 
-  const pickRecipient = (user: User) => {
+  const pickRecipient = useCallback((user: User) => {
     setSelected(user);
     setError('');
     setStep('amount');
-  };
+  }, []);
+
+  /**
+   * Stables : sans ça, `RecipientRow` recevrait un élément neuf à chaque
+   * frappe et sa mémoïsation ne servirait à rien. Les deux corrections vont
+   * ensemble, l'une sans l'autre ne change rien.
+   */
+  const renderRecipient = useCallback(
+    ({ item }: { item: User }) => <RecipientRow user={item} onPick={pickRecipient} />,
+    [pickRecipient],
+  );
+  const recipientKeyExtractor = useCallback((item: User) => item.id, []);
 
   const backToRecipient = () => {
     setStep('recipient');
@@ -229,31 +277,11 @@ export default function SendCoinsModal({ visible, onClose, currencyId, symbol, b
                 ) : (
                   <FlatList
                     data={users}
-                    keyExtractor={(item) => item.id}
+                    keyExtractor={recipientKeyExtractor}
                     style={styles.userList}
                     contentContainerStyle={styles.userListContent}
                     keyboardShouldPersistTaps="handled"
-                    renderItem={({ item }) => (
-                      <TouchableOpacity style={styles.userRow} onPress={() => pickRecipient(item)} activeOpacity={0.7}>
-                        <Avatar size={44} username={item.username} uri={item.avatar} />
-                        <View style={styles.userInfo}>
-                          <PremiumDisplayName
-                            text={item.full_name || item.username}
-                            baseStyle={styles.userName}
-                            isPremium={!!(item as any)?.premium}
-                            subscriptionTierRaw={(item as any)?.subscription_tier}
-                            fontId="system"
-                            effectId="none"
-                            numberOfLines={1}
-                            customization={(item as any)?.profile_customization as ProfileCustomization | undefined}
-                            verified={!!item.verified}
-                            verificationStyle={(item.verification_style as any) || 'default'}
-                          />
-                          <Text style={styles.userHandle} numberOfLines={1}>@{item.username}</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                      </TouchableOpacity>
-                    )}
+                    renderItem={renderRecipient}
                     ListEmptyComponent={
                       !searching ? (
                         <View style={styles.hintWrap}>

@@ -2017,8 +2017,11 @@ export default function TweetsScreen() {
           </TouchableOpacity>
 
           <View style={S.brandLockup}>
+            {/* `brand-mark.png` (192×192), pas `icon.png` (1920×1920) : affiché
+                statiquement à 26 pt, l'original imposait un décodage de
+                3,69 Mpx à chaque montage de l'écran le plus regardé de l'app. */}
             <Image
-              source={require('../../assets/icon.png')}
+              source={require('../../assets/brand-mark.png')}
               style={{ width: 26, height: 26 }}
               resizeMode="contain"
             />

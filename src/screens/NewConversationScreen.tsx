@@ -28,6 +28,7 @@ import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
 import { toast } from '../components/ui/Toast';
+import { useAuth } from '../contexts/AuthContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -68,6 +69,8 @@ const TABS = [
 ];
 
 export default function NewConversationScreen({ navigation, route }: any) {
+  const { user: authUser } = useAuth();
+  const authUserId = authUser?.id ? String(authUser.id) : null;
   const initialTab = route?.params?.initialTab;
   const [mode, setMode] = useState<'dm' | 'group' | 'invites'>(
     initialTab === 'group' || initialTab === 'invites' ? initialTab : 'dm'
@@ -97,7 +100,13 @@ export default function NewConversationScreen({ navigation, route }: any) {
   useEffect(() => {
     const idx = TABS.findIndex((t) => t.key === mode);
     // 2·√80 ≈ 18 : le curseur d'onglet glisse et s'arrête net.
-    Animated.spring(tabAnim, { toValue: idx, useNativeDriver: false, tension: 80, friction: 18 }).start();
+    //
+    // Pilote NATIF : le curseur se déplace en `translateX` et non plus en
+    // `left`. Ce n'est pas le pilote qu'il fallait changer, c'est la propriété
+    // — le pilote natif ne sait pas animer `left`, ce qui condamnait le
+    // ressort à tourner sur le thread JS. Le fil a déjà fait cette migration
+    // (voir TweetsScreen, « Indicateur d'onglet — thread UI »).
+    Animated.spring(tabAnim, { toValue: idx, useNativeDriver: true, tension: 80, friction: 18 }).start();
   }, [mode]);
 
   useEffect(() => {
@@ -131,11 +140,13 @@ export default function NewConversationScreen({ navigation, route }: any) {
   const loadDefaultUsers = async () => {
     setLoadingDefaults(true);
     try {
-      const me = await apiService.getCurrentUser();
-      if (!me?.id) return;
+      // Identifiant lu dans `AuthContext` : le `getCurrentUser()` qui était ici
+      // était un aller-retour réseau complet, en tête du chargement, pour une
+      // donnée déjà en mémoire.
+      if (!authUserId) return;
       const [followersRes, followingRes] = await Promise.all([
-        apiService.getUserFollowers(me.id, { limit: 35, offset: 0 }),
-        apiService.getUserFollowing(me.id, { limit: 35, offset: 0 }),
+        apiService.getUserFollowers(authUserId, { limit: 35, offset: 0 }),
+        apiService.getUserFollowing(authUserId, { limit: 35, offset: 0 }),
       ]);
       const followers = followersRes?.success ? ((followersRes as any)?.data?.followers || []) : [];
       const following = followingRes?.success ? ((followingRes as any)?.data?.following || []) : [];
@@ -269,7 +280,10 @@ export default function NewConversationScreen({ navigation, route }: any) {
     );
   };
 
-  const tabIndicatorLeft = tabAnim.interpolate({
+  // Les valeurs de sortie sont déjà des décalages absolus depuis la gauche :
+  // la conversion vers `translateX` est directe, à condition d'ancrer le
+  // curseur à `left: 0` pour que le décalage parte du même bord qu'avant.
+  const tabIndicatorTranslateX = tabAnim.interpolate({
     inputRange: [0, 1, 2],
     outputRange: [4, (SCREEN_W - 32) / 3 + 4, ((SCREEN_W - 32) / 3) * 2 + 4],
   });
@@ -297,7 +311,16 @@ export default function NewConversationScreen({ navigation, route }: any) {
         {/* ── TABS ── */}
         <View style={styles.tabsContainer}>
           <View style={styles.tabsTrack}>
-            <Animated.View style={[styles.tabIndicator, { left: tabIndicatorLeft, width: (SCREEN_W - 32) / 3 - 8 }]} />
+            <Animated.View
+              style={[
+                styles.tabIndicator,
+                {
+                  left: 0,
+                  width: (SCREEN_W - 32) / 3 - 8,
+                  transform: [{ translateX: tabIndicatorTranslateX }],
+                },
+              ]}
+            />
             {TABS.map((tab) => (
               <TouchableOpacity key={tab.key} style={styles.tab} onPress={() => setMode(tab.key as any)} activeOpacity={0.8}>
                 <Ionicons name={tab.icon} size={15} color={mode === tab.key ? colors.onAccent : colors.textMuted} />

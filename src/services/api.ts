@@ -222,6 +222,39 @@ class ApiService {
   //   return this.token;
   // }
 
+  /**
+   * Requêtes `GET` identiques déjà en vol, mutualisées.
+   *
+   * ── Le problème ──
+   * Aucune déduplication n'existait : deux appels identiques lancés à une
+   * seconde d'intervalle partaient deux fois. `/api/messages/conversations`
+   * — qui renvoie TOUTES les conversations — a trois appelants distincts
+   * (le badge « non lu », l'onglet Messages, l'ouverture d'une conversation) :
+   * le parcours le plus banal de la messagerie la téléchargeait deux à trois
+   * fois en quelques secondes.
+   *
+   * ── Pourquoi la déduplication et PAS un cache ──
+   * Un cache mal réglé sur une messagerie afficherait des messages périmés.
+   * Celle-ci ne le peut pas : rien n'est conservé après la résolution, la clé
+   * disparaît dès que la requête retombe. Elle ne supprime que les doublons
+   * SIMULTANÉS — jamais une donnée fraîche.
+   *
+   * ── Ce qu'elle couvre, et ce qu'elle ne couvre pas ──
+   * Uniquement les `GET` : mutualiser deux écritures les ferait disparaître
+   * l'une l'autre. La clé inclut le jeton, pour que deux comptes (bascule de
+   * compte) ne partagent jamais une réponse.
+   *
+   * ── Conséquence assumée ──
+   * Les appelants simultanés reçoivent le MÊME objet de réponse, comme dans
+   * n'importe quelle couche de déduplication. Muter une réponse au lieu de la
+   * lire deviendrait donc visible ailleurs — ce que personne ne fait ici, mais
+   * c'est la contrepartie à connaître.
+   *
+   * Même idiome que `refreshInFlight` plus haut, qui mutualise déjà le
+   * rafraîchissement de jeton pour la même raison.
+   */
+  private readonly getInFlight = new Map<string, Promise<any>>();
+
   // Méthode publique pour les requêtes génériques
   async request(
     endpoint: string,
@@ -233,7 +266,27 @@ class ApiService {
       timeout?: number;
     } = {}
   ): Promise<any> {
-    return this.makeRequest(endpoint, options);
+    const method = options.method || 'GET';
+    if (method !== 'GET') return this.makeRequest(endpoint, options);
+
+    // La clé reprend TOUT ce qui change la requête, `undefined` compris :
+    // `requiresAuth` non fourni ne veut pas dire `false` au même endroit que
+    // `requiresAuth: false` explicite, et deux appels qui ne se comportent pas
+    // pareil ne doivent jamais se mutualiser.
+    const key = [
+      endpoint,
+      String(options.requiresAuth),
+      String(options.timeout),
+      options.token ?? this.token ?? '',
+    ].join('|');
+    const flying = this.getInFlight.get(key);
+    if (flying) return flying;
+
+    const promise = this.makeRequest(endpoint, options).finally(() => {
+      this.getInFlight.delete(key);
+    });
+    this.getInFlight.set(key, promise);
+    return promise;
   }
 
   // Méthodes de commodité pour les requêtes HTTP

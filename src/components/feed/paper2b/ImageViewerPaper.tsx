@@ -32,7 +32,7 @@
  * portent donc `'worklet'`, et tout retour vers React passe par `runOnJS`.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -88,7 +88,13 @@ interface PageProps {
   onZoomChange: (zoomed: boolean) => void;
 }
 
-function ZoomablePage({ url, width, height, dismiss, onClose, onZoomChange }: PageProps) {
+/**
+ * Mémoïsée : `index` et `anyZoomed` vivent dans la visionneuse, si bien que
+ * chaque glissé d'une image à l'autre et chaque entrée ou sortie de zoom
+ * re-rendaient TOUTES les pages montées — c'est-à-dire plusieurs images plein
+ * écran, dans un écran qui ne sert qu'à les regarder en grand.
+ */
+const ZoomablePage = memo(function ZoomablePage({ url, width, height, dismiss, onClose, onZoomChange }: PageProps) {
   const [loaded, setLoaded] = useState(false);
   /**
    * Le zoom est AUSSI en state React, pas seulement en `sharedValue` : c'est
@@ -237,7 +243,7 @@ function ZoomablePage({ url, width, height, dismiss, onClose, onZoomChange }: Pa
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
 // ─── La visionneuse ─────────────────────────────────────────────────────────
 
@@ -268,6 +274,31 @@ export default function ImageViewerPaper({
     setAnyZoomed(false);
     dismiss.value = 0;
   }, [visible, initialIndex, dismiss]);
+
+  /**
+   * Stables : `ZoomablePage` mémoïsée ne sert à rien si elle reçoit un élément
+   * neuf à chaque changement d'index ou de zoom. `setAnyZoomed` est déjà stable
+   * (c'est un setter de `useState`), et `width`/`height` ne bougent qu'à la
+   * rotation — les seules dépendances qui restent.
+   */
+  const renderPage = useCallback(
+    ({ item }: { item: string }) => (
+      <ZoomablePage
+        url={item}
+        width={width}
+        height={height}
+        dismiss={dismiss}
+        onClose={onClose}
+        onZoomChange={setAnyZoomed}
+      />
+    ),
+    [width, height, dismiss, onClose],
+  );
+  const pageKeyExtractor = useCallback((url: string, i: number) => `${url}-${i}`, []);
+  const getPageLayout = useCallback(
+    (_: unknown, i: number) => ({ length: width, offset: width * i, index: i }),
+    [width],
+  );
 
   const onMomentumEnd = useCallback(
     (e: { nativeEvent: { contentOffset: { x: number } } }) => {
@@ -328,19 +359,10 @@ export default function ImageViewerPaper({
           scrollEnabled={!anyZoomed}
           showsHorizontalScrollIndicator={false}
           initialScrollIndex={initialIndex}
-          getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
-          keyExtractor={(url, i) => `${url}-${i}`}
+          getItemLayout={getPageLayout}
+          keyExtractor={pageKeyExtractor}
           onMomentumScrollEnd={onMomentumEnd}
-          renderItem={({ item }) => (
-            <ZoomablePage
-              url={item}
-              width={width}
-              height={height}
-              dismiss={dismiss}
-              onClose={onClose}
-              onZoomChange={setAnyZoomed}
-            />
-          )}
+          renderItem={renderPage}
         />
 
         <Animated.View style={[S.chrome, chromeStyle]} pointerEvents="box-none">

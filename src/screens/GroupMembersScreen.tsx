@@ -24,6 +24,7 @@ import { certifiedNameColors, type ProfileCustomization } from '../services/prof
 import { API_CONFIG } from '../config/api';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { useAuth } from '../contexts/AuthContext';
 
 function getAvatarUri(avatar?: string | null): string | null {
   if (!avatar) return null;
@@ -107,7 +108,12 @@ export default function GroupMembersScreen({ navigation, route }: any) {
   const conversationId = route?.params?.conversationId as string;
   const title = route?.params?.title as string;
 
-  const [myId, setMyId] = useState<string | null>(null);
+  // Identifiant lu dans `AuthContext` plutôt que redemandé au serveur : les
+  // deux `getCurrentUser()` de cet écran étaient des allers-retours complets
+  // pour une donnée en mémoire, dont un EN SÉRIE devant la requête des
+  // participants — il retardait donc l'affichage de l'écran.
+  const { user: authUser } = useAuth();
+  const myId = authUser?.id ? String(authUser.id) : null;
   const [participants, setParticipants] = useState<any[]>([]);
   const [groupMeta, setGroupMeta] = useState<any>(null);
   const [query, setQuery] = useState('');
@@ -117,8 +123,6 @@ export default function GroupMembersScreen({ navigation, route }: any) {
   const [sheet, setSheet] = useState<{ visible: boolean; participant?: any }>({ visible: false });
 
   const load = async () => {
-    const me = await apiService.getCurrentUser();
-    setMyId(me?.id || null);
     const res = await apiService.get(`/api/messages/conversations/${conversationId}/participants`);
     if (res?.success) {
       setParticipants(Array.isArray(res.participants) ? res.participants : []);
@@ -129,11 +133,10 @@ export default function GroupMembersScreen({ navigation, route }: any) {
   useEffect(() => { load(); }, [conversationId]);
 
   const loadDefaultUsers = async () => {
-    const me = await apiService.getCurrentUser();
-    if (!me?.id) return;
+    if (!myId) return;
     const [followersRes, followingRes] = await Promise.all([
-      apiService.getUserFollowers(me.id, { limit: 30, offset: 0 }),
-      apiService.getUserFollowing(me.id, { limit: 30, offset: 0 }),
+      apiService.getUserFollowers(myId, { limit: 30, offset: 0 }),
+      apiService.getUserFollowing(myId, { limit: 30, offset: 0 }),
     ]);
     const followers = followersRes?.success ? ((followersRes as any)?.data?.followers || []) : [];
     const following = followingRes?.success ? ((followingRes as any)?.data?.following || []) : [];

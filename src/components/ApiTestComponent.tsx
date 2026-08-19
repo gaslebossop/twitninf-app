@@ -243,7 +243,6 @@ export const ApiTestComponent: React.FC<ApiTestComponentProps> = ({ onClose }) =
                           <VerifiedBadge 
                             verificationStyle={(user.verification_style as any) || 'default'}
                             size={16} 
-                            animated={true}
                           />
                         </View>
                       )}

@@ -21,7 +21,22 @@ import { useNavigation } from '@react-navigation/native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { colors, fonts, glow, radius } from '../theme';
 import { ScreenBackground, HowItWorks, celebrateReward, AppHeader } from '../components/ui';
-import SlotReel3D, { cellForSymbol } from '../components/casino/SlotReel3D';
+/**
+ * Le rouleau 3D est chargé PARESSEUSEMENT.
+ *
+ * `SlotReel3D` est le seul fichier du dépôt à importer `three`, `expo-three` et
+ * `expo-gl`. Comme trois navigateurs référencent `CasinoScreen`, et que la
+ * référence au composant est consommée dans le rendu du navigateur, ces trois
+ * bibliothèques étaient évaluées AU DÉMARRAGE — pour tout le monde, y compris
+ * ceux qui n'ouvriront jamais le casino. `inlineRequires` (activé dans
+ * `metro.config.js`) ne suffit pas : il déplace le `require` à son premier
+ * usage, et cet usage est le rendu du navigateur.
+ *
+ * `cellForSymbol` vient de `reelStrip` et NON de `SlotReel3D` : un import nommé
+ * sur le module lourd le rappellerait aussitôt et annulerait tout.
+ */
+const SlotReel3D = React.lazy(() => import('../components/casino/SlotReel3D'));
+import { cellForSymbol } from '../components/casino/reelStrip';
 import CasinoService, { CasinoConfig, CasinoResult, CasinoHistoryRow, WheelMode } from '../services/casinoService';
 import NewEconomyService from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
@@ -868,13 +883,18 @@ export default function CasinoScreen() {
                   <View style={styles.slotWindow}>
                     {[0, 1, 2].map(i => (
                       use3D ? (
-                        <SlotReel3D
-                          key={`r3d-${i}`}
-                          style={styles.slotReel3D}
-                          targetCell={reel3D.cells[i]}
-                          spinKey={reel3D.key}
-                          durationMs={REEL_STOP_MS[i]}
-                        />
+                        // Le repli est la fenêtre vide du rouleau : le temps
+                        // que `three` s'évalue à la première ouverture, le
+                        // cabinet garde exactement sa géométrie — rien ne
+                        // saute quand les tambours arrivent.
+                        <React.Suspense key={`r3d-${i}`} fallback={<View style={styles.slotReel3D} />}>
+                          <SlotReel3D
+                            style={styles.slotReel3D}
+                            targetCell={reel3D.cells[i]}
+                            spinKey={reel3D.key}
+                            durationMs={REEL_STOP_MS[i]}
+                          />
+                        </React.Suspense>
                       ) : (
                         <View key={i} style={styles.slotReel}>
                           <Animated.View style={{ transform: [{ translateY: reelAnims[i] }] }}>

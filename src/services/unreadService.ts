@@ -19,12 +19,28 @@ function subscribe(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-async function getMessagesUnreadCount(): Promise<number> {
+/**
+ * Compte les conversations non lues.
+ *
+ * ── Pourquoi `meId` est un PARAMÈTRE ──
+ * Cette fonction faisait elle-même un `getCurrentUser()` — un aller-retour
+ * réseau complet, EN SÉRIE après le premier, toutes les 30 secondes, sur tous
+ * les écrans — uniquement pour obtenir l'identifiant de l'utilisateur courant
+ * et exclure les messages qu'il a lui-même envoyés. Cet identifiant est déjà
+ * dans `AuthContext`, dont la barre d'onglets est un descendant : il suffit de
+ * le passer. Un aller-retour sur deux disparaît, sans rien attendre du serveur.
+ *
+ * ── Ce qui reste à faire ──
+ * Le vrai correctif est une route dédiée qui renvoie un entier, sur le modèle
+ * de `getNotificationsUnreadCount` dix lignes plus bas : ici on télécharge
+ * TOUTE la liste des conversations pour produire un seul nombre. La route
+ * n'existe pas encore côté API.
+ */
+async function getMessagesUnreadCount(currentUserId?: string | null): Promise<number> {
   try {
     const res = await apiService.get('/api/messages/conversations');
     const list: any[] = res?.success ? res.conversations || [] : [];
-    const me = await apiService.getCurrentUser();
-    const meId = me?.id ? String(me.id) : null;
+    const meId = currentUserId ? String(currentUserId) : null;
 
     return list.reduce((count, conv: any) => {
       const last = conv?.last_message;

@@ -29,7 +29,7 @@ export {
 export type { ColorToken, ThemeName } from './colors';
 export { typography, fontWeight, fontFamily } from './typography';
 export type { TypographyToken } from './typography';
-export { fonts, fontAssets } from './fonts';
+export { fonts, fontAssets, coreFontAssets, displayNameFontAssets } from './fonts';
 export type { FontToken } from './fonts';
 
 // Vocabulaire de mouvement — durées, courbes et ressorts partagés.

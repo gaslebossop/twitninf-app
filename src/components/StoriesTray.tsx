@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  ScrollView,
+  FlatList,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -32,6 +33,42 @@ interface StoriesTrayProps {
 }
 
 const AVATAR_SIZE = 62;
+
+/**
+ * Un anneau de story, mémoïsé. Le rail était un `ScrollView` : il montait
+ * TOUS les groupes renvoyés par `/api/stories/feed` — appelée sans `limit` —
+ * et n'en démontait aucun. Le coût est payé en tête du fil d'accueil, avant le
+ * premier tweet, et par tout le monde ; un compte qui suit beaucoup de gens
+ * actifs a le plus d'anneaux à monter, donc l'ouverture la plus lente. C'est
+ * le mauvais sens.
+ */
+const StoryGroupItem = memo(function StoryGroupItem({
+  group,
+  index,
+  gapColor,
+  onOpen,
+}: {
+  group: StoryGroup;
+  index: number;
+  gapColor: string;
+  onOpen: (index: number) => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.item} activeOpacity={0.75} onPress={() => onOpen(index)}>
+      <StoryRing
+        size={AVATAR_SIZE}
+        uri={resolveAvatar(group.user?.avatar)}
+        label={group.user?.username}
+        hasStory
+        seen={!group.has_unseen}
+        gapColor={gapColor}
+      />
+      <Text style={styles.label} numberOfLines={1}>
+        {group.user?.username || 'story'}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
 function withoutExpiredStories(group: StoryGroup, now = Date.now()): StoryGroup {
   const stories = group.stories.filter((item) => {
@@ -98,12 +135,12 @@ export default function StoriesTray({
     return () => clearTimeout(timer);
   }, [feed, load]);
 
-  const openGroup = (groups: StoryGroup[], index: number) => {
+  const openGroup = useCallback((groups: StoryGroup[], index: number) => {
     if (!groups[index]?.stories?.length) return;
     setViewerGroups(groups);
     setViewerIndex(index);
     setViewerVisible(true);
-  };
+  }, []);
 
   const handleAddStory = async () => {
     try {
@@ -199,6 +236,21 @@ export default function StoriesTray({
     setViewerGroups((current) => current.map(updateGroup));
   };
 
+  const openGroupAt = useCallback(
+    (index: number) => openGroup(feed.groups, index),
+    [openGroup, feed.groups],
+  );
+  const renderStoryGroup = useCallback(
+    ({ item, index }: { item: StoryGroup; index: number }) => (
+      <StoryGroupItem group={item} index={index} gapColor={backgroundColor} onOpen={openGroupAt} />
+    ),
+    [backgroundColor, openGroupAt],
+  );
+  const storyKeyExtractor = useCallback(
+    (group: StoryGroup, index: number) => String(group.user?.id ?? `group-${index}`),
+    [],
+  );
+
   const hasAnything = feed.self.stories.length > 0 || feed.groups.length > 0;
   if (loading && !hasAnything) {
     return (
@@ -213,71 +265,68 @@ export default function StoriesTray({
 
   return (
     <View style={[styles.container, style]}>
-      <ScrollView
+      <FlatList
         horizontal
+        data={feed.groups}
+        keyExtractor={storyKeyExtractor}
+        renderItem={renderStoryGroup}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rail}
-      >
-        {/* « Votre story » — toujours en tête, comme sur Instagram */}
-        <TouchableOpacity style={styles.item} activeOpacity={0.75} onPress={handleSelfPress}>
-          <View>
-            <StoryRing
-              size={AVATAR_SIZE}
-              uri={selfAvatar}
-              label={currentUser?.username || feed.self.user?.username}
-              hasStory={selfHasStory}
-              seen
-              showPlus={!selfHasStory}
-              gapColor={backgroundColor}
-            />
-            {publishing && (
-              <View style={styles.publishingOverlay}>
-                <ActivityIndicator size="small" color="#fff" />
+        // Pas de `getItemLayout` : l'en-tête compte une ou deux tuiles selon
+        // qu'on a déjà une story, et un offset faux y ferait plus de mal que
+        // la mesure à la volée ne coûte sur des tuiles de largeur fixe.
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={50}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          // Une VUE EN RANGÉE, et pas un fragment : le conteneur que
+          // `VirtualizedList` pose autour de l'en-tête est une colonne par
+          // défaut, ce qui empilerait « Votre story » au-dessus d'« Ajouter »
+          // au lieu de les poser côte à côte.
+          <View style={styles.railHeader}>
+            {/* « Votre story » — toujours en tête, comme sur Instagram */}
+            <TouchableOpacity style={styles.item} activeOpacity={0.75} onPress={handleSelfPress}>
+              <View>
+                <StoryRing
+                  size={AVATAR_SIZE}
+                  uri={selfAvatar}
+                  label={currentUser?.username || feed.self.user?.username}
+                  hasStory={selfHasStory}
+                  seen
+                  showPlus={!selfHasStory}
+                  gapColor={backgroundColor}
+                />
+                {publishing && (
+                  <View style={styles.publishingOverlay}>
+                    <ActivityIndicator size="small" color="#fff" />
+                  </View>
+                )}
               </View>
+              <Text style={styles.label} numberOfLines={1}>
+                Votre story
+              </Text>
+            </TouchableOpacity>
+
+            {selfHasStory && (
+              <TouchableOpacity style={styles.item} activeOpacity={0.75} onPress={handleAddStory}>
+                <StoryRing
+                  size={AVATAR_SIZE}
+                  uri={selfAvatar}
+                  label={currentUser?.username}
+                  hasStory={false}
+                  showPlus
+                  gapColor={backgroundColor}
+                />
+                <Text style={styles.label} numberOfLines={1}>
+                  Ajouter
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
-          <Text style={styles.label} numberOfLines={1}>
-            Votre story
-          </Text>
-        </TouchableOpacity>
-
-        {selfHasStory && (
-          <TouchableOpacity style={styles.item} activeOpacity={0.75} onPress={handleAddStory}>
-            <StoryRing
-              size={AVATAR_SIZE}
-              uri={selfAvatar}
-              label={currentUser?.username}
-              hasStory={false}
-              showPlus
-              gapColor={backgroundColor}
-            />
-            <Text style={styles.label} numberOfLines={1}>
-              Ajouter
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {feed.groups.map((group, index) => (
-          <TouchableOpacity
-            key={group.user?.id || `group-${index}`}
-            style={styles.item}
-            activeOpacity={0.75}
-            onPress={() => openGroup(feed.groups, index)}
-          >
-            <StoryRing
-              size={AVATAR_SIZE}
-              uri={resolveAvatar(group.user?.avatar)}
-              label={group.user?.username}
-              hasStory
-              seen={!group.has_unseen}
-              gapColor={backgroundColor}
-            />
-            <Text style={styles.label} numberOfLines={1}>
-              {group.user?.username || 'story'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        }
+      />
 
       <StoryViewer
         visible={viewerVisible}
@@ -303,6 +352,7 @@ const styles = StyleSheet.create({
   },
   loadingContainer: { alignItems: 'center', justifyContent: 'center', height: 108 },
   rail: { paddingHorizontal: 10, gap: 14 },
+  railHeader: { flexDirection: 'row', gap: 14 },
   item: { alignItems: 'center', width: 76 },
   label: {
     marginTop: 6,

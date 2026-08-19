@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { memo, useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -98,7 +98,14 @@ function FloatingHeart({ onDone }: { onDone: () => void }) {
 }
 
 // ─── Chat Message Row (Instagram Live style) ─────────────────────────────────
-function ChatRow({ item }: { item: ChatMessage }) {
+/**
+ * Mémoïsé : sur un live actif, un message arrive plusieurs fois par seconde et
+ * re-rendait TOUTES les lignes montées du chat — en concurrence directe avec
+ * la lecture du flux vidéo. `item` est la seule chose que la ligne lit, et
+ * `setMessages` conserve la référence des messages déjà là (`[msg, ...prev]`),
+ * donc la comparaison par défaut suffit.
+ */
+const ChatRow = memo(function ChatRow({ item }: { item: ChatMessage }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(12)).current;
 
@@ -126,14 +133,14 @@ function ChatRow({ item }: { item: ChatMessage }) {
         <View style={styles.chatHeader}>
           <Text style={[styles.chatUsername, { color: nameColor }]}>{item.user}</Text>
           {(item.verified || item.verification_style !== 'default') && (
-            <VerifiedBadge verificationStyle={item.verification_style || 'default'} size={12} animated />
+            <VerifiedBadge verificationStyle={item.verification_style || 'default'} size={12} />
           )}
         </View>
         <Text style={styles.chatText}>{item.text}</Text>
       </View>
     </Animated.View>
   );
-}
+});
 
 // ─── Viewer Count Badge ───────────────────────────────────────────────────────
 function ViewerBadge({ count }: { count: number }) {
@@ -293,6 +300,15 @@ export default function LiveViewerScreen() {
     setHearts(prev => prev.filter(h => h !== id));
   }, []);
 
+  /**
+   * Stables, et pas des flèches anonymes : une identité neuve à chaque message
+   * reçu suffirait à faire re-rendre toutes les lignes montées par le
+   * `CellRenderer` de la FlatList, `ChatRow` mémoïsé ou non. Les deux
+   * corrections vont ensemble.
+   */
+  const renderChatRow = useCallback(({ item }: { item: ChatMessage }) => <ChatRow item={item} />, []);
+  const chatKeyExtractor = useCallback((item: ChatMessage) => item.id, []);
+
   const toggleOrientation = async () => {
     if (isLandscape) {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
@@ -396,8 +412,8 @@ export default function LiveViewerScreen() {
               <FlatList
                 ref={flatListRef}
                 data={messages}
-                keyExtractor={item => item.id}
-                renderItem={({ item }) => <ChatRow item={item} />}
+                keyExtractor={chatKeyExtractor}
+                renderItem={renderChatRow}
                 inverted
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.chatList}

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Image, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { colors } from '../../theme';
 
 /**
@@ -8,7 +8,7 @@ import { colors } from '../../theme';
  * de dégradé. Reste à l'écran quelques centaines de ms tout au plus, une
  * mise en scène plus poussée serait hors de proportion.
  */
-export default function AppLoadingScreen() {
+export default function AppLoadingScreen({ style }: { style?: StyleProp<ViewStyle> }) {
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -23,14 +23,29 @@ export default function AppLoadingScreen() {
   }, [pulse]);
 
   return (
-    <View style={styles.root}>
+    // `style` sert à le poser en VOILE (`StyleSheet.absoluteFill`) plutôt qu'en
+    // écran exclusif : l'arbre applicatif se monte alors dessous et l'auth
+    // avance pendant que les polices arrivent, au lieu d'attendre son tour.
+    <View style={[styles.root, style]}>
       <Animated.View
+        // `renderToHardwareTextureAndroid` / `shouldRasterizeIOS` : la vue est
+        // gravée en texture une fois, puis l'échelle et l'opacité de la boucle
+        // ne sont plus qu'une composition GPU — même dispositif que
+        // `FeedRefreshLogo.tsx`.
+        renderToHardwareTextureAndroid
+        shouldRasterizeIOS
         style={{
           opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] }),
           transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }],
         }}
       >
-        <Image source={require('../../../assets/icon.png')} style={styles.logo} resizeMode="contain" />
+        {/* PAS `assets/icon.png` (1920×1920, 126 Ko) : affiché à 64 pt et
+            animé en boucle infinie, il forçait le décodage de 3,69 Mpx sur le
+            chemin le plus chargé du démarrage (polices + restauration de
+            session). `refresh-mark.png` est le même dessin, déjà gravé à sa
+            taille d'écran (144×144, 6 Ko) pour ce même problème ailleurs
+            (voir `FeedRefreshLogo.tsx`). */}
+        <Image source={require('../../../assets/refresh-mark.png')} style={styles.logo} resizeMode="contain" />
       </Animated.View>
       <View style={styles.dots}>
         <View style={styles.dot} />

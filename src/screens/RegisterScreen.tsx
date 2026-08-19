@@ -393,8 +393,10 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
+          {/* `brand-mark-lg.png` (288×288), pas `icon.png` (1920×1920) : même
+              raison qu'à la connexion, voir `LoginScreen.tsx`. */}
           <Image
-            source={require('../../assets/icon.png')}
+            source={require('../../assets/brand-mark-lg.png')}
             style={{ width: 80, height: 80 }}
             resizeMode="contain"
           />

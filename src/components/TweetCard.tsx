@@ -43,6 +43,7 @@ import trackingService from '../services/trackingService';
 import { apiService } from '../services';
 import { useAuth } from '../contexts/AuthContext';
 import { colors, fonts } from '../theme';
+import { sameAuthor } from '../utils/sameAuthor';
 import { toast } from './ui/Toast';
 import { confirmAsync } from './ui/ConfirmSheet';
 import { showActionSheet, type ActionSheetItem } from './ui/ActionSheet';
@@ -326,15 +327,25 @@ function TweetCard({
       style={({ pressed }) => [
         styles.container, 
         compact && styles.compactContainer,
+        // L'ombre portée reste sur iOS et disparaît d'Android. `elevation` sur
+        // les lignes d'une liste qui défile y est l'un des coûts de composition
+        // les plus classiques : le système recalcule une ombre par ligne et par
+        // image, et `TweetCard` est ce qui rend toute la liste de ProfileScreen.
+        // Le profil défilait donc moins bien PENDANT un événement que le reste
+        // du temps — une dégradation intermittente, difficile à relier à sa
+        // cause. La bordure teintée juste au-dessus suffit à marquer le thème.
         hasActiveEvent && eventTheme && {
           backgroundColor: eventTheme.colors.surface,
           borderColor: eventTheme.colors.border,
           borderWidth: 1,
-          shadowColor: eventTheme.colors.shadow,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 8,
+          ...(Platform.OS === 'ios'
+            ? {
+                shadowColor: eventTheme.colors.shadow,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+              }
+            : null),
         },
         pressed && { opacity: 0.95 },
       ]}
@@ -408,7 +419,6 @@ function TweetCard({
                       <VerifiedBadge
                         verificationStyle={(tweet.author?.verification_style as any) || 'default'}
                         size={16}
-                        animated={true}
                         tint={feedBadge.tint}
                       />
                     </View>
@@ -729,14 +739,10 @@ function areEqual(prev: TweetCardProps, next: TweetCardProps) {
     // L'accès au contenu payant change l'affichage du verrou.
     (a as any).paid_content?.has_access === (b as any).paid_content?.has_access &&
     // L'auteur peut changer d'habillage sans que le tweet change d'identité.
-    a.author?.id === b.author?.id &&
-    a.author?.username === b.author?.username &&
-    a.author?.full_name === b.author?.full_name &&
-    a.author?.avatar === b.author?.avatar &&
-    a.author?.verified === b.author?.verified &&
-    (a.author as any)?.verification_style === (b.author as any)?.verification_style &&
-    (a.author as any)?.profile_customization ===
-      (b.author as any)?.profile_customization
+    // Comparateur partagé avec TweetRow et TweetRowGutter : il couvre aussi
+    // `premium` et `subscription_tier`, qui manquaient ici alors que les
+    // deux sont rendus (voir `isPremium` / `subscriptionTierRaw`).
+    sameAuthor(a.author, b.author)
   );
 }
 

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, StatusBar, View, ActivityIndicator } from 'react-native';
+import { Platform, StatusBar, StyleSheet, View, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { useFonts } from 'expo-font';
-import { fontAssets, colors, statusBarStyle } from './src/theme';
+import { useFonts, loadAsync as loadFontsAsync } from 'expo-font';
+import { coreFontAssets, displayNameFontAssets, colors, statusBarStyle } from './src/theme';
 import AppLoadingScreen from './src/components/ui/AppLoadingScreen';
-import { AuthProvider } from './src/contexts/AuthContext';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { EventsProvider } from './src/contexts/EventsContext';
 import { EventProvider } from './src/contexts/EventContext';
 import { EventThemeProvider } from './src/components/EventThemeProvider';
@@ -33,6 +33,57 @@ import UpdateAvailableGate from './src/components/UpdateAvailableGate';
 import SleepGate from './src/components/SleepGate';
 
 /**
+ * Enregistrement de l'appareil pour les notifications push.
+ *
+ * L'ancienne version GUETTAIT `apiService.token` toutes les secondes, dix fois
+ * au plus, depuis un `useEffect` posé au-dessus d'`AuthProvider` — le seul
+ * endroit de l'arbre qui ne peut pas savoir quand la session aboutit. Deux
+ * conséquences : une seconde perdue même quand l'authentification était
+ * immédiate, et surtout, au-delà de dix secondes — un réseau lent, c'est-à-dire
+ * exactement le cas où l'on tient à ses notifications — **l'appareil n'était
+ * jamais enregistré**, silencieusement, le `console.error` étant retiré du
+ * bundle en production.
+ *
+ * Monté SOUS `AuthProvider`, ce composant réagit au moment exact où la session
+ * est établie. `isAuthenticated` ne passe à vrai qu'après
+ * `apiService.setSessionAccessToken`, le jeton est donc posé quand on arrive
+ * ici. Plus de délai, plus de plafond d'essais, plus d'échec muet.
+ */
+function PushDeviceRegistration({ token }: { token: string | null }) {
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${apiService.getConnectionStatus().baseURL}/api/notifications/register-device`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiService.token}`,
+            },
+            body: JSON.stringify({ expoPushToken: token }),
+          },
+        );
+        if (!cancelled && !res.ok) {
+          console.error('❌ App - Erreur enregistrement device:', res.status, res.statusText);
+        }
+      } catch (error) {
+        console.error("❌ App - Erreur lors de l'enregistrement du device:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, token]);
+
+  return null;
+}
+
+/**
  * Choix de la langue de lecture à la première connexion.
  *
  * Monté au-dessus du navigateur pour que la question soit posée quel que soit
@@ -50,93 +101,93 @@ function ReadingLanguageGate() {
 }
 
 export default function App() {
-  // Chargement des polices : le duo de l'app (Plus Jakarta Sans + Inter) et les
-  // familles du nom affiché premium (voir `displayNameFonts`).
-  // Non bloquant : si le chargement échoue ou traîne, on affiche l'app
-  // avec la police système en repli (aucun écran figé possible).
-  const [fontsLoaded, fontError] = useFonts(fontAssets);
+  /**
+   * Le démarrage ne bloque QUE sur les polices dont le premier écran a besoin
+   * (voir `coreFontAssets`). Les quinze familles du nom affiché premium
+   * arrivent juste après, sans bloquer personne : c'est une option cosmétique
+   * choisie par une fraction des comptes, elle n'a aucune raison de retarder
+   * le lancement de tout le monde.
+   *
+   * Ce que ça change vraiment : tant que `fontsReady` est faux, RIEN n'est
+   * monté — ni navigateur, ni contextes, ni premier appel réseau du fil.
+   * L'attente des polices et le chargement du fil étaient donc mis bout à bout
+   * au lieu d'avancer ensemble.
+   *
+   * Le repli reste non bloquant en cas d'échec, et le filet de sécurité passe
+   * de 4 s à 1,2 s : sur cinq polices dont trois lues depuis le bundle, quatre
+   * secondes n'étaient plus un filet mais une attente réelle.
+   */
+  const [fontsLoaded, fontError] = useFonts(coreFontAssets);
   const [forceReady, setForceReady] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setForceReady(true), 4000);
+    const t = setTimeout(() => setForceReady(true), 1200);
     return () => clearTimeout(t);
   }, []);
   const fontsReady = fontsLoaded || !!fontError || forceReady;
 
+  // Aucun `await` remonté : l'app est déjà affichée quand celles-ci arrivent.
+  // Un nom premium s'affiche en police système jusque-là, puis prend la sienne.
   useEffect(() => {
-    (async () => {
-      try {
-        // Vérification de la disponibilité de Constants
-        if (!Constants) {
-          console.error('❌ Constants is undefined');
-          return;
-        }
+    loadFontsAsync(displayNameFontAssets).catch(() => {});
+  }, []);
 
-        // Utilise le Project ID EAS défini dans app.json
-        const projectId = (Constants as any)?.expoConfig?.extra?.eas?.projectId
-          || (Constants as any)?.easConfig?.projectId
-          || '341da021-111f-4a0c-9f54-0b5f4c9c3965'; // Project ID correct depuis app.json
-        
-        console.log('🔔 App - Project ID pour notifications:', projectId);
-        
-        const token = await registerForPushNotifications(projectId);
-        console.log('🔔 App - Token de notification obtenu:', token ? 'Oui' : 'Non');
+  /**
+   * Préparatifs des notifications, DIFFÉRÉS après le premier rendu utile.
+   *
+   * Ce bloc ne bloquait déjà pas l'affichage, mais il partait sur le réseau au
+   * moment précis où la requête du fil en avait le plus besoin. Le même délai
+   * de décantation que les « gates » de démarrage lui laisse la priorité, puis
+   * les notifications s'installent.
+   *
+   * L'enregistrement de l'appareil, lui, ne se fait plus ici : il est confié à
+   * `PushDeviceRegistration`, monté sous `AuthProvider` (voir plus haut).
+   */
+  const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
 
-        await setupFranceDailyLocalNotifications();
-        console.log('🔔 App - Rappels locaux FR configurés');
-        
-        if (token) {
-          // Attendre que l'API service soit initialisé
-          let retryCount = 0;
-          const maxRetries = 10;
-          
-          const tryRegisterDevice = async () => {
-            if (apiService?.token) {
-              try {
-                console.log('🔔 App - Tentative d\'enregistrement du device...');
-                const response = await fetch(`${apiService.getConnectionStatus().baseURL}/api/notifications/register-device`, {
-                  method: 'POST',
-                  headers: { 
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${apiService.token}` 
-                  },
-                  body: JSON.stringify({ expoPushToken: token })
-                });
-                
-                if (response.ok) {
-                  console.log('✅ App - Device enregistré avec succès');
-                } else {
-                  console.error('❌ App - Erreur enregistrement device:', response.status, response.statusText);
-                }
-              } catch (error) {
-                console.error('❌ App - Erreur lors de l\'enregistrement du device:', error);
-              }
-            } else if (retryCount < maxRetries) {
-              retryCount++;
-              console.log(`🔔 App - Token API non disponible, nouvelle tentative dans 1s (${retryCount}/${maxRetries})`);
-              setTimeout(tryRegisterDevice, 1000);
-            } else {
-              console.error('❌ App - Impossible d\'enregistrer le device après plusieurs tentatives');
-            }
-          };
-          
-          tryRegisterDevice();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          if (!Constants) {
+            console.error("❌ Constants is undefined");
+            return;
+          }
+
+          // Utilise le Project ID EAS défini dans app.json
+          const projectId = (Constants as any)?.expoConfig?.extra?.eas?.projectId
+            || (Constants as any)?.easConfig?.projectId
+            || '341da021-111f-4a0c-9f54-0b5f4c9c3965'; // Project ID correct depuis app.json
+
+          // Les rappels LOCAUX ne dépendent en rien du jeton push distant :
+          // les enchaîner ne servait à rien.
+          const [token] = await Promise.all([
+            registerForPushNotifications(projectId),
+            setupFranceDailyLocalNotifications(),
+          ]);
+          console.log("🔔 App - Token de notification obtenu:", token ? 'Oui' : 'Non');
+          setExpoPushToken(token || null);
+        } catch (error) {
+          console.error("❌ App - Erreur lors de l'initialisation des notifications:", error);
         }
-      } catch (error) {
-        console.error('❌ App - Erreur lors de l\'initialisation des notifications:', error);
-      }
-    })();
+      })();
+    }, 400);
+    return () => clearTimeout(timer);
   }, []);
   
-  if (!fontsReady) {
-    return (
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaProvider>
-          <AppLoadingScreen />
-        </SafeAreaProvider>
-      </GestureHandlerRootView>
-    );
-  }
-
+  /*
+   * Plus de retour anticipé sur `!fontsReady`.
+   *
+   * L'écran de chargement était rendu À LA PLACE de l'arbre applicatif : tant
+   * que les polices n'étaient pas là, `AuthProvider` n'était pas monté, donc
+   * la session ne se vérifiait pas, donc le navigateur ne montait pas, donc la
+   * première requête du fil ne partait pas. Deux attentes sans aucun rapport —
+   * lire des fichiers de police et interroger le serveur d'authentification —
+   * étaient mises bout à bout. Le démarrage coûtait leur SOMME.
+   *
+   * L'arbre se monte désormais tout de suite et l'écran de chargement passe en
+   * voile par-dessus : il ne masque plus que l'affichage, il n'empêche plus le
+   * travail. Le démarrage coûte le plus long des deux, pas les deux.
+   */
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -179,6 +230,7 @@ export default function App() {
                   backgroundColor={Platform.OS === 'android' ? colors.bg : 'transparent'}
                 />
                 <AppNavigator />
+                <PushDeviceRegistration token={expoPushToken} />
                 <ReadingLanguageGate />
                 <ProfileCompletionGate />
                 {/* Dernier de la file des popups de démarrage : le socle légal
@@ -209,6 +261,9 @@ export default function App() {
       </ActionSheetProvider>
       </ConfirmProvider>
       </ToastProvider>
+      {/* Dernier enfant de `SafeAreaProvider` : il se dessine donc au-dessus de
+          tout l'arbre applicatif, qui travaille dessous en attendant. */}
+      {!fontsReady && <AppLoadingScreen style={StyleSheet.absoluteFill} />}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

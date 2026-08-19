@@ -12,7 +12,8 @@ import {
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useForegroundInterval } from '../hooks/useForegroundInterval';
 import NewEconomyService, { EconomicStats, ChartRange } from '../services/newEconomyService';
 import CurrencyService from '../services/currencyService';
 import SimpleChart from '../components/SimpleChart';
@@ -60,22 +61,35 @@ const TradingScreenContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currencyId) {
-      loadMarketData();
-
-      // Mettre à jour les données toutes les 30 secondes. Dépend aussi de
-      // `timeframe` : sinon l'intervalle gardait en mémoire l'intervalle de
-      // graphique sélectionné AU MOMENT du montage (fermeture figée) et
-      // continuait de rafraîchir avec l'ancien `range`, même après un
-      // changement de sélecteur — l'effet se ré-arme ici avec le bon `range`
-      // à chaque changement.
-      const interval = setInterval(() => {
-        loadMarketData(true);
-      }, 30000);
-
-      return () => clearInterval(interval);
-    }
+    if (currencyId) loadMarketData();
   }, [currencyId, timeframe]);
+
+  /**
+   * Rafraîchissement toutes les 30 s — via `useForegroundInterval`, et non un
+   * `setInterval` nu.
+   *
+   * Le `clearInterval` au démontage était correct, mais l'écran RESTE MONTÉ
+   * tant qu'il est dans la pile de navigation : le sondage continuait donc de
+   * tourner après qu'on soit parti ailleurs, et même application en
+   * arrière-plan. Ce hook le suspend hors premier plan (et rejoue le callback
+   * au retour), `useIsFocused` le suspend aussi quand un autre écran recouvre
+   * celui-ci.
+   *
+   * Le hook garde le callback dans une ref remise à jour à chaque rendu : le
+   * `timeframe` lu est donc toujours le courant, ce que l'ancien effet
+   * obtenait en se ré-armant à chaque changement (fermeture figée, expliquée
+   * dans son commentaire d'origine).
+   */
+  const isFocused = useIsFocused();
+  useForegroundInterval(
+    React.useCallback(() => {
+      if (!currencyId || !isFocused) return;
+      loadMarketData(true);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currencyId, isFocused, timeframe]),
+    30000,
+    { runImmediately: false },
+  );
 
   const startAnimations = () => {
   };

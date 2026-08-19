@@ -103,7 +103,8 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const [paidPreview, setPaidPreview] = useState('');
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [charCount, setCharCount] = useState(0);
+  // `content.length` remplace `charCount` : un état dérivé redondant, à
+  // resynchroniser à la main à chaque écriture (voir `handleContentChange`).
 
   // ── Vidéo jointe ──
   // L'option vivait dans un bouton flottant séparé du composeur : on ne
@@ -164,7 +165,6 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     if (!prefill || prefillApplied.current) return;
     prefillApplied.current = true;
     setContent(prefill);
-    setCharCount(prefill.length);
   }, [prefill]);
 
   // Limite selon l'abonnement de l'auteur : 280 par défaut, 1 000 pour un
@@ -256,7 +256,6 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     if (saved) {
       setEditingDraftId(null);
       setContent('');
-      setCharCount(0);
       toast.success('Brouillon enregistré', {
         description: 'Tu le retrouveras depuis l\'icône brouillons.',
       });
@@ -273,7 +272,6 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     }
 
     setContent(draft.content);
-    setCharCount(draft.content.length);
     setIsPrivate(draft.isPrivate);
     setIsSensitive(draft.isSensitive);
     // Un brouillon écrit du temps de l'abonnement ne doit pas rouvrir l'option
@@ -314,23 +312,16 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     })();
   }, [quoteTweetId]);
 
+  // Pas d'animation ici : une séquence de 200 ms était relancée à CHAQUE
+  // caractère (5 à 8 par seconde en frappe ordinaire), donc systématiquement
+  // écrasée par la suivante avant d'atteindre son terme. L'amplitude visée
+  // (0,5 %) est de toute façon invisible sur un champ de saisie — tout le
+  // coût (deux `Animated.timing`, une `Animated.sequence`, un aller au pilote
+  // natif par caractère) était payé pour un effet que personne ne pouvait
+  // percevoir. `inputScaleAnim` reste utilisé ailleurs, sur le focus et le
+  // flou du champ : ces deux ressorts-là sont corrects, on n'y touche pas.
   const handleContentChange = (text: string) => {
     setContent(text);
-    setCharCount(text.length);
-
-    // Animation lors de la saisie
-    Animated.sequence([
-      Animated.timing(inputScaleAnim, {
-        toValue: 1.005,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(inputScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
   };
 
   /**
@@ -937,8 +928,8 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
 
   const isSubmitDisabled =
     (!content.trim() && !videoUri && imageUris.length === 0) || content.length > MAX_CHARS || loading;
-  const isOverLimit = charCount > MAX_CHARS;
-  const charPercentage = (charCount / MAX_CHARS) * 100;
+  const isOverLimit = content.length > MAX_CHARS;
+  const charPercentage = (content.length / MAX_CHARS) * 100;
 
   const bgColor = hasActiveEvent && eventTheme ? eventTheme.colors.background : colors.bg;
   const textColor = hasActiveEvent && eventTheme ? eventTheme.colors.text : colors.textPrimary;
@@ -1071,7 +1062,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     style={[
                       styles.textInput,
                       { color: textColor },
-                      charCount > TWEET_MAX_CHARS_FREE && styles.textInputLong,
+                      content.length > TWEET_MAX_CHARS_FREE && styles.textInputLong,
                       isOverLimit && styles.textInputOverLimit,
                     ]}
                     placeholder={parentTweetId ? "Exprimez votre pensée..." : quoteTweetId ? "Ajoutez un commentaire..." : "Quoi de neuf ?"}
@@ -1119,7 +1110,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                       styles.charCounter,
                       isOverLimit && styles.charCounterOverLimit
                     ]}>
-                      {MAX_CHARS - charCount}
+                      {MAX_CHARS - content.length}
                     </Text>
                   </View>
 
@@ -1568,7 +1559,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                 )}
 
                 {/* Avertissement */}
-                {charCount === 0 && (
+                {content.length === 0 && (
                   <View style={styles.writingTips}>
                     <Ionicons name="information-circle" size={16} color={colors.accent} style={{ marginBottom: 6 }} />
                     <Text style={styles.tipsTitle}>Avertissement</Text>

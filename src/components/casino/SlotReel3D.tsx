@@ -43,21 +43,10 @@ const FOV = 46;
 const BLUR_FROM = 5;
 const BLUR_TO = 26;
 
-/** Ordre des symboles sur la bande — doit suivre `STRIP` du script Python. */
-export const REEL_STRIP = [
-  'cherry', 'lemon', 'cherry', 'bell',
-  'star', 'cherry', 'lemon', 'diamond',
-  'cherry', 'bell', 'lemon', 'star',
-  'cherry', 'lemon', 'bell', 'seven',
-] as const;
-
-export type ReelSymbol = (typeof REEL_STRIP)[number];
-
-/** Première case portant ce symbole, ou `null` si le serveur en envoie un inconnu. */
-export function cellForSymbol(symbol: string): number | null {
-  const index = REEL_STRIP.indexOf(symbol as ReelSymbol);
-  return index < 0 ? null : index;
-}
+// La bande et son arithmétique vivent dans `reelStrip.ts`, hors de ce module :
+// les importer d'ici rappellerait `three` et annulerait le chargement paresseux
+// du rouleau. Réexportées pour ne casser aucun appelant existant.
+export { REEL_STRIP, cellForSymbol, type ReelSymbol } from './reelStrip';
 
 interface SlotReel3DProps {
   /** Case à afficher à l'arrêt (0-15). */

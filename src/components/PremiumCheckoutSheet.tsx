@@ -71,7 +71,11 @@ function readableInk(hex: string): string {
 type Palette = ReturnType<typeof makePalette>;
 
 /** Logo de l'app — même source que l'écran de chargement. */
-const LOGO = require('../../assets/icon.png');
+// PAS `assets/icon.png` (1920×1920) : ni `brandLogo` (28 pt) ni `emblemLogo`
+// (96 pt) n'ont besoin de cette définition. Deux marques gravées à leur
+// taille d'affichage réelle.
+const LOGO_SM = require('../../assets/brand-mark.png'); // 192×192, couvre jusqu'à 64 pt @3x
+const LOGO_LG = require('../../assets/brand-mark-lg.png'); // 288×288, couvre 96 pt @3x
 
 /**
  * Les listes d'avantages viennent désormais du catalogue partagé
@@ -272,7 +276,7 @@ export default function PremiumCheckoutSheet({
 
           <View style={styles.header}>
             <View style={styles.brand}>
-              <Image source={LOGO} style={styles.brandLogo} resizeMode="contain" />
+              <Image source={LOGO_SM} style={styles.brandLogo} resizeMode="contain" />
               <Text style={styles.brandText}>TWITNINF PRO</Text>
             </View>
             <TouchableOpacity style={styles.close} onPress={onClose} hitSlop={8}>
@@ -324,7 +328,7 @@ export default function PremiumCheckoutSheet({
                 {/* Le logo de l'app plutôt qu'une étoile générique : c'est la
                     marque qu'on achète, pas une décoration. Aucun fond derrière :
                     le PNG est transparent, un cadre plein le dénaturait. */}
-                <Image source={LOGO} style={styles.emblemLogo} resizeMode="contain" />
+                <Image source={LOGO_LG} style={styles.emblemLogo} resizeMode="contain" />
               </View>
 
               <Text style={styles.title}>

@@ -356,11 +356,15 @@ function PaperTabBar({
 
   // Badge de l'onglet Messages — seul compteur restant dans la barre, les
   // notifications ayant leur pastille dans l'en-tête du fil.
+  const { user } = useAuth();
+  const currentUserId = user?.id ? String(user.id) : null;
   const [messageCount, setMessageCount] = React.useState(0);
   const refreshCount = React.useCallback(async () => {
-    setMessageCount(await unreadService.getMessagesUnreadCount());
-  }, []);
-  useForegroundInterval(refreshCount, 30000);
+    // Identifiant passé plutôt que redemandé au serveur, et sondage à trois
+    // minutes : mêmes raisons que dans `BottomTabNavigator`.
+    setMessageCount(await unreadService.getMessagesUnreadCount(currentUserId));
+  }, [currentUserId]);
+  useForegroundInterval(refreshCount, 180000);
   React.useEffect(() => unreadService.subscribe(refreshCount), [refreshCount]);
 
   /**
