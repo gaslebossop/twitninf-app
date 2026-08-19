@@ -477,3 +477,130 @@ existe, il n'a pas été propagé ».**
   en exemple.
 - `useForegroundInterval` existe, suspend correctement en arrière-plan, et est
   utilisé aux deux endroits de la barre d'onglets.
+
+---
+
+## R2-4 — Quatre listes se téléchargent en entier, sans pagination — et la 21e réponse d'un tweet est physiquement inatteignable — MAJEUR
+
+`src/screens/ConversationThreadScreen.tsx:729`,
+`src/screens/MessagesScreen.tsx:109`,
+`src/services/storiesService.ts:100`,
+`src/components/CommentSheet.tsx:397`,
+`src/screens/TweetDetailScreen.tsx:504`
+
+### Ce qui se passe
+
+Cinq points d'entrée réseau demandent une collection **sans aucun paramètre de
+pagination**, ou avec un plafond figé en dur. Vérifié un par un dans le code :
+
+| Appel | Ligne | Paramètres envoyés | Conséquence |
+|---|---|---|---|
+| Messages d'une conversation | `ConversationThreadScreen:729` | **aucun** | tout l'historique à chaque ouverture |
+| Liste des conversations | `MessagesScreen:109` | **aucun** | toutes les conversations, avec leurs participants |
+| Fil des stories | `storiesService.ts:100` | **aucun** | tous les groupes de stories |
+| Commentaires (feuille) | `CommentSheet:397` | `{ nested: true, limit: 100 }` | plafond brut, pas de suite |
+| Réponses (page détail) | `TweetDetailScreen:504` | `{ limit: 20, offset: 0 }` | **`offset` figé à 0** |
+
+```tsx
+// ConversationThreadScreen.tsx:729 — aucune borne
+const res = await apiService.get(`/api/messages/conversations/${conversationId}/messages`);
+
+// MessagesScreen.tsx:109 — aucune borne
+const convRes = await apiService.get('/api/messages/conversations');
+
+// storiesService.ts:100 — aucune borne
+const res = await apiService.get('/api/stories/feed');
+```
+
+### L'effet concret
+
+**1. La conversation.** Une conversation active de plusieurs mois se
+retélécharge **intégralement** à chaque ouverture de l'écran, et à chaque
+retour dessus. Sur une messagerie, c'est la collection qui grossit le plus
+vite et qui ne cesse jamais de grossir : c'est le seul endroit de
+l'application où la lenteur s'aggrave mécaniquement avec l'ancienneté du
+compte. Un utilisateur fidèle est puni pour sa fidélité. À rapprocher de
+**F3-2** (`ConversationThreadScreen`, constat CRITIQUE de la section listes) :
+la même donnée non bornée est ensuite montée sans virtualisation — le défaut
+réseau et le défaut de rendu se multiplient au lieu de s'additionner.
+
+**2. La liste des conversations.** Non bornée elle aussi, et — voir **R2-1** et
+**R2-3** — téléchargée depuis **trois** endroits différents, dont un sondage
+toutes les 30 secondes sur tous les écrans. C'est le seul endroit du dépôt où
+l'absence de pagination et la duplication d'appel se cumulent.
+
+**3. Les commentaires.** `limit: 100` sans « charger plus » : au-delà de 100
+réponses, la feuille de commentaires affiche silencieusement une vue tronquée,
+sans jamais l'indiquer à l'utilisateur.
+
+**4. La 21e réponse est inatteignable.** C'est le point le plus grave, et ce
+n'est plus une question de vitesse mais un **manque fonctionnel** :
+`TweetDetailScreen:504` demande `{ limit: 20, offset: 0 }`, `offset` est une
+**constante littérale** ; `grep offset` sur tout le fichier ne renvoie que
+trois occurrences, toutes `offset: 0` (`:371`, `:435`, `:504`), et
+`grep onEndReached|loadMore|hasMore` sur le fichier ne renvoie **rien**. Il n'y
+a donc aucun chemin de code, quel que soit le geste de l'utilisateur, qui
+puisse demander la réponse n°21. Sur un tweet populaire, les réponses
+existent, le serveur sait les servir (`getTweetReplies` accepte bien `offset`,
+`api.ts:1453`), et l'application ne les demandera jamais.
+
+### Ce qui rend le correctif facile
+
+Le contrat est **déjà prêt côté API** : `api.ts:1453` déclare
+
+```ts
+async getTweetReplies(id, params?: { limit?; offset?; nested? })
+  : Promise<ApiResponse<{ replies: Tweet[]; pagination: PaginationInfo }>>
+```
+
+Le type de retour comporte déjà `pagination: PaginationInfo`. La réponse du
+serveur contient donc l'information nécessaire pour savoir s'il reste des
+pages — **elle est reçue, typée, et jetée**. Il n'y a rien à négocier avec le
+serveur pour les réponses : juste à lire ce qu'il renvoie déjà.
+
+### Le correctif
+
+**Priorité 1 — les réponses (manque fonctionnel, correctif local) :**
+
+```tsx
+const [replyOffset, setReplyOffset] = useState(0);
+const [hasMoreReplies, setHasMoreReplies] = useState(false);
+
+const loadMoreReplies = useCallback(async () => {
+  const rep = await apiService.getTweetReplies(tweetId, { limit: 20, offset: replyOffset });
+  setReplies(prev => [...prev, ...(rep.data?.replies ?? [])]);
+  setReplyOffset(o => o + 20);
+  setHasMoreReplies(!!rep.data?.pagination?.hasMore);   // déjà dans la réponse
+}, [tweetId, replyOffset]);
+```
+branché sur `onEndReached` de la liste, avec `onEndReachedThreshold={0.5}`.
+Même schéma pour `CommentSheet:397`, en descendant `limit: 100` à 20.
+
+**Priorité 2 — les messages d'une conversation :** paginer **par le haut**
+(les N derniers messages, puis remonter au défilement), pas par le bas. C'est
+le sens de lecture d'une messagerie, et cela rend le premier affichage
+constant quel que soit l'âge de la conversation. Demande une évolution côté
+serveur (`before=<timestamp>&limit=50`) — à traiter avec F3-2, dont c'est la
+moitié manquante.
+
+**Priorité 3 — liste des conversations et fil des stories :** un `limit`
+généreux (50) suffit, avec `onEndReached` pour la suite. Ces deux collections
+grossissent lentement ; le gain est réel mais moindre.
+
+### Réserve honnête sur la priorisation
+
+Je n'ai **aucune mesure de volume** pour ces cinq collections. Le seul chiffre
+de volume réel du dépôt est **~977 tweets vivants en production**
+(`ExploreWall.tsx:191`) : à cette échelle, la liste des conversations et le fil
+des stories ne sont probablement **pas** un problème aujourd'hui. Je maintiens
+malgré tout le classement MAJEUR, pour deux raisons qui ne dépendent pas du
+volume :
+
+- la **21e réponse** est inatteignable dès aujourd'hui, quel que soit le
+  nombre d'utilisateurs — c'est une constante de code, pas une question
+  d'échelle ;
+- l'historique d'une conversation est la seule collection qui croît **sans
+  jamais décroître**, donc la seule dont le coût est certain de se dégrader.
+
+Les points 3 (stories) et la liste des conversations relèvent de la dette
+prudente, pas de l'urgence.

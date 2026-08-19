@@ -91,7 +91,9 @@ SAIN et à ne pas rouvrir : les 8 « gates » (délai de décantation + `if visi
 
 ## Reprendre à — R2 (EN COURS)
 
-**Constats écrits et poussés :** R2-1 (badge messages : toute la liste des
+**Constats écrits et poussés :** R2-4 (pagination : 4 listes sans bornes +
+`TweetDetailScreen:504` `offset: 0` en dur, la 21e réponse est inatteignable —
+MAJEUR), R2-1 (badge messages : toute la liste des
 conversations + `getCurrentUser()` en série, toutes les 30 s, sur tous les
 écrans — CRITIQUE), R2-2 (sur-récupération : `limit: 500` de profils complets
 pour un Set d'ids, + `getCurrentUser()` sur 16 sites), R2-3 (ni cache ni
@@ -154,15 +156,19 @@ choix), cache par onglet (`tabCacheRef`), garde `if (followingIds.size === 0)`,
 repli sur cache (`servedFromCacheRef`), Explorer isolé. Détaillé dans le
 « SAIN » de R2-2. **Seul reproche : le volume d'UNE requête (limit 500).**
 
-### RESTE À INSTRUIRE POUR R2 — il ne reste qu'UN constat
-1. **Pagination absente** (preuves C ci-dessus) + **manque fonctionnel des
-   réponses** (preuve D : `TweetDetailScreen:504`, `offset: 0` en dur, la 21e
-   réponse est inatteignable). À rédiger en un constat groupé « R2-4 ».
-   Tout est déjà vérifié, il n'y a plus qu'à écrire.
-2. Puis synthèse R2 et passage à R3.
+### RESTE À INSTRUIRE POUR R2
 
-Déjà traités : `TradingScreen` (dans R2-3), annulation à la sortie d'écran
-(dans R2-3, correctif 3), cache/déduplication (R2-3).
+R2-4 (pagination groupée + 21e réponse inatteignable) : **ÉCRIT ET POUSSÉ**.
+
+Reste :
+1. `TweetDetailScreen:345-475` (`loadProgressiveInfo`) — chaîne de **4 requêtes
+   en série** (`getAlgorithmInfo` → `getUserInteractionStats` →
+   `getTweetViralityStats` → `getProgressiveRecommendations`), déclenchée par
+   `useEffect(..., [currentAlgorithm, tweet])` — donc rejouée à chaque
+   changement d'identité de l'objet `tweet`. Gardée par
+   `currentAlgorithm === 'progressive'`. À vérifier : combien de fois `setTweet`
+   est appelé après le chargement initial. → constat **R2-5**.
+2. Puis synthèse R2 et passage à R3.
 
 Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
 
