@@ -55,41 +55,74 @@ reste de l'audit.
 
 ## Reprendre à — F4 (EN COURS)
 
-**Aucun constat encore rédigé.** `AUDIT-F4.md` reste à créer.
+**Constats écrits et poussés :** F4-1 (`VerifiedBadge` : jusqu'à 5 boucles
+infinies par badge ; `animated` vaut `true` par défaut et le garde-fou
+`animated={false}` n'est posé que sur 4 usages sur 14 — `TweetCard:411`,
+`LiveViewerScreen:129`, `MessagesScreen:339` et 7 autres sont exposés).
 
-### Matériel DÉJÀ VÉRIFIÉ pendant F2/F3 — ne pas re-chercher
+**BALAYAGES F4 DÉJÀ FAITS — résultats, ne pas les refaire :**
+- `useNativeDriver: false` → seulement **6 appels réels** (FuturisticCarousel
+  ×3, PremiumUpsellModal, PremiumCheckoutSheet, NewConversationScreen:100),
+  tous sur des écrans secondaires. 242 appels en `true`. Le fil a MIGRÉ son
+  indicateur d'onglet vers Reanimated (`TweetsScreen:322`). Hygiène très bonne.
+  Reste éventuellement : `NewConversationScreen:272` anime `left` (pourrait
+  être un `translateX` natif) — mineur.
+- `scrollEventThrottle` → 3 usages seulement : `{1}` (FeedGutterScreen, CORRECT
+  car `useAnimatedScrollHandler`), `{160}` (ConversationThread), `{100}`
+  (ExploreWall). **AUCUN `{16}`** — le défaut visé par le brief est ABSENT.
+- `onScroll` → 3 usages, dont 1 en `useAnimatedScrollHandler`. Les 2 autres
+  n'écrivent que dans des refs, aucun `setState`. SAIN.
+- **worklet sans `runOnJS`** → RIEN TROUVÉ. 12 fichiers à gestes vérifiés un
+  par un (Tappable, Toast, SwipeFollow, Calibration, StoryViewer, ImageViewer,
+  ImageViewerPaper, ExploreImmersive, FeedGutter, ConversationThread,
+  TweetsScreen, VideoEditor) : tous utilisent `runOnJS`. Les helpers partagés
+  de `src/utils/gesture.ts` (`clamp`, `rubberBand`, `projectDecay`) portent
+  tous `'worklet'`. SAIN.
+- `springify()` → **0 occurrence** (sauf un commentaire disant qu'on l'évite).
+  Défaut n°1 de CLAUDE.md ABSENT.
+- `entering=` → 16 usages, **aucun sur une ligne de liste** (bannières
+  d'erreur, états vides, onboarding). Défaut n°2 de CLAUDE.md ABSENT.
+  `ConversationThread:1341` est gardé par `justArrivedIdsRef`.
+- `BlurView` → 16 fichiers le RENDENT (3 l'importent sans l'utiliser :
+  VerifiedBadge, KosporBirthdayPopup, twitninfvideo). La tab bar
+  (`navigation/BottomTabNavigator:225`) ne floute QUE sur iOS (matériau natif),
+  Android a une `View` pleine — BON choix. `LockedText:99` documente pourquoi
+  il évite `experimentalBlurMethod` sur Android. SAIN.
 
-**Pistes à creuser, vérifiées comme existantes :**
-- `CasinoScreen.tsx:212` — `CONFETTI.map()`, pièces animées simultanément.
-- `SearchScreen.tsx:102-103`, `:761`, `:863`, `:911`, `:942` — 5
-  `Animated.View` dont les valeurs (`fadeAnim`=1, `slideAnim`=0) ne sont
-  JAMAIS animées : aucun `Animated.timing/spring/parallel` dans le fichier.
-  Déjà écrit en F2-6, à ne PAS redoubler en F4 — juste citer.
-- `CreateTweetScreen.tsx:317-334` — `Animated.sequence` par caractère
-  (écrit en F2-7, ne pas redoubler).
-- `src/theme/motion.ts` — contient les bonnes valeurs maison
-  (`duration.fast/base`, `easing.out`, `spring`) : à utiliser comme référence
-  pour juger les autres animations.
-- `scrollEventThrottle` : à recenser (le brief cible la valeur 16 sur écran
-  120 Hz). `ConversationThreadScreen:1608` est à 160.
-- `onScroll` en JS vs `useAnimatedScrollHandler` : à recenser.
-- Appels d'une fonction JS ordinaire depuis un worklet SANS `runOnJS` : à
-  chercher (tue l'app sans journal). `ImageViewerPaper` fait ça correctement,
-  c'est la bonne référence.
+**PISTES F4 RESTANTES :**
+1. `withRepeat` (24) et `Animated.loop` : `ProfileDecoration` (6),
+   `PremiumBadges` (3), `PremiumUsernameGlow` (2), `PremiumProfileCard` (3),
+   `profile/ThemeMaterial` (4), `profile/AvatarMaterial` (4) — même question
+   que F4-1 : combien tournent en même temps dans une liste ?
+2. `CasinoScreen.tsx:212` — `CONFETTI.map()`.
+3. `shouldRasterizeIOS` / `renderToHardwareTextureAndroid` : seulement 2
+   usages dans tout le dépôt — vérifier s'il en manque sur des vues
+   transformées à chaque image.
+4. Ombres/opacités empilées sur ce qui défile (147 `shadowRadius`/`elevation`).
 
-**DÉJÀ VÉRIFIÉ SAIN pour F4, ne pas relire :**
-- `src/utils/litPulse.ts` — horloge singleton de module, pilote natif, UNE
-  seule `Animated.loop` pour toute l'app. Excellent.
-- `AnimatedNameFill` (`ProfileDecoration.tsx:619`) — `useDrift` coupé quand
-  l'effet est `none` : pas de boucle par ligne de fil.
-- `ConversationThreadScreen:1341-1345` — `entering={FadeInDown}` gardé par
-  `justArrivedIdsRef` (Set purgé à 700 ms). Garde-fou CLAUDE.md respecté.
-- `CreateTweetScreen:1086`, `:1094` — ressorts focus/blur tension 50 /
-  friction 14 = amortissement quasi critique. CONFORME.
-- `twitninfvideo:543-544` — `onViewableItemsChanged`/`viewabilityConfig` en
-  `ref` (RN lève une exception sinon). Correct.
-- `ImageViewerPaper` — `runOnJS` systématique, `applyZoom` appelé aux bornes
-  du geste seulement, pas par image.
+**À SIGNALER EN R3 (dead code, trouvé en F4)** :
+- `src/components/TopNavbar.tsx` n'est **importé NULLE PART** (3 `BlurView`,
+  dégradé multi-stops, couleurs hex en dur pré-Pulse). Mort.
+- **CINQ** composants de barre de navigation basse coexistent :
+  `navigation/BottomTabNavigator`, `components/BottomTabNavigator`,
+  `components/ModernBottomNavbar`, `components/UnifiedBottomNavbar`,
+  `components/EnhancedBottomTabNavigator`. Vérifier lesquels sont morts.
+- `VerifiedBadge.tsx:10-12` importe `BlurView`, `MaskedView` et `Svg` sans
+  jamais les rendre.
+- `SearchScreen` : `startAnimations = () => {}` — fonction vide (F2-6).
+- `clampWorklet` dupliqué à l'identique dans `ImageViewer.tsx:57` et
+  `ImageViewerPaper.tsx:73`, alors que `utils/gesture.ts:66` exporte `clamp`.
+
+### Vérifié SAIN pendant F2/F3, ne pas relire
+
+`litPulse.ts` (horloge singleton, excellent) · `AnimatedNameFill`
+(`ProfileDecoration:619`, `useDrift` coupé si effet `none`) ·
+`ConversationThread:1341` (`entering` gardé par `justArrivedIdsRef`) ·
+`CreateTweetScreen:1086/1094` (ressorts quasi critiques) ·
+`twitninfvideo:543` (viewability en `ref`) · `ImageViewerPaper` (`runOnJS`).
+
+Déjà écrits ailleurs, NE PAS redoubler en F4 : `SearchScreen` 5 `Animated.View`
+inertes (F2-6) · `CreateTweetScreen` `Animated.sequence` par caractère (F2-7).
 
 ---
 
