@@ -110,7 +110,15 @@ pas le rouvrir.
 
 ## Reprendre à — R3 (EN COURS)
 
-**Aucun constat écrit pour l'instant.** `AUDIT-R3.md` reste à créer.
+**Constats écrits et poussés :** R3-1 (6 dépendances déclarées et jamais
+importées ; seule `react-native-maps` coûte vraiment — module natif autolinké
+dans l'APK. Les 5 autres ne pèsent rien dans le bundle : Metro n'empaquette pas
+ce qu'aucun import n'atteint — **ce point de précision est important, ne pas le
+perdre**).
+
+**Avertissement de méthode noté en tête de `AUDIT-R3.md`** : `node_modules/`
+n'est PAS installé sur la machine d'audit → aucun poids de dépendance n'a pu
+être mesuré. Ne pas prétendre le contraire dans les constats suivants.
 
 ### Matériel DÉJÀ VÉRIFIÉ dans les passes précédentes — ne pas le redécouvrir
 
@@ -137,8 +145,13 @@ Code mort / doublons recensés au fil de F2, F4, R2 :
 
 ### Plan R3 — ce qu'il reste à faire
 
-1. `package.json` : lire les dépendances, repérer les **lourdes** et les
-   **doublons de rôle** (deux bibliothèques d'icônes, deux de dates, etc.).
+1. ~~`package.json` : dépendances mortes~~ → **FAIT (R3-1)**. Reste sur
+   `package.json` : les **doublons de rôle** encore vivants — `expo-av` (11
+   fichiers) *et* `react-native-video` (2 fichiers) coexistent ; `three` +
+   `expo-three` + `expo-gl` (~600 Ko de JS d'après la taille publiée, non
+   mesuré) ne servent qu'à **un seul composant**,
+   `src/components/casino/SlotReel3D.tsx` → candidat n°1 au chargement
+   paresseux. **17 paquets `@expo-google-fonts`** (lien avec R1-1).
 2. Imports empêchant le tree-shaking : `import * as X`, imports de barils
    (`lodash` entier vs `lodash/xxx`), `react-native-vector-icons` en entier.
 3. Ressources embarquées inutilement : croiser `assets/` (déjà mesuré en F1 —
