@@ -31,7 +31,9 @@ dépendances trop étroites, l'accusé « Vu » n'apparaît pas en temps réel),
 F2-6 (`SearchScreen` : frappe re-rendant 40 résultats non virtualisés,
 + 5 `Animated.View` inertes), F2-7 (`CreateTweetScreen` : `Animated.sequence`
 de 200 ms relancée à chaque caractère + écran monolithe de 2 140 l. / 31
-`useState`).
+`useState`), F2-3 bis (`TweetCard` : le correctif « auteur » existe déjà là et
+n'a pas été reporté sur `TweetRow`/`TweetRowGutter` ; `premium` et
+`subscription_tier` manquent aux TROIS comparateurs).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -58,6 +60,8 @@ transverse de fin d'audit — ce n'est pas un constat F2 en soi.
   est bien posé au build EAS.
 - `SearchScreen` n'appelle PAS le réseau à chaque frappe (`onSubmitEditing`).
 - `TweetCard` est un `memo` avec comparateur (`TweetCard.tsx:743`) — protégé.
+- `NotificationsScreen` : SAIN, le meilleur exemple du dépôt. Ne pas relire.
+- `ProfileScreen` / `UserProfileScreen` : mémoïsation SAINE. Ne pas relire.
 - `CreateTweetScreen` : ressorts focus/blur (tension 50 / friction 14) =
   amortissement quasi critique, CONFORME à `CLAUDE.md`. Ne pas le signaler.
 

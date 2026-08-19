@@ -828,3 +828,103 @@ sans risque de régression visuelle.
   `compact` un littéral, la carte citée est **épargnée** par la frappe. Bon
   point : c'est le sous-arbre le plus lourd de l'écran, et c'est le seul qui
   soit protégé.
+
+---
+
+## F2-3 bis — Complément décisif : le correctif existe déjà dans le dépôt, il n'a pas été reporté
+
+`src/components/TweetCard.tsx:715-739`
+
+Découvert en vérifiant `ProfileScreen`, qui rend ses tweets avec `TweetCard` et
+non `TweetRow`. Le comparateur de `TweetCard` est celui-ci :
+
+```tsx
+    // L'accès au contenu payant change l'affichage du verrou.
+    (a as any).paid_content?.has_access === (b as any).paid_content?.has_access &&
+    // L'auteur peut changer d'habillage sans que le tweet change d'identité.
+    a.author?.id === b.author?.id &&
+    a.author?.username === b.author?.username &&
+    a.author?.full_name === b.author?.full_name &&
+    a.author?.avatar === b.author?.avatar &&
+    a.author?.verified === b.author?.verified &&
+    (a.author as any)?.verification_style === (b.author as any)?.verification_style &&
+    (a.author as any)?.profile_customization === (b.author as any)?.profile_customization
+```
+
+**F2-3 n'est donc pas une hypothèse : c'est une régression déjà rencontrée,
+déjà diagnostiquée et déjà corrigée — à un seul endroit sur trois.** Le
+commentaire « L'auteur peut changer d'habillage sans que le tweet change
+d'identité » décrit mot pour mot le mécanisme décrit en F2-3. Quelqu'un a buté
+dessus, l'a compris, l'a réparé dans `TweetCard`, et `TweetRow` /
+`TweetRowGutter` sont passés au travers.
+
+Deux conséquences pratiques :
+
+1. **Le correctif proposé en F2-3 n'est pas à inventer : il est à copier.** La
+   forme retenue ici (comparaison champ par champ, référence directe sur
+   `profile_customization`) est exactement celle que je proposais, ce qui lève
+   le doute que j'y exprimais sur la maison. À reporter tel quel dans les deux
+   comparateurs du fil.
+2. **La ligne `paid_content?.has_access` confirme la réserve de F2-3.** Elle est
+   présente ici et absente des deux autres. Ce n'était donc pas un faux
+   problème : il a bien fallu l'ajouter au moins une fois.
+
+### Mais `TweetCard` a lui aussi un trou — sur les deux champs les plus sensibles
+
+Le report a été fait sur sept champs d'auteur. Il en manque **deux**, et
+`TweetCard` les rend pourtant (`:393-394`) :
+
+```tsx
+isPremium={!!tweet.author?.premium}
+subscriptionTierRaw={(tweet.author as any)?.subscription_tier}
+```
+
+Ni `premium` ni `subscription_tier` ne figurent dans le comparateur.
+
+**Effet concret** : un utilisateur achète un premium, revient sur son profil —
+c'est le premier endroit où il va vérifier ce qu'il vient de payer — et ses
+tweets affichent toujours le nom sans habillage premium. Il faut quitter
+l'écran et y revenir pour voir la différence. C'est le pire moment possible
+pour un doute sur « est-ce que mon paiement est passé ? ».
+
+Le même trou existe dans `TweetRow` et `TweetRowGutter`, où `premium` (`:460`,
+`:586`) et `subscription_tier` (`:461`, `:587`) sont rendus aussi.
+
+### Correctif
+
+Ajouter les deux lignes manquantes **aux trois** comparateurs, et non au seul
+`TweetCard` :
+
+```tsx
+(a.author as any)?.premium === (b.author as any)?.premium &&
+(a.author as any)?.subscription_tier === (b.author as any)?.subscription_tier &&
+```
+
+Le geste durable : extraire un `sameAuthor()` unique et partagé (forme donnée
+en F2-3), importé par les trois composants. C'est la seule façon d'éviter que
+le prochain champ d'auteur ajouté à l'interface soit à nouveau oublié dans deux
+comparateurs sur trois — ce qui vient de se produire deux fois de suite.
+
+### Note d'architecture, hors constat
+
+`ProfileScreen` rend ses tweets avec `TweetCard` (`:304`) tandis que
+`UserProfileScreen` les rend avec `TweetRow` (`:500`) : deux composants
+différents pour la même chose, sur deux écrans jumeaux. Ce n'est pas un défaut
+de performance en soi — les deux sont mémoïsés — mais c'est la cause directe du
+correctif appliqué à un seul des deux. Signalé pour information ; la
+consolidation dépasse le cadre de cet audit.
+
+### Ce que j'ai vérifié et trouvé SAIN au passage
+
+- **`NotificationsScreen` est propre**, et c'est le meilleur exemple du dépôt :
+  `NotificationItem` est un `React.memo` dont le comparateur repose sur
+  l'**identité** de `notification` (`:271-277`), ce qui est ici le bon choix
+  puisque `handleMarkAsRead` (`:363`) ne recrée l'objet que de la notification
+  touchée et conserve les références des autres. `keyExtractor` et
+  `renderNotification` sont en `useCallback` (`:446-457`), `filtered` en
+  `useMemo` (`:437`), et même le tableau vide est une constante de module
+  (`EMPTY_NOTIFICATIONS`, `:280`) avec le commentaire qui explique pourquoi.
+  Rien à signaler.
+- `ProfileScreen` (`:300-314`) et `UserProfileScreen` (`:448-510`) :
+  `keyExtractor`, `renderTweetItem`, `rowContext` et `handleRowAction` sont
+  tous mémoïsés avec des dépendances stables. Sains tous les deux.
