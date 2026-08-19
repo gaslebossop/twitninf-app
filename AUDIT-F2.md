@@ -928,3 +928,128 @@ consolidation dépasse le cadre de cet audit.
 - `ProfileScreen` (`:300-314`) et `UserProfileScreen` (`:448-510`) :
   `keyExtractor`, `renderTweetItem`, `rowContext` et `handleRowAction` sont
   tous mémoïsés avec des dépendances stables. Sains tous les deux.
+
+---
+
+## F2-8 — Fil vidéo : chaque glissé re-rend toutes les cartes vidéo montées — CRITIQUE
+
+`src/screens/twitninfvideo.tsx:105` et `:533-552`
+
+C'est le fil vidéo vertical plein écran, façon TikTok — l'écran où l'exigence de
+fluidité est la plus haute de toute l'application, et le seul où la moindre
+saccade est immédiatement lue comme « l'app est cassée ».
+
+```tsx
+const VideoCard: React.FC<VideoCardProps> = ({ tweet, isActive, onSheetToggle, cardHeight }) => {
+  // 9 useState, un <Video> expo-av, une feuille de commentaires…
+};                                        // :105 — AUCUN React.memo
+
+<FlatList
+  data={videos}
+  keyExtractor={item => item.id}                       // ← recréé à chaque rendu
+  pagingEnabled
+  renderItem={({ item }) => (                          // ← recréé à chaque rendu
+    <VideoCard
+      tweet={item}
+      isActive={activeVideoId === item.id && isFocused}
+      onSheetToggle={(isVisible) => setIsScrollEnabled(!isVisible)}  // ← closure neuve par carte
+      cardHeight={cardHeight}
+    />
+  )}
+/>
+```
+
+### Ce qui ne va pas
+
+Les trois défauts se cumulent exactement comme dans F2-2, mais sur un contenu
+incomparablement plus lourd :
+
+1. `VideoCard` n'est pas mémoïsé (`:105`, `React.FC` nu).
+2. `renderItem` et `keyExtractor` sont des flèches anonymes (`:535`, `:545`).
+3. `onSheetToggle` est une quatrième closure neuve par carte et par rendu.
+
+**Le déclencheur est le glissé lui-même.** `activeVideoId` change à chaque
+changement de vidéo (`onViewableItemsChanged`, `:543`) : l'écran se re-rend,
+`renderItem` prend une identité neuve, et le `CellRenderer` (`PureComponent`)
+de `VirtualizedList` propage le re-rendu à **toutes** les cartes montées.
+`setIsScrollEnabled` (`:549`), déclenché à l'ouverture des commentaires, fait
+la même chose.
+
+Et une carte montée coûte cher. Chacune porte (`:105-160`, `:262-300`) :
+**9 `useState`**, un `<LinearGradient>` plein écran, une `<Image>` de
+miniature, un **`<Video>` expo-av**, une boucle `overlays.map(...)` avec du
+texte outliné, et la barre d'actions.
+
+Point aggravant vérifié : le `<Video>` est **monté en permanence** dès que
+`videoUrl` existe (`:272`). Seul `shouldPlay={isActive}` varie. Il n'y a donc
+pas une carte vidéo montée, mais autant que la fenêtre de virtualisation en
+garde — et cette `FlatList` ne règle **ni `windowSize`, ni
+`initialNumToRender`, ni `maxToRenderPerBatch`, ni `removeClippedSubviews`**
+(vérifié : aucun de ces quatre attributs n'est présent). Elle tourne donc sur
+les valeurs par défaut de React Native : `initialNumToRender: 10` et
+`windowSize: 21`. Chaque carte faisant une hauteur d'écran, cela signifie
+**jusqu'à ~10 lecteurs vidéo instanciés dès l'ouverture de l'onglet**, et
+jusqu'à ~21 montés en défilement. *Le réglage de la fenêtre relève de F3 ; il
+est mentionné ici parce que c'est lui qui fixe le multiplicateur du présent
+constat.*
+
+### Effet concret pour l'utilisateur
+
+À chaque glissé vers la vidéo suivante — le geste le plus répété de cet écran,
+plusieurs fois par minute — l'ensemble des cartes montées repasse par le rendu
+React et la réconciliation, **pendant** que le lecteur enchaîne sur la vidéo
+suivante et que l'animation de défilement paginé est en cours. Les trois se
+disputent le même thread JS au même instant.
+
+Le symptôme : le glissé « accroche » juste au moment du calage sur la vidéo
+suivante, et la première demi-seconde de lecture est hachée. C'est exactement
+le défaut qui distingue une application vidéo qui paraît finie d'une qui ne le
+paraît pas — et l'utilisateur n'a rien d'autre à faire sur cet écran que ce
+geste-là.
+
+### Correctif
+
+```tsx
+const VideoCard = React.memo(function VideoCard({ tweet, isActive, onSheetToggle, cardHeight }) {
+  …
+});
+
+// dans l'écran :
+const handleSheetToggle = useCallback((isVisible: boolean) => setIsScrollEnabled(!isVisible), []);
+const videoKeyExtractor = useCallback((item: Tweet) => item.id, []);
+const renderVideo = useCallback(
+  ({ item }: { item: Tweet }) => (
+    <VideoCard
+      tweet={item}
+      isActive={activeVideoId === item.id && isFocused}
+      onSheetToggle={handleSheetToggle}
+      cardHeight={cardHeight}
+    />
+  ),
+  [activeVideoId, isFocused, handleSheetToggle, cardHeight],
+);
+```
+
+`renderItem` garde forcément `activeVideoId` en dépendance — c'est
+`React.memo` sur `VideoCard` qui fait le tri derrière : seules **les deux**
+cartes dont `isActive` bascule réellement se re-rendent, au lieu de toutes.
+On passe d'une dizaine de rendus de carte vidéo par glissé à **2**.
+
+Le gain suivant, complémentaire, est de ne monter le `<Video>` que pour la
+carte active et ses voisines immédiates (`{isActive || isNeighbour ? <Video…/> : <Image thumb/>}`)
+— mais c'est un changement de comportement de préchargement, à mesurer avant
+d'être adopté, et il relève plutôt de F3/R3. Le correctif ci-dessus, lui, est
+purement mécanique.
+
+### Ce que j'ai vérifié et trouvé SAIN sur cet écran
+
+- **`onViewableItemsChanged` et `viewabilityConfig` sont passés via des `ref`**
+  (`:543-544`, `onViewableItemsChanged.current` / `viewabilityConfig.current`).
+  C'est exactement ce qu'il faut faire : React Native **lève une exception** si
+  l'une de ces deux props change d'identité après le montage. Le réflexe est
+  bon et mérite d'être noté, d'autant qu'il montre que le piège des références
+  instables était connu de l'auteur — il n'a simplement pas été appliqué à
+  `renderItem`, juste au-dessus.
+- `snapToInterval={cardHeight}` utilise bien la hauteur responsive et non
+  `Dimensions.get('window').height` brut, avec le commentaire qui l'explique
+  (`:538`). Correct.
