@@ -34,7 +34,9 @@ de 200 ms relancée à chaque caractère + écran monolithe de 2 140 l. / 31
 `useState`), F2-3 bis (`TweetCard` : le correctif « auteur » existe déjà là et
 n'a pas été reporté sur `TweetRow`/`TweetRowGutter` ; `premium` et
 `subscription_tier` manquent aux TROIS comparateurs), F2-8 (`twitninfvideo` :
-fil vidéo, toutes les cartes re-rendues à chaque glissé — CRITIQUE).
+fil vidéo, toutes les cartes re-rendues à chaque glissé — CRITIQUE), F2-9
+(balayage groupé des 7 `renderItem` inline restants ; `GoLiveScreen` MAJEUR,
+`SendCoinsModal` MODÉRÉ, 5 autres mineurs).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -72,12 +74,8 @@ transverse de fin d'audit — ce n'est pas un constat F2 en soi.
 **Pistes NON encore explorées pour F2 :**
 - « État placé trop haut » : reste `ForgeScreen`, `WalletScreen`,
   `TradingScreen`. (`SearchScreen` → F2-6, `CreateTweetScreen` → F2-7.)
-- Les renderItem inline restants, TOUS sur des écrans à faible trafic — à
-  traiter en un seul constat groupé « F2-9 » plutôt qu'un par un :
-  `SendCoinsModal:236`, `ImageViewerPaper:334`, `FollowRequestsScreen:136`,
-  `MyPassesScreen:358`, `EconomyManagementScreen:268/318`,
-  `UserConnectionsScreen:140`, `CommunityCurrenciesScreen:103`,
-  `LivesScreen:171`, `GoLiveScreen:455`. (`twitninfvideo:545` → fait, F2-8.)
+- ~~renderItem inline restants~~ → FAIT, constat groupé F2-9. Le recensement
+  y est exhaustif (recherche `renderItem={` / `keyExtractor={` sur tout `src/`).
 - Gros composants non-liste : `UserStatsTab` (2379 l.),
   `ProfileDecoration` (1521 l.), `NavbarOnboardingModal` (1121 l.).
 

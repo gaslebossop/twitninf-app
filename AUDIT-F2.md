@@ -1053,3 +1053,116 @@ purement mécanique.
 - `snapToInterval={cardHeight}` utilise bien la hauteur responsive et non
   `Dimensions.get('window').height` brut, avec le commentaire qui l'explique
   (`:538`). Correct.
+
+---
+
+## F2-9 — Les sept `renderItem` inline restants — balayage groupé
+
+Recensement de tous les `renderItem` / `keyExtractor` inline encore présents
+dans le dépôt après les constats précédents. Le défaut technique est le même
+partout (flèche anonyme → identité neuve à chaque rendu → le `CellRenderer`
+`PureComponent` re-rend toutes les cellules montées) ; **ce qui change d'un
+écran à l'autre, c'est la fréquence du déclencheur.** Ils sont donc groupés,
+et classés par gain réel.
+
+| Écran | Lignes | Déclencheur de re-rendu | Gravité |
+|---|---|---|---|
+| `GoLiveScreen.tsx` | `:450`, `:455` | frappe du diffuseur **et** message reçu | **MAJEUR** |
+| `SendCoinsModal.tsx` | `:232`, `:236` | frappe dans la recherche de destinataire | **MODÉRÉ** |
+| `LivesScreen.tsx` | `:162`, `:171` | rafraîchissement de la liste des lives | mineur |
+| `UserConnectionsScreen.tsx` | `:139`, `:140` | suivre / ne plus suivre | mineur |
+| `MyPassesScreen.tsx` | `:357`, `:358` | rafraîchissement | mineur |
+| `FollowRequestsScreen.tsx` | `:126`, `:136` | accepter / refuser | mineur |
+| `CommunityCurrenciesScreen.tsx` | `:95`, `:103` | rafraîchissement | mineur |
+
+Les cinq derniers sont des listes courtes sur des écrans peu visités, dont
+l'état ne change que sur une action explicite de l'utilisateur : le correctif
+est le même `useCallback` mécanique, mais le gain est théorique. **Ils sont
+listés pour exhaustivité, pas pour être traités en priorité.** Les deux
+premiers, en revanche, méritent chacun un mot.
+
+### `GoLiveScreen` — le jumeau de F2-2, côté diffuseur, et en pire
+
+`src/screens/GoLiveScreen.tsx:98-99` et `:447-465`
+
+```tsx
+const [messages, setMessages] = useState<LiveChatMessage[]>([]);   // :98
+const [draft, setDraft]       = useState('');                      // :99   ← MÊME composant
+
+<FlatList
+  data={messages}
+  keyExtractor={(item) => item.id}            // :450  ← recréé à chaque rendu
+  renderItem={({ item }) => (                 // :455  ← recréé à chaque rendu
+    <View style={styles.chatRow}>
+      <Avatar size={26} uri={item.avatar} username={item.user} … />
+      …
+    </View>
+  )}
+/>
+…
+<TextInput value={draft} onChangeText={setDraft} … />               // :471-472
+```
+
+F2-2 décrivait ce défaut sur `LiveViewerScreen`, côté **spectateur**. Il est ici
+identique côté **diffuseur**, avec deux aggravations :
+
+1. **Deux déclencheurs au lieu d'un.** Chez le spectateur, seule l'arrivée d'un
+   message re-rend le chat. Ici s'ajoute la frappe : `draft` (`:99`) vit dans le
+   même composant que la liste, donc chaque caractère tapé par le diffuseur
+   re-rend tout le chat en plus.
+2. **Le contexte est le pire possible.** Le diffuseur est en train de
+   **capturer, encoder et téléverser un flux vidéo**. Le thread JS qu'on
+   encombre à chaque frappe et à chaque message est celui-là même qui pilote la
+   diffusion. Une saccade chez un spectateur gêne un spectateur ; une saccade
+   chez le diffuseur dégrade le flux pour **tout le monde**.
+
+En pratique : le diffuseur répond à son public — l'usage même de ce champ — et
+chaque caractère reconstruit les lignes de chat visibles, pendant que les
+messages continuent d'arriver et de faire la même chose.
+
+**Correctif** : le même que F2-2, plus l'extraction du composeur.
+
+```tsx
+const ChatRow = React.memo(function ChatRow({ item }: { item: LiveChatMessage }) { … });
+const renderChatRow    = useCallback(({ item }) => <ChatRow item={item} />, []);
+const chatKeyExtractor = useCallback((item: LiveChatMessage) => item.id, []);
+```
+
+et sortir `draft` dans un `<LiveComposer onSend={sendMessage} />` qui détient
+son propre état. Ce dernier geste est le plus rentable des deux ici, puisqu'il
+supprime le déclencheur le plus fréquent — et il est purement local.
+
+*Note* : `onContentSizeChange={() => chatListRef.current?.scrollToEnd(…)}`
+(`:454`) est aussi une flèche recréée à chaque rendu. C'est sans conséquence
+(la prop n'est pas comparée par le `CellRenderer`), mais elle se stabilise
+gratuitement dans le même geste.
+
+### `SendCoinsModal` — la frappe re-rend la liste des destinataires
+
+`src/components/SendCoinsModal.tsx:208`, `:232-236`
+
+`query` (`:208`, `onChangeText={setQuery}`) vit dans le même composant que la
+`FlatList` des destinataires, dont `renderItem` et `keyExtractor` sont inline.
+Même mécanique que `SearchScreen` (F2-6), sur une liste plus courte.
+
+**Effet concret** : chercher à qui envoyer des NF devient poussif à mesure que
+la liste de contacts est longue. C'est un écran d'**envoi d'argent** : l'à-coup
+y est mal ressenti, parce que l'utilisateur y est déjà attentif et hésitant.
+L'écran contient par ailleurs deux autres `TextInput` (`:310` montant, `:341`
+note), qui re-rendent la liste eux aussi alors qu'elle n'est plus regardée.
+
+**Correctif** : `useCallback` sur `renderItem`/`keyExtractor`, ligne
+destinataire en `memo`, et idéalement isoler `query`, `amount` et `note` dans
+leurs sous-composants respectifs.
+
+### Ce que j'ai vérifié et trouvé SAIN
+
+- Ce tableau est **exhaustif** pour le dépôt à la date de l'audit : recherche
+  de `renderItem={` et `keyExtractor={` sur tout `src/`, tous les résultats
+  sont soit traités dans un constat F2-1…F2-9, soit déjà mémoïsés.
+- Les écrans les plus fréquentés — `TweetsScreen`, `NotificationsScreen`,
+  `MessagesScreen`, `ProfileScreen`, `UserProfileScreen`, `FeedGutterScreen` —
+  ont tous des `renderItem` et `keyExtractor` correctement mémoïsés. Le défaut
+  se concentre sur les écrans secondaires et, malheureusement, sur les deux
+  écrans vidéo/live (F2-8 et le présent constat), qui sont justement les plus
+  sensibles.
