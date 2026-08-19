@@ -117,3 +117,85 @@ l'état `inputText` dans un sous-composant `CommentComposer` dédié. La frappe
 cesse alors de re-rendre `CommentSheet`, ce qui supprime le déclencheur
 principal sans toucher aux props des lignes. Les rendus provoqués par un like
 ou un dépliage resteraient, eux, non optimisés.
+
+---
+
+## F2-2 — Chat du live : chaque message reçu re-rend tout le chat — MAJEUR
+
+`src/screens/LiveViewerScreen.tsx:396-401` et `:100-134`
+
+```tsx
+function ChatRow({ item }: { item: ChatMessage }) {   // ligne 101 — PAS de React.memo
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(12)).current;
+  useEffect(() => { Animated.parallel([...]).start(); }, []);
+  return (
+    <Animated.View style={[styles.chatRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <Avatar size={26} ... />
+      ...
+      <VerifiedBadge verificationStyle={item.verification_style || 'default'} size={12} animated />
+    </Animated.View>
+  );
+}
+
+<FlatList
+  data={messages}
+  keyExtractor={item => item.id}                        // ← recréé à chaque rendu
+  renderItem={({ item }) => <ChatRow item={item} />}    // ← recréé à chaque rendu
+  inverted
+/>
+```
+
+### Ce qui ne va pas
+
+`ChatRow` n'est pas mémoïsé **et** `renderItem` est une flèche anonyme. Les
+deux défauts se renforcent : même en ajoutant `React.memo` à `ChatRow`, il
+recevrait un élément neuf à chaque rendu de l'écran, et même avec un
+`renderItem` stable, `ChatRow` sans mémo se re-rendrait quand même. Il faut
+les deux corrections, pas une.
+
+Le déclencheur est ici bien plus fréquent qu'un `setState` d'interface : c'est
+**l'arrivée d'un message**. Sur un live actif, plusieurs messages par seconde.
+Chaque `setMessages` re-rend `LiveViewerScreen`, donne une identité neuve à
+`renderItem`, et le `CellRenderer` (`PureComponent`) de `VirtualizedList`
+propage le re-rendu à **toutes** les lignes montées.
+
+Chaque re-rendu de ligne reconstruit un `Avatar`, un `<Text>` de pseudo, un
+`<Text>` de message et un `VerifiedBadge`. Ce dernier est bien mémoïsé
+(`src/components/VerifiedBadge.tsx:721`), mais il reçoit des props primitives
+égales, donc il est correctement épargné — c'est le seul frein en place.
+
+### Effet concret pour l'utilisateur
+
+Pendant un live animé, le chat saccade au moment précis où il devrait défiler
+le plus finement : à chaque message, ~10 à 15 lignes montées repassent par le
+rendu React et la réconciliation, en concurrence directe avec la lecture du
+flux vidéo et avec l'animation d'entrée du nouveau message
+(`LiveViewerScreen.tsx:105-110`). Plus le chat est vivant, plus il rame — le
+comportement exactement inverse de celui attendu.
+
+S'y ajoute la pression sur le ramasse-miettes : une nouvelle closure
+`renderItem`, une nouvelle closure `keyExtractor` et N éléments React par
+message reçu.
+
+### Correctif
+
+```tsx
+const ChatRow = React.memo(function ChatRow({ item }: { item: ChatMessage }) { ... });
+
+// dans le composant :
+const renderChatRow = useCallback(({ item }: { item: ChatMessage }) => <ChatRow item={item} />, []);
+const chatKeyExtractor = useCallback((item: ChatMessage) => item.id, []);
+```
+
+Aucune dépendance : `ChatRow` ne lit rien d'autre que `item`. Après correction,
+un message reçu ne re-rend plus que la ligne ajoutée — de ~15 rendus de ligne
+par message à **1**.
+
+### Réserve honnête
+
+L'animation d'entrée de `ChatRow` (`useEffect` à dépendances vides) ne se
+rejoue pas au re-rendu, seulement au montage : ce n'est donc **pas** le
+troisième défaut d'animation listé dans `CLAUDE.md`. Elle reste néanmoins
+exposée au recyclage de cellule si `keyExtractor` produisait un jour des clés
+non uniques — point traité en F3.

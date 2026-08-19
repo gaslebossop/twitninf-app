@@ -22,7 +22,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 
 ## Reprendre à — F2
 
-**Constats déjà écrits et poussés :** F2-1 (`CommentSheet`).
+**Constats déjà écrits et poussés :** F2-1 (`CommentSheet`),
+F2-2 (`LiveViewerScreen`, chat du live).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -35,13 +36,11 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
   `stats.views` documentée et justifiée. Sain.
 
 **Pistes vérifiées, constats restant à RÉDIGER :**
-1. `src/screens/LiveViewerScreen.tsx:400` — `ChatRow` (ligne 101) n'est pas
-   mémoïsé + `renderItem` et `keyExtractor` inline. Chat de live.
-2. `src/screens/ConversationThreadScreen.tsx:1291` — pas de composant
+1. `src/screens/ConversationThreadScreen.tsx:1291` — pas de composant
    `MessageBubble` mémoïsé ; `renderItem` dépend de `messages` et
    `expandedMessageId`, donc toute nouvelle bulle re-rend toutes les bulles
    montées.
-3. `TweetRow.tsx:748` et `TweetRowGutter.tsx:736` — le comparateur ne compare
+2. `TweetRow.tsx:748` et `TweetRowGutter.tsx:736` — le comparateur ne compare
    pas `tweet.author` (avatar, pseudo, `premium`, `verified` sont pourtant
    rendus). Interface figée après changement d'avatar / achat premium.
 
