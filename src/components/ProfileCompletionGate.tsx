@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
 import { useAuth } from '../contexts/AuthContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';

@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, radius, withAlpha } from '../../theme';
 import useSheetGesture from '../../hooks/useSheetGesture';
 import feedback from '../../utils/feedback';

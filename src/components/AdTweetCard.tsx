@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import apiService from '../services/api';
 import VerifiedBadge from './VerifiedBadge';
 import PremiumDisplayName from './PremiumDisplayName';

@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import type { RtmpPublisherViewMethods } from 'react-native-nitro-rtmp-publisher';

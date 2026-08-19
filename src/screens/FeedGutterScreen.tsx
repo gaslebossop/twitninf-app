@@ -71,10 +71,11 @@ import Animated, {
   runOnJS,
   Extrapolation,
   FadeIn,
+  LinearTransition,
 } from 'react-native-reanimated';
 import { clamp, projectDecay, rubberBand, springFrom } from '../utils/gesture';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { apiService, progressiveRecommendationService } from '../services';
 import { neuralRankService } from '../services/neuralRankService';
@@ -97,6 +98,7 @@ import TweetRowGutter from '../components/feed/paper2b/TweetRowGutter';
 import type { TweetRowAction } from '../components/feed/TweetRow';
 import PromotedAccountCard from '../components/feed/PromotedAccountCard';
 import TweetSkeleton from '../components/feed/TweetSkeleton';
+import FeedItemEntrance from '../components/feed/FeedItemEntrance';
 import ExploreGrid, { type CardRect } from '../components/feed/ExploreGrid';
 import ExploreImmersive from '../components/feed/ExploreImmersive';
 import feedback from '../utils/feedback';
@@ -104,7 +106,8 @@ import { displayContentOf, splitTweetMedia } from '../utils/tweetMedia';
 import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
 import StoriesTray from '../components/StoriesTray';
 import SpotlightBand from '../components/feed/paper2b/SpotlightBand';
-import FeedRefreshLogo, { PULL_THRESHOLD } from '../components/feed/paper2b/FeedRefreshLogo';
+import { PullRefreshLogo } from '../components/ui';
+import { usePullRefreshLogo } from '../hooks/usePullRefreshLogo';
 import storiesService from '../services/storiesService';
 import PaywallSetupSheet from '../components/PaywallSetupSheet';
 
@@ -263,6 +266,24 @@ export default function FeedGutterScreen() {
   const [refreshing, setRefreshing] = useState(false);
   // Incrémenté au pull-to-refresh pour recharger la barre de stories.
   const [storiesRefresh, setStoriesRefresh] = useState(0);
+
+  /**
+   * Arrivée des lignes — voir `components/feed/FeedItemEntrance.tsx`.
+   *
+   * `entranceSeen` est la mémoire des lignes DÉJÀ apparues : elle vit ici, à
+   * l'écran, et pas dans la ligne, précisément parce qu'une ligne est
+   * recyclée. Sans elle, chaque remontée à l'écran rejouerait l'animation —
+   * le défaut qui avait fait rejeter la première tentative.
+   *
+   * Les deux vont par paire : on incrémente la génération ET on vide le `Set`,
+   * jamais l'un sans l'autre.
+   */
+  const [entranceGeneration, setEntranceGeneration] = useState(0);
+  const entranceSeen = useRef<Set<string>>(new Set()).current;
+  const markNewBatch = useCallback(() => {
+    entranceSeen.clear();
+    setEntranceGeneration((n) => n + 1);
+  }, [entranceSeen]);
   // Auteurs ayant une story active (non expirée) : alimente l'anneau autour
   // de l'avatar dans le fil, distinct du badge de vérification.
   const [storyUserIds, setStoryUserIds] = useState<Set<string>>(new Set());
@@ -982,6 +1003,7 @@ export default function FeedGutterScreen() {
     if (activeTab === 'explore') {
       setExploreRefreshing(true);
       await fetchExplore(true);
+      // La grille a sa propre arrivée (voir `ExploreWall`), déclenchée là-bas.
       return;
     }
 
@@ -997,11 +1019,14 @@ export default function FeedGutterScreen() {
         // ici et réaffichait le bandeau que le repli sur cache venait d'effacer.
         await Promise.allSettled([fetchTweets(true), fetchFollowing()]);
       }
+      // APRÈS la requête : la fournée est posée, les lignes peuvent entrer.
+      // Avant, l'animation partirait sur le contenu encore ancien.
+      markNewBatch();
     } catch {
       if (!servedFromCacheRef.current) setError('Erreur lors du rafraîchissement');
     }
     finally { setRefreshing(false); }
-  }, [activeTab, currentAlgorithm, trackCustomAction]);
+  }, [activeTab, currentAlgorithm, trackCustomAction, markNewBatch]);
 
   /**
    * Changement d'onglet.
@@ -1502,47 +1527,22 @@ export default function FeedGutterScreen() {
   }).current;
 
   /**
-   * Dépassement de la liste, en points, positif vers le bas — c'est ce que
-   * lit le logo d'actualisation.
-   *
-   * ⚠️ iOS uniquement, par nature : `contentOffset.y` ne devient négatif que
-   * grâce au REBOND, qui n'existe pas sur Android (voir `FeedRefreshLogo`).
+   * Actualisation au geste — logo commun (`usePullRefreshLogo` +
+   * `PullRefreshLogo`), aussi monté sur Explorer, les notifications et les
+   * profils. Le hook ne fait rien côté Android (pas de rebond, la surface
+   * garde son `AppRefreshControl` natif là-bas) et remet `pull` à zéro à
+   * chaque prise de focus — sans ça l'indicateur restait « posé » à moitié en
+   * revenant sur l'onglet après un changement de page en pleine traction.
    */
-  const feedPull = useSharedValue(0);
-  const onFeedScroll = useAnimatedScrollHandler({
-    onScroll: (e) => {
-      const over = -e.contentOffset.y;
-      feedPull.value = over > 0 ? over : 0;
-    },
-  });
+  const handlePullRefresh = useCallback(() => {
+    if (activeTab === 'explore') return;
+    // Pas de secousse ici : `usePullRefreshLogo` la joue déjà au FRANCHISSEMENT
+    // du seuil, pendant la traction (comme une vraie liste iOS). En rejouer une
+    // au relâchement en ferait deux coup sur coup pour un seul geste.
+    onRefresh();
+  }, [activeTab, onRefresh]);
 
-  /**
-   * Déclenchement de l'actualisation au relâchement — iOS uniquement.
-   *
-   * C'est ce qui permet de se passer complètement de `RefreshControl` sur
-   * iOS, et donc de sa roue : `tintColor="transparent"` ne l'efface pas, elle
-   * réapparaît en gris par-dessus le logo dès qu'on tire. Deux indicateurs
-   * superposés et décalés, ce qui est pire que la roue seule.
-   *
-   * On lit la même distance que le logo (`PULL_THRESHOLD`) : ce qui est plein
-   * à l'écran est exactement ce qui déclenche.
-   */
-  const onFeedScrollEndDrag = useCallback(
-    (e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
-      if (Platform.OS !== 'ios') return;
-      if (refreshing || activeTab === 'explore') return;
-      const over = -(e?.nativeEvent?.contentOffset?.y ?? 0);
-      if (over < PULL_THRESHOLD) return;
-      // `like()` et PAS `select()` : `select()` passe `0` pulsation iOS à
-      // `play()`, c'est-à-dire muet sur iOS (voir l'en-tête de
-      // `utils/feedback.ts` — un appui ordinaire n'y vibre jamais). Or sans
-      // roue native, cette secousse est le seul accusé de réception au
-      // relâchement : elle doit partir sur les deux plateformes.
-      feedback.like();
-      onRefresh();
-    },
-    [refreshing, activeTab, onRefresh],
-  );
+  const { pull: feedPull, scrollHandler: onFeedScroll, logoKey } = usePullRefreshLogo(handlePullRefresh, refreshing);
 
   /**
    * État de la question de réglage (« tu en veux moins / plus »).
@@ -1655,16 +1655,23 @@ export default function FeedGutterScreen() {
       const promoted = (item as any).promoted_account;
       if (promoted) {
         return (
-          <PromotedAccountCard
-            account={promoted}
-            adId={(item as any).ad_data?.id}
-            onOpen={() => {
-              if ((item as any).ad_data?.id) {
-                apiService.post(`/api/ads/advertisements/${(item as any).ad_data.id}/click`).catch(() => {});
-              }
-              (navigation as any).navigate('UserProfile', { userId: promoted.id, username: promoted.username });
-            }}
-          />
+          <FeedItemEntrance
+            id={String(item.id)}
+            index={index}
+            generation={entranceGeneration}
+            seen={entranceSeen}
+          >
+            <PromotedAccountCard
+              account={promoted}
+              adId={(item as any).ad_data?.id}
+              onOpen={() => {
+                if ((item as any).ad_data?.id) {
+                  apiService.post(`/api/ads/advertisements/${(item as any).ad_data.id}/click`).catch(() => {});
+                }
+                (navigation as any).navigate('UserProfile', { userId: promoted.id, username: promoted.username });
+              }}
+            />
+          </FeedItemEntrance>
         );
       }
       // Rang dans le fil de discussion — logique pure, donc testée hors de
@@ -1698,13 +1705,24 @@ export default function FeedGutterScreen() {
       // rendue sous la ligne concernée. Toucher `data` obligerait
       // `keyExtractor`, la déduplication, la pagination et le suivi des
       // impressions à composer avec des entrées qui ne sont pas des tweets.
-      if (askAtId !== item.id) return row;
+      const entering = (content: React.ReactNode) => (
+        <FeedItemEntrance
+          id={String(item.id)}
+          index={index}
+          generation={entranceGeneration}
+          seen={entranceSeen}
+        >
+          {content}
+        </FeedItemEntrance>
+      );
+
+      if (askAtId !== item.id) return entering(row);
 
       // Le tweet d'abord, la question juste en dessous : « des tweets comme
       // celui-ci » désigne ce qu'on vient de lire. Au-dessus, la phrase
       // pointerait vers un tweet pas encore vu.
       const author = (item as any)?.originalTweet?.author || (item as any)?.author;
-      return (
+      return entering(
         <>
           {row}
           <AlgoCheckGutter
@@ -1732,7 +1750,7 @@ export default function FeedGutterScreen() {
         </>
       );
     },
-    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation]
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen]
   );
 
   // Une publicité de tweet garde le VRAI id du tweet (voir `dedupeKey`
@@ -1788,30 +1806,42 @@ export default function FeedGutterScreen() {
           pendingCount={pendingTweets.length}
           pendingActionCount={pendingActions.length}
         />
-        <StoriesTray
-          currentUser={storiesUser}
-          refreshSignal={storiesRefresh}
-          backgroundColor={C.bg}
-          onOpenProfile={(author) => (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username })}
-          onSendMessage={async (author, message) => {
-            if (!message.trim()) {
-              (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
-              return;
-            }
-            try {
-              await apiService.post(`/api/messages/direct/${author.id}`, { content: message.trim() });
-            } catch {
-              // L'échec d'une réponse de story ne doit pas casser le fil.
-            }
-          }}
-        />
+        {/* `layout=` sur les deux blocs ci-dessous : `StoriesTray` passe d'un
+            simple rond de chargement à la rangée réelle (hauteurs
+            différentes), et `SpotlightBand` ne rend RIEN tant que
+            `/api/spotlight/today` n'a pas répondu (`if (loading || !tweet)
+            return null`). Sans transition de mise en page, ce sont deux
+            sauts de hauteur instantanés à l'ouverture du fil — le premier
+            tweet démarre trop haut sur la première image, puis « téléporte »
+            plus bas dès que l'une ou l'autre réponse arrive. */}
+        <Animated.View layout={LinearTransition.duration(220)}>
+          <StoriesTray
+            currentUser={storiesUser}
+            refreshSignal={storiesRefresh}
+            backgroundColor={C.bg}
+            onOpenProfile={(author) => (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username })}
+            onSendMessage={async (author, message) => {
+              if (!message.trim()) {
+                (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
+                return;
+              }
+              try {
+                await apiService.post(`/api/messages/direct/${author.id}`, { content: message.trim() });
+              } catch {
+                // L'échec d'une réponse de story ne doit pas casser le fil.
+              }
+            }}
+          />
+        </Animated.View>
 
         {/* Le post du jour : une ligne du fil sur un cran de fond, pas une
             notice posée au-dessus des stories. */}
-        <SpotlightBand
-          refreshSignal={storiesRefresh}
-          onOpenTweet={(tweetId) => (navigation as any).navigate('TweetDetail', { tweetId })}
-        />
+        <Animated.View layout={LinearTransition.duration(220)}>
+          <SpotlightBand
+            refreshSignal={storiesRefresh}
+            onOpenTweet={(tweetId) => (navigation as any).navigate('TweetDetail', { tweetId })}
+          />
+        </Animated.View>
 
         {error && (
           <Animated.View entering={FadeIn.duration(180)} style={S.errorBanner}>
@@ -2198,12 +2228,12 @@ export default function FeedGutterScreen() {
           décale pas la liste en apparaissant.
 
           iOS uniquement : elle suit le doigt via le rebond de la liste, qui
-          n'existe pas sur Android (voir `FeedRefreshLogo`). Et jamais sur
-          Explorer, qui garde la palette « Pulse » et sa propre roue native
-          (`ExploreGrid` monte son `RefreshControl`) — deux indicateurs pour
+          n'existe pas sur Android (voir `PullRefreshLogo`). Et jamais sur
+          Explorer, qui garde sa propre roue native (`ExploreGrid` monte
+          `PullRefreshLogo` lui-même sur sa surface) — deux indicateurs pour
           une seule attente. */}
       {Platform.OS === 'ios' && activeTab !== 'explore' && (
-        <FeedRefreshLogo pull={feedPull} active={refreshing} />
+        <PullRefreshLogo key={logoKey} pull={feedPull} active={refreshing} />
       )}
       {activeTab === 'explore' ? (
         <ExploreGrid
@@ -2241,7 +2271,6 @@ export default function FeedGutterScreen() {
         // Le coût est nul ici — le gestionnaire est un worklet, il ne réveille
         // pas le thread JS à chaque événement.
         scrollEventThrottle={1}
-        onScrollEndDrag={onFeedScrollEndDrag}
         // iOS : le rebond de la liste doit exister même quand le fil tient en
         // moins d'un écran, sinon il n'y a rien à tirer et l'actualisation
         // devient impossible sur un compte tout neuf.
@@ -2252,8 +2281,8 @@ export default function FeedGutterScreen() {
              iOS n'a plus de `RefreshControl` du tout : sa roue réapparaît en
              gris par-dessus le logo malgré `tintColor="transparent"`, et deux
              indicateurs superposés valent moins que la roue seule. Le
-             déclenchement y est fait à la main au relâchement
-             (`onFeedScrollEndDrag`), ce que le rebond de la liste permet.
+             déclenchement y est fait à la main au relâchement (`onEndDrag` du
+             gestionnaire animé), ce que le rebond de la liste permet.
 
              Android le garde : sans rebond, la traction est mangée par
              `SwipeRefreshLayout` et personne d'autre ne peut ni la mesurer ni

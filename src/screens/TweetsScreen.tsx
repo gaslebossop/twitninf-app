@@ -41,7 +41,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { clamp, projectDecay, rubberBand, springFrom } from '../utils/gesture';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { apiService, progressiveRecommendationService } from '../services';
 import { neuralRankService } from '../services/neuralRankService';

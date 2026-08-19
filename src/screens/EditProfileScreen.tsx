@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, StatusBar, Platfor
 // `expo-image` : cache disque et décodage hors du thread JS. `transition={0}`
 // pour garder exactement l'apparition d'avant.
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services';

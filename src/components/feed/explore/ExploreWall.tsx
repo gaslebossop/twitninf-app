@@ -1,22 +1,23 @@
-import React, { memo, useCallback, useContext, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  ScrollView,
+  Platform,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Animated from 'react-native-reanimated';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 
 import { colors, fonts, isDarkTheme, radius } from '../../../theme';
-import { AppRefreshControl, Tappable } from '../../ui';
+import { AppRefreshControl, PullRefreshLogo, Tappable } from '../../ui';
+import { usePullRefreshLogo } from '../../../hooks/usePullRefreshLogo';
 import { describeCards, NEW_SINCE_FLOOR } from './cardFormat';
 import { buildColumns } from './wallLayout';
 import ExploreCard, { type CardRect } from './ExploreCard';
+import FeedItemEntrance from '../FeedItemEntrance';
 import type { Tweet } from '../../../types/api';
 
 const GRID_PADDING = 12;
@@ -147,16 +148,25 @@ function ExploreWall({
     }
   }, [hasMore, loadingMore, onEndReached]);
 
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    contentHeightRef.current = contentSize.height;
-    layoutHeightRef.current = layoutMeasurement.height;
-    scrollOffsetRef.current = contentOffset.y;
-    // Un événement de défilement porte les deux hauteurs d'un coup.
-    contentMeasuredRef.current = true;
-    layoutMeasuredRef.current = true;
-    checkEndReached();
-  }, [checkEndReached]);
+  /**
+   * Reçu depuis `usePullRefreshLogo` (le suivi de traction du logo commun
+   * a aussi besoin de `onScroll` — un seul est accepté par la vue, voir ce
+   * hook), plutôt que posé directement en `onScroll` de la liste.
+   */
+  const handleScrollFrame = useCallback(
+    ({ offsetY, contentHeight, layoutHeight }: { offsetY: number; contentHeight: number; layoutHeight: number }) => {
+      contentHeightRef.current = contentHeight;
+      layoutHeightRef.current = layoutHeight;
+      scrollOffsetRef.current = offsetY;
+      // Un événement de défilement porte les deux hauteurs d'un coup.
+      contentMeasuredRef.current = true;
+      layoutMeasuredRef.current = true;
+      checkEndReached();
+    },
+    [checkEndReached],
+  );
+
+  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing, handleScrollFrame);
 
   // Un `ScrollView` nu ne rappelle `onScroll` que si l'utilisateur défile
   // réellement — impossible si le contenu tient dans l'écran. `onLayout`
@@ -175,16 +185,55 @@ function ExploreWall({
     checkEndReached();
   }, [checkEndReached]);
 
+  /**
+   * Arrivée des cartes — même mécanique que le fil (voir `FeedItemEntrance`).
+   *
+   * Le mur n'est PAS virtualisé (voir la note plus bas) : rien ne se démonte,
+   * donc le piège du recyclage ne s'y pose pas. Le `Set` sert quand même : il
+   * empêche une carte déjà posée de rejouer son arrivée quand la pagination
+   * en ajoute d'autres en dessous.
+   */
+  const [entranceGeneration, setEntranceGeneration] = useState(0);
+  const entranceSeen = useRef<Set<string>>(new Set()).current;
+  const wasRefreshing = useRef(refreshing);
+  useEffect(() => {
+    // Au RELÂCHEMENT du rafraîchissement (vrai → faux) : la nouvelle fournée
+    // est posée. Le faire à l'aller animerait le contenu encore ancien.
+    if (wasRefreshing.current && !refreshing) {
+      entranceSeen.clear();
+      setEntranceGeneration((n) => n + 1);
+    }
+    wasRefreshing.current = refreshing;
+  }, [refreshing, entranceSeen]);
+
+  /**
+   * Rang GLOBAL dans le mur, pas le rang dans sa colonne : les deux colonnes
+   * sont remplies en alternance, donc un index de colonne ferait démarrer
+   * deux cartes voisines avec le même décalage et casserait la cascade.
+   */
+  const orderIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    metas.forEach((meta, i) => map.set(String(meta.tweet.id), i));
+    return map;
+  }, [metas]);
+
   const renderCard = (meta: (typeof metas)[number]) => (
-    <ExploreCard
+    <FeedItemEntrance
       key={meta.tweet.id}
-      meta={meta}
-      cardWidth={cardWidth}
-      isNew={isNew(meta.tweet)}
-      onPress={onOpenTweet}
-      onLike={onLikeTweet}
-      onLongPress={onLongPressTweet}
-    />
+      id={String(meta.tweet.id)}
+      index={orderIndex.get(String(meta.tweet.id)) ?? 0}
+      generation={entranceGeneration}
+      seen={entranceSeen}
+    >
+      <ExploreCard
+        meta={meta}
+        cardWidth={cardWidth}
+        isNew={isNew(meta.tweet)}
+        onPress={onOpenTweet}
+        onLike={onLikeTweet}
+        onLongPress={onLongPressTweet}
+      />
+    </FeedItemEntrance>
   );
 
   // Décision assumée, pas un oubli : ce mur n'est pas virtualisé (pas de
@@ -196,16 +245,24 @@ function ExploreWall({
   // évité. Limite acceptée à revisiter si le corpus grossit, pas à corriger
   // maintenant.
   return (
-    <ScrollView
-      style={styles.list}
-      contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 24 }]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      onScroll={handleScroll}
-      scrollEventThrottle={100}
-      onContentSizeChange={handleContentSizeChange}
-      onLayout={handleLayout}
-    >
+    <View style={styles.list}>
+      {/* iOS uniquement : elle suit le doigt via le rebond de la liste, qui
+          n'existe pas sur Android (voir `PullRefreshLogo`/`AppRefreshControl`
+          plus bas, gardé natif sur cette plateforme). */}
+      {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
+      <Animated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 24 }]}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
+        refreshControl={Platform.OS === 'ios' ? undefined : (
+          <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        )}
+        onScroll={scrollHandler}
+        scrollEventThrottle={1}
+        onContentSizeChange={handleContentSizeChange}
+        onLayout={handleLayout}
+      >
       {ListHeaderComponent}
 
       {/* En dessous du plancher, aucune ligne : mieux vaut rien qu'un
@@ -250,7 +307,8 @@ function ExploreWall({
           <Text style={styles.drawMoreText} maxFontSizeMultiplier={1.2}>Nouveau tirage</Text>
         </Tappable>
       )}
-    </ScrollView>
+      </Animated.ScrollView>
+    </View>
   );
 }
 
@@ -258,6 +316,7 @@ export default memo(ExploreWall);
 
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: WALL_BACKGROUND },
+  scroll: { flex: 1 },
   listContent: {
     paddingHorizontal: GRID_PADDING,
     paddingTop: 8,

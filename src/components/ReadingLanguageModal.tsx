@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useReadingLanguage } from '../contexts/ReadingLanguageContext';
 import StartupStepPage from './StartupStepPage';
 import { colors, fonts } from '../theme';

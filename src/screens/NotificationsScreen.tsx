@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { fonts, colors , statusBarStyle} from '../theme';
-import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton, AppRefreshControl, PullRefreshLogo } from '../components/ui';
+import { usePullRefreshLogo } from '../hooks/usePullRefreshLogo';
+import Animated from 'react-native-reanimated';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  FlatList,
   StyleSheet,
   StatusBar,
   Platform,
@@ -15,7 +16,7 @@ import {
 // hors du thread JS, sur des vignettes montées en liste. `transition={0}` :
 // aucune apparition en fondu, le rendu reste celui d'avant.
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import Avatar from '../components/Avatar';
@@ -336,6 +337,8 @@ export default function NotificationsScreen() {
     setRefreshing(false);
   };
 
+  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing);
+
   const handleMarkAllAsRead = async () => {
     try {
       await unreadService.withRetry(async () => {
@@ -510,11 +513,16 @@ export default function NotificationsScreen() {
         avant la première frame. La bannière d'alerte et les demandes
         d'abonnement deviennent l'en-tête, à la même place.
       */}
-      <FlatList
+      <View style={styles.listWrap}>
+      {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
+      <Animated.FlatList
         style={styles.list}
-        refreshControl={
+        refreshControl={Platform.OS === 'ios' ? undefined : (
           <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        )}
+        onScroll={scrollHandler}
+        scrollEventThrottle={1}
+        alwaysBounceVertical
         showsVerticalScrollIndicator={false}
         data={error ? EMPTY_NOTIFICATIONS : filtered}
         keyExtractor={keyExtractor}
@@ -568,6 +576,7 @@ export default function NotificationsScreen() {
           )
         }
       />
+      </View>
     </View>
     </ScreenBackground>
   );
@@ -625,6 +634,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Liste
+  listWrap: { flex: 1 },
   list: { flex: 1 },
 
   // ── Item

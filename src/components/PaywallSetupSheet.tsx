@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, radius } from '../theme';
 import { toast } from './ui/Toast';
 import { confirmAsync } from './ui/ConfirmSheet';

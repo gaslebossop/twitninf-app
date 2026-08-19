@@ -31,7 +31,7 @@ export default function AppLoadingScreen({ style }: { style?: StyleProp<ViewStyl
         // `renderToHardwareTextureAndroid` / `shouldRasterizeIOS` : la vue est
         // gravée en texture une fois, puis l'échelle et l'opacité de la boucle
         // ne sont plus qu'une composition GPU — même dispositif que
-        // `FeedRefreshLogo.tsx`.
+        // `PullRefreshLogo.tsx`.
         renderToHardwareTextureAndroid
         shouldRasterizeIOS
         style={{
@@ -44,7 +44,7 @@ export default function AppLoadingScreen({ style }: { style?: StyleProp<ViewStyl
             chemin le plus chargé du démarrage (polices + restauration de
             session). `refresh-mark.png` est le même dessin, déjà gravé à sa
             taille d'écran (144×144, 6 Ko) pour ce même problème ailleurs
-            (voir `FeedRefreshLogo.tsx`). */}
+            (voir `PullRefreshLogo.tsx`). */}
         <Image source={require('../../../assets/refresh-mark.png')} style={styles.logo} resizeMode="contain" />
       </Animated.View>
       <View style={styles.dots}>

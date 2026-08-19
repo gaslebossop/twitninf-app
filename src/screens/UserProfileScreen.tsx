@@ -1,5 +1,10 @@
 import { colors, fonts, glow, withAlpha, duration as D, easing as E , statusBarStyle} from '../theme';
-import { BackButton, ScreenSkeleton } from '../components/ui';
+import { BackButton, ScreenSkeleton, AppRefreshControl, PullRefreshLogo } from '../components/ui';
+import { usePullRefreshLogo } from '../hooks/usePullRefreshLogo';
+// Alias : ce fichier importe déjà `Animated` du cœur RN plus bas — une
+// `Animated.Value` du cœur passée à une vue Reanimated échoue en silence
+// (voir CLAUDE.md), donc les deux ne doivent jamais partager le même nom.
+import ReanimatedView from 'react-native-reanimated';
 import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -12,12 +17,11 @@ import {
   Animated,
   Easing,
   Platform,
-  RefreshControl,
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { apiService } from '../services';
 import { useAuth } from '../contexts/AuthContext';
@@ -605,6 +609,8 @@ export default function UserProfileScreen() {
     setRefreshing(false);
   };
 
+  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing);
+
   const handleTabChange = (tab: 'tweets' | 'replies' | 'media' | 'likes') => setActiveTab(tab);
 
   // ── LOADING STATE ──
@@ -686,14 +692,20 @@ export default function UserProfileScreen() {
           ],
         }}
       >
-      <FlatList
+      {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
+      <ReanimatedView.FlatList
         ref={scrollRef}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
         bounces={!refreshing}
+        alwaysBounceVertical
         removeClippedSubviews={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        onScroll={scrollHandler}
+        scrollEventThrottle={1}
+        refreshControl={Platform.OS === 'ios' ? undefined : (
+          <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        )}
         data={showsTweets ? tweetsWithInteractions : EMPTY_TWEETS}
         keyExtractor={tweetKeyExtractor}
         renderItem={renderTweetItem}

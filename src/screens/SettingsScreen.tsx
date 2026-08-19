@@ -15,12 +15,12 @@ import {
   Switch,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../contexts/AuthContext';
 import { useAdminPermissions } from '../hooks/useAdminPermissions';
 import { useEvents } from '../contexts/EventContext';
 import { apiService } from '../services';
-import { liveService } from '../services/liveService';
+import { liveService, RTMP_INGEST_URL } from '../services/liveService';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import PremiumProfileCard from '../components/PremiumProfileCard';
 import GAuthLinkRewardCard from '../components/GAuthLinkRewardCard';
@@ -616,7 +616,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               <View style={styles.streamKeyInfo}>
                 <Text style={styles.streamKeyLabel}>URL du serveur (RTMP)</Text>
                 <View style={styles.streamKeyRow}>
-                  <Text style={styles.streamKeyText} numberOfLines={1}>rtmp://51.255.48.125:1935/live</Text>
+                  <Text style={styles.streamKeyText} numberOfLines={1}>{RTMP_INGEST_URL}</Text>
                 </View>
               </View>
 

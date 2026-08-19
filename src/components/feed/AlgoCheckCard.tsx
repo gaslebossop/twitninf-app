@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, radius, withAlpha, duration as D, easing as E } from '../../theme';
 import feedback from '../../utils/feedback';
 import Tappable from '../ui/Tappable';

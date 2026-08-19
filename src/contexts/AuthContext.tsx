@@ -308,17 +308,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const checkAuthStatus = async () => {
     if (__DEV__) console.count('[loop-hunt] checkAuthStatus call');
+
+    let token: string | null = null;
     try {
-      const token = await tokenStore.getAccessToken();
+      token = await tokenStore.getAccessToken();
+    } catch (error) {
+      console.error('AuthContext - checkAuthStatus (jeton):', error);
+      setUser(null);
+      setIsAuthenticated(false);
+      setIsLoading(false);
+      return;
+    }
 
-      if (!token) {
-        setUser(null);
-        setIsAuthenticated(false);
-        return;
-      }
+    if (!token) {
+      setUser(null);
+      setIsAuthenticated(false);
+      setIsLoading(false);
+      return;
+    }
 
-      await apiService.setSessionAccessToken(token);
+    await apiService.setSessionAccessToken(token);
 
+    // Le jeton en stockage suffit à savoir qu'on est authentifié : le
+    // navigateur peut monter tout de suite (AppNavigator.tsx lit isLoading),
+    // pendant que le profil se rafraîchit en arrière-plan ci-dessous. Voir
+    // AUDIT-R1.md R1-2 correctif 3 — c'est le maillon qui sortait 1 à 3
+    // allers-retours réseau du chemin critique du démarrage.
+    setIsAuthenticated(true);
+    setIsLoading(false);
+
+    try {
       // `getCurrentUser` passe par makeRequest : un 401 y déclenche déjà un
       // rafraîchissement puis un rejeu. On n'arrive ici avec un utilisateur
       // nul que si la session est réellement perdue ou si l'API est
@@ -327,7 +346,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (currentUser) {
         setUser(currentUser);
-        setIsAuthenticated(true);
         return;
       }
 
@@ -337,22 +355,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const retried = await apiService.getCurrentUser();
         if (retried) {
           setUser(retried);
-          setIsAuthenticated(true);
           return;
         }
       }
 
+      // Le serveur a explicitement refusé la session (401 non récupéré par
+      // un rafraîchissement) : c'est une perte de session confirmée.
       setUser(null);
       setIsAuthenticated(false);
     } catch (error) {
-      // Erreur réseau au démarrage : on NE détruit PAS les jetons. L'ancienne
-      // version les effaçait ici, ce qui déconnectait au moindre démarrage
-      // hors ligne.
-      console.error('AuthContext - checkAuthStatus:', error);
-      setUser(null);
-      setIsAuthenticated(false);
-    } finally {
-      setIsLoading(false);
+      // Erreur réseau une fois le navigateur déjà monté avec
+      // isAuthenticated=true : on NE déconnecte PAS sur un simple
+      // aller-retour perdu. `setSessionExpiredHandler` reste le seul chemin
+      // de déconnexion automatique (voir plus bas) ; une panne réseau ne le
+      // déclenche pas, et ce correctif ne doit pas en ouvrir un second.
+      console.error('AuthContext - checkAuthStatus (profil):', error);
     }
   };
 

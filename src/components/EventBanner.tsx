@@ -5,7 +5,7 @@ import { fonts } from '../theme';
 
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEventStyles } from '../hooks/useEventStyles';
 import { useEvents } from '../contexts/EventContext';
 
@@ -22,13 +22,7 @@ export const EventBanner: React.FC<EventBannerProps> = ({
 }) => {
   const { activeEvent, hasActiveEvent } = useEvents();
   const { styles: eventStyles, theme, hasEffect } = useEventStyles();
-  
-  // Vérification de la disponibilité des hooks
-  if (!eventStyles || !theme) {
-    console.warn('⚠️ EventBanner: Styles or theme is undefined');
-    return null;
-  }
-  
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(-50)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -103,6 +97,12 @@ export const EventBanner: React.FC<EventBannerProps> = ({
       ]).start();
     }
   }, [hasActiveEvent, activeEvent, hasEffect, pulseAnim, shimmerAnim]);
+
+  // Vérification de la disponibilité des hooks
+  if (!eventStyles || !theme) {
+    console.warn('⚠️ EventBanner: Styles or theme is undefined');
+    return null;
+  }
 
   if (!hasActiveEvent || !activeEvent || !theme) {
     return null;

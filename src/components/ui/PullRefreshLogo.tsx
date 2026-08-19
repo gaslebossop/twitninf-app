@@ -9,25 +9,20 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { ps } from '../../../theme/paper2b';
 
 /**
- * 🧪 L'actualisation du fil « 2B — Gouttière ».
+ * Indicateur d'actualisation commun — remplace la roue native par le logo de
+ * l'app, sur toute surface qui le veut (fil, Explorer, notifications, profil).
  *
- * Le logo apparaît sous le doigt pendant qu'on TIRE : il grandit et tourne en
+ * Il apparaît sous le doigt pendant qu'on TIRE : il grandit et tourne en
  * proportion de la traction, puis tourne librement le temps de la requête.
  *
  * ── Pourquoi c'est piloté par le DOIGT et pas par le temps ──────────────
- * L'actualisation du fil dure quelques dizaines de millisecondes. Toute
- * animation jouée APRÈS le relâchement est donc invisible : une barre qui se
- * remplit, une roue qui fait trois tours, personne ne les verra jamais. Le
- * seul moment qui dure, c'est la traction elle-même — parce que c'est la main
- * qui en décide la durée.
- *
- * L'animation est donc une fonction de la DISTANCE tirée, pas du temps écoulé.
- * On tire lentement, elle tourne lentement ; on relâche à mi-chemin, elle
- * revient en arrière. C'est ce qui donne la sensation que l'écran répond au
- * geste au lieu de jouer un clip par-dessus.
+ * L'actualisation dure quelques dizaines de millisecondes. Toute animation
+ * jouée APRÈS le relâchement est donc invisible : une barre qui se remplit,
+ * une roue qui fait trois tours, personne ne les verra jamais. Le seul moment
+ * qui dure, c'est la traction elle-même — parce que c'est la main qui en
+ * décide la durée.
  *
  * ── La rotation libre ne sert qu'aux requêtes lentes ────────────────────
  * Elle prend le relais au relâchement, pour le cas où le réseau traîne. Sur
@@ -39,17 +34,20 @@ import { ps } from '../../../theme/paper2b';
  *
  * ── Limite connue : Android ─────────────────────────────────────────────
  * Cette animation lit le dépassement de défilement (`contentOffset.y` négatif)
- * de la liste. C'est un comportement de REBOND, qui n'existe que sur iOS :
- * sur Android la liste ne dépasse pas, `SwipeRefreshLayout` intercepte la
- * traction et ne dit à personne où en est le doigt. `FeedGutterScreen` y garde
- * donc l'indicateur natif, remis aux couleurs du fil. Aller plus loin
- * demanderait de remplacer tout le pull-to-refresh par un `Pan` maison.
+ * de la liste, un comportement de REBOND qui n'existe que sur iOS : sur
+ * Android la liste ne dépasse pas, `SwipeRefreshLayout` intercepte la
+ * traction et ne dit à personne où en est le doigt. Toute surface qui monte
+ * ce composant garde donc `AppRefreshControl` (natif) sur Android — voir
+ * `usePullRefreshLogo`.
+ *
+ * Voir `usePullRefreshLogo` pour le gestionnaire de défilement associé, qui
+ * alimente `pull` et déclenche `onRefresh` au relâchement.
  */
 
-interface FeedRefreshLogoProps {
+interface PullRefreshLogoProps {
   /**
    * Dépassement courant de la liste, en points, positif vers le bas.
-   * Écrit par le gestionnaire de défilement de l'écran, sur le thread UI.
+   * Fourni par `usePullRefreshLogo`, écrit sur le thread UI.
    */
   pull: SharedValue<number>;
   /** Vrai pendant la requête d'actualisation. */
@@ -58,27 +56,23 @@ interface FeedRefreshLogoProps {
 
 /**
  * Traction à partir de laquelle le logo est à pleine taille — et à partir de
- * laquelle le relâchement déclenche l'actualisation.
- *
- * Exporté : sur iOS, c'est l'ÉCRAN qui déclenche (voir `FeedGutterScreen`),
- * et les deux doivent parler de la même distance. Un logo plein qui ne
- * déclenche pas, ou l'inverse, se lit comme un bouton qui ment.
+ * laquelle le relâchement déclenche l'actualisation (voir
+ * `usePullRefreshLogo`, qui lit la même constante).
  */
-export const PULL_THRESHOLD = ps(78);
-const THRESHOLD = PULL_THRESHOLD;
+export const PULL_REFRESH_THRESHOLD = 78;
 
 /** Le logo ne descend jamais plus bas, même si on tire jusqu'en bas de l'écran. */
-const MAX_DROP = ps(52);
+const MAX_DROP = 52;
 
-const LOGO = ps(46);
+const LOGO = 46;
 
 /** Tour complet de la rotation libre. */
 const SPIN_MS = 780;
 
 /** Hauteur à laquelle le logo se tient pendant une requête qui dure. */
-const HOLD_DROP = ps(34);
+const HOLD_DROP = 34;
 
-function FeedRefreshLogo({ pull, active }: FeedRefreshLogoProps) {
+function PullRefreshLogo({ pull, active }: PullRefreshLogoProps) {
   const spin = useSharedValue(0);
   /**
    * Plancher de visibilité pendant la requête.
@@ -93,8 +87,11 @@ function FeedRefreshLogo({ pull, active }: FeedRefreshLogoProps) {
   useEffect(() => {
     // À l'aller, sans transition : la requête part à cet instant précis, et
     // un fondu de plus retarderait le seul indicateur de l'écran.
+    // Au retour, `Easing.out` : la sortie part vite puis s'éteint en douceur,
+    // au lieu du `inOut` par défaut qui traîne au démarrage et fait paraître
+    // le logo « collant » une fois la requête finie.
     if (active) hold.value = 1;
-    else hold.value = withTiming(0, { duration: 180 });
+    else hold.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [active, hold]);
 
   useEffect(() => {
@@ -114,10 +111,31 @@ function FeedRefreshLogo({ pull, active }: FeedRefreshLogoProps) {
   }, [active, spin]);
 
   const style = useAnimatedStyle(() => {
-    const raw = pull.value / THRESHOLD;
+    const raw = pull.value / PULL_REFRESH_THRESHOLD;
     const pulled = raw < 0 ? 0 : raw > 1 ? 1 : raw;
     // Le plancher de la requête l'emporte quand le doigt est déjà parti.
-    const p = pulled > hold.value ? pulled : hold.value;
+    const linear = pulled > hold.value ? pulled : hold.value;
+
+    /**
+     * Course ADOUCIE (`easeOutCubic`), pas la fraction brute.
+     *
+     * Le rapport `pull / seuil` est linéaire : le logo n'existait donc
+     * qu'à peine sur le premier tiers du geste, puis rattrapait tout d'un
+     * coup — c'est ce qui donnait l'impression d'un élément qui « apparaît »
+     * au lieu d'un élément qu'on tire. Avec une sortie cubique, il se révèle
+     * franchement dès les premiers pixels puis ralentit en approchant du
+     * seuil : le geste se sent tout du long, et l'arrivée à pleine taille est
+     * douce au lieu d'être un butoir.
+     */
+    const p = 1 - Math.pow(1 - linear, 3);
+
+    /**
+     * Le déplacement, lui, suit le doigt À LA LETTRE (rapport constant, sans
+     * adoucissement) : c'est ce qui fait que le logo reste « collé » au
+     * doigt. L'adoucir désolidariserait les deux et donnerait ce flottement
+     * caoutchouteux qui trahit une animation pilotée par autre chose que la
+     * main.
+     */
     const rawDrop = pull.value * 0.5;
     const capped = rawDrop > MAX_DROP ? MAX_DROP : rawDrop;
     const drop = capped > hold.value * HOLD_DROP ? capped : hold.value * HOLD_DROP;
@@ -145,8 +163,7 @@ function FeedRefreshLogo({ pull, active }: FeedRefreshLogoProps) {
         { rotate: `${(p * 360 + spin.value * 360) % 360}deg` },
       // `as const` : sans lui, TypeScript élargit chaque entrée en une union
       // où toutes les autres clés valent `undefined`, et le tableau ne
-      // correspond plus au type des transformations (même astuce que dans
-      // `useReactionAnimation`).
+      // correspond plus au type des transformations.
       ] as const,
     };
   });
@@ -155,27 +172,16 @@ function FeedRefreshLogo({ pull, active }: FeedRefreshLogoProps) {
     <Animated.View
       style={[S.host, style]}
       pointerEvents="none"
-      /**
-       * Le logo est gravé UNE FOIS en texture, puis la rotation et l'échelle
-       * ne sont plus qu'une composition GPU. Sans ça, chaque image redemande
-       * un rééchantillonnage du bitmap, et l'animation saccade.
-       *
-       * L'échelle ne dépasse jamais 1 (voir `style`), donc la texture n'est
-       * jamais agrandie au-delà de sa définition : pas de flou.
-       */
-      renderToHardwareTextureAndroid
-      shouldRasterizeIOS
+      // ⏳ `renderToHardwareTextureAndroid`/`shouldRasterizeIOS` RETIRÉS EN TEST :
+      // le logo restait invisible en usage réel alors que `pull`/`opacity`
+      // suivaient correctement le doigt (confirmé par instrumentation) — la
+      // texture mise en cache par ces deux props ne semble pas se réinvalider
+      // sur des changements d'opacité/transform pilotés par Reanimated sur le
+      // thread UI. À rétablir seulement si le rendu est confirmé fiable ET que
+      // l'animation saccade sans eux.
     >
       <Image
-        /**
-         * ⚠️ PAS `assets/icon.png` — celui-là fait 1920 × 1920 (l'icône de
-         * l'app). Affiché en 46 pt et retransformé à chaque image, c'était
-         * 3,7 mégapixels retravaillés par frame, et l'animation ne tenait pas
-         * la cadence. Celui-ci est le même dessin, gravé à sa taille d'écran.
-         *
-         * L'en-tête du fil, lui, garde `icon.png` : il ne l'anime jamais.
-         */
-        source={require('../../../../assets/refresh-mark.png')}
+        source={require('../../../assets/refresh-mark.png')}
         style={S.logo}
         resizeMode="contain"
       />
@@ -183,11 +189,11 @@ function FeedRefreshLogo({ pull, active }: FeedRefreshLogoProps) {
   );
 }
 
-export default React.memo(FeedRefreshLogo);
+export default React.memo(PullRefreshLogo);
 
 const S = StyleSheet.create({
-  // Hors du flux : l'indicateur ne doit jamais pousser le premier tweet vers
-  // le bas. `alignSelf` le centre sans conteneur supplémentaire.
+  // Hors du flux : l'indicateur ne doit jamais pousser le premier élément
+  // vers le bas. `alignSelf` le centre sans conteneur supplémentaire.
   host: {
     position: 'absolute',
     top: 0,

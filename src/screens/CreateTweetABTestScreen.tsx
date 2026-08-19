@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tweet } from '../types/api';
 import { wp, hp, fontSize, spacing, borderRadius, iconSize, shadow } from '../utils/responsive';
 import { BackButton } from '../components/ui';

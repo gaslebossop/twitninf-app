@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppHeader, ScreenBackground, EmptyState, promptAsync } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import { colors, fonts, radius, statusBarStyle } from '../theme';

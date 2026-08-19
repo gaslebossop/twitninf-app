@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { colors, fonts } from '../theme';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';

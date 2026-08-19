@@ -1,7 +1,7 @@
 import { fonts } from '../theme';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 export default function AlgorithmSelector() {
   return (

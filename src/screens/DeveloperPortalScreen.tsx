@@ -3,7 +3,7 @@ import { ScreenBackground, BackButton } from '../components/ui';
 import React, { useState, useEffect } from 'react';
 import { View as ViewComponent, Text as TextComponent, StyleSheet as StyleSheetComponent, TouchableOpacity as TouchableOpacityComponent, ScrollView as ScrollViewComponent, TextInput as TextInputComponent, Alert as AlertComponent, ActivityIndicator as ActivityIndicatorComponent, Dimensions, Clipboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../services/api';
 
 const { width } = Dimensions.get('window');

@@ -19,6 +19,7 @@ export const ACCESS_TOKEN_KEY = 'auth_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';
 
 const MIGRATION_FLAG = 'secure_token_migration_v1';
+const ROLE_CACHE_CLEANUP_FLAG = 'role_cache_cleanup_v1';
 
 async function secureGet(key: string): Promise<string | null> {
   try {
@@ -127,6 +128,21 @@ export const tokenStore = {
       await AsyncStorage.setItem(MIGRATION_FLAG, '1');
     } catch {
       // Une migration ratée n'est pas fatale : l'utilisateur se reconnectera.
+    }
+
+    // `user_role` / `user_permissions` étaient écrits en clair à chaque
+    // connexion (AUDIT-S3.md) sans jamais être effacés à la déconnexion ni au
+    // changement de compte. Plus aucun code ne les lit (le rôle vient de
+    // `user` via AuthContext) : la seule correction utile est de ne plus les
+    // écrire (fait dans api.ts) et de purger le résidu déjà présent sur les
+    // appareils mis à jour, une fois pour toutes.
+    try {
+      if (!(await AsyncStorage.getItem(ROLE_CACHE_CLEANUP_FLAG))) {
+        await AsyncStorage.multiRemove(['user_role', 'user_permissions']);
+        await AsyncStorage.setItem(ROLE_CACHE_CLEANUP_FLAG, '1');
+      }
+    } catch {
+      // Idem : pas fatal, au pire le résidu reste jusqu'au prochain démarrage.
     }
   },
 };

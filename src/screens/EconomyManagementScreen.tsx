@@ -5,7 +5,7 @@ import {
   Platform, StatusBar, Clipboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppHeader, ScreenBackground, ScreenSkeleton, GlassCard, GlassButton, EmptyState, showActionSheet } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import { colors, fonts, radius, statusBarStyle } from '../theme';
@@ -233,6 +233,72 @@ export default function EconomyManagementScreen() {
     </ScrollView>
   );
 
+  const transactionKeyExtractor = useCallback((item: any) => item.id, []);
+
+  const renderTransactionItem = useCallback(({ item }: { item: any }) => {
+    const isPositive = item.type === 'PURCHASE' || item.type === 'REWARD';
+    return (
+      <TouchableOpacity style={styles.txCard} onPress={() => { setSelectedTransaction(item); setDetailsModalVisible(true); }} activeOpacity={0.85}>
+        <View style={styles.txTopRow}>
+          <View style={[styles.txIcon, { backgroundColor: isPositive ? colors.successMuted : 'rgba(255,210,77,0.10)' }]}>
+            <Ionicons name={TX_ICON[item.type] || 'cog-outline'} size={17} color={isPositive ? colors.success : colors.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.txType}>{item.type === 'TRANSFER' ? 'Transfert forcé' : item.type}</Text>
+            <Text style={styles.txDate}>
+              {new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {new Date(item.createdAt).toLocaleDateString('fr-FR')}
+            </Text>
+          </View>
+          <Text style={[styles.txAmount, { color: isPositive ? colors.success : item.amount > 100000 ? colors.red : colors.textPrimary }]}>
+            {item.fromUserId === null ? '+' : ''}{formatPreciseAmount(item.amount)}
+          </Text>
+        </View>
+
+        <View style={styles.txUsersRow}>
+          <Text style={styles.txUserName} numberOfLines={1}>{item.fromUser?.username || 'SYSTÈME'}</Text>
+          <Ionicons name="arrow-forward" size={12} color={colors.textMuted} style={{ marginHorizontal: 6 }} />
+          <Text style={styles.txUserName} numberOfLines={1}>{item.toUser?.username || 'Inconnu'}</Text>
+        </View>
+
+        {item.description ? <Text style={styles.txDescription} numberOfLines={1}>« {item.description} »</Text> : null}
+
+        <View style={styles.txFooter}>
+          <View style={styles.txStatusBadge}>
+            <View style={[styles.statusDot, { backgroundColor: item.status === 'COMPLETED' ? colors.success : colors.gold }]} />
+            <Text style={styles.txStatusText}>{item.status}</Text>
+          </View>
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleDeleteTransaction(item.id); }} style={styles.txDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="trash-outline" size={15} color={colors.red} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [handleDeleteTransaction]);
+
+  const holderKeyExtractor = useCallback((item: any) => item.userId, []);
+
+  const renderHolderItem = useCallback(({ item, index }: { item: any; index: number }) => (
+    <GlassCard style={styles.holderCard} contentStyle={styles.holderCardContent}>
+      <View style={styles.rankBox}>
+        {index < 3 ? (
+          <Text style={styles.rankEmoji}>{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</Text>
+        ) : (
+          <Text style={styles.rankNumber}>#{index + 1}</Text>
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.holderName} numberOfLines={1}>{item.username}</Text>
+        <Text style={styles.holderShare}>
+          {((item.balance / (stats?.circulatingSupply || 1)) * 100).toFixed(2)}% de l'économie
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={styles.holderBalance}>{formatPreciseAmount(item.balance)}</Text>
+        <Text style={styles.holderCurrency}>TWC</Text>
+      </View>
+    </GlassCard>
+  ), [stats?.circulatingSupply]);
+
   const renderTransactions = () => (
     <View style={{ flex: 1 }}>
       <View style={styles.fluxStatsBar}>
@@ -260,50 +326,12 @@ export default function EconomyManagementScreen() {
 
       <FlatList
         data={transactions}
-        keyExtractor={(item) => item.id}
+        keyExtractor={transactionKeyExtractor}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
         ListEmptyComponent={<EmptyState icon="receipt-outline" title="Aucune transaction" message="Rien à afficher pour ce filtre." />}
-        renderItem={({ item }) => {
-          const isPositive = item.type === 'PURCHASE' || item.type === 'REWARD';
-          return (
-            <TouchableOpacity style={styles.txCard} onPress={() => { setSelectedTransaction(item); setDetailsModalVisible(true); }} activeOpacity={0.85}>
-              <View style={styles.txTopRow}>
-                <View style={[styles.txIcon, { backgroundColor: isPositive ? colors.successMuted : 'rgba(255,210,77,0.10)' }]}>
-                  <Ionicons name={TX_ICON[item.type] || 'cog-outline'} size={17} color={isPositive ? colors.success : colors.gold} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.txType}>{item.type === 'TRANSFER' ? 'Transfert forcé' : item.type}</Text>
-                  <Text style={styles.txDate}>
-                    {new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {new Date(item.createdAt).toLocaleDateString('fr-FR')}
-                  </Text>
-                </View>
-                <Text style={[styles.txAmount, { color: isPositive ? colors.success : item.amount > 100000 ? colors.red : colors.textPrimary }]}>
-                  {item.fromUserId === null ? '+' : ''}{formatPreciseAmount(item.amount)}
-                </Text>
-              </View>
-
-              <View style={styles.txUsersRow}>
-                <Text style={styles.txUserName} numberOfLines={1}>{item.fromUser?.username || 'SYSTÈME'}</Text>
-                <Ionicons name="arrow-forward" size={12} color={colors.textMuted} style={{ marginHorizontal: 6 }} />
-                <Text style={styles.txUserName} numberOfLines={1}>{item.toUser?.username || 'Inconnu'}</Text>
-              </View>
-
-              {item.description ? <Text style={styles.txDescription} numberOfLines={1}>« {item.description} »</Text> : null}
-
-              <View style={styles.txFooter}>
-                <View style={styles.txStatusBadge}>
-                  <View style={[styles.statusDot, { backgroundColor: item.status === 'COMPLETED' ? colors.success : colors.gold }]} />
-                  <Text style={styles.txStatusText}>{item.status}</Text>
-                </View>
-                <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleDeleteTransaction(item.id); }} style={styles.txDeleteBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="trash-outline" size={15} color={colors.red} />
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={renderTransactionItem}
       />
     </View>
   );
@@ -311,31 +339,11 @@ export default function EconomyManagementScreen() {
   const renderHolders = () => (
     <FlatList
       data={richList}
-      keyExtractor={(item) => item.userId}
+      keyExtractor={holderKeyExtractor}
       style={styles.tabContent}
       contentContainerStyle={{ paddingBottom: 100 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
-      renderItem={({ item, index }) => (
-        <GlassCard style={styles.holderCard} contentStyle={styles.holderCardContent}>
-          <View style={styles.rankBox}>
-            {index < 3 ? (
-              <Text style={styles.rankEmoji}>{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</Text>
-            ) : (
-              <Text style={styles.rankNumber}>#{index + 1}</Text>
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.holderName} numberOfLines={1}>{item.username}</Text>
-            <Text style={styles.holderShare}>
-              {((item.balance / (stats?.circulatingSupply || 1)) * 100).toFixed(2)}% de l'économie
-            </Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.holderBalance}>{formatPreciseAmount(item.balance)}</Text>
-            <Text style={styles.holderCurrency}>TWC</Text>
-          </View>
-        </GlassCard>
-      )}
+      renderItem={renderHolderItem}
     />
   );
 

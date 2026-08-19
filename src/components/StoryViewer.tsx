@@ -30,7 +30,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { projectDecay, rubberBand, springFrom } from '../utils/gesture';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode } from 'expo-av';
 import { fonts , colors, statusBarStyle} from '../theme';

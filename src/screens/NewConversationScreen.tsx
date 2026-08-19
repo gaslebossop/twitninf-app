@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
 // reste identique.
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
 import VerifiedBadge from '../components/VerifiedBadge';

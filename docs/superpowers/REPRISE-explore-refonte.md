@@ -230,7 +230,7 @@ Relevées par les relecteurs, non bloquantes, aucune corrigée :
 
 ## 8. Le fait qui justifie toute la refonte
 
-Mesuré en prod le 2026-08-18 (`51.210.11.74`, base `twitninf`) :
+Mesuré en prod le 2026-08-18 (VPS, base `twitninf`) :
 
 | | |
 |---|---|

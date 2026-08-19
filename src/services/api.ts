@@ -582,14 +582,7 @@ class ApiService {
           response.data.refreshToken
         );
         this.token = response.data.token;
-        
-        // Stocker les informations de l'utilisateur incluant le rôle
-        if (response.data.user) {
-          await AsyncStorage.setItem('user_role', response.data.user.role || 'user');
-          await AsyncStorage.setItem('user_permissions', JSON.stringify(response.data.user.moderation_permissions || {}));
-          console.log('👑 Rôle utilisateur stocké:', response.data.user.role);
-        }
-        
+
         console.log('✅ Connexion réussie');
       }
       
@@ -603,58 +596,6 @@ class ApiService {
         errors: []
       };
     }
-  }
-
-  // Récupérer le rôle de l'utilisateur actuel
-  async getUserRole(): Promise<string> {
-    try {
-      const role = await AsyncStorage.getItem('user_role');
-      return role || 'user';
-    } catch (error) {
-      console.error('❌ Erreur lors de la récupération du rôle:', error);
-      return 'user';
-    }
-  }
-
-  // Récupérer les permissions de l'utilisateur actuel
-  async getUserPermissions(): Promise<any> {
-    try {
-      const permissions = await AsyncStorage.getItem('user_permissions');
-      return permissions ? JSON.parse(permissions) : {};
-    } catch (error) {
-      console.error('❌ Erreur lors de la récupération des permissions:', error);
-      return {};
-    }
-  }
-
-  // Vérifier si l'utilisateur a un rôle spécifique
-  async hasRole(role: string): Promise<boolean> {
-    const userRole = await this.getUserRole();
-    return userRole === role;
-  }
-
-  // Vérifier si l'utilisateur a une permission spécifique
-  async hasPermission(permission: string): Promise<boolean> {
-    const permissions = await this.getUserPermissions();
-    return permissions[permission] === true;
-  }
-
-  // Vérifier si l'utilisateur est modérateur ou plus
-  async isModerator(): Promise<boolean> {
-    const userRole = await this.getUserRole();
-    return ['moderateur', 'admin', 'superadmin', 'classeurdetweets', 'economiegardien'].includes(userRole);
-  }
-
-  // Vérifier si l'utilisateur est admin ou plus
-  async isAdmin(): Promise<boolean> {
-    const userRole = await this.getUserRole();
-    return ['admin', 'superadmin'].includes(userRole);
-  }
-
-  // Vérifier si l'utilisateur est superadmin
-  async isSuperAdmin(): Promise<boolean> {
-    const userRole = await this.getUserRole();
-    return userRole === 'superadmin';
   }
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {
@@ -753,14 +694,6 @@ class ApiService {
       
       if (response.success && response.data) {
         console.log('✅ Utilisateur récupéré:', response.data.username);
-        
-        // Mettre à jour le rôle et les permissions en local pour la cohérence
-        if (response.data.role) {
-          await AsyncStorage.setItem('user_role', response.data.role);
-        }
-        if (response.data.moderation_permissions) {
-          await AsyncStorage.setItem('user_permissions', JSON.stringify(response.data.moderation_permissions));
-        }
 
         return response.data;
       } else {

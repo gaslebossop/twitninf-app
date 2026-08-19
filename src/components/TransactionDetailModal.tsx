@@ -7,7 +7,7 @@ import {
   Pressable,
   ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { WalletTransaction } from '../services/walletService';
 import { useAuth } from '../contexts/AuthContext';
 import { colors, fonts, radius, withAlpha } from '../theme';

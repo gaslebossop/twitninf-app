@@ -12,6 +12,7 @@
  * l'affiche doit donc rester lisible sans elle (voir `SceneCanvas`).
  */
 import { API_CONFIG } from './api';
+import { resolveServerUrl } from './serverUrl';
 
 export type SceneName =
   | '01-chambre'
@@ -26,8 +27,19 @@ export type SceneName =
  * `EXPO_PUBLIC_SCENES_URL` n'existe que pour pointer une machine de dev pendant
  * qu'on retouche une scène ; en production, elles vivent avec l'API et suivent
  * donc automatiquement `EXPO_PUBLIC_API_URL`.
+ *
+ * Passe par le même assainisseur que `API_URL`/`STREAM_SERVER` (HTTPS
+ * obligatoire hors localhost, aucun identifiant intégré à l'URL) — voir
+ * AUDIT-S2.md : c'était la seule des six variables `EXPO_PUBLIC_*` à
+ * contourner cette vérification. Silencieux quand la variable est absente,
+ * contrairement à `resolveServerUrl` seul : ce n'est pas un mode dégradé, la
+ * grande majorité des builds ne la renseigne jamais.
  */
-const override = process.env.EXPO_PUBLIC_SCENES_URL?.trim().replace(/\/+$/, '');
+const rawOverride = process.env.EXPO_PUBLIC_SCENES_URL?.trim();
+const resolvedOverride = rawOverride
+  ? resolveServerUrl(rawOverride, 'EXPO_PUBLIC_SCENES_URL', '', () => {})
+  : null;
+const override = resolvedOverride?.configured ? resolvedOverride.url : undefined;
 
 export const SCENES_ORIGIN = override || `${API_CONFIG.BASE_URL}/anim`;
 

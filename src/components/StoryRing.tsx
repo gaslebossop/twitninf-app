@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 // hors du thread JS. Sans `transition`, l'apparition reste identique.
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts } from '../theme';
 
 /** Dégradé de l'anneau Instagram (jaune → orange → rose → violet → bleu). */

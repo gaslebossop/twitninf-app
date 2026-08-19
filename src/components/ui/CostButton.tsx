@@ -7,7 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, radius, withAlpha } from '../../theme';
 import { useCoinBalance } from '../../hooks/useCoinBalance';
 import feedback from '../../utils/feedback';

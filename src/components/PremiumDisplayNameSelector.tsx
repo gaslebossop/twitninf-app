@@ -2,7 +2,7 @@ import { fonts , colors} from '../theme';
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { canUseFeature, effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import {
   DISPLAY_NAME_EFFECT_KEY,

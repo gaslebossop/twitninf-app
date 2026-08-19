@@ -12,7 +12,7 @@ import {
 // La version de react-native (core) ne pose aucun inset sur Android — seule
 // celle de react-native-safe-area-context protège le haut de l'écran partout.
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import Avatar from '../components/Avatar';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -94,9 +94,47 @@ export default function UserConnectionsScreen({ navigation, route }: any) {
     if (!loading && !loadingMore && hasMore) void loadConnections(false);
   };
 
-  const openProfile = (item: User) => {
+  const openProfile = useCallback((item: User) => {
     navigation.push('UserProfile', { userId: item.id, username: item.username });
-  };
+  }, [navigation]);
+
+  const keyExtractor = useCallback((item: User) => item.id, []);
+
+  const renderItem = useCallback(({ item }: { item: User }) => (
+    <TouchableOpacity style={styles.row} onPress={() => openProfile(item)} activeOpacity={0.72}>
+      <Avatar size={48} username={item.username} uri={item.avatar} />
+      <View style={styles.identity}>
+        <View style={styles.nameLine}>
+          <PremiumDisplayName
+            text={item.full_name || item.username}
+            baseStyle={styles.name}
+            isPremium={!!(item as any)?.premium}
+            subscriptionTierRaw={(item as any)?.subscription_tier}
+            fontId="system"
+            effectId="none"
+            numberOfLines={1}
+            customization={(item as any)?.profile_customization as ProfileCustomization | undefined}
+            verified={!!item.verified}
+            verificationStyle={(item.verification_style as any) || 'default'}
+          />
+          {item.verified && (
+            <VerifiedBadge
+              verificationStyle={(item.verification_style as any) || 'default'}
+              size={14}
+              tint={
+                certifiedNameColors(
+                  (item.verification_style as any) || 'default',
+                  (item as any)?.profile_customization as ProfileCustomization | undefined,
+                ).from
+              }
+            />
+          )}
+        </View>
+        <Text style={styles.username} numberOfLines={1}>@{item.username}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </TouchableOpacity>
+  ), [openProfile]);
 
   return (
     <ScreenBackground>
@@ -136,42 +174,8 @@ export default function UserConnectionsScreen({ navigation, route }: any) {
         ) : (
           <FlatList
             data={users}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.row} onPress={() => openProfile(item)} activeOpacity={0.72}>
-                <Avatar size={48} username={item.username} uri={item.avatar} />
-                <View style={styles.identity}>
-                  <View style={styles.nameLine}>
-                    <PremiumDisplayName
-                      text={item.full_name || item.username}
-                      baseStyle={styles.name}
-                      isPremium={!!(item as any)?.premium}
-                      subscriptionTierRaw={(item as any)?.subscription_tier}
-                      fontId="system"
-                      effectId="none"
-                      numberOfLines={1}
-                      customization={(item as any)?.profile_customization as ProfileCustomization | undefined}
-                      verified={!!item.verified}
-                      verificationStyle={(item.verification_style as any) || 'default'}
-                    />
-                    {item.verified && (
-                      <VerifiedBadge
-                        verificationStyle={(item.verification_style as any) || 'default'}
-                        size={14}
-                        tint={
-                          certifiedNameColors(
-                            (item.verification_style as any) || 'default',
-                            (item as any)?.profile_customization as ProfileCustomization | undefined,
-                          ).from
-                        }
-                      />
-                    )}
-                  </View>
-                  <Text style={styles.username} numberOfLines={1}>@{item.username}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />
             }

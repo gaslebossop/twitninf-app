@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
@@ -66,64 +66,68 @@ const COLORS = {
   shadowLight: colors.overlayMedium,
 };
 
+// Une particule = un composant : les hooks ne peuvent pas être appelés dans
+// la callback d'un Array.from (react-hooks/rules-of-hooks).
+const Particle = ({ index }: { index: number }) => {
+  const animValue = useRef(new Animated.Value(0)).current;
+  const [randomDelay] = useState(Math.random() * 5000);
+  const [randomSize] = useState(Math.random() * 4 + 2);
+  const [randomOpacity] = useState(Math.random() * 0.6 + 0.2);
+
+  useEffect(() => {
+    const animate = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(animValue, {
+            toValue: 1,
+            duration: 8000 + Math.random() * 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animValue, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    setTimeout(animate, randomDelay);
+  }, []);
+
+  return (
+    <Animated.View
+      key={index}
+      style={[
+        styles.particle,
+        {
+          left: `${Math.random() * 100}%`,
+          width: randomSize,
+          height: randomSize,
+          opacity: randomOpacity,
+          transform: [
+            {
+              translateY: animValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [screenHeight + 50, -50],
+              }),
+            },
+            {
+              translateX: animValue.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0, Math.random() * 100 - 50, 0],
+              }),
+            },
+          ],
+        },
+      ]}
+    />
+  );
+};
+
 // Composant de particules animées pour l'arrière-plan
 const FloatingParticles = () => {
-  const particles = Array.from({ length: 15 }, (_, i) => {
-    const animValue = useRef(new Animated.Value(0)).current;
-    const [randomDelay] = useState(Math.random() * 5000);
-    const [randomSize] = useState(Math.random() * 4 + 2);
-    const [randomOpacity] = useState(Math.random() * 0.6 + 0.2);
-
-    useEffect(() => {
-      const animate = () => {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(animValue, {
-              toValue: 1,
-              duration: 8000 + Math.random() * 4000,
-              useNativeDriver: true,
-            }),
-            Animated.timing(animValue, {
-              toValue: 0,
-              duration: 0,
-              useNativeDriver: true,
-            }),
-          ])
-        ).start();
-      };
-      
-      setTimeout(animate, randomDelay);
-    }, []);
-
-    return (
-      <Animated.View
-        key={i}
-        style={[
-          styles.particle,
-          {
-            left: `${Math.random() * 100}%`,
-            width: randomSize,
-            height: randomSize,
-            opacity: randomOpacity,
-            transform: [
-              {
-                translateY: animValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [screenHeight + 50, -50],
-                }),
-              },
-              {
-                translateX: animValue.interpolate({
-                  inputRange: [0, 0.5, 1],
-                  outputRange: [0, Math.random() * 100 - 50, 0],
-                }),
-              },
-            ],
-          },
-        ]}
-      />
-    );
-  });
+  const particles = Array.from({ length: 15 }, (_, i) => <Particle key={i} index={i} />);
 
   return <View style={styles.particlesContainer}>{particles}</View>;
 };

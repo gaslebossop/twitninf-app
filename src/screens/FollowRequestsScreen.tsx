@@ -13,7 +13,7 @@ import {
 // La version de react-native (core) ne pose aucun inset sur Android — seule
 // celle de react-native-safe-area-context protège le haut de l'écran partout.
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts , statusBarStyle} from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton, EmptyState } from '../components/ui';
 import apiService from '../services/api';
@@ -70,7 +70,7 @@ export default function FollowRequestsScreen({ navigation }: any) {
     setRefreshing(false);
   };
 
-  const handleAccept = async (item: FollowRequest) => {
+  const handleAccept = useCallback(async (item: FollowRequest) => {
     setBusyIds((prev) => new Set(prev).add(item.id));
     try {
       const res = await apiService.acceptFollowRequest(item.id);
@@ -85,9 +85,9 @@ export default function FollowRequestsScreen({ navigation }: any) {
         return next;
       });
     }
-  };
+  }, []);
 
-  const handleReject = async (item: FollowRequest) => {
+  const handleReject = useCallback(async (item: FollowRequest) => {
     setBusyIds((prev) => new Set(prev).add(item.id));
     try {
       const res = await apiService.rejectFollowRequest(item.id);
@@ -101,11 +101,83 @@ export default function FollowRequestsScreen({ navigation }: any) {
         return next;
       });
     }
-  };
+  }, []);
 
-  const openProfile = (userId: string, username: string) => {
+  const openProfile = useCallback((userId: string, username: string) => {
     navigation.navigate('UserProfile', { userId, username });
-  };
+  }, [navigation]);
+
+  const keyExtractor = useCallback((item: FollowRequest) => item.id, []);
+
+  const renderItem = useCallback(({ item }: { item: FollowRequest }) => {
+    const busy = busyIds.has(item.id);
+    const avatarUri = getAvatarUri(item.follower.avatar);
+    return (
+      <View style={styles.row}>
+        <TouchableOpacity
+          style={styles.rowUser}
+          onPress={() => openProfile(item.follower.id, item.follower.username)}
+          activeOpacity={0.7}
+        >
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              <Ionicons name="person" size={20} color={colors.textSecondary} />
+            </View>
+          )}
+          <View style={styles.rowUserInfo}>
+            <View style={styles.rowNameLine}>
+              <PremiumDisplayName
+                text={item.follower.full_name}
+                baseStyle={styles.rowName}
+                isPremium={!!item.follower.premium}
+                subscriptionTierRaw={item.follower.subscription_tier}
+                fontId="system"
+                effectId="none"
+                numberOfLines={1}
+                customization={item.follower.profile_customization}
+                verified={!!item.follower.verified}
+                verificationStyle={item.follower.verification_style as any}
+              />
+              {item.follower.verified && (
+                <VerifiedBadge
+                  verificationStyle={item.follower.verification_style as any}
+                  size={13}
+                  tint={
+                    certifiedNameColors(
+                      item.follower.verification_style as any,
+                      item.follower.profile_customization,
+                    ).from
+                  }
+                />
+              )}
+            </View>
+            <Text style={styles.rowUsername} numberOfLines={1}>@{item.follower.username}</Text>
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.declineBtn]}
+            onPress={() => handleReject(item)}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
+            {busy ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Text style={styles.declineText}>Refuser</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.acceptBtn]}
+            onPress={() => handleAccept(item)}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
+            {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={styles.acceptText}>Accepter</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }, [busyIds, handleReject, handleAccept, openProfile]);
 
   return (
     <ScreenBackground>
@@ -123,7 +195,7 @@ export default function FollowRequestsScreen({ navigation }: any) {
         ) : (
           <FlatList
             data={requests}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
             contentContainerStyle={requests.length === 0 ? styles.emptyContent : styles.listContent}
             ListEmptyComponent={
@@ -133,75 +205,7 @@ export default function FollowRequestsScreen({ navigation }: any) {
                 message="Ton compte est privé : les demandes d’abonnement apparaîtront ici, à accepter ou refuser une par une."
               />
             }
-            renderItem={({ item }) => {
-              const busy = busyIds.has(item.id);
-              const avatarUri = getAvatarUri(item.follower.avatar);
-              return (
-                <View style={styles.row}>
-                  <TouchableOpacity
-                    style={styles.rowUser}
-                    onPress={() => openProfile(item.follower.id, item.follower.username)}
-                    activeOpacity={0.7}
-                  >
-                    {avatarUri ? (
-                      <Image source={{ uri: avatarUri }} style={styles.avatar} />
-                    ) : (
-                      <View style={[styles.avatar, styles.avatarFallback]}>
-                        <Ionicons name="person" size={20} color={colors.textSecondary} />
-                      </View>
-                    )}
-                    <View style={styles.rowUserInfo}>
-                      <View style={styles.rowNameLine}>
-                        <PremiumDisplayName
-                          text={item.follower.full_name}
-                          baseStyle={styles.rowName}
-                          isPremium={!!item.follower.premium}
-                          subscriptionTierRaw={item.follower.subscription_tier}
-                          fontId="system"
-                          effectId="none"
-                          numberOfLines={1}
-                          customization={item.follower.profile_customization}
-                          verified={!!item.follower.verified}
-                          verificationStyle={item.follower.verification_style as any}
-                        />
-                        {item.follower.verified && (
-                          <VerifiedBadge
-                            verificationStyle={item.follower.verification_style as any}
-                            size={13}
-                            tint={
-                              certifiedNameColors(
-                                item.follower.verification_style as any,
-                                item.follower.profile_customization,
-                              ).from
-                            }
-                          />
-                        )}
-                      </View>
-                      <Text style={styles.rowUsername} numberOfLines={1}>@{item.follower.username}</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.declineBtn]}
-                      onPress={() => handleReject(item)}
-                      disabled={busy}
-                      activeOpacity={0.8}
-                    >
-                      {busy ? <ActivityIndicator size="small" color={colors.textSecondary} /> : <Text style={styles.declineText}>Refuser</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.acceptBtn]}
-                      onPress={() => handleAccept(item)}
-                      disabled={busy}
-                      activeOpacity={0.8}
-                    >
-                      {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={styles.acceptText}>Accepter</Text>}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            }}
+            renderItem={renderItem}
           />
         )}
       </SafeAreaView>

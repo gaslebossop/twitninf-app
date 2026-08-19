@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { MainStackParamList } from '../navigation/MainNavigator';
@@ -66,6 +66,30 @@ export default function CommunityCurrenciesScreen() {
     setRefreshing(false);
   };
 
+  const keyExtractor = useCallback((item: UserCurrency) => item.id, []);
+
+  const renderItem = useCallback(({ item }: { item: UserCurrency }) => (
+    <TouchableOpacity
+      style={[styles.card, { borderColor: `${item.color}55` }]}
+      onPress={() => navigation.navigate('CurrencyDetail', { currencyId: item.id })}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.mark, { backgroundColor: item.color }]}>
+        <Text style={styles.markText}>{item.symbol.slice(0, 3)}</Text>
+      </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.cardMeta}>{item.symbol} · {item.priceEur.toFixed(4)} €</Text>
+        {item.creator && <Text style={styles.cardCreator} numberOfLines={1}>par @{item.creator.username}</Text>}
+      </View>
+      <View style={styles.cardHolding}>
+        <Text style={styles.cardHoldingValue}>{fmt(item.holding)}</Text>
+        <Text style={styles.cardHoldingLabel}>détenu</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </TouchableOpacity>
+  ), [navigation]);
+
   return (
     <ScreenBackground>
       <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
@@ -92,7 +116,7 @@ export default function CommunityCurrenciesScreen() {
       ) : (
         <FlatList
           data={currencies}
-          keyExtractor={(item) => item.id}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           ListEmptyComponent={
@@ -100,27 +124,7 @@ export default function CommunityCurrenciesScreen() {
               <Text style={styles.emptyText}>Aucune monnaie communautaire pour l'instant. Soyez le premier.</Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[styles.card, { borderColor: `${item.color}55` }]}
-              onPress={() => navigation.navigate('CurrencyDetail', { currencyId: item.id })}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.mark, { backgroundColor: item.color }]}>
-                <Text style={styles.markText}>{item.symbol.slice(0, 3)}</Text>
-              </View>
-              <View style={styles.cardBody}>
-                <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.cardMeta}>{item.symbol} · {item.priceEur.toFixed(4)} €</Text>
-                {item.creator && <Text style={styles.cardCreator} numberOfLines={1}>par @{item.creator.username}</Text>}
-              </View>
-              <View style={styles.cardHolding}>
-                <Text style={styles.cardHoldingValue}>{fmt(item.holding)}</Text>
-                <Text style={styles.cardHoldingLabel}>détenu</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
+          renderItem={renderItem}
         />
       )}
     </ScreenBackground>

@@ -18,7 +18,7 @@ import {
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { socket, connectLiveSocket, disconnectLiveSocket } from '../services/liveService';
 import { useAuth } from '../contexts/AuthContext';

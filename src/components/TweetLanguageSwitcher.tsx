@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { apiService } from '../services';
 import { TweetTranslation } from '../types/api';
 import { colors, fonts } from '../theme';

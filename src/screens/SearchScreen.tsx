@@ -14,7 +14,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../theme';
 import { useNavigation, useRoute, RouteProp, ParamListBase } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';

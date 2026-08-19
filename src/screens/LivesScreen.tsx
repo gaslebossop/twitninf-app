@@ -5,7 +5,7 @@ import {
   Dimensions, RefreshControl, Animated, StatusBar,
   Image, ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
@@ -95,7 +95,7 @@ export default function LivesScreen() {
     navigation.navigate('GoLive');
   };
 
-  const handleJoinLive = async (live: LiveRoom) => {
+  const handleJoinLive = useCallback((live: LiveRoom) => {
     navigation.navigate('LiveViewer', {
       liveId: live.liveId,
       playbackUrl: live.metadata.playbackUrl,
@@ -104,7 +104,17 @@ export default function LivesScreen() {
       verified: live.metadata.verified,
       verificationStyle: live.metadata.verificationStyle,
     });
-  };
+  }, [navigation]);
+
+  const keyExtractor = useCallback((item: LiveRoom) => item.liveId, []);
+
+  const renderItem = useCallback(({ item }: { item: LiveRoom }) => (
+    <LiveCard
+      live={item}
+      onPress={() => handleJoinLive(item)}
+      joining={joiningId === item.liveId}
+    />
+  ), [handleJoinLive, joiningId]);
 
   // ── Empty State ─────────────────────────────────────────────────────────────
   if (loading) {
@@ -159,7 +169,7 @@ export default function LivesScreen() {
       {/* Liste TikTok-style */}
       <FlatList
         data={lives}
-        keyExtractor={item => item.liveId}
+        keyExtractor={keyExtractor}
         contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 80 }}
         refreshControl={
           <RefreshControl
@@ -168,13 +178,7 @@ export default function LivesScreen() {
             tintColor={colors.accent}
           />
         }
-        renderItem={({ item }) => (
-          <LiveCard
-            live={item}
-            onPress={() => handleJoinLive(item)}
-            joining={joiningId === item.liveId}
-          />
-        )}
+        renderItem={renderItem}
       />
 
       {/* Le bouton Go Live */}

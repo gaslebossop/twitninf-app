@@ -91,7 +91,7 @@ import {
   BottomTabBarHeightCallbackContext,
   type BottomTabBarProps,
 } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { View, Text, StyleSheet, Pressable, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   useSharedValue,

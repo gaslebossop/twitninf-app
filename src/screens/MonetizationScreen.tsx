@@ -13,7 +13,7 @@ import {
 // celle de react-native-safe-area-context protège le haut de l'écran partout.
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { BackButton } from '../components/ui';
 import { toast } from '../components/ui/Toast';

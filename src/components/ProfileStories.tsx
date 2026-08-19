@@ -18,7 +18,7 @@ import {
 // hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
 // reste identique.
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, fonts } from '../theme';
 import { STORY_GRADIENT } from './StoryRing';

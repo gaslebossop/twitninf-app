@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts } from '../../theme';
 import { HEADER_CONTENT_HEIGHT, useHeaderMetrics } from '../../hooks/useHeaderMetrics';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';

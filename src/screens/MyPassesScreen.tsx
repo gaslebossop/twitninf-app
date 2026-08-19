@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -333,6 +333,12 @@ export default function MyPassesScreen() {
     return [...passes].sort((a, b) => Number(isSpent(a)) - Number(isSpent(b)));
   }, [passes]);
 
+  const passKeyExtractor = useCallback((item: EventPass) => item.id, []);
+
+  const renderPass = useCallback(({ item }: { item: EventPass }) => (
+    <PassCard pass={item} onOpen={() => setOpened(item)} walletStatus={walletStatus} />
+  ), [walletStatus]);
+
   const body = () => {
     if (loading && !passes) return <ScreenSkeleton variant="list" />;
 
@@ -354,10 +360,8 @@ export default function MyPassesScreen() {
     return (
       <FlatList
         data={ordered}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <PassCard pass={item} onOpen={() => setOpened(item)} walletStatus={walletStatus} />
-        )}
+        keyExtractor={passKeyExtractor}
+        renderItem={renderPass}
         contentContainerStyle={[styles.listInner, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}

@@ -20,7 +20,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts } from '../../theme';
 import { duration as motionDurations, easing } from '../../theme/motion';
 import { useReduceMotion } from '../../hooks/useReduceMotion';

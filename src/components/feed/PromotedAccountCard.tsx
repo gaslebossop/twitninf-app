@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import Avatar from '../Avatar';
 import VerifiedBadge from '../VerifiedBadge';
 import apiService from '../../services/api';

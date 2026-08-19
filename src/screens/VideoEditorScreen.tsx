@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Video from 'react-native-video';
 import { fonts , colors} from '../theme';
@@ -587,6 +587,14 @@ export default function VideoEditorScreen() {
           {panel === 'filters' && (
             <View style={[styles.filterSheet, { paddingBottom: insets.bottom + 16 }]}>
               <Text style={styles.sheetTitle}>Filtres</Text>
+              {Platform.OS === 'android' && (
+                // L'aperçu CIFilter (react-native-video) n'existe que sur iOS
+                // — voir videoFilters.ts. Le rendu final reste filtré des deux
+                // côtés, seul l'aperçu live manque ici.
+                <Text style={styles.filterAndroidHint}>
+                  Aperçu non disponible sur Android — le filtre s'applique bien à l'export
+                </Text>
+              )}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 {VIDEO_FILTERS.map((entry) => (
                   <TouchableOpacity key={entry.id} onPress={() => setFilterId(entry.id)} style={styles.filterItem}>
@@ -704,6 +712,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16, borderTopRightRadius: 16,
   },
   sheetTitle: { color: '#fff', fontSize: 15, fontFamily: fonts.bold, paddingHorizontal: 16 },
+  filterAndroidHint: { color: colors.textSecondary, fontSize: 12, paddingHorizontal: 16, marginTop: 4 },
   filterRow: { paddingHorizontal: 16, gap: 16 },
   filterItem: { alignItems: 'center', gap: 6, width: 62 },
   filterThumb: {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, statusBarStyle } from '../theme';
 import { AppHeader, ScreenBackground } from '../components/ui';
 import { useReadingLanguage } from '../contexts/ReadingLanguageContext';

@@ -24,7 +24,7 @@ Start-Sleep -Seconds 10
 # Tester la connectivité
 Write-Host "🧪 Test de connectivité..." -ForegroundColor Cyan
 try {
-    $response = Invoke-WebRequest -Uri "http://51.255.48.125:3000/api/health" -TimeoutSec 5
+    $response = Invoke-WebRequest -Uri "http://localhost:3000/api/health" -TimeoutSec 5
     Write-Host "✅ Serveur accessible: $($response.StatusCode)" -ForegroundColor Green
 } catch {
     Write-Host "❌ Serveur non accessible: $($_.Exception.Message)" -ForegroundColor Red
@@ -33,7 +33,7 @@ try {
 # Tester les routes de monétisation
 Write-Host "🧪 Test des routes de monétisation..." -ForegroundColor Cyan
 try {
-    $response = Invoke-WebRequest -Uri "http://51.255.48.125:3000/api/tweet-monetization/stats" -TimeoutSec 5
+    $response = Invoke-WebRequest -Uri "http://localhost:3000/api/tweet-monetization/stats" -TimeoutSec 5
     Write-Host "✅ Routes de monétisation disponibles: $($response.StatusCode)" -ForegroundColor Green
 } catch {
     Write-Host "❌ Routes de monétisation non disponibles: $($_.Exception.Message)" -ForegroundColor Red

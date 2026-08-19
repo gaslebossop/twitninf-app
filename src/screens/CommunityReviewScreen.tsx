@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, fonts , statusBarStyle} from '../theme';
 import ReviewTutorial, { markTutorialSeen, tutorialSeen } from '../components/ReviewTutorial';

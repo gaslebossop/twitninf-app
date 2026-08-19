@@ -1,5 +1,5 @@
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AppHeader, ScreenBackground } from '../components/ui';
 import UserStatsTab from '../components/UserStatsTab';

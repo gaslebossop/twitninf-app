@@ -14,7 +14,7 @@ import {
   Vibration,
   useWindowDimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';

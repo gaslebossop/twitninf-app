@@ -18,7 +18,7 @@ import {
 // la version de react-native-safe-area-context applique un vrai inset sur les
 // deux plateformes ; c'est elle qu'il faut utiliser ici, pas celle du core.
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../services/api';
 import { BackButton, ScreenSkeleton } from '../components/ui';
 import { toast } from '../components/ui/Toast';

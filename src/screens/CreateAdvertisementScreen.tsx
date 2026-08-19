@@ -1,5 +1,5 @@
 import { fonts } from '../theme';
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import apiService from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -121,7 +121,9 @@ export default function CreateAdvertisementScreen() {
     }
   };
 
-  const handleInputChange = (field: string, value: any) => {
+  const keyExtractorById = useCallback(<T extends { id: string }>(item: T) => item.id, []);
+
+  const handleInputChange = useCallback((field: string, value: any) => {
     if (field.startsWith('targeting_criteria.')) {
       const targetingField = field.split('.')[1];
       setFormData(prev => ({
@@ -137,7 +139,7 @@ export default function CreateAdvertisementScreen() {
         [field]: value,
       }));
     }
-  };
+  }, []);
 
   const validateForm = () => {
     if (!formData.tweet_id) {
@@ -208,7 +210,7 @@ export default function CreateAdvertisementScreen() {
     }
   };
 
-  const renderTweetItem = ({ item }: { item: Tweet }) => (
+  const renderTweetItem = useCallback(({ item }: { item: Tweet }) => (
     <TouchableOpacity
       style={[
         styles.tweetItem,
@@ -235,9 +237,9 @@ export default function CreateAdvertisementScreen() {
         color={formData.tweet_id === item.id ? '#4F7CFF' : '#657786'}
       />
     </TouchableOpacity>
-  );
+  ), [formData.tweet_id, handleInputChange]);
 
-  const renderCampaignItem = ({ item }: { item: Campaign }) => (
+  const renderCampaignItem = useCallback(({ item }: { item: Campaign }) => (
     <TouchableOpacity
       style={[
         styles.campaignItem,
@@ -257,7 +259,7 @@ export default function CreateAdvertisementScreen() {
         color={formData.campaign_id === item.id ? '#4F7CFF' : '#657786'}
       />
     </TouchableOpacity>
-  );
+  ), [formData.campaign_id, handleInputChange]);
 
   return (
     <View style={styles.container}>
@@ -324,7 +326,7 @@ export default function CreateAdvertisementScreen() {
           <FlatList
             data={campaigns}
             renderItem={renderCampaignItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractorById}
             style={styles.campaignsList}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled={true}
@@ -524,7 +526,7 @@ export default function CreateAdvertisementScreen() {
             <FlatList
               data={tweets}
               renderItem={renderTweetItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={keyExtractorById}
               style={styles.modalTweetsList}
               showsVerticalScrollIndicator={false}
             />

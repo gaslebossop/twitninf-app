@@ -12,7 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Fire Claude Code routine
+        env:
+          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
         run: |
           curl -sf -X POST "https://api.anthropic.com/v1/claude_code/routines/trig_01HtbcpU8LZUJvD4H5qnedba/fire" \
-            -H "Authorization: Bearer ${{ secrets.CLAUDE_ROUTINE_TOKEN }}" \
+            -H "Authorization: Bearer $CLAUDE_ROUTINE_TOKEN" \
             -H "anthropic-version: 2023-06-01"

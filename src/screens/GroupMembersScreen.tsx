@@ -16,7 +16,7 @@ import {
 // La version de react-native (core) ne pose aucun inset sur Android — seule
 // celle de react-native-safe-area-context protège le haut de l'écran partout.
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import apiService from '../services/api';
 import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';

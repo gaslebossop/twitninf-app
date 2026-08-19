@@ -16,7 +16,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VerificationStyleService, { VerificationStyle } from '../services/verificationStyleService';

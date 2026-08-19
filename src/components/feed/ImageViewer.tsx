@@ -42,7 +42,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { colors, fonts , statusBarStyle} from '../../theme';
 import { Tappable } from '../ui';

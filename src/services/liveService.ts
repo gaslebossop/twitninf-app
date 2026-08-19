@@ -22,6 +22,14 @@ const resolvedStreamServer = resolveServerUrl(
 const STREAM_SERVER = resolvedStreamServer.url;
 
 /**
+ * URL d'ingestion RTMP à afficher dans les réglages, pour configurer OBS /
+ * Streamlabs / CameraFi — dérivée de `STREAM_SERVER` plutôt qu'écrite en dur,
+ * pour la même raison que ci-dessus (voir AUDIT-S1.md : l'IP en dur de la
+ * v1 traînait toujours dans `SettingsScreen.tsx`).
+ */
+export const RTMP_INGEST_URL = `rtmp://${new URL(STREAM_SERVER).hostname}:1935/live`;
+
+/**
  * Le socket porte le jeton d'accès : le serveur en tire l'identité de
  * l'auteur des messages du chat, au lieu de croire ce que le client déclare.
  * `auth` est une fonction, donc réévaluée à chaque (re)connexion — un jeton

@@ -3,7 +3,7 @@ import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { fonts, withAlpha } from '../theme';
 import { icon as iconSize, round, space, touch, type } from '../theme/eventScale';
 import { AppRefreshControl } from '../components/ui';

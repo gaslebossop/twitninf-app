@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // hors du thread JS, sur des avatars et pièces jointes montés en liste.
 // `transition={0}` : aucune apparition en fondu, le rendu ne change pas.
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio, AVPlaybackStatus } from 'expo-av';

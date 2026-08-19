@@ -29,7 +29,7 @@ import useSheetGesture from '../hooks/useSheetGesture';
 // hors du thread JS. `transition={0}` : aucune apparition en fondu, le rendu
 // reste identique.
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOffline } from '../contexts/OfflineContext';
 import apiService from '../services/api';

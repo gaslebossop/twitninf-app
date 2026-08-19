@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, StatusBar, RefreshControl, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppHeader, ScreenBackground, GlassCard, GlassButton, EmptyState, confirmAsync, promptAsync } from '../components/ui';
 import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';

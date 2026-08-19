@@ -18,7 +18,7 @@ import {
   UIManager,
   StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../contexts/AuthContext';
 import TweetMonetizationService from '../services/tweetMonetizationService';
 import MonetizationProgramService, { MonetizationProgramEligibility } from '../services/monetizationProgramService';

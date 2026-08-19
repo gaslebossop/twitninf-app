@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fonts, colors, withAlpha , statusBarStyle} from '../theme';
-import { ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
+import { ScreenBackground, ScreenSkeleton, AppRefreshControl, PullRefreshLogo } from '../components/ui';
+import { usePullRefreshLogo } from '../hooks/usePullRefreshLogo';
+// Alias : ce fichier importe déjà `Animated` du cœur RN plus bas — une
+// `Animated.Value` du cœur passée à une vue Reanimated échoue en silence
+// (voir CLAUDE.md), donc les deux ne doivent jamais partager le même nom.
+import ReanimatedView from 'react-native-reanimated';
 import {
   View,
   Text,
@@ -20,7 +25,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { Tweet, User } from '../types/api';
@@ -408,6 +413,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     finally { setRefreshing(false); }
   };
 
+  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing);
+
   const handleAddAccount = async () => {
     if (!newAccUsername.trim() || !newAccPassword) {
       toast.error('Champs requis', {
@@ -522,15 +529,20 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         le hero et les parures premium débordent en `position: absolute`, et le
         clipping les ferait disparaître.
       */}
-      <FlatList
+      <View style={S.listWrap}>
+      {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
+      <ReanimatedView.FlatList
         style={S.scroll}
         contentContainerStyle={{ paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
         bounces={!refreshing}
+        alwaysBounceVertical
         removeClippedSubviews={false}
-        refreshControl={
+        onScroll={scrollHandler}
+        scrollEventThrottle={1}
+        refreshControl={Platform.OS === 'ios' ? undefined : (
           <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        )}
         data={tabLoading ? EMPTY_TWEETS : profileTweets}
         keyExtractor={tweetKeyExtractor}
         renderItem={renderTweetItem}
@@ -1087,6 +1099,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           </>
         }
       />
+      </View>
 
       {/* ── VISIONNEUSE DE STORIES (avatar) ── */}
       <StoryViewer
@@ -1122,6 +1135,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
 const S = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: 'transparent' },
+  listWrap: { flex: 1 },
   scroll: { flex: 1, backgroundColor: 'transparent' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
 

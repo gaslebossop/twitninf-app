@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, statusBarStyle, withAlpha } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton, Tappable } from '../components/ui';
 import { toast } from '../components/ui/Toast';

@@ -24,7 +24,7 @@ import Svg, {
   Rect,
   Stop,
 } from 'react-native-svg';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, statusBarStyle, towardWhite, withAlpha } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton, Tappable } from '../components/ui';
 import { toast } from '../components/ui/Toast';

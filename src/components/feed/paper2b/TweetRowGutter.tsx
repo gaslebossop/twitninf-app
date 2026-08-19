@@ -74,7 +74,7 @@ import Animated, {
   Extrapolation,
   LinearTransition,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Avatar from '../../Avatar';
 import ClickableMentions from '../../ClickableMentions';
@@ -464,11 +464,19 @@ function TweetRowGutter({
         <TouchableOpacity
           style={S.counter}
           onPress={handleLikePress}
-          onLongPress={handleSuperLikeLongPress}
+          // Seulement si le palier peut vraiment poser un Super Cœur : un
+          // `onLongPress` posé qui ne fait rien (`handleSuperLikeLongPress`
+          // sort tout de suite quand `!superHeartEnabled`) avale quand même
+          // le relâchement — un `TouchableOpacity` qui a déclenché son
+          // `onLongPress` n'appelle plus `onPress` derrière. Un appui tenu ne
+          // serait-ce qu'un peu (le doigt recouvre l'icône dans la
+          // gouttière, voir plus haut) posait donc un like qui ne partait
+          // jamais, sans rien à l'écran pour le dire.
+          onLongPress={superHeartEnabled ? handleSuperLikeLongPress : undefined}
           delayLongPress={420}
           disabled={isAd}
           activeOpacity={0.6}
-          hitSlop={{ top: 4, bottom: 4, left: 10, right: 6 }}
+          hitSlop={{ top: 8, bottom: 8, left: 12, right: 8 }}
           accessibilityLabel={isLiked ? 'Retirer le j’aime' : 'Aimer ce tweet'}
         >
           <View style={[S.burstHost, { width: iconSize, height: iconSize }]}>
@@ -502,7 +510,7 @@ function TweetRowGutter({
             style={S.counterSmall}
             onPress={handleRetweetPress}
             activeOpacity={0.6}
-            hitSlop={{ top: 4, bottom: 4, left: 10, right: 6 }}
+            hitSlop={{ top: 8, bottom: 8, left: 12, right: 8 }}
             accessibilityLabel={isRetweeted ? 'Annuler le repost' : 'Reposter ce tweet'}
           >
             <View style={[S.burstHostSmall, { width: iconSize, height: iconSize }]}>

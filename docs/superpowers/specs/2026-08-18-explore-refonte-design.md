@@ -12,7 +12,7 @@ Sept passes d'itération sont déjà passées sur cet onglet (voir l'historique 
 `ExploreGrid.tsx` et `ExploreImmersive.tsx`) sans lever l'impression rapportée :
 « pas assez addictive, pas assez jolie, pas assez pro ».
 
-Quatre mesures prises en prod le 2026-08-18 (`51.210.11.74`, base `twitninf`)
+Quatre mesures prises en prod le 2026-08-18 (VPS, base `twitninf`)
 expliquent pourquoi :
 
 | Mesure | Valeur |

@@ -11,7 +11,7 @@ import {
   RefreshControl,
   StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useForegroundInterval } from '../hooks/useForegroundInterval';
 import NewEconomyService, { EconomicStats, ChartRange } from '../services/newEconomyService';
