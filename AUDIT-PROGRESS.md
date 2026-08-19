@@ -14,8 +14,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | R1 | RAPIDITÉ — démarrage | **TERMINÉE** | `AUDIT-R1.md` |
 | R2 | RAPIDITÉ — réseau | **TERMINÉE** | `AUDIT-R2.md` |
 | R3 | RAPIDITÉ — poids du bundle | **TERMINÉE** | `AUDIT-R3.md` |
-| S1 | SÉCURITÉ — secrets dans l'historique git | **EN COURS** | `AUDIT-S1.md` |
-| S2 | SÉCURITÉ — ce qui part en clair dans le bundle | À FAIRE | — |
+| S1 | SÉCURITÉ — secrets dans l'historique git | **TERMINÉE** | `AUDIT-S1.md` |
+| S2 | SÉCURITÉ — ce qui part en clair dans le bundle | **EN COURS** | `AUDIT-S2.md` |
 | S3 | SÉCURITÉ — appareil et chaîne de build | À FAIRE | — |
 
 ---
@@ -131,35 +131,63 @@ d'agir sur R3-1, R3-3, R3-5.
 
 ---
 
-## Reprendre à — S1 (EN COURS)
+## S1 — TERMINÉE
 
-**Aucun constat écrit pour l'instant.** `AUDIT-S1.md` reste à créer.
+**Aucun secret d'authentification dans l'historique.** 0 critique, 0 majeur,
+3 mineurs (divulgation d'infrastructure). Décompte et étendue de la
+vérification dans `AUDIT-S1.md` ; **le détail va au propriétaire, pas ici**.
 
-⚠️ **RAPPEL CRITIQUE — le dépôt est PUBLIC.** Dans `AUDIT-S1.md` et dans ce
-fichier : **uniquement le décompte et la gravité**. Jamais un secret, jamais un
-chemin exact, jamais un commit précis, jamais une méthode. Le détail va dans le
-MESSAGE FINAL, que seul le propriétaire lit.
+Historique **intégralement** couvert et petit : 225 commits, 2 603 objets,
+1 396 blobs examinés un par un, du 2026-08-03 au 2026-08-19, toutes branches
+distantes récupérées. **Ne pas refaire ce balayage** — l'étendue exacte et les
+motifs recherchés sont listés dans `AUDIT-S1.md`.
 
-### Plan S1 — historique git complet
+---
 
-Le dépôt est passé de privé à public : **tout secret ayant existé dans
-l'historique est compromis**, même supprimé depuis.
+## Reprendre à — S2 (EN COURS)
 
-1. `git log --all --oneline | wc -l` pour dimensionner.
-2. `git log -S` sur les motifs usuels (`api_key`, `secret`, `token`,
-   `password`, `Bearer `, `-----BEGIN`, `AIza`, `sk_`, `ghp_`, `xox`).
-3. `git log --all --diff-filter=A --name-only` pour les fichiers ajoutés puis
-   supprimés (`.env`, `*.keystore`, `*.p8`, `*.p12`, `google-services.json`,
-   `serviceAccount*.json`).
-4. `git rev-list --all` + recherche dans les objets non atteignables si le
-   temps le permet.
-5. Vérifier `.gitignore` et `.env.example` (ce dernier ne doit contenir que
-   des valeurs factices).
+**Aucun constat écrit pour l'instant.** `AUDIT-S2.md` reste à créer.
 
-**Piste déjà connue à instruire ici** : `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`
-(citée dans `plugins/withGoogleMapsApiKey.js` et `.env.example`) — le préfixe
-`EXPO_PUBLIC_` la publie de toute façon (→ **S2**), mais vérifier si une valeur
-réelle a transité dans l'historique.
+⚠️ **Le dépôt est PUBLIC** : dans `AUDIT-S2.md`, décompte et gravité
+uniquement. Le détail (quelles variables, quelles valeurs, quelle restriction
+manque) va dans le MESSAGE FINAL.
+
+### Matériel DÉJÀ VÉRIFIÉ pour S2 — ne pas le redécouvrir
+
+`.env.example` a été lu intégralement en S1. Il déclare **5 variables
+`EXPO_PUBLIC_*`** — donc 5 valeurs inlinées par Metro et lisibles en clair par
+quiconque télécharge l'APK ou l'IPA :
+
+1. `EXPO_PUBLIC_API_URL` — serveur API principal.
+2. `EXPO_PUBLIC_STREAM_SERVER` — serveur de stream (RTMPS/HLS/chat live).
+3. `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY` — **le cas le plus intéressant** :
+   `.env.example` dit qu'elle doit être « restreinte à l'application Android
+   `com.gasleboss.TwitNin` ». Or une restriction Android se fait par
+   *package + empreinte SHA-1 du certificat de signature*. **À instruire** :
+   quelle empreinte est utilisée ? Si c'est celle du magasin de **débogage**
+   (identifié en S1 comme le fichier universel du SDK Android, donc public),
+   la restriction ne protège rien. C'est la vraie question de S2.
+   Voir aussi R3-1 : la carte est devenue une `WebView`, donc **cette clé ne
+   sert peut-être tout simplement plus à rien** — une clé publiée qui ne sert
+   plus est un risque sans contrepartie.
+4. `EXPO_PUBLIC_UPDATE_FEED_URL` — flux de mise à jour, renseigné par la CI.
+5. `EXPO_PUBLIC_BUILD_VERSION`.
+
+### Plan S2
+
+1. Balayer tout `src/` sur `process.env.EXPO_PUBLIC_` : les 5 ci-dessus
+   sont-elles les seules réellement lues ? Y en a-t-il d'autres non
+   documentées dans `.env.example` ?
+2. Pour chacune : juger si la divulgation est acceptable, et si une
+   restriction existe **côté fournisseur** (c'est le seul vrai rempart — le
+   préfixe `EXPO_PUBLIC_` rend la valeur publique par construction).
+3. Vérifier `app.config.js` : d'autres valeurs y sont-elles injectées dans
+   `extra` ou dans le manifeste ?
+4. Vérifier `src/config/*.ts` (`adminConfig.ts`, `api.ts`,
+   `featureFlagKeys.ts`, `trading.ts`) — repérés en S1 comme fichiers de
+   configuration à lire.
+5. `tests/security-config.test.js` existe : le lire, il documente peut-être
+   déjà les invariants attendus.
 
 ## Rappels pour la prochaine exécution
 
