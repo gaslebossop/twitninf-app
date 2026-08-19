@@ -36,7 +36,9 @@ le dépôt n'a **aucune configuration ESLint**, donc pas de
 ## Reprendre à — F3 (EN COURS)
 
 **Constats écrits et poussés :** F3-1 (`twitninfvideo` : aucune prop de
-virtualisation, ~10 lecteurs vidéo instanciés à l'ouverture — CRITIQUE).
+virtualisation, ~10 lecteurs vidéo instanciés à l'ouverture — CRITIQUE),
+F3-2 (`ConversationThreadScreen` : historique entier sans pagination, liste non
+`inverted`, cascade de `scrollToEnd` à l'ouverture — CRITIQUE).
 
 **Recensement fait, à exploiter** : sur les **20 fichiers** contenant une
 `<FlatList>`, seuls **4** règlent la virtualisation — `TweetsScreen`,
@@ -47,14 +49,19 @@ updateCellsBatchingPeriod 50 / windowSize 7 / removeClippedSubviews` par
 plateforme. Même schéma qu'en F2 : correctif trouvé une fois, jamais propagé.
 
 **Prochains constats F3 à rédiger, par priorité :**
-1. `ImageViewerPaper` — pages plein écran, mêmes défauts que F3-1 (il a
-   `getItemLayout`, mais aucune prop de fenêtre). À vérifier puis rédiger.
-2. `ConversationThreadScreen:1601` + `MessagesScreen` — listes potentiellement
-   longues, aucun réglage.
-3. Constat groupé pour les 16 listes non réglées (tableau).
-4. `SearchScreen:979-1043` — `ScrollView` + `.map()` sur ~40 résultats, aucune
+1. `SearchScreen:979-1043` — `ScrollView` + `.map()` sur ~40 résultats, aucune
    virtualisation (déjà vérifié en F2-6, reste à rédiger côté F3).
-5. Chercher les autres `ScrollView` montant des listes entières.
+2. Chercher les AUTRES `ScrollView` montant des listes entières (`.map()` dans
+   un `ScrollView`) — pas encore recensé à l'échelle du dépôt.
+3. `MessagesScreen` — liste des conversations, aucun réglage ; vérifier s'il y
+   a une pagination.
+4. Constat groupé final pour les listes non réglées restantes (tableau), une
+   fois les cas individuels traités.
+
+**ÉCARTÉ après vérification, ne pas y revenir** : `ImageViewerPaper` — pages
+plein écran et aucune prop de fenêtre, MAIS une galerie est plafonnée à 4
+images (`MAX_TWEET_IMAGES = 4`, `CreateTweetScreen.tsx:62`), donc les défauts
+RN n'ont aucun effet. Documenté en fin de `AUDIT-F3.md` comme SAIN.
 
 ### Matériel DÉJÀ VÉRIFIÉ pendant F2 — ne pas re-chercher
 
