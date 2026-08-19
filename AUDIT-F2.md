@@ -1201,3 +1201,121 @@ c'est précisément le piège que F4 doit traquer, et il est évité ici.
   se concentre sur les écrans secondaires et, malheureusement, sur les deux
   écrans vidéo/live (F2-8 et le présent constat), qui sont justement les plus
   sensibles.
+
+---
+
+# F2 — SYNTHÈSE DE SECTION
+
+## Les constats, par gain décroissant
+
+| # | Où | Défaut | Gravité |
+|---|---|---|---|
+| F2-8 | `twitninfvideo.tsx` | fil vidéo : toutes les cartes (avec leur `<Video>`) re-rendues à chaque glissé | **CRITIQUE** |
+| F2-1 | `CommentSheet.tsx` | chaque frappe re-rend tous les commentaires et remonte tous les séparateurs | **CRITIQUE** |
+| F2-7 | `CreateTweetScreen.tsx` | `Animated.sequence` de 200 ms relancée à chaque caractère | **MAJEUR** |
+| F2-4 | `ConversationThreadScreen.tsx` | toutes les bulles re-rendues à chaque message | **MAJEUR** |
+| F2-5 | `ConversationThreadScreen.tsx` | closure périmée : l'accusé « Vu » n'apparaît jamais à temps | **MAJEUR** |
+| F2-3 | `TweetRow` + `TweetRowGutter` | `tweet.author` absent des comparateurs : avatar/premium/certif figés | **MAJEUR** |
+| F2-3 bis | `TweetCard.tsx` | `premium` et `subscription_tier` manquent aux **trois** comparateurs | **MAJEUR** |
+| F2-2 | `LiveViewerScreen.tsx` | chat du live : tout le chat re-rendu à chaque message | **MAJEUR** |
+| F2-9 | `GoLiveScreen.tsx` | idem côté diffuseur, **plus** la frappe, **pendant** l'encodage vidéo | **MAJEUR** |
+| F2-6 | `SearchScreen.tsx` | 40 résultats non virtualisés re-rendus à chaque frappe + 5 `Animated.View` inertes | **MAJEUR** |
+| F2-9 | `SendCoinsModal`, `ImageViewerPaper` | `renderItem` inline sur un déclencheur fréquent | MODÉRÉ |
+| F2-9 | 6 écrans secondaires | `renderItem` inline, déclencheur rare | mineur |
+
+## Ce qu'il faut en retenir
+
+**Un seul mécanisme explique la moitié du rapport.** Un `renderItem` inline
+donne une identité neuve à chaque rendu ; le `CellRenderer` de
+`VirtualizedList` est une `PureComponent` ; il re-rend donc toutes les cellules
+montées. Ce mécanisme, à lui seul, produit F2-1, F2-2, F2-4, F2-8 et F2-9.
+
+**Ce mécanisme est déjà parfaitement compris dans ce dépôt.** Il est nommé,
+commenté et neutralisé dans `TweetsScreen`, `NotificationsScreen`,
+`ProfileScreen`, `UserProfileScreen` et `ConversationThreadScreen` — ce dernier
+portant même le commentaire le plus clair du dépôt sur le sujet
+(`:1286-1289`). Le problème n'est pas un manque de connaissance : c'est que la
+leçon n'a jamais quitté le fil d'accueil. **Elle n'a atteint aucun des quatre
+écrans vidéo/live et messagerie**, qui sont pourtant les plus exigeants.
+
+**Le même schéma se répète pour les comparateurs.** `TweetCard` compare
+l'auteur, avec le commentaire qui explique pourquoi ; `TweetRow` et
+`TweetRowGutter` ne le font pas. Là encore : correctif trouvé une fois, non
+propagé.
+
+**Recommandation transverse, avant les correctifs individuels.** Les trois
+quarts de ces constats disparaîtraient à l'écriture avec deux garde-fous :
+
+1. **Activer ESLint avec `react-hooks/exhaustive-deps` en erreur.** Vérifié :
+   ce dépôt n'a **aucune** configuration ESLint (ni `.eslintrc*`, ni
+   `eslint.config.*`, ni script `lint` dans `package.json`). F2-5 — la faute la
+   plus difficile à trouver de cette section, et la seule qui produise un bug
+   fonctionnel invisible en relecture — aurait été signalée automatiquement.
+2. **Un `sameAuthor()` partagé**, importé par les trois composants de ligne,
+   pour que le prochain champ d'auteur ajouté à l'interface ne soit pas à
+   nouveau oublié dans deux comparateurs sur trois.
+
+## Ce que j'ai vérifié et trouvé SAIN
+
+Cette liste est aussi importante que les constats : elle borne ce qui a été
+regardé, et elle évite qu'une passe suivante refasse le travail.
+
+- **Les 9 fournisseurs de `src/contexts/`** : toutes les valeurs de contexte
+  sont mémoïsées. Vérifiés un par un. C'est la première chose qu'on cherche
+  dans un audit de re-rendus, et il n'y a rien.
+- **`TweetsScreen`** (l'écran le plus regardé) : `rowContext` en `useMemo`,
+  `handleRowAction` en `useCallback` avec `tweetsRef`, `renderTweet` et
+  `keyExtractor` en `useCallback`. Sain.
+- **`NotificationsScreen`** : le meilleur exemple du dépôt (détail en F2-3 bis).
+- **`ProfileScreen`, `UserProfileScreen`, `MessagesScreen`** : mémoïsation
+  correcte, dépendances stables.
+- **`TweetRowGutter`** : comparateur complet sur ses 11 props, avec exclusion
+  de `stats.views` documentée et justifiée (2B n'affiche plus les vues). Le
+  seul manque est `author`, traité en F2-3.
+- **`babel.config.js`** : `transform-remove-console` en production avec
+  `exclude: ['warn','error']`. Les 323 `console.log` de `src/` ne pèsent donc
+  rien en release — y compris celui, par tweet rendu, de `SearchScreen:856`.
+- **`src/utils/litPulse.ts`** : horloge **singleton de module**, pilote natif,
+  partagée par tous les noms lumineux et toutes les pastilles de certification.
+  Une seule `Animated.loop` pour l'application entière, quel que soit le nombre
+  d'éléments montés, et une phase commune par construction. C'est la meilleure
+  pièce de code que cet audit ait rencontrée : à citer en exemple, et surtout à
+  ne pas « simplifier » un jour par une boucle par composant.
+- **`AnimatedNameFill`** (`ProfileDecoration.tsx:619`) : la dérive du dégradé
+  est explicitement coupée quand le nom n'a pas d'effet
+  (`useDrift(2600, 0, effect !== 'none')`), avec le commentaire qui précise que
+  c'est justement pour ne pas lancer une boucle par ligne montée dans le fil.
+  Exactement le bon réflexe, au bon endroit.
+- **`ImageViewerPaper`** : `runOnJS` correctement utilisé pour tout retour d'un
+  worklet vers React, et `applyZoom` appelé aux bornes du geste seulement.
+
+### Deux réserves mineures, signalées sans être des constats
+
+- `litPulse()` construit une nouvelle `AnimatedInterpolation` à chaque appel, y
+  compris dans `AnimatedNameFill` quand `effect === 'none'` (`:651`) — donc
+  pour chaque nom du fil, à chaque rendu, alors que le résultat est ensuite
+  inutilisé. C'est une allocation d'objet JS, négligeable en soi ; la déplacer
+  sous le `if (effect === 'none') return label;` la supprimerait gratuitement.
+- La boucle de `getDriver()` (`litPulse.ts:25-33`) n'est **jamais arrêtée** :
+  une fois un nom lumineux monté, elle tourne pour toute la durée de vie de
+  l'application, même quand plus aucun élément lumineux n'est à l'écran. Sur
+  pilote natif le thread JS n'en souffre pas — c'est le point fort du design —
+  mais le driver natif continue de tourner en permanence. Impact batterie
+  probablement faible ; **non mesuré**, et je ne recommande pas de toucher à ce
+  fichier sur la foi d'une hypothèse : c'est à vérifier au profileur avant
+  toute chose, et à ne changer que si la mesure le justifie.
+
+## Limites de cette section
+
+- Aucune mesure sur appareil : tout est établi par lecture du code. Les ordres
+  de grandeur (« ~15 lignes », « ~10 lecteurs vidéo ») sont déduits des valeurs
+  par défaut de React Native et des `limit` des appels API, pas chronométrés.
+- Les gros composants non-liste `UserStatsTab` (2 379 l., 12 `useState`) et
+  `NavbarOnboardingModal` (1 121 l.) n'ont fait l'objet que d'un survol : ni
+  boucle d'animation ni `setInterval`, donc pas de re-rendu périodique. Leur
+  découpage interne n'a pas été analysé — écrans peu fréquentés, gain attendu
+  faible.
+- `ForgeScreen`, `WalletScreen` et `TradingScreen` : survolés, aucun défaut du
+  type « état placé trop haut » avec un déclencheur fréquent. `TradingScreen`
+  a un `setInterval` de 30 s qui n'est pas suspendu quand l'écran perd le focus
+  (`:72-78`) — c'est un sujet **réseau**, renvoyé à R2.
