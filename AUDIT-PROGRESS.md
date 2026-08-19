@@ -110,7 +110,11 @@ pas le rouvrir.
 
 ## Reprendre à — R3 (EN COURS)
 
-**Constats écrits et poussés :** R3-4 (**191** fichiers importent
+**Constats écrits et poussés :** R3-5 (doublon vidéo : `expo-av` 11 fichiers
+*et* `react-native-video` 2 fichiers, ce dernier pour la seule prop `filter`
+d'un seul écran — et cette prop est **iOS-seule**, sans garde `Platform.OS` :
+sur Android l'aperçu de filtre est inerte alors que le rendu serveur, lui,
+filtre bien), R3-4 (**191** fichiers importent
 `@expo/vector-icons` par le **baril**, 3 par le chemin direct — correctif `sed`
 mécanique ; gain en TEMPS d'évaluation, PAS en poids d'APK), addendum R3-2
 (`inlineRequires: true` est activé dans `metro.config.js` — bon réglage, mais
@@ -183,7 +187,12 @@ Code mort / doublons recensés au fil de F2, F4, R2 :
    actif en production avec `exclude: ['warn','error']` — **BON**, à citer en
    SAIN, et cela **répond par avance** au point « journaux » routé vers S3
    depuis R2-5. Reste : vérifier Hermes dans `app.config.js`.
-5. Puis : **doublon vidéo** (point 1 ci-dessus), synthèse R3, passage à S1.
+5. ~~doublon vidéo~~ **FAIT (R3-5)**.
+6. Reste : Hermes dans `app.config.js`, `assets/` (**déjà mesuré en F1 — relire
+   `AUDIT-F1.md`, ne pas remesurer** ; noter seulement l'angle bundle : les
+   618 Ko d'`assets/casino/` = 44 % de tout `assets/` (1,4 Mo) pour le SEUL
+   composant qui tire aussi `three` — cf. R3-2), puis **synthèse R3** et
+   passage à **S1**.
 
 ### Matériel à ROUTER vers S3 (sécurité, plus tard)
 

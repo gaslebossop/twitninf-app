@@ -387,3 +387,80 @@ l'audit, et le remède n'est pas une correction de plus mais un garde-fou
 automatique — une règle ESLint `no-restricted-imports` interdisant le baril
 aurait rendu ces 191 occurrences impossibles à écrire. Le dépôt n'a **aucune
 configuration ESLint** (vérifié en F2).
+
+---
+
+## R3-5 — Deux piles vidéo natives dans le binaire, la seconde pour une seule prop d'un seul écran — MODÉRÉ
+
+`src/screens/VideoEditorScreen.tsx:18` et `:426-434`,
+`src/utils/videoFilters.ts:1`, `package.json`
+
+### Ce qui est vérifié
+
+Deux bibliothèques vidéo natives sont déclarées et **toutes deux réellement
+utilisées** — ce n'est donc pas un cas de R3-1 :
+
+| Bibliothèque | Fichiers | Usage |
+|---|---|---|
+| `expo-av` | **11** | `Video` + `Audio` : fil, stories, messages vocaux, création, live, `twitninfvideo`… toute l'application |
+| `react-native-video` | **2** | `VideoEditorScreen.tsx:18` (le composant) et `videoFilters.ts:1` (**le type `FilterType` seul**) |
+
+`react-native-video` n'est donc présent que pour **un seul écran**, et dans cet
+écran pour **une seule prop** :
+
+```tsx
+<Video … filter={activeFilter.preview} />     // :426-434
+```
+
+### L'effet concret
+
+Un module natif est lié au binaire dès qu'il figure dans `package.json`
+(autolinking — même mécanique qu'en R3-1, et toujours aucune exclusion
+configurée). L'APK et l'IPA embarquent donc **deux décodeurs vidéo complets**
+là où un seul est utilisé partout sauf sur un écran. Je ne peux pas chiffrer le
+delta (pas de `node_modules`, pas de build), mais un lecteur vidéo natif se
+compte en centaines de kilo-octets à quelques mégaoctets par plateforme.
+
+**Et sur Android, ce coût n'achète rien.** Le dépôt le documente lui-même
+(`videoFilters.ts:6-7`) : l'aperçu de filtre est « un CIFilter appliqué en
+aperçu par `react-native-video` (**iOS**) ». CIFilter est l'API d'imagerie
+d'Apple ; la prop `filter` n'a pas d'équivalent Android. Or `VideoEditorScreen`
+ne contient **aucun garde `Platform.OS`** autour de cette prop (vérifié : les
+deux seuls `Platform.OS` du fichier, `:299-300`, concernent le clavier).
+
+Conséquence pour un utilisateur Android : il choisit un filtre, **l'aperçu ne
+change pas**, et la vidéo qu'il reçoit après rendu par l'API est pourtant bien
+filtrée (la chaîne ffmpeg côté serveur, elle, est indépendante de la
+plateforme). Il ne voit donc pas ce qu'il obtient. Ce n'est plus un constat de
+poids de bundle mais d'**expérience** — et il est probablement passé inaperçu
+parce qu'il ne produit ni erreur ni journal.
+
+### Le correctif
+
+**Le vrai choix est en amont, et il n'est pas technique** : l'aperçu de filtre
+en direct justifie-t-il une seconde pile vidéo native pour la moitié des
+utilisateurs ?
+
+- **Si oui** : garder `react-native-video`, mais afficher sur Android un état
+  explicite (« aperçu indisponible sur cet appareil, le filtre sera bien
+  appliqué au rendu ») plutôt qu'un aperçu inerte. Coût : quelques lignes.
+- **Si non** : retirer `react-native-video`, revenir à `expo-av` sur cet écran
+  et remplacer l'aperçu direct par des vignettes filtrées côté serveur. On
+  gagne une pile native entière et on rend les deux plateformes identiques.
+  `FilterType` (`videoFilters.ts:1`) serait alors remplacé par un simple type
+  chaîne, l'API n'échangeant de toute façon que la **clé** du filtre — le
+  fichier le dit lui-même : « c'est la clé qui voyage dans la requête, jamais
+  la chaîne ».
+
+Sans avis produit, je ne tranche pas. Ce que je peux dire : la seconde option
+est nettement moins chère à maintenir, et la première laisse une différence de
+comportement entre iOS et Android qu'il faudra documenter à chaque évolution.
+
+### Réserve
+
+Le caractère iOS-seul de la prop `filter` s'appuie sur le **commentaire du
+dépôt lui-même** (`videoFilters.ts:6-7`) et sur la nature de CIFilter, pas sur
+une lecture de `react-native-video` (interdite ici). Si une version récente a
+ajouté un équivalent Android, la moitié « expérience » de ce constat tombe —
+la moitié « deux piles natives pour un écran » reste vraie dans tous les cas.
+À vérifier en une minute sur la documentation du paquet avant d'agir.
