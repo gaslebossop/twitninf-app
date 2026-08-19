@@ -604,3 +604,95 @@ volume :
 
 Les points 3 (stories) et la liste des conversations relèvent de la dette
 prudente, pas de l'urgence.
+
+---
+
+## R2-5 — Une chaîne de 4 requêtes en série, rejouée à chaque « j'aime » — mais aujourd'hui inatteignable — MINEUR (latent)
+
+`src/screens/TweetDetailScreen.tsx:345-484`
+
+### Ce qui se passe
+
+`loadProgressiveInfo` enchaîne **quatre allers-retours réseau strictement en
+série**, chacun attendant le précédent alors qu'aucun ne dépend de son
+résultat :
+
+```tsx
+const response = await progressiveRecommendationService.getAlgorithmInfo();        // :355
+if (response && response.success) {
+  const userStats  = await progressiveRecommendationService.getUserInteractionStats();      // :360
+  const tweetStats = await progressiveRecommendationService.getTweetViralityStats(tweet.id); // :365
+  const progressiveRecommendations =
+    await progressiveRecommendationService.getProgressiveRecommendations({…});              // :369
+```
+
+Les trois derniers ne partagent que `tweet.id`, connu d'avance : ils sont
+parallélisables tels quels. C'est **l'exact inverse** du bon patron écrit
+70 lignes plus bas dans le même fichier (`:502`, le `Promise.all` cité en
+exemple en R2-3) — deuxième occurrence, dans un seul fichier, du schéma
+« le bon réflexe existe, il n'a pas été propagé ».
+
+### L'amplificateur : la chaîne est rejouée à chaque interaction
+
+```tsx
+useEffect(() => {
+  if (currentAlgorithm === 'progressive' && tweet) loadProgressiveInfo();
+}, [currentAlgorithm, tweet]);       // :480-484
+```
+
+La dépendance est l'**objet** `tweet`, pas `tweet.id`. Or `handleLike`
+(`:567`) et `handleRetweet` (`:595`) construisent chacun un objet neuf en mise
+à jour optimiste — et un second en cas d'échec pour revenir en arrière. Chaque
+« j'aime » et chaque retweet relance donc les **4 requêtes en série** ; un
+échec réseau les relance **deux fois**. Un utilisateur qui aime puis retweete
+déclenche 8 allers-retours séquentiels sans avoir rien demandé.
+
+### Pourquoi c'est classé MINEUR malgré tout — et ce que ça révèle vraiment
+
+**Cette chaîne ne peut pas se déclencher sur une installation neuve.**
+Vérifié : `currentAlgorithm` vaut `'smart'` à l'initialisation (`:265`) et
+n'est jamais écrit ailleurs que depuis `AsyncStorage.getItem('selectedAlgorithm')`
+(`:335`) ; or un `grep selectedAlgorithm` sur tout `src/` ne trouve que **deux
+écritures**, `TweetsScreen:525` et `FeedGutterScreen:566`, qui écrivent toutes
+deux la valeur `'neural_rank'`. Aucun code du dépôt n'écrit `'progressive'`.
+
+Deux conséquences, et la seconde est la plus intéressante :
+
+1. **Le risque résiduel est réel mais borné.** `AsyncStorage` ne s'efface pas
+   à la mise à jour de l'application : un appareil sur lequel une version
+   antérieure a écrit `'progressive'` porte encore cette valeur, indéfiniment,
+   et il n'existe **aucune migration** qui la nettoie. Ces utilisateurs-là
+   subissent la chaîne aujourd'hui. Je ne peux pas estimer combien ils sont
+   depuis le code seul.
+2. **Tout un pan d'interface est mort sans que rien ne le signale.** Le bloc
+   `{currentAlgorithm === 'progressive' && (…)}` (`:773`), le bouton de
+   rechargement (`:1376`), les quatre `setProgressiveInfo` : plus rien de tout
+   cela ne peut s'afficher sur une installation courante. Ce n'est plus un
+   défaut de rapidité réseau, c'est du **code mort porteur d'un piège** — le
+   jour où quelqu'un réactive `'progressive'`, il hérite en même temps de la
+   chaîne sérielle et du redéclenchement à chaque « j'aime ».
+
+### Le correctif
+
+Deux lignes, quel que soit l'avenir de la fonctionnalité :
+
+```tsx
+const [userStats, tweetStats, progressiveRecommendations] = await Promise.all([
+  progressiveRecommendationService.getUserInteractionStats(),
+  progressiveRecommendationService.getTweetViralityStats(tweet.id),
+  progressiveRecommendationService.getProgressiveRecommendations({…}),
+]);
+```
+et `}, [currentAlgorithm, tweet?.id]);` en dépendance de l'effet — c'est
+`tweet.id` qui commande ce chargement, pas l'objet.
+
+**Décision à prendre en amont, et c'est elle qui compte** : soit la
+fonctionnalité « progressive » revient, et il faut alors un chemin qui écrive
+la valeur ; soit elle est abandonnée, et il faut supprimer les ~130 lignes
+(`:344-484`, `:773`, `:1376-1400`) **et** purger la clé `selectedAlgorithm`
+des appareils qui la portent encore. Le laisser en l'état est le seul choix
+qui garde les inconvénients des deux.
+
+Au passage, `loadProgressiveInfo` journalise les réponses complètes en clair
+(`console.log('📡 Réponse getAlgorithmInfo:', response)`, `:356`, `:362`,
+`:366`, `:375`) — à revoir avec le point « journaux » de la section S3.

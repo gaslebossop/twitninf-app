@@ -158,17 +158,15 @@ repli sur cache (`servedFromCacheRef`), Explorer isolé. Détaillé dans le
 
 ### RESTE À INSTRUIRE POUR R2
 
-R2-4 (pagination groupée + 21e réponse inatteignable) : **ÉCRIT ET POUSSÉ**.
+R2-4 (pagination) et R2-5 (chaîne progressive) : **ÉCRITS ET POUSSÉS**.
 
-Reste :
-1. `TweetDetailScreen:345-475` (`loadProgressiveInfo`) — chaîne de **4 requêtes
-   en série** (`getAlgorithmInfo` → `getUserInteractionStats` →
-   `getTweetViralityStats` → `getProgressiveRecommendations`), déclenchée par
-   `useEffect(..., [currentAlgorithm, tweet])` — donc rejouée à chaque
-   changement d'identité de l'objet `tweet`. Gardée par
-   `currentAlgorithm === 'progressive'`. À vérifier : combien de fois `setTweet`
-   est appelé après le chargement initial. → constat **R2-5**.
-2. Puis synthèse R2 et passage à R3.
+Reste : **synthèse R2**, passage de R2 à TERMINÉE, puis R3.
+
+À ROUTER vers R3 depuis R2-5 : `TweetDetailScreen:344-484`, `:773`,
+`:1376-1400` = ~130 lignes de code mort (`currentAlgorithm === 'progressive'`
+est inatteignable — aucune écriture de cette valeur dans tout `src/`).
+À ROUTER vers S3 : `loadProgressiveInfo` journalise les réponses réseau
+complètes (`console.log`, `:356/362/366/375`).
 
 Chiffre utile : **~977 tweets vivants en prod** (`ExploreWall.tsx:191`).
 
