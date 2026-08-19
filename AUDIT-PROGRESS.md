@@ -110,7 +110,11 @@ pas le rouvrir.
 
 ## Reprendre à — R3 (EN COURS)
 
-**Constats écrits et poussés :** R3-1 (6 dépendances déclarées et jamais
+**Constats écrits et poussés :** R3-2 (83 imports d'écrans **statiques** dans
+`MainNavigator`, **aucun `React.lazy`/`Suspense` dans tout le dépôt** ;
+`three`+`expo-three`+`expo-gl` évalués au démarrage pour le seul
+`SlotReel3D.tsx` — piège du correctif : l'export nommé `cellForSymbol` doit
+être déplacé), R3-1 (6 dépendances déclarées et jamais
 importées ; seule `react-native-maps` coûte vraiment — module natif autolinké
 dans l'APK. Les 5 autres ne pèsent rien dans le bundle : Metro n'empaquette pas
 ce qu'aucun import n'atteint — **ce point de précision est important, ne pas le
@@ -145,13 +149,15 @@ Code mort / doublons recensés au fil de F2, F4, R2 :
 
 ### Plan R3 — ce qu'il reste à faire
 
-1. ~~`package.json` : dépendances mortes~~ → **FAIT (R3-1)**. Reste sur
-   `package.json` : les **doublons de rôle** encore vivants — `expo-av` (11
-   fichiers) *et* `react-native-video` (2 fichiers) coexistent ; `three` +
-   `expo-three` + `expo-gl` (~600 Ko de JS d'après la taille publiée, non
-   mesuré) ne servent qu'à **un seul composant**,
-   `src/components/casino/SlotReel3D.tsx` → candidat n°1 au chargement
-   paresseux. **17 paquets `@expo-google-fonts`** (lien avec R1-1).
+1. ~~dépendances mortes~~ **FAIT (R3-1)**. ~~three/lazy~~ **FAIT (R3-2)**.
+   Reste : **doublon de rôle vidéo** — `expo-av` (11 fichiers, dont
+   `Video`+`Audio`) *et* `react-native-video` (2 fichiers :
+   `VideoEditorScreen.tsx:18` pour son `FilterType` iOS, `videoFilters.ts:1`
+   pour le type seul). **Deux piles vidéo natives dans l'APK pour une seule
+   fonctionnalité d'un seul écran.** Vérifier aussi si `expo-av` est déprécié
+   en SDK 54 au profit d'`expo-video`/`expo-audio` (je ne peux pas le
+   confirmer hors ligne — ne pas l'affirmer sans source).
+   Puis : **17 paquets `@expo-google-fonts`** (lien avec R1-1).
 2. Imports empêchant le tree-shaking : `import * as X`, imports de barils
    (`lodash` entier vs `lodash/xxx`), `react-native-vector-icons` en entier.
 3. Ressources embarquées inutilement : croiser `assets/` (déjà mesuré en F1 —
