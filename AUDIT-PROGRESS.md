@@ -10,8 +10,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 | F1 | FLUIDITÉ — poids réel des images | **TERMINÉE** | `AUDIT-F1.md` |
 | F2 | FLUIDITÉ — rendus inutiles | **TERMINÉE** | `AUDIT-F2.md` |
 | F3 | FLUIDITÉ — listes | **TERMINÉE** | `AUDIT-F3.md` |
-| F4 | FLUIDITÉ — animations et thread UI | **EN COURS** | `AUDIT-F4.md` |
-| R1 | RAPIDITÉ — démarrage | À FAIRE | — |
+| F4 | FLUIDITÉ — animations et thread UI | **TERMINÉE** | `AUDIT-F4.md` |
+| R1 | RAPIDITÉ — démarrage | **EN COURS** | `AUDIT-R1.md` |
 | R2 | RAPIDITÉ — réseau | À FAIRE | — |
 | R3 | RAPIDITÉ — poids du bundle | À FAIRE | — |
 | S1 | SÉCURITÉ — secrets dans l'historique git | À FAIRE | — |
@@ -53,76 +53,80 @@ reste de l'audit.
 
 ---
 
-## Reprendre à — F4 (EN COURS)
+## F4 — TERMINÉE
 
-**Constats écrits et poussés :** F4-1 (`VerifiedBadge` : jusqu'à 5 boucles
-infinies par badge ; `animated` vaut `true` par défaut et le garde-fou
-`animated={false}` n'est posé que sur 4 usages sur 14 — `TweetCard:411`,
-`LiveViewerScreen:129`, `MessagesScreen:339` et 7 autres sont exposés).
+2 constats (`AUDIT-F4.md`) : F4-1 MAJEUR (`VerifiedBadge`), F4-2 trois points
+mineurs groupés. **C'est la section la plus saine des quatre** : les 5 défauts
+d'animation les plus graves cherchés par le brief sont ABSENTS (worklet sans
+`runOnJS`, `springify()`, `entering` sur ligne recyclée,
+`scrollEventThrottle={16}`, mélange Reanimated/`Animated` RN). Détail des
+balayages dans la synthèse de `AUDIT-F4.md` — ne pas les refaire.
 
-**BALAYAGES F4 DÉJÀ FAITS — résultats, ne pas les refaire :**
-- `useNativeDriver: false` → seulement **6 appels réels** (FuturisticCarousel
-  ×3, PremiumUpsellModal, PremiumCheckoutSheet, NewConversationScreen:100),
-  tous sur des écrans secondaires. 242 appels en `true`. Le fil a MIGRÉ son
-  indicateur d'onglet vers Reanimated (`TweetsScreen:322`). Hygiène très bonne.
-  Reste éventuellement : `NewConversationScreen:272` anime `left` (pourrait
-  être un `translateX` natif) — mineur.
-- `scrollEventThrottle` → 3 usages seulement : `{1}` (FeedGutterScreen, CORRECT
-  car `useAnimatedScrollHandler`), `{160}` (ConversationThread), `{100}`
-  (ExploreWall). **AUCUN `{16}`** — le défaut visé par le brief est ABSENT.
-- `onScroll` → 3 usages, dont 1 en `useAnimatedScrollHandler`. Les 2 autres
-  n'écrivent que dans des refs, aucun `setState`. SAIN.
-- **worklet sans `runOnJS`** → RIEN TROUVÉ. 12 fichiers à gestes vérifiés un
-  par un (Tappable, Toast, SwipeFollow, Calibration, StoryViewer, ImageViewer,
-  ImageViewerPaper, ExploreImmersive, FeedGutter, ConversationThread,
-  TweetsScreen, VideoEditor) : tous utilisent `runOnJS`. Les helpers partagés
-  de `src/utils/gesture.ts` (`clamp`, `rubberBand`, `projectDecay`) portent
-  tous `'worklet'`. SAIN.
-- `springify()` → **0 occurrence** (sauf un commentaire disant qu'on l'évite).
-  Défaut n°1 de CLAUDE.md ABSENT.
-- `entering=` → 16 usages, **aucun sur une ligne de liste** (bannières
-  d'erreur, états vides, onboarding). Défaut n°2 de CLAUDE.md ABSENT.
-  `ConversationThread:1341` est gardé par `justArrivedIdsRef`.
-- `BlurView` → 16 fichiers le RENDENT (3 l'importent sans l'utiliser :
-  VerifiedBadge, KosporBirthdayPopup, twitninfvideo). La tab bar
-  (`navigation/BottomTabNavigator:225`) ne floute QUE sur iOS (matériau natif),
-  Android a une `View` pleine — BON choix. `LockedText:99` documente pourquoi
-  il évite `experimentalBlurMethod` sur Android. SAIN.
+**CONCLUSION TRANSVERSE qui se dégage (à reprendre en fin d'audit)** : le dépôt
+ne manque pas de compétence — les diagnostics sont justes et les commentaires
+excellents. Il manque de **diffusion** : 4 fois sur 4, un correctif juste est
+resté là où le bug avait été observé (F2-3, F3-3, F4-1, F4-2a). Privilégier les
+remèdes structurels (inverser un défaut dangereux, extraire une constante
+partagée, activer ESLint) aux corrections ponctuelles.
 
-**PISTES F4 RESTANTES :**
-1. `withRepeat` (24) et `Animated.loop` : `ProfileDecoration` (6),
-   `PremiumBadges` (3), `PremiumUsernameGlow` (2), `PremiumProfileCard` (3),
-   `profile/ThemeMaterial` (4), `profile/AvatarMaterial` (4) — même question
-   que F4-1 : combien tournent en même temps dans une liste ?
-2. `CasinoScreen.tsx:212` — `CONFETTI.map()`.
-3. `shouldRasterizeIOS` / `renderToHardwareTextureAndroid` : seulement 2
-   usages dans tout le dépôt — vérifier s'il en manque sur des vues
-   transformées à chaque image.
-4. Ombres/opacités empilées sur ce qui défile (147 `shadowRadius`/`elevation`).
+## FLUIDITÉ (F1-F4) — TERMINÉE. Priorité n°1 du brief entièrement couverte.
 
-**À SIGNALER EN R3 (dead code, trouvé en F4)** :
-- `src/components/TopNavbar.tsx` n'est **importé NULLE PART** (3 `BlurView`,
-  dégradé multi-stops, couleurs hex en dur pré-Pulse). Mort.
-- **CINQ** composants de barre de navigation basse coexistent :
-  `navigation/BottomTabNavigator`, `components/BottomTabNavigator`,
-  `components/ModernBottomNavbar`, `components/UnifiedBottomNavbar`,
-  `components/EnhancedBottomTabNavigator`. Vérifier lesquels sont morts.
-- `VerifiedBadge.tsx:10-12` importe `BlurView`, `MaskedView` et `Svg` sans
-  jamais les rendre.
-- `SearchScreen` : `startAnimations = () => {}` — fonction vide (F2-6).
-- `clampWorklet` dupliqué à l'identique dans `ImageViewer.tsx:57` et
-  `ImageViewerPaper.tsx:73`, alors que `utils/gesture.ts:66` exporte `clamp`.
+---
 
-### Vérifié SAIN pendant F2/F3, ne pas relire
+## Reprendre à — R1 (EN COURS)
 
-`litPulse.ts` (horloge singleton, excellent) · `AnimatedNameFill`
-(`ProfileDecoration:619`, `useDrift` coupé si effet `none`) ·
-`ConversationThread:1341` (`entering` gardé par `justArrivedIdsRef`) ·
-`CreateTweetScreen:1086/1094` (ressorts quasi critiques) ·
-`twitninfvideo:543` (viewability en `ref`) · `ImageViewerPaper` (`runOnJS`).
+**Aucun constat encore rédigé.** `AUDIT-R1.md` reste à créer.
 
-Déjà écrits ailleurs, NE PAS redoubler en F4 : `SearchScreen` 5 `Animated.View`
-inertes (F2-6) · `CreateTweetScreen` `Animated.sequence` par caractère (F2-7).
+R1 = ce qui est chargé/exécuté avant le premier écran utile : polices,
+contextes, travail synchrone, appels réseau en cascade au montage.
+
+### Matériel déjà vu, utile pour R1 — ne pas re-chercher
+
+- `App.tsx` n'a PAS encore été lu. C'est le point de départ évident.
+- **9 fournisseurs de contexte** dans `src/contexts/` (tous mémoïsés, vérifié
+  en F2) — mais leur COÛT DE MONTAGE n'a pas été regardé : combien font un
+  appel réseau ou une lecture AsyncStorage au démarrage ?
+- `AuthContext.tsx` = état utilisateur courant, monté très tôt.
+- `babel.config.js` : `transform-remove-console` actif en production. À
+  confirmer en R3 que `NODE_ENV=production` est bien posé au build EAS.
+- `ScreenSkeleton` / `TweetSkeleton` existent et sont utilisés (bon signe pour
+  la perception de démarrage).
+
+### Matériel déjà vérifié, à ROUTER vers R2 (réseau) — ne pas le redécouvrir
+
+- `ConversationThreadScreen:725` — `loadMessages` récupère TOUTE la liste des
+  conversations juste pour trouver les participants d'UNE conversation, EN
+  SÉRIE avant de demander les messages. 2 allers-retours séquentiels avant le
+  premier message.
+- **4 listes sans pagination** : messages d'une conversation, liste des
+  conversations (`MessagesScreen:109`), commentaires (`CommentSheet:397`,
+  plafond brut de 100), stories (`storiesService.ts:99`).
+- `TweetDetailScreen:504` — réponses plafonnées à `limit: 20` avec
+  `offset: 0` EN DUR et aucun « charger plus » : impossible de lire la 21e
+  réponse. Manque fonctionnel.
+- `TweetDetailScreen:502` — `Promise.all` pour paralléliser tweet + réponses.
+  BON point, à citer en exemple.
+- `TradingScreen:72-78` — `setInterval` de 30 s qui n'est PAS suspendu quand
+  l'écran perd le focus.
+- Chiffre de volume réel : **~977 tweets vivants en prod**
+  (`ExploreWall.tsx:191`). Seule donnée de volume du dépôt.
+
+### Matériel déjà vérifié, à ROUTER vers R3 (bundle) — code mort recensé
+
+- `src/components/TopNavbar.tsx` — importé NULLE PART.
+- `src/components/PremiumUsernameGlow.tsx` — importé NULLE PART (2 boucles).
+- `src/components/PremiumBadges.tsx` — importé NULLE PART (3 boucles).
+- **CINQ** barres de navigation basse coexistent : `navigation/BottomTabNavigator`
+  (la vraie), `components/BottomTabNavigator`, `components/ModernBottomNavbar`,
+  `components/UnifiedBottomNavbar`, `components/EnhancedBottomTabNavigator`.
+- `VerifiedBadge.tsx:10-12` importe `BlurView`, `MaskedView`, `Svg` sans jamais
+  les rendre.
+- `clampWorklet` dupliqué à l'identique (`ImageViewer.tsx:57`,
+  `ImageViewerPaper.tsx:73`) alors que `utils/gesture.ts:66` exporte `clamp`.
+- `SearchScreen` : `startAnimations = () => {}` vide, et 5 `Animated.View`
+  inertes (F2-6).
+- **Aucune configuration ESLint** dans le dépôt (ni `.eslintrc*`, ni
+  `eslint.config.*`, ni script `lint`).
 
 ---
 
