@@ -110,7 +110,11 @@ pas le rouvrir.
 
 ## Reprendre à — R3 (EN COURS)
 
-**Constats écrits et poussés :** R3-2 (83 imports d'écrans **statiques** dans
+**Constats écrits et poussés :** R3-3 (20 fichiers de police embarqués, dont
+17 pour une option cosmétique + 2 paquets `@expo-google-fonts` — `inter` et
+`plus-jakarta-sans` — jamais importés, à ajouter à R3-1. **SAIN et notable** :
+`fonts.ts` importe chaque graisse individuellement, défaut de tree-shaking
+déjà évité sciemment), R3-2 (83 imports d'écrans **statiques** dans
 `MainNavigator`, **aucun `React.lazy`/`Suspense` dans tout le dépôt** ;
 `three`+`expo-three`+`expo-gl` évalués au démarrage pour le seul
 `SlotReel3D.tsx` — piège du correctif : l'export nommé `cellForSymbol` doit
@@ -157,9 +161,11 @@ Code mort / doublons recensés au fil de F2, F4, R2 :
    fonctionnalité d'un seul écran.** Vérifier aussi si `expo-av` est déprécié
    en SDK 54 au profit d'`expo-video`/`expo-audio` (je ne peux pas le
    confirmer hors ligne — ne pas l'affirmer sans source).
-   Puis : **17 paquets `@expo-google-fonts`** (lien avec R1-1).
-2. Imports empêchant le tree-shaking : `import * as X`, imports de barils
-   (`lodash` entier vs `lodash/xxx`), `react-native-vector-icons` en entier.
+   ~~polices~~ **FAIT (R3-3)**.
+2. Imports empêchant le tree-shaking. **Partiellement fait** : `theme/fonts.ts`
+   est vérifié et SAIN (R3-3). Reste à balayer : `import * as X` ailleurs,
+   `@expo/vector-icons` (importé en `{ Ionicons }` — vérifier si Metro tire
+   quand même tout le paquet), imports de barils `src/components/ui/index.ts`.
 3. Ressources embarquées inutilement : croiser `assets/` (déjà mesuré en F1 —
    **relire `AUDIT-F1.md` plutôt que remesurer**) avec ce qui est réellement
    `require`/importé.

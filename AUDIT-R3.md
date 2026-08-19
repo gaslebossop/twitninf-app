@@ -189,3 +189,89 @@ constantes de tête (`:25-47`) sont de l'arithmétique triviale et un tableau de
 16 entrées. Aucune scène, aucun `Renderer`, aucune texture n'est construit hors
 composant. Le coût dénoncé ici est celui de `three` lui-même, pas celui du
 fichier du dépôt — qui est, lui, correctement écrit.
+
+---
+
+## R3-3 — 20 fichiers de police embarqués, dont 17 pour une option cosmétique — et 2 paquets de police jamais importés — MODÉRÉ
+
+`src/theme/fonts.ts:16-124`, `package.json`
+
+### Ce qui est vérifié
+
+`fontAssets` (`fonts.ts:102-124`) déclare **20 fichiers de police**, tous
+chargés en une fois au démarrage :
+
+| Rôle | Nombre | Détail |
+|---|---|---|
+| Police de marque (tout le texte de l'app) | **3** | `TwitninfSans-Book/Medium/Bold`, mesurés : **115 788 + 121 020 + 118 304 o = 347 Ko** |
+| Option « police du nom affiché » (fonctionnalité Pro) | **15** | Anton, PlayfairDisplay, Lora, SpaceMono-Bold, Oswald, Montserrat, Poppins, Raleway, Nunito, Rubik, Merriweather, Archivo, Orbitron, Caveat, Cinzel |
+| Test sous drapeau `fil.refonte2b` | **2** | `Archivo-SemiBold`, `SpaceMono-Regular` (`:38-39`) |
+
+Et dans `package.json`, **17 paquets `@expo-google-fonts`** sont déclarés alors
+que `fonts.ts` n'en importe que **15**. Vérifié par balayage de tout `src/` et
+d'`App.tsx` : `@expo-google-fonts/inter` et
+`@expo-google-fonts/plus-jakarta-sans` ne sont importés **nulle part** —
+aucun `Inter_*`, aucun `PlusJakarta*` dans le dépôt. Ce sont deux dépendances
+mortes de plus, à ajouter à la liste de **R3-1**.
+
+### L'effet concret
+
+Les 3 fichiers de marque sont incompressibles : c'est la police de toute
+l'interface, elle doit être là. Les **17 autres** — 15 pour l'option, 2 pour un
+test sous drapeau — sont embarqués dans l'APK et l'IPA de **tous** les
+utilisateurs, y compris de l'écrasante majorité qui ne changera jamais la
+police de son nom de profil. Je n'ai pas pu mesurer leur poids
+(`node_modules/` absent) ; à titre de repère, les 3 fichiers mesurés font en
+moyenne **116 Ko** pièce, et des familles comme Merriweather ou Playfair
+Display sont plutôt au-dessus de cette moyenne. Un ordre de grandeur de
+**1 à 2 Mo** pour les 17 est plausible — mais je le donne comme une
+**estimation à vérifier par une mesure**, pas comme un chiffre.
+
+Ces 20 polices sont aussi le premier maillon de la chaîne de démarrage décrite
+en **R1-1** : ce constat-ci parle du poids embarqué, R1-1 parlait du temps
+d'attente. Le correctif est le même et sert les deux.
+
+### Le correctif
+
+**Immédiat, sans discussion** : retirer `@expo-google-fonts/inter` et
+`@expo-google-fonts/plus-jakarta-sans` de `package.json`.
+
+**Le vrai gain** : ne charger les 15 polices de l'option qu'à la demande.
+Elles ne servent qu'à deux endroits — l'écran qui laisse choisir sa police, et
+l'affichage d'un nom qui en utilise une. `Font.loadAsync` accepte d'être
+appelé après le démarrage :
+
+```ts
+// au démarrage : uniquement la marque + le mono des montants
+useFonts({ 'TwitninfSans-Book': …, 'TwitninfSans-Medium': …,
+           'TwitninfSans-Bold': …, 'SpaceMono-Bold': SpaceMono_700Bold });
+
+// à l'ouverture du sélecteur, ou au premier nom qui la demande :
+await Font.loadAsync({ [displayNameFonts.geometric]: Montserrat_700Bold });
+```
+
+**Attention** : cela ne réduit pas l'APK — les fichiers restent embarqués tant
+qu'ils sont `require`és quelque part. Cela réduit le **démarrage** (R1-1).
+Pour réduire aussi l'APK, il faudrait servir ces 15 polices depuis l'API et les
+mettre en cache sur l'appareil, ce qui est un chantier d'une autre ampleur et
+introduit un cas « nom sans sa police » à gérer. Je ne le recommande pas tant
+que le gain n'est pas mesuré.
+
+**Les 2 polices du test `fil.refonte2b`** : `fonts.ts:35-37` documente déjà
+qu'elles sont « à retirer avec le test ». Rien à ajouter — sinon que le test
+mérite une date de fin, sans quoi ces deux fichiers resteront.
+
+### Ce que j'ai vérifié et trouvé SAIN — et c'est notable
+
+`src/theme/fonts.ts` importe **chaque graisse individuellement**
+(`@expo-google-fonts/anton/400Regular`, jamais `@expo-google-fonts/anton`), avec
+le commentaire exact qui l'explique en tête de fichier (`:14-15`) :
+« Importing a package root makes Metro resolve every weight exported by that
+package, including weights the app never uses. »
+
+C'est **précisément** le défaut de tree-shaking que cette section devait
+chercher, et il est **déjà évité, sciemment, avec la raison écrite à côté**.
+Sans cette discipline, 15 familles × toutes leurs graisses auraient été
+résolues au lieu de 15 fichiers. C'est le meilleur exemple du dépôt de ce que
+la conclusion de F4 appelait « le dépôt ne manque pas de compétence » — ici, la
+compétence a même été documentée pour la suite.
