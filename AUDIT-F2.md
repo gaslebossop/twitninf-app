@@ -493,3 +493,116 @@ de `MessageBubble` filtrer, puisque seule la bulle concernée verra son
 - `handleListScroll` et `handleContentSizeChange` sont en `useCallback` à
   dépendances vides, avec `isAtBottomRef` en `ref` plutôt qu'en état : aucun
   rendu déclenché par le défilement. Bon réflexe.
+
+---
+
+## F2-5 — Conversation : l'accusé de lecture « Vu » n'apparaît jamais en temps réel — MAJEUR
+
+`src/screens/ConversationThreadScreen.tsx:1499-1507` (dépendances) contre
+`:1468-1496` (rangée « Vu »)
+
+Constat jumeau du précédent, et **de sens inverse** : F2-4 décrit des
+dépendances trop larges qui font re-rendre ce qui n'a pas bougé ; celui-ci
+décrit des dépendances trop étroites qui empêchent de re-rendre ce qui a bougé.
+Les deux vivent dans le même `useCallback`.
+
+La rangée « Vu » lit six valeurs du composant :
+
+```tsx
+{isLastOutgoing && hasBeenSeen && (          // :1468   hasBeenSeen        ✗ absent des deps
+  <View style={styles.seenRow}>
+    {!isGroup ? (
+      avatarUri ? (                          // :1471   avatarUri          ✗ absent
+        <Image source={{ uri: avatarUri }} … />
+      ) : (
+        … String(conversationUsername …)      // :1477   conversationUsername ✗ absent
+      )
+    ) : (
+      seenReaders.slice(0, 3).map(([uid]) => // :1481   seenReaders        ✗ absent
+        … participantMap[String(uid)] …       //         participantMap     ✓ présent
+      )
+    )}
+    <Text style={styles.seenLabel}>{seenLabel}</Text>  // :1493 seenLabel   ✗ absent
+  </View>
+)}
+```
+
+Cinq des six ne figurent pas dans le tableau de dépendances (`:1499-1507`).
+`renderItem` les capture donc dans une **closure périmée**.
+
+### Pourquoi ça se voit — la chaîne complète
+
+Ce serait sans conséquence si ces valeurs ne changeaient qu'en même temps que
+`messages`. Ce n'est pas le cas, et le chemin est traçable de bout en bout :
+
+1. L'interlocuteur ouvre la conversation et lit. Le serveur émet `read:update`.
+2. Le gestionnaire de socket (`:820-828`) appelle **uniquement**
+   `setReadByUser(...)`. `messages` n'est pas touché — vérifié, c'est le seul
+   `setState` de ce gestionnaire.
+3. `seenReaders` se recalcule correctement : son `useMemo` a bien `readByUser`
+   dans ses dépendances (`:1210`). `hasBeenSeen` passe à `true`, `seenLabel`
+   devient « Vu 14:32 ».
+4. Le composant se re-rend, donc ces trois valeurs sont à jour **dans le corps
+   du composant**.
+5. Mais `renderItem` n'est **pas** recréé : aucune de ses dépendances n'a
+   changé. La `FlatList` reçoit la même fonction, le `CellRenderer`
+   (`PureComponent`) ne re-rend rien, et les bulles continuent d'exécuter
+   l'ancienne closure, dans laquelle `hasBeenSeen` vaut encore `false`.
+6. **Rien ne s'affiche.**
+
+Il n'existe aucun `extraData` sur cette `FlatList` (`:1601-1613`) — vérifié —
+qui rattraperait le coup.
+
+### Effet concret pour l'utilisateur
+
+L'utilisateur envoie un message. L'autre le lit dans la seconde. **Aucun « Vu »
+n'apparaît.** L'indicateur ne se débloque qu'au prochain changement de
+`messages` : un nouveau message envoyé ou reçu — c'est-à-dire, le plus souvent,
+la réponse elle-même. Autrement dit, « Vu » s'affiche systématiquement *trop
+tard pour servir à quelque chose* : au moment précis où la réponse rend
+l'information sans intérêt.
+
+C'est la fonctionnalité qui répond à la question « est-ce qu'il a vu mon
+message ? », et c'est exactement dans ce cas — message lu, pas encore répondu —
+qu'elle reste muette. Depuis l'extérieur, ça ressemble à un accusé de lecture
+qui « ne marche pas », et non à un bug de rendu.
+
+Symptôme dérivé cohérent avec ce diagnostic : quitter puis rouvrir la
+conversation affiche le « Vu » immédiatement (le montage recrée tout).
+
+### Correctif
+
+Il disparaît **gratuitement** si l'on applique le correctif de F2-4 : une fois
+la rangée « Vu » sortie dans le composant `MessageBubble` mémoïsé, elle reçoit
+`hasBeenSeen`, `seenLabel` et `seenReaders` en props ordinaires, et le
+comparateur de `memo` les voit changer. C'est l'argument le plus fort pour
+traiter les deux ensemble plutôt que de rafistoler les dépendances.
+
+**Correctif minimal** si l'on ne veut pas refondre tout de suite — ajouter les
+cinq valeurs manquantes aux dépendances :
+
+```tsx
+}, [
+  messages, participantMap, myId, isGroup, expandedMessageId,
+  openImageViewer, lastOutgoingMessageId, sendReaction,
+  hasBeenSeen, seenLabel, seenReaders, avatarUri, conversationUsername,  // ← ajout
+]);
+```
+
+Correct, mais à comprendre pour ce que c'est : **on échange un bug d'affichage
+contre un re-rendu de toutes les bulles à chaque accusé de lecture reçu**,
+c'est-à-dire qu'on aggrave F2-4. Acceptable comme rustine de court terme
+uniquement, et à condition de faire suivre par l'extraction du composant.
+
+Un `eslint-plugin-react-hooks` avec `exhaustive-deps` en **erreur** aurait
+signalé les cinq omissions à l'écriture. Vaut la peine d'être vérifié à
+l'échelle du dépôt — c'est le type de faute qui se reproduit.
+
+### Réserve honnête
+
+Je n'ai pas exécuté l'application : la chaîne est établie par lecture du code
+(le gestionnaire `read:update` ne touche que `readByUser` ; `readByUser` n'est
+pas une dépendance transitive de `renderItem` ; pas d'`extraData`). Chacun de
+ces trois maillons est vérifié individuellement dans le fichier, mais le
+symptôme lui-même n'a pas été reproduit sur appareil. À confirmer d'un coup
+d'œil avant de refondre — c'est trente secondes à deux téléphones.

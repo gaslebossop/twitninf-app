@@ -26,7 +26,8 @@ l'ordre de priorité imposé (fluidité > rapidité > sécurité).
 F2-2 (`LiveViewerScreen`, chat du live), F2-3 (comparateurs `TweetRow` /
 `TweetRowGutter` : `tweet.author` jamais comparé), F2-4
 (`ConversationThreadScreen` : `renderItem` dépend de `messages`, toutes les
-bulles se re-rendent à chaque message).
+bulles se re-rendent à chaque message), F2-5 (`ConversationThreadScreen` :
+dépendances trop étroites, l'accusé « Vu » n'apparaît pas en temps réel).
 
 **Déjà couvert, rien à signaler** (ne pas relire) :
 - Les 9 fournisseurs de `src/contexts/` : toutes les valeurs de contexte sont
@@ -38,15 +39,12 @@ bulles se re-rendent à chaque message).
 - `TweetRowGutter` : comparateur complet sur ses 11 props, exclusion de
   `stats.views` documentée et justifiée. Sain.
 
-**Constat VÉRIFIÉ, restant à RÉDIGER (prochain) :**
-1. `ConversationThreadScreen.tsx:1499-1507` — le tableau de dépendances de
-   `renderItem` OMET `seenReaders`, `hasBeenSeen`, `seenLabel`, `avatarUri` et
-   `conversationUsername`, tous lus dans la rangée « Vu » (`:1468-1496`).
-   `seenReaders` dépend de `readByUser` (`:1210`), que l'événement socket
-   `read:update` (`:820-828`) met à jour SEUL, sans toucher `messages`.
-   Conséquence vérifiée : l'accusé de lecture « Vu » n'apparaît pas tant qu'un
-   message n'est pas envoyé ou reçu. Revers exact de F2-4 (dépendances trop
-   larges) : ici elles sont trop étroites.
+**Aucun constat en attente de rédaction.** Tout ce qui était vérifié est écrit.
+
+**Piste ouverte par F2-5, à creuser** : vérifier si
+`eslint-plugin-react-hooks` / `exhaustive-deps` est actif dans ce dépôt et à
+quel niveau. Les omissions de F2-5 auraient dû être signalées à l'écriture ;
+si la règle est désactivée, le même défaut est probablement ailleurs.
 
 **Note de chemin** : `TweetRowGutter.tsx` est dans
 `src/components/feed/paper2b/`, pas `src/components/feed/`.
