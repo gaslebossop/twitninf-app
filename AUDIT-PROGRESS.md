@@ -43,6 +43,14 @@ Fil rouge dégagé, à reprendre en R2 : **quatre listes chargent sans aucune
 pagination** — messages d'une conversation, liste des conversations,
 commentaires (plafond brut de 100), stories. Le sujet est côté API.
 
+**Addendum ajouté après coup** : `ExploreWall.tsx:190` est une 3e liste non
+virtualisée, mais c'est une décision ASSUMÉE et documentée dans le fichier —
+pas un constat. Elle livre au passage le SEUL chiffre de volume réel du dépôt :
+**~977 tweets vivants en production**. Ce chiffre pondère les constats qui
+dépendent du volume de données (StoriesTray, UserConnections) mais PAS ceux qui
+dépendent d'une constante de code. Règle de priorisation à garder pour tout le
+reste de l'audit.
+
 ---
 
 ## Reprendre à — F4 (EN COURS)

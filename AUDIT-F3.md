@@ -663,3 +663,62 @@ déborde de F3 vers R2.
 - `getItemLayout` n'a pas été recensé systématiquement sur les listes à hauteur
   fixe. Il est signalé là où il manque et serait exact (F3-1, F3-4/`StoriesTray`) ;
   ailleurs, les hauteurs sont variables et il n'est pas applicable.
+
+---
+
+## Addendum F3 — `ExploreWall`, la troisième liste non virtualisée : décision assumée, pas un oubli
+
+`src/components/feed/explore/ExploreWall.tsx:190-253`
+
+Découvert après la synthèse, en instruisant F4. Mon balayage de F3-4 l'avait
+manqué : le fichier rend ses colonnes via `leftColumn.map()` /
+`rightColumn.map()` (`:225`, `:230`), une forme que mon tri par nombre de
+`.map()` n'a pas fait remonter.
+
+C'est bien une liste de données non virtualisée, avec pagination infinie
+(`checkEndReached`, `:158`). **Mais ce n'est pas un défaut**, et le fichier le
+dit lui-même :
+
+> « Décision assumée, pas un oubli : ce mur n'est pas virtualisé (pas de
+> `FlatList`/`VirtualizedList`) — tout s'accumule dans ce `ScrollView` et rien
+> ne se démonte. La prod tourne avec environ **977 tweets vivants au total**,
+> donc la liste accumulée reste bornée en pratique. Virtualiser un mur en
+> maçonnerie avec bande héroïque et cartes de rupture pleine largeur est un
+> chantier à part entière que le plan a délibérément évité. Limite acceptée à
+> revisiter si le corpus grossit, pas à corriger maintenant. »
+
+Rien à ajouter : la limite est identifiée, chiffrée, justifiée, et la condition
+de réexamen est écrite. **Je ne le compte pas comme un constat.**
+
+### Ce chiffre borne une partie de mes constats — et il faut le dire
+
+« Environ 977 tweets vivants en production » est la seule donnée de volume
+réel rencontrée dans tout ce dépôt, et elle relativise honnêtement plusieurs
+raisonnements de F3 :
+
+- **`SearchScreen` (F3-4)** : sur un corpus de ~1 000 tweets, une recherche
+  atteint souvent le plafond de 20 par type. Le constat tient, mais son ordre
+  de grandeur — 40 lignes — est bien un maximum, pas une moyenne.
+- **`StoriesTray` (F3-4)** : à cette échelle de corpus, la base d'utilisateurs
+  est modeste, donc le nombre de groupes de stories l'est probablement aussi.
+  Ma réserve (« si l'API en renvoie une dizaine, le constat est
+  surdimensionné ») est très vraisemblablement le cas réel. **À traiter en
+  dernier des quatre MAJEURS de F3.**
+- **`UserConnectionsScreen` (F3-3)** : une liste d'abonnés paginée à l'infini
+  reste courte sur une base modeste. Confirme le classement en MODÉRÉ.
+
+En revanche, ce chiffre **ne change rien** aux deux constats critiques :
+
+- **F3-1** monte ~10 lecteurs vidéo dès l'ouverture *quel que soit* le nombre
+  de vidéos disponibles — c'est `initialNumToRender` qui le décide, pas le
+  corpus. Il faut au moins 10 vidéos pour l'atteindre, ce qu'un corpus de 977
+  tweets fournit largement.
+- **F3-2** porte sur le nombre de **messages d'une conversation**, sans rapport
+  avec le nombre de tweets. Une seule conversation nourrie suffit.
+
+C'est un rappel utile pour la suite de l'audit : ce dépôt sert une base
+d'utilisateurs encore modeste. Les constats qui dépendent d'un **volume de
+données** (listes longues) sont donc à pondérer ; ceux qui dépendent d'une
+**constante de code** (`initialNumToRender`, une animation par frappe, un
+comparateur incomplet) frappent dès le premier utilisateur et ne se
+« résorberont » jamais d'eux-mêmes. **La priorité doit aller aux seconds.**
