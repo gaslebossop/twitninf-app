@@ -14,11 +14,18 @@ import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { colors, fonts, isDarkTheme, radius } from '../../../theme';
 import { AppRefreshControl, PullRefreshLogo, Tappable } from '../../ui';
 import { usePullRefreshLogo } from '../../../hooks/usePullRefreshLogo';
+import { useOptimizedViewTracking } from '../../../hooks/useOptimizedViewTracking';
 import { describeCards, NEW_SINCE_FLOOR } from './cardFormat';
 import { buildColumns } from './wallLayout';
+import { getVisibleCardIds, type CardVisibilityRect } from './wallVisibility';
 import ExploreCard, { type CardRect } from './ExploreCard';
 import FeedItemEntrance from '../FeedItemEntrance';
 import type { Tweet } from '../../../types/api';
+
+/** Même seuil que le fil (`itemVisiblePercentThreshold: 50`). */
+const VISIBILITY_THRESHOLD = 0.5;
+/** Le scroll appelle `handleScrollFrame` à chaque frame (`scrollEventThrottle={1}`) : on ne recalcule pas la visibilité plus souvent que ça. */
+const VISIBILITY_CHECK_THROTTLE_MS = 250;
 
 const GRID_PADDING = 12;
 const GRID_GAP = 10;
@@ -58,6 +65,23 @@ interface ExploreWallProps {
   ListHeaderComponent?: React.ReactElement | null;
 }
 
+/**
+ * Arrivée des cartes après un rafraîchissement, réglée pour le MUR — pas les
+ * réglages du fil, pensés pour de grandes lignes :
+ *
+ *  - **plafond 10, pas 6** : l'écran montre ~5 rangées de 2 cartes. Avec 6
+ *    (3 rangées), la 4ᵉ apparaissait d'un coup pendant que les trois
+ *    précédentes glissaient — une couture en plein champ de vision, au moment
+ *    exact où l'œil regarde la nouvelle fournée arriver ;
+ *  - **course 16 px et décalé 32 ms** : une carte du mur fait environ un tiers
+ *    de la hauteur d'une ligne de fil. Les 22 px/44 ms du fil y luttaient
+ *    contre leurs voisines au lieu de composer avec elles ;
+ *  - **durée 340 ms** : la vague couvre les 10 cartes en ~320 ms de décalage
+ *    cumulé — la fournée entière est posée avant que l'œil n'ait le temps de
+ *    comparer deux rangées.
+ */
+const WALL_ENTRANCE = { maxAnimatedIndex: 10, staggerMs: 32, travel: 16, durationMs: 340 };
+
 function ExploreWall({
   tweets, refreshing, loadingMore, hasMore, lastVisitAt,
   onRefresh, onEndReached, onOpenTweet, onLikeTweet, onLongPressTweet, onDrawMore,
@@ -87,6 +111,70 @@ function ExploreWall({
   const layoutMeasuredRef = useRef(false);
   const contentMeasuredRef = useRef(false);
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
+
+  /**
+   * Position MESURÉE (`onLayout`) de chaque carte, pas estimée à partir des
+   * hauteurs de `cardFormat`/`wallLayout` — ces hauteurs sont documentées
+   * comme des approximations pour l'équilibrage des colonnes, pas pour la
+   * précision pixel. `top`/`height` viennent de l'`onLayout` de la `cell` :
+   * dans une colonne en flux normal (pas de positionnement absolu), `y` est
+   * déjà l'offset cumulé depuis le haut de la colonne.
+   */
+  const cardPositionsRef = useRef<Map<string, { top: number; height: number }>>(new Map());
+  /** Offset du conteneur `columns` dans le contenu défilable (après l'en-tête et la bannière « nouveaux »). */
+  const columnsOffsetRef = useRef(0);
+  /** Une impression par tweet par session — même pattern que `entranceSeen`. */
+  const impressionsSeenRef = useRef<Set<string>>(new Set());
+  const lastVisibilityCheckRef = useRef(0);
+
+  const { trackView, trackClick } = useOptimizedViewTracking({
+    // Rien ici ne fait déjà un filtre de dwell-time en amont (pas de
+    // `FlatList`) : une carte visible au tout premier rendu part
+    // immédiatement dans le batch, sans code séparé pour « premier rendu »
+    // vs « scroll ».
+    minViewTime: 0,
+    debounceMs: 600,
+    batchSize: 20,
+    source: 'explore',
+  });
+
+  const evaluateVisibility = useCallback(() => {
+    if (cardPositionsRef.current.size === 0) return;
+    const rects: CardVisibilityRect[] = [];
+    cardPositionsRef.current.forEach(({ top, height }, id) => {
+      rects.push({ id, top: columnsOffsetRef.current + top, height });
+    });
+    const visibleIds = getVisibleCardIds(
+      rects,
+      scrollOffsetRef.current,
+      layoutHeightRef.current,
+      VISIBILITY_THRESHOLD,
+    );
+    for (const id of visibleIds) {
+      if (impressionsSeenRef.current.has(id)) continue;
+      impressionsSeenRef.current.add(id);
+      trackView(id, true);
+    }
+  }, [trackView]);
+
+  const handleCellLayout = useCallback((id: string) => (e: LayoutChangeEvent) => {
+    cardPositionsRef.current.set(id, {
+      top: e.nativeEvent.layout.y,
+      height: e.nativeEvent.layout.height,
+    });
+    evaluateVisibility();
+  }, [evaluateVisibility]);
+
+  const handleColumnsLayout = useCallback((e: LayoutChangeEvent) => {
+    columnsOffsetRef.current = e.nativeEvent.layout.y;
+    evaluateVisibility();
+  }, [evaluateVisibility]);
+
+  // À chaque page de plus : les nouvelles cartes du bas peuvent déjà être
+  // dans le viewport sur un petit écran.
+  useEffect(() => {
+    evaluateVisibility();
+  }, [tweets.length, evaluateVisibility]);
 
   // `useWindowDimensions` et non `Dimensions.get()` : la largeur doit suivre
   // une rotation ou un écran partagé, sinon toutes les hauteurs estimées sont
@@ -162,11 +250,20 @@ function ExploreWall({
       contentMeasuredRef.current = true;
       layoutMeasuredRef.current = true;
       checkEndReached();
+
+      // `scrollEventThrottle={1}` fait tourner ce handler à (quasi) chaque
+      // frame : comparer N cartes à ce rythme est du gâchis, throttlé à part
+      // de `checkEndReached` (une simple comparaison, elle, reste inchangée).
+      const now = Date.now();
+      if (now - lastVisibilityCheckRef.current >= VISIBILITY_CHECK_THROTTLE_MS) {
+        lastVisibilityCheckRef.current = now;
+        evaluateVisibility();
+      }
     },
-    [checkEndReached],
+    [checkEndReached, evaluateVisibility],
   );
 
-  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing, handleScrollFrame);
+  const { pull, scrollHandler, logoKey, listRef } = usePullRefreshLogo(onRefresh, refreshing, handleScrollFrame);
 
   // Un `ScrollView` nu ne rappelle `onScroll` que si l'utilisateur défile
   // réellement — impossible si le contenu tient dans l'écran. `onLayout`
@@ -217,6 +314,20 @@ function ExploreWall({
     return map;
   }, [metas]);
 
+  /**
+   * Clic = vue garantie + clic distinct. `trackView` est idempotent (déjà
+   * comptée si la détection passive avait qualifié la carte) ; ici il
+   * garantit une vue même sur une ouverture quasi immédiate après montage,
+   * avant que la détection n'ait eu le temps de la qualifier. `trackClick`
+   * est dédié — jamais déclenché par le scroll, uniquement par ce chemin.
+   */
+  const handleOpenTweet = useCallback((tweet: Tweet, from: CardRect | null) => {
+    const id = String(tweet.id);
+    trackView(id, true);
+    trackClick(id);
+    onOpenTweet(tweet, from);
+  }, [trackView, trackClick, onOpenTweet]);
+
   const renderCard = (meta: (typeof metas)[number]) => (
     <FeedItemEntrance
       key={meta.tweet.id}
@@ -224,12 +335,13 @@ function ExploreWall({
       index={orderIndex.get(String(meta.tweet.id)) ?? 0}
       generation={entranceGeneration}
       seen={entranceSeen}
+      tuning={WALL_ENTRANCE}
     >
       <ExploreCard
         meta={meta}
         cardWidth={cardWidth}
         isNew={isNew(meta.tweet)}
-        onPress={onOpenTweet}
+        onPress={handleOpenTweet}
         onLike={onLikeTweet}
         onLongPress={onLongPressTweet}
       />
@@ -251,6 +363,9 @@ function ExploreWall({
           plus bas, gardé natif sur cette plateforme). */}
       {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
       <Animated.ScrollView
+        // Même mécanique que les autres surfaces : la traction est lue par
+        // cette ref sur le thread UI (voir `usePullRefreshLogo`).
+        ref={listRef}
         style={styles.scroll}
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 24 }]}
         showsVerticalScrollIndicator={false}
@@ -277,15 +392,23 @@ function ExploreWall({
           succession de blocs. Le découpage en blocs obligeait la colonne la
           plus courte à attendre l'autre à chaque frontière, ce qui laissait
           une bande blanche en travers de la grille tous les huit tweets. */}
-      <View style={styles.columns}>
+      <View style={styles.columns} onLayout={handleColumnsLayout}>
         <View style={styles.column}>
           {leftColumn.map((meta) => (
-            <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
+            <View
+              key={meta.tweet.id}
+              style={styles.cell}
+              onLayout={handleCellLayout(String(meta.tweet.id))}
+            >{renderCard(meta)}</View>
           ))}
         </View>
         <View style={styles.column}>
           {rightColumn.map((meta) => (
-            <View key={meta.tweet.id} style={styles.cell}>{renderCard(meta)}</View>
+            <View
+              key={meta.tweet.id}
+              style={styles.cell}
+              onLayout={handleCellLayout(String(meta.tweet.id))}
+            >{renderCard(meta)}</View>
           ))}
         </View>
       </View>

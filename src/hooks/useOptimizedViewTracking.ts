@@ -6,6 +6,8 @@ interface ViewTrackingOptions {
   minViewTime?: number;
   batchSize?: number;
   enableBackgroundSync?: boolean;
+  /** Marque chaque vue envoyée par ce tracker comme venant d'Explorer. */
+  source?: 'explore';
 }
 
 interface ViewEvent {
@@ -22,14 +24,15 @@ class OptimizedViewTracker {
   private batchTimer: NodeJS.Timeout | null = null;
   private isOnline = true;
   
-  private options: Required<ViewTrackingOptions>;
+  private options: Required<Omit<ViewTrackingOptions, 'source'>> & Pick<ViewTrackingOptions, 'source'>;
 
   constructor(options: ViewTrackingOptions = {}) {
     this.options = {
       debounceMs: options.debounceMs ?? 1000,
       minViewTime: options.minViewTime ?? 2000,
       batchSize: options.batchSize ?? 10,
-      enableBackgroundSync: options.enableBackgroundSync ?? true
+      enableBackgroundSync: options.enableBackgroundSync ?? true,
+      source: options.source
     };
   }
 
@@ -67,6 +70,21 @@ class OptimizedViewTracker {
     }, this.options.minViewTime);
 
     this.viewTimers.set(tweetId, timer);
+  }
+
+  /**
+   * Un clic est un événement isolé, pas un flux à regrouper : envoi
+   * immédiat, sans passer par `pendingViews`/le debounce du batch.
+   */
+  async trackClick(tweetId: string) {
+    try {
+      const response = await apiService.incrementTweetClicks([tweetId]);
+      if (!response?.success) {
+        throw new Error(response?.message || 'Le serveur a refusé le clic');
+      }
+    } catch (error) {
+      console.error('❌ Error tracking click:', error);
+    }
   }
 
   /**
@@ -134,9 +152,9 @@ class OptimizedViewTracker {
    */
   private async sendViewBatch(views: ViewEvent[]) {
     const tweetIds = views.map(v => v.tweetId);
-    
+
     try {
-      const response = await apiService.incrementTweetViews(tweetIds);
+      const response = await apiService.incrementTweetViews(tweetIds, this.options.source);
       if (!response?.success) {
         throw new Error(response?.message || 'Le serveur a refusé le batch de vues');
       }
@@ -217,6 +235,12 @@ export function useOptimizedViewTracking(options: ViewTrackingOptions = {}) {
     }
   }, []);
 
+  // Track click — jamais déclenché par le scroll, uniquement par une
+  // ouverture explicite (voir `ExploreWall`).
+  const trackClick = useCallback((tweetId: string) => {
+    void trackerRef.current?.trackClick(tweetId);
+  }, []);
+
   // Reset tracker
   const resetTracker = useCallback(() => {
     if (trackerRef.current) {
@@ -226,6 +250,7 @@ export function useOptimizedViewTracking(options: ViewTrackingOptions = {}) {
 
   return {
     trackView,
+    trackClick,
     resetTracker
   };
 }

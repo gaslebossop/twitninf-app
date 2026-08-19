@@ -1369,14 +1369,16 @@ class ApiService {
   }
 
   /**
-   * Incrémenter les vues de plusieurs tweets en une seule requête (optimisé)
+   * Incrémenter les vues de plusieurs tweets en une seule requête (optimisé).
+   * `source: 'explore'` fait aussi incrémenter `explore_view_count` côté
+   * serveur — omis, le comportement est strictement celui du fil.
    */
-  async incrementTweetViews(tweetIds: string[]): Promise<ApiResponse<{ updated: number }>> {
+  async incrementTweetViews(tweetIds: string[], source?: 'explore'): Promise<ApiResponse<{ updated: number }>> {
     try {
       console.log(`👁️ Incrémentation des vues pour ${tweetIds.length} tweets...`);
       const response = await this.makeRequest('/api/tweets/views/increment', {
         method: 'POST',
-        body: { tweetIds },
+        body: source ? { tweetIds, source } : { tweetIds },
         requiresAuth: true,
       });
       console.log('✅ Vues incrémentées');
@@ -1384,6 +1386,30 @@ class ApiService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur lors de l\'incrémentation des vues';
       console.error('❌ Erreur d\'incrémentation des vues:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
+  /**
+   * Incrémenter les clics Explorer de plusieurs tweets — envoi immédiat, pas
+   * de debounce/batch : un clic est un événement isolé. Sert uniquement la
+   * paie ; ne touche ni `view_count` ni le classement temps réel.
+   */
+  async incrementTweetClicks(tweetIds: string[]): Promise<ApiResponse<{ updated: number }>> {
+    try {
+      const response = await this.makeRequest('/api/tweets/clicks/increment', {
+        method: 'POST',
+        body: { tweetIds },
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de l\'incrémentation des clics';
+      console.error('❌ Erreur d\'incrémentation des clics:', errorMessage);
       return {
         success: false,
         message: errorMessage,

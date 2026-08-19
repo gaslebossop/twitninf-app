@@ -238,6 +238,11 @@ class BehaviorTracker {
     this.trackAction(bookmarked ? 'tweet_bookmark' : 'tweet_unbookmark', tweetId, 'tweet', contextData);
   }
 
+  /** Clic sur une carte du mur Explorer — analytics uniquement, pas la source de vérité de la paie. */
+  trackTweetClick(tweetId: string | number, contextData: any = {}) {
+    this.trackAction('tweet_click', tweetId, 'tweet', contextData);
+  }
+
   /**
    * 👤 Profile Tracking
    */

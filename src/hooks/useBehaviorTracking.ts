@@ -61,7 +61,7 @@ export function useBehaviorTracking(options: UseBehaviorTrackingOptions = {}) {
   // 🐦 Fonctions de tracking pour les tweets
   const trackTweetInteraction = useCallback((
     tweetId: string | number,
-    interactionType: 'view' | 'like' | 'unlike' | 'retweet' | 'unretweet' | 'reply' | 'share' | 'bookmark',
+    interactionType: 'view' | 'like' | 'unlike' | 'retweet' | 'unretweet' | 'reply' | 'share' | 'bookmark' | 'click',
     contextData: any = {}
   ) => {
     if (!user) return;
@@ -99,6 +99,9 @@ export function useBehaviorTracking(options: UseBehaviorTrackingOptions = {}) {
         break;
       case 'bookmark':
         behaviorTracker.trackTweetBookmark(tweetId, true, enrichedContext);
+        break;
+      case 'click':
+        behaviorTracker.trackTweetClick(tweetId, enrichedContext);
         break;
     }
   }, [user, screenName]);
