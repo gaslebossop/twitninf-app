@@ -1,41 +1,46 @@
 /**
- * Monétisation créateur — pot hebdomadaire en NF.
+ * Monétisation — tableau de bord du créateur.
  *
- * Écran refait entièrement le 2026-08-20. Ce qu'il remplace et pourquoi :
+ * Refonte du 2026-08-20 (seconde passe). Ce que la version précédente ratait,
+ * bien qu'elle affichât les bons chiffres :
  *
- * - L'ancienne page affichait un montant RECALCULÉ à chaque ouverture, puis en
- *   versait un autre au moment du clic. Ici, le chiffre du bandeau vient d'une
- *   part FIGÉE à la clôture du lundi : ce qui est affiché est ce qui est versé,
- *   et encaisser ne déclenche aucun calcul.
- * - Elle listait `tweet.views` / `tweet.likes` là où l'API renvoyait ces
- *   champs sous `stats` — chaque ligne affichait donc `undefined`. Toutes les
- *   valeurs de cet écran sont désormais typées (`creatorPoolService.ts`) et
- *   passées par `num()`, qui ne laisse jamais sortir autre chose qu'un nombre.
- * - Elle parlait de « TWC ». Le symbole réellement en base est **NF** ; il est
- *   maintenant lu depuis la réponse plutôt qu'écrit en dur.
+ * - Sept cartes identiques empilées, chacune précédée d'un intertitre : la
+ *   somme à encaisser et « le pot de la semaine » avaient le même poids
+ *   visuel. Rien ne disait où regarder en premier.
+ * - Aucune donnée graphique. Douze semaines d'historique en colonne de
+ *   nombres, qu'il fallait comparer de tête pour savoir si ça montait.
+ * - Six paragraphes de pédagogie affichés en permanence entre les chiffres.
+ *   On les lit une fois ; ensuite ils font défiler l'écran pour rien. Ils sont
+ *   désormais tous derrière un `Disclosure`.
+ * - Les montants en police de texte, donc non alignés d'une ligne à l'autre.
+ *   Le repo a `fonts.mono` exactement pour ça.
  *
- * Le principe de lecture de l'écran : on descend du RÉSULTAT vers sa CAUSE.
- * Combien j'ai → combien la semaine en cours rapporte → pourquoi (les quatre
- * signaux, avec mon rang) → ce qui peut l'augmenter → d'où vient l'argent.
- * Quelqu'un qui s'arrête à la première carte a déjà l'essentiel ; quelqu'un
- * qui descend comprend comment le faire monter.
+ * Cette page réunit maintenant les trois écrans qui étaient séparés : les
+ * gains, l'entrée dans le programme (critères et candidature, remontés tout en
+ * haut quand ils bloquent le paiement) et un accès à l'état du compte.
+ * `MonetizationProgramScreen` et `AccountStatusScreen` restent pour le détail.
+ *
+ * L'ordre de lecture va du RÉSULTAT vers sa CAUSE : combien j'ai → ce qui
+ * m'en empêche, le cas échéant → ce que la semaine rapporte → pourquoi → ce
+ * qui l'a porté → d'où vient l'argent → l'historique.
  */
 
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
   ActivityIndicator,
-  StatusBar,
   LayoutAnimation,
   Platform,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
   UIManager,
+  View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+
 import { useAuth } from '../contexts/AuthContext';
 import CreatorPoolService, {
   CreatorPoolDashboard,
@@ -44,172 +49,61 @@ import CreatorPoolService, {
 import MonetizationProgramService, {
   MonetizationProgramEligibility,
 } from '../services/monetizationProgramService';
-import { colors, fonts, withAlpha, radius, statusBarStyle } from '../theme';
+import { userStatsService } from '../services/userStatsService';
+import { splitEarnings, type ContentEarning } from '../services/contentEarningsSplit';
+import { colors, fonts, radius, statusBarStyle, withAlpha } from '../theme';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import {
   AppHeader,
-  ScreenBackground,
-  GlassCard,
-  GlassButton,
-  SectionLabel,
   EmptyState,
+  ErrorState,
+  GlassButton,
+  GlassCard,
+  GlassIconButton,
+  ScreenBackground,
+  SectionLabel,
   Skeleton,
+  Tappable,
   celebrateReward,
 } from '../components/ui';
 import { toast } from '../components/ui/Toast';
+import {
+  ContentRow,
+  Disclosure,
+  DisclosureLine,
+  EarningsBars,
+  MetricTile,
+  PayoutRow,
+  ProgramOverview,
+  QualityRing,
+  SignalBar,
+  compact,
+  deltaRatio,
+  money,
+  num,
+  percent,
+  periodLabel,
+  shortDate,
+  signedPercent,
+  timeUntil,
+  type EarningsBar,
+} from '../components/monetization';
 
 if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExperimental) {
   (UIManager as any).setLayoutAnimationEnabledExperimental(true);
 }
 
-/** Bref, sans rebond — un dépliage répond à un tap, pas à un montage. */
+/** Bref, sans rebond — un dépliage répond à un appui, pas à un montage. */
 const expand = () =>
   LayoutAnimation.configureNext(
-    LayoutAnimation.create(180, LayoutAnimation.Types.easeOut, LayoutAnimation.Properties.opacity)
+    LayoutAnimation.create(180, LayoutAnimation.Types.easeOut, LayoutAnimation.Properties.opacity),
   );
 
-/* ------------------------------------------------------------------ */
-/* Formatage                                                           */
-/* ------------------------------------------------------------------ */
+/** Le sentinelle « toutes les semaines » de l'état d'encaissement. */
+const CLAIM_ALL = '__all__';
 
-/**
- * Garde-fou unique de l'écran.
- *
- * Toute valeur numérique venue du réseau passe par ici. C'est la réponse
- * directe au défaut de l'ancienne page : un champ renommé côté serveur y
- * devenait `undefined`, puis s'affichait tel quel au milieu d'une phrase. Ici
- * il devient `0`, et un zéro se voit tout de suite comme une anomalie.
- */
-function num(value: unknown, fallback = 0): number {
-  const n = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function money(value: unknown, decimals = 2): string {
-  return num(value).toLocaleString('fr-FR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-function compact(value: unknown): string {
-  const n = Math.round(num(value));
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.0', '')} M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace('.0', '')} k`;
-  return n.toLocaleString('fr-FR');
-}
-
-function percent(value: unknown): string {
-  return `${Math.round(num(value) * 100)} %`;
-}
-
-/** « 3 j 04 h » — assez précis pour situer la clôture, sans faux compte à rebours. */
-function timeUntil(iso: string | undefined): string {
-  if (!iso) return '—';
-  const ms = new Date(iso).getTime() - Date.now();
-  if (!Number.isFinite(ms) || ms <= 0) return 'imminente';
-  const hours = Math.floor(ms / 3_600_000);
-  const days = Math.floor(hours / 24);
-  if (days >= 1) return `${days} j ${String(hours % 24).padStart(2, '0')} h`;
-  const minutes = Math.floor((ms % 3_600_000) / 60_000);
-  return `${hours} h ${String(minutes).padStart(2, '0')} min`;
-}
-
-function periodLabel(startIso?: string, endIso?: string): string {
-  if (!startIso) return '';
-  const start = new Date(startIso);
-  const end = endIso ? new Date(new Date(endIso).getTime() - 1) : null;
-  const fmt = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-  return end ? `${fmt(start)} — ${fmt(end)}` : fmt(start);
-}
-
-/* ------------------------------------------------------------------ */
-/* Briques d'affichage                                                 */
-/* ------------------------------------------------------------------ */
-
-function Stat({
-  icon,
-  label,
-  value,
-  hint,
-  tone = 'default',
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: 'default' | 'accent';
-}) {
-  return (
-    <View style={styles.stat}>
-      <Ionicons
-        name={icon}
-        size={16}
-        color={tone === 'accent' ? colors.accent : colors.textSecondary}
-      />
-      <Text style={[styles.statValue, tone === 'accent' && styles.statValueAccent]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-      {!!hint && <Text style={styles.statHint}>{hint}</Text>}
-    </View>
-  );
-}
-
-/**
- * Une composante de qualité, avec le rang dans le vivier.
- *
- * La barre montre le RANG (0 = dernier, 100 % = premier), pas la valeur brute :
- * « 42 ms de lecture moyenne » ne dit rien à personne, « mieux que 78 % des
- * créateurs cette semaine » dit tout. La valeur brute reste en légende pour qui
- * veut vérifier.
- */
-function QualityBar({
-  label,
-  percentile,
-  weight,
-  raw,
-  negative = false,
-}: {
-  label: string;
-  percentile: number;
-  weight: number;
-  raw: string;
-  negative?: boolean;
-}) {
-  const pct = Math.max(0, Math.min(1, num(percentile)));
-  const tint = negative ? colors.warning : colors.accent;
-
-  return (
-    <View style={styles.quality}>
-      <View style={styles.qualityHead}>
-        <Text style={styles.qualityLabel}>{label}</Text>
-        <Text style={styles.qualityWeight}>
-          {negative ? '−' : ''}
-          {Math.round(num(weight) * 100)} %
-        </Text>
-      </View>
-      <View style={styles.qualityTrack}>
-        <View
-          style={[
-            styles.qualityFill,
-            { width: `${Math.max(2, pct * 100)}%`, backgroundColor: tint },
-          ]}
-        />
-      </View>
-      <View style={styles.qualityFoot}>
-        <Text style={styles.qualityRank}>
-          {negative
-            ? `Plus signalé que ${Math.round(pct * 100)} % du vivier`
-            : `Devant ${Math.round(pct * 100)} % du vivier`}
-        </Text>
-        <Text style={styles.qualityRaw}>{raw}</Text>
-      </View>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Écran                                                               */
-/* ------------------------------------------------------------------ */
+/** Combien de publications avant le repli. Au-delà, la liste devient un fil. */
+const CONTENT_PREVIEW = 4;
 
 interface Props {
   navigation: any;
@@ -219,22 +113,32 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
   const { user, isAuthenticated } = useAuth();
   const { width } = useResponsiveLayout();
   const isWide = width >= 700;
-  // La barre d'onglets est posée en absolu au-dessus du contenu. Le contexte
-  // vaut `undefined` quand l'écran est poussé sur la pile plutôt qu'affiché
-  // comme onglet — d'où le repli, plutôt que `useBottomTabBarHeight` qui lève.
+  // Posée en absolu au-dessus du contenu. Le contexte vaut `undefined` quand
+  // l'écran est poussé sur la pile plutôt qu'affiché comme onglet — d'où le
+  // repli, contrairement à `useBottomTabBarHeight` qui lève.
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
 
   const [data, setData] = useState<CreatorPoolDashboard | null>(null);
   const [program, setProgram] = useState<MonetizationProgramEligibility | null>(null);
+  const [content, setContent] = useState<ContentEarning[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
+  const [claimingKey, setClaimingKey] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [selectedBar, setSelectedBar] = useState<string | null>(null);
   const [openPeriod, setOpenPeriod] = useState<string | null>(null);
+  const [showAllContent, setShowAllContent] = useState(false);
+
+  /* ---------------------------------------------------------------- */
+  /* Chargement                                                        */
+  /* ---------------------------------------------------------------- */
 
   const load = useCallback(async () => {
-    if (!isAuthenticated || !user) return;
+    if (!isAuthenticated || !user) {
+      setLoading(false);
+      return;
+    }
     try {
       setError(null);
       // Les deux ensemble : la page doit pouvoir dire « tu n'es pas encore
@@ -245,6 +149,18 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
       ]);
       setData(dashboard);
       setProgram(eligibility);
+
+      // Volontairement après, et sans bloquer : l'attribution par publication
+      // est un complément estimé. Son indisponibilité ne doit pas priver
+      // l'écran de son sujet principal, qui est le montant.
+      const projected = num(dashboard?.currentPeriod?.projection?.amount);
+      try {
+        const raw: any = await userStatsService.getTopPerformingTweets(user.id, 25, '7d');
+        const list = Array.isArray(raw) ? raw : raw?.topTweets || [];
+        setContent(splitEarnings(list, projected).rows);
+      } catch {
+        setContent(null);
+      }
     } catch (e: any) {
       setError(e?.message || 'Impossible de charger tes gains');
     } finally {
@@ -262,49 +178,209 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
     load();
   }, [load]);
 
+  /* ---------------------------------------------------------------- */
+  /* Données dérivées                                                  */
+  /* ---------------------------------------------------------------- */
+
   const symbol = data?.currency?.symbol || 'NF';
   const claimableTotal = num(data?.claimable?.total);
   const claimableCount = num(data?.claimable?.count);
   const projection: PeriodProjection | null = data?.currentPeriod?.projection || null;
 
-  const handleClaim = useCallback(async () => {
-    if (claiming || claimableTotal <= 0) return;
-    setClaiming(true);
-    try {
-      const result = await CreatorPoolService.claim();
-      const total = num(result?.total);
-      // La célébration porte le montant RÉELLEMENT versé par le serveur, pas
-      // celui qu'affichait l'écran : si les deux divergeaient un jour, c'est
-      // le versement qui fait foi.
-      celebrateReward({
-        amount: total,
-        unit: symbol,
-        label: claimableCount > 1 ? `${claimableCount} semaines encaissées` : 'Part créateur',
+  /**
+   * L'historique arrive du plus récent au plus ancien (`ORDER BY … DESC`).
+   *
+   * Mémoïsé pour lui-même : écrit `data?.history || []`, le repli produit un
+   * NOUVEAU tableau à chaque rendu, ce qui invalide les cinq `useMemo` qui en
+   * dépendent — le tri des barres et les totaux se recalculeraient à chaque
+   * frappe d'état, y compris pendant le défilement.
+   */
+  const history = useMemo(() => data?.history || [], [data?.history]);
+
+  const lifetimeTotal = useMemo(
+    () => history.reduce((acc, h) => acc + num(h.amount), 0),
+    [history],
+  );
+
+  const historyMax = useMemo(
+    () => history.reduce((acc, h) => Math.max(acc, num(h.amount)), 0),
+    [history],
+  );
+
+  /** Sept semaines closes, dans l'ordre du temps, plus la semaine en cours. */
+  const bars = useMemo<EarningsBar[]>(() => {
+    const chronological = [...history].sort(
+      (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime(),
+    );
+    const rows: EarningsBar[] = chronological.slice(-7).map((h) => ({
+      key: h.periodKey,
+      short: shortDate(h.periodStart),
+      amount: num(h.amount),
+      kind: h.status === 'claimed' ? 'claimed' : 'claimable',
+    }));
+
+    if (projection && data?.currentPeriod?.key) {
+      rows.push({
+        key: data.currentPeriod.key,
+        short: shortDate(data.currentPeriod.start),
+        amount: num(projection.amount),
+        kind: 'projected',
       });
+    }
+    return rows;
+  }, [history, projection, data?.currentPeriod?.key, data?.currentPeriod?.start]);
+
+  /** Le détail de la barre tapée, sinon rien : la légende reste une ligne. */
+  const selected = useMemo(() => {
+    if (!selectedBar) return null;
+    const bar = bars.find((b) => b.key === selectedBar);
+    if (!bar) return null;
+    const entry = history.find((h) => h.periodKey === selectedBar);
+    return {
+      label: entry
+        ? periodLabel(entry.periodStart, entry.periodEnd)
+        : periodLabel(data?.currentPeriod?.start, data?.currentPeriod?.end),
+      amount: bar.amount,
+      kind: bar.kind,
+    };
+  }, [selectedBar, bars, history, data?.currentPeriod?.start, data?.currentPeriod?.end]);
+
+  /**
+   * Variation de la projection par rapport à la dernière semaine close.
+   *
+   * Comparer à la semaine EN COURS n'aurait aucun sens (elle n'est pas finie),
+   * et comparer au cumul à encaisser non plus (il peut couvrir trois semaines).
+   */
+  const weekDelta = useMemo(
+    () => (projection ? deltaRatio(projection.amount, history[0]?.amount) : null),
+    [projection, history],
+  );
+
+  /**
+   * L'appartenance au programme, et non l'éligibilité au paiement.
+   *
+   * Un créateur hors programme ne voit QUE les conditions d'entrée : lui
+   * montrer un tableau de bord de revenus qu'il ne peut pas encaisser donne un
+   * écran qu'on ne sait pas lire.
+   *
+   * `program === null` signifie que l'appel de statut a échoué, PAS que la
+   * personne est dehors : dans ce cas on garde le tableau de bord. Une panne
+   * réseau ne doit jamais rétrograder un créateur approuvé en prospect et lui
+   * cacher l'argent qui l'attend.
+   */
+  const inProgram = !program || program.programStatus === 'approved';
+
+  const eligible = !!projection?.eligible;
+  const lockedReason = projection?.lockedReason || null;
+  const pool = data?.currentPeriod?.pool;
+  const weights = data?.weights;
+  const earnedKeys = useMemo(
+    () => new Set((projection?.bonuses?.earned || []).map((b) => b.key)),
+    [projection],
+  );
+  const bonusMultiplier = num(projection?.bonuses?.multiplier, 1);
+
+  const visibleContent = useMemo(() => {
+    const rows = (content || []).filter((row) => row.views > 0);
+    return showAllContent ? rows : rows.slice(0, CONTENT_PREVIEW);
+  }, [content, showAllContent]);
+
+  const hiddenContentCount = Math.max(0, (content || []).filter((r) => r.views > 0).length - visibleContent.length);
+
+  /* ---------------------------------------------------------------- */
+  /* Actions                                                           */
+  /* ---------------------------------------------------------------- */
+
+  const runClaim = useCallback(
+    async (periodKey: string | undefined, busyKey: string, label: string) => {
+      if (claimingKey) return;
+      setClaimingKey(busyKey);
+      try {
+        const result = await CreatorPoolService.claim(periodKey);
+        // La célébration porte le montant RÉELLEMENT versé par le serveur, pas
+        // celui qu'affichait l'écran : si les deux divergeaient un jour, c'est
+        // le versement qui fait foi.
+        celebrateReward({ amount: num(result?.total), unit: symbol, label });
+        await load();
+      } catch (e: any) {
+        toast.error('Encaissement impossible', { description: e?.message });
+      } finally {
+        setClaimingKey(null);
+      }
+    },
+    [claimingKey, symbol, load],
+  );
+
+  const claimAll = useCallback(() => {
+    if (claimableTotal <= 0) return;
+    runClaim(
+      undefined,
+      CLAIM_ALL,
+      claimableCount > 1 ? `${claimableCount} semaines encaissées` : 'Part créateur',
+    );
+  }, [claimableTotal, claimableCount, runClaim]);
+
+  const claimOne = useCallback(
+    (periodKey: string, label: string) => runClaim(periodKey, periodKey, label),
+    [runClaim],
+  );
+
+  const apply = useCallback(async () => {
+    if (applying || !program?.canApply) return;
+    setApplying(true);
+    try {
+      await MonetizationProgramService.apply();
+      toast.success('Candidature envoyée', { description: 'On te tient au courant après revue.' });
       await load();
     } catch (e: any) {
-      toast.error('Encaissement impossible', { description: e?.message });
+      toast.error('Envoi impossible', { description: e?.message });
     } finally {
-      setClaiming(false);
+      setApplying(false);
     }
-  }, [claiming, claimableTotal, claimableCount, symbol, load]);
+  }, [applying, program, load]);
 
-  const contentWidth = useMemo(
+  const togglePeriod = useCallback((key: string) => {
+    expand();
+    setOpenPeriod((current) => (current === key ? null : key));
+  }, []);
+
+  const contentStyle = useMemo(
     () => [
+      styles.content,
       isWide ? { maxWidth: 680, alignSelf: 'center' as const, width: '100%' as const } : null,
       { paddingBottom: 32 + tabBarHeight },
     ],
-    [isWide, tabBarHeight]
+    [isWide, tabBarHeight],
   );
 
-  /* --- États bloquants ------------------------------------------------ */
+  /* ---------------------------------------------------------------- */
+  /* États bloquants                                                   */
+  /* ---------------------------------------------------------------- */
+
+  const header = (
+    <AppHeader
+      navigation={navigation}
+      title="Monétisation"
+      subtitle={
+        data?.currentPeriod?.start
+          ? `Semaine du ${periodLabel(data.currentPeriod.start, data.currentPeriod.end)}`
+          : `Ta part du pot hebdomadaire en ${symbol}`
+      }
+      right={
+        <GlassIconButton
+          icon="shield-checkmark-outline"
+          onPress={() => navigation?.navigate?.('AccountStatus')}
+        />
+      }
+    />
+  );
 
   if (!isAuthenticated || !user) {
     return (
       <ScreenBackground>
         <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
-        <AppHeader navigation={navigation} title="Monétisation" />
-        <View style={[styles.content, contentWidth]}>
+        {header}
+        <View style={contentStyle}>
           <EmptyState
             icon="lock-closed-outline"
             title="Connexion requise"
@@ -319,43 +395,78 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
     return (
       <ScreenBackground>
         <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
-        <AppHeader navigation={navigation} title="Monétisation" />
-        <View style={[styles.content, contentWidth]}>
-          <Skeleton height={148} style={styles.skeleton} />
-          <Skeleton height={104} style={styles.skeleton} />
-          <Skeleton height={220} style={styles.skeleton} />
+        {header}
+        <View style={contentStyle}>
+          <Skeleton height={230} style={styles.skeleton} />
+          <Skeleton height={150} style={styles.skeleton} />
+          <Skeleton height={190} style={styles.skeleton} />
         </View>
       </ScreenBackground>
     );
   }
 
-  const eligible = !!projection?.eligible;
-  const lockedReason = projection?.lockedReason || null;
-  const pool = data?.currentPeriod?.pool;
-  const weights = data?.weights;
-  const earnedBonuses = projection?.bonuses?.earned || [];
-  const earnedKeys = new Set(earnedBonuses.map((b) => b.key));
+  if (error && !data) {
+    return (
+      <ScreenBackground>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+        {header}
+        <View style={contentStyle}>
+          <ErrorState detail={error} onRetry={load} retrying={loading} />
+        </View>
+      </ScreenBackground>
+    );
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Hors programme — la page ne montre que l'entrée                   */
+  /* ---------------------------------------------------------------- */
+
+  if (!inProgram && program) {
+    return (
+      <ScreenBackground>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+        {header}
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={contentStyle}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
+            />
+          }
+        >
+          <ProgramOverview
+            program={program}
+            symbol={symbol}
+            applying={applying}
+            onApply={apply}
+            pool={pool ? { pool: pool.pool, shareOfInflows: pool.shareOfInflows } : null}
+            cohortSize={data?.currentPeriod?.cohortSize}
+            weights={weights}
+          />
+        </ScrollView>
+      </ScreenBackground>
+    );
+  }
+
+  const claimingAll = claimingKey === CLAIM_ALL;
+
+  /* ---------------------------------------------------------------- */
+  /* Écran                                                             */
+  /* ---------------------------------------------------------------- */
 
   return (
     <ScreenBackground>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
-      <AppHeader
-        navigation={navigation}
-        title="Monétisation"
-        subtitle={`Ta part du pot hebdomadaire en ${symbol}`}
-        right={
-          <GlassButton
-            label="Mon compte"
-            variant="ghost"
-            icon="shield-checkmark-outline"
-            onPress={() => navigation?.navigate?.('AccountStatus')}
-          />
-        }
-      />
+      {header}
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, contentWidth]}
+        contentContainerStyle={contentStyle}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -368,407 +479,456 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
       >
         {!!error && (
           <View style={styles.errorBanner}>
-            <Ionicons name="warning-outline" size={18} color={colors.warning} />
+            <Ionicons name="warning-outline" size={16} color={colors.warning} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
-        {/* --- 1. Ce qu'il y a à encaisser --------------------------------- */}
+        {/* --- 1. Ce qu'il y a à encaisser ----------------------------- */}
         <GlassCard style={styles.hero} highlight contentStyle={styles.heroContent}>
           <View style={styles.heroTop}>
-            <View style={styles.heroBadge}>
-              <Ionicons name="wallet-outline" size={18} color={colors.accent} />
-            </View>
-            <Text style={styles.heroKicker}>
-              {claimableTotal > 0 ? 'Prêt à encaisser' : 'Rien à encaisser'}
+            <Text style={styles.kicker}>
+              {claimableTotal > 0 ? 'À encaisser' : 'Rien à encaisser'}
             </Text>
+            {claimableCount > 1 && (
+              <View style={styles.pill}>
+                <Text style={styles.pillText}>{claimableCount} semaines</Text>
+              </View>
+            )}
           </View>
 
-          <View style={styles.heroAmountRow}>
-            <Text style={styles.heroAmount}>{money(claimableTotal)}</Text>
-            <Text style={styles.heroUnit}>{symbol}</Text>
+          <View style={styles.amountRow}>
+            <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              {money(claimableTotal)}
+            </Text>
+            <Text style={styles.amountUnit}>{symbol}</Text>
           </View>
 
-          <Text style={styles.heroHint}>
-            {claimableTotal > 0
-              ? claimableCount > 1
-                ? `${claimableCount} semaines closes t'attendent. Le montant est figé : il ne bougera plus.`
-                : 'Montant figé à la clôture de lundi. Il ne bougera plus.'
-              : `La semaine en cours se clôture dans ${timeUntil(data?.currentPeriod?.end)}. Ta part sera figée à ce moment-là.`}
-          </Text>
+          {bars.length > 0 && (
+            <>
+              <EarningsBars
+                bars={bars}
+                symbol={symbol}
+                selectedKey={selectedBar}
+                onSelect={(key) => setSelectedBar((current) => (current === key ? null : key))}
+                style={styles.bars}
+              />
 
-          {claimableTotal > 0 ? (
+              {/* Une seule ligne, qui change de contenu : soit la légende des
+                  barres, soit le détail de celle qu'on vient de taper. La
+                  hauteur ne bouge pas, donc rien ne saute sous le doigt. */}
+              <View style={styles.legend}>
+                {selected ? (
+                  <>
+                    <Text style={styles.legendStrong} numberOfLines={1}>
+                      {selected.label}
+                    </Text>
+                    <Text style={styles.legendValue}>
+                      {selected.kind === 'projected' ? '≈ ' : ''}
+                      {money(selected.amount)} {symbol}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.legendMuted} numberOfLines={1}>
+                      {claimableTotal > 0
+                        ? 'Montant figé à la clôture. Il ne bougera plus.'
+                        : `Clôture dans ${timeUntil(data?.currentPeriod?.end)}`}
+                    </Text>
+                    <Text style={styles.legendHint}>appuie sur une barre</Text>
+                  </>
+                )}
+              </View>
+            </>
+          )}
+
+          {claimableTotal > 0 && (
             <GlassButton
-              label={claiming ? 'Encaissement…' : `Encaisser ${money(claimableTotal)} ${symbol}`}
+              label={claimingAll ? 'Encaissement…' : `Encaisser ${money(claimableTotal)} ${symbol}`}
               icon="arrow-down-circle-outline"
-              onPress={handleClaim}
-              disabled={claiming}
-              loading={claiming}
+              onPress={claimAll}
+              disabled={!!claimingKey}
+              loading={claimingAll}
               fullWidth
               style={styles.heroButton}
             />
-          ) : null}
-
-          {!!data?.claimable?.periods?.length && claimableCount > 1 && (
-            <View style={styles.heroPeriods}>
-              {data.claimable.periods.map((p) => (
-                <View key={p.periodKey} style={styles.heroPeriodRow}>
-                  <Text style={styles.heroPeriodLabel}>
-                    {periodLabel(p.periodStart, p.periodEnd)}
-                  </Text>
-                  <Text style={styles.heroPeriodValue}>
-                    {money(p.amount)} {symbol}
-                  </Text>
-                </View>
-              ))}
-            </View>
           )}
+
+          <View style={styles.heroFoot}>
+            <View style={styles.heroFootItem}>
+              <Text style={styles.heroFootLabel}>Total gagné</Text>
+              <Text style={styles.heroFootValue}>
+                {money(lifetimeTotal)} <Text style={styles.heroFootUnit}>{symbol}</Text>
+              </Text>
+            </View>
+
+            <Tappable
+              style={styles.heroFootLink}
+              onPress={() => navigation?.navigate?.('WalletDetail')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.heroFootLinkText}>Portefeuille</Text>
+              <Ionicons name="chevron-forward" size={13} color={colors.accent} />
+            </Tappable>
+          </View>
         </GlassCard>
 
-        {/* --- 2. La semaine en cours -------------------------------------- */}
+        {/* --- 2. Le paiement est suspendu ----------------------------- */}
+        {/* Seul un créateur DÉJÀ dans le programme arrive ici : les prospects
+            sont partis sur `ProgramOverview` plus haut. Le blocage vient donc
+            d'autre chose que des seuils d'entrée — un abonnement expiré, le
+            plus souvent — et afficher les critères d'admission n'aiderait pas. */}
+        {!eligible && (
+          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+            <View style={styles.lockHead}>
+              <View style={styles.lockIcon}>
+                <Ionicons name="lock-closed" size={14} color={colors.warning} />
+              </View>
+              <View style={styles.lockHeadText}>
+                <Text style={styles.lockTitle}>Paiement suspendu</Text>
+                <Text style={styles.lockReason}>
+                  {lockedReason
+                    || 'Il te faut un abonnement Plus ou Pro actif pour encaisser tes parts.'}
+                </Text>
+                <Text style={styles.note}>
+                  Tes chiffres continuent d’être comptés : ce que tu vois ci-dessous est
+                  exactement ce que tu toucheras une fois débloqué.
+                </Text>
+              </View>
+            </View>
+          </GlassCard>
+        )}
+
+        {/* --- 3. La semaine en cours ---------------------------------- */}
         <SectionLabel>Cette semaine</SectionLabel>
-        <GlassCard contentStyle={styles.cardBody}>
-          <View style={styles.periodHead}>
-            <Text style={styles.periodRange}>
+        <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+          <View style={styles.cardHead}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
               {periodLabel(data?.currentPeriod?.start, data?.currentPeriod?.end)}
             </Text>
             <View style={styles.countdown}>
-              <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
+              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
               <Text style={styles.countdownText}>{timeUntil(data?.currentPeriod?.end)}</Text>
             </View>
           </View>
 
           {projection ? (
             <>
-              <View style={styles.statRow}>
-                <Stat
-                  icon="trending-up-outline"
+              <View style={styles.grid}>
+                <MetricTile
                   label="Part projetée"
-                  value={`${money(projection.amount)} ${symbol}`}
+                  value={money(projection.amount)}
+                  unit={symbol}
+                  hint={weekDelta !== null ? `${signedPercent(weekDelta)} vs sem. passée` : 'première semaine'}
                   tone="accent"
                 />
-                <Stat
-                  icon="speedometer-outline"
+                <MetricTile
                   label="RPM"
                   value={money(projection.rpm)}
-                  hint={`${symbol} / 1000 vues`}
+                  unit={symbol}
+                  hint="pour 1000 vues"
                 />
               </View>
-              <View style={styles.statRow}>
-                <Stat
-                  icon="eye-outline"
+              <View style={styles.grid}>
+                <MetricTile
+                  label="Part du pot"
+                  value={percent(projection.share, 2)}
+                  hint={`sur ${compact(data?.currentPeriod?.cohortSize)} créateurs`}
+                />
+                <MetricTile
                   label="Vues qualifiées"
                   value={compact(projection.qualifiedViews)}
                   hint={`${compact(projection.rawViews)} brutes`}
                 />
-                <Stat
-                  icon="people-outline"
+              </View>
+              <View style={styles.grid}>
+                <MetricTile
                   label="Spectateurs"
                   value={compact(projection.distinctViewers)}
                   hint="comptes distincts"
                 />
+                <MetricTile
+                  label="Récompenses"
+                  value={`× ${money(bonusMultiplier, 2)}`}
+                  hint={
+                    projection.bonuses?.capped
+                      ? 'plafonné'
+                      : `${earnedKeys.size} obtenue${earnedKeys.size > 1 ? 's' : ''}`
+                  }
+                  tone={bonusMultiplier > 1 ? 'success' : 'default'}
+                />
               </View>
-
-              <Text style={styles.note}>
-                Une projection, pas une promesse : elle bouge tant que la semaine n’est pas
-                close, parce que ta part dépend aussi de ce que font les {compact(data?.currentPeriod?.cohortSize)} autres
-                créateurs de la semaine.
-              </Text>
 
               {!projection.hasRealDwell && (
                 <View style={styles.warnRow}>
-                  <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+                  <Ionicons name="information-circle-outline" size={15} color={colors.warning} />
                   <Text style={styles.warnText}>
-                    Aucun temps de lecture réel n’a été mesuré sur ton contenu cette semaine.
-                    L’attention est estimée, donc décotée de {percent(1 - num(projection.attentionFactor, 1))}.
+                    Aucun temps de lecture réel n’a été mesuré cette semaine. L’attention est
+                    estimée, donc décotée de {percent(1 - num(projection.attentionFactor, 1))}.
                   </Text>
                 </View>
               )}
+
+              <Disclosure label="Pourquoi ce chiffre bouge">
+                <DisclosureLine>
+                  C’est une projection, pas une promesse. Ta part dépend de ce que font les{' '}
+                  {compact(data?.currentPeriod?.cohortSize)} autres créateurs de la semaine : elle
+                  baisse s’ils publient mieux, monte s’ils lèvent le pied, même si tes propres
+                  chiffres ne changent pas.
+                </DisclosureLine>
+                <DisclosureLine>
+                  Elle se fige à la clôture du lundi. À partir de là, le montant affiché est
+                  exactement celui qui sera versé — encaisser ne déclenche aucun recalcul.
+                </DisclosureLine>
+              </Disclosure>
             </>
           ) : (
-            <Text style={styles.note}>
-              Personne n’a encore vu tes publications cette semaine. Dès la première vue, ta
-              projection apparaît ici.
-            </Text>
+            <EmptyState
+              compact
+              icon="eye-off-outline"
+              title="Aucune vue cette semaine"
+              message="Dès la première vue sur une publication, ta projection apparaît ici."
+            />
           )}
         </GlassCard>
 
-        {/* --- 3. Pourquoi ce montant -------------------------------------- */}
+        {/* --- 4. Pourquoi ce montant ---------------------------------- */}
         {projection && weights && (
           <>
             <SectionLabel>Ta qualité</SectionLabel>
-            <GlassCard contentStyle={styles.cardBody}>
-              <View style={styles.qualityHeader}>
-                <Text style={styles.qualityScore}>{percent(projection.quality)}</Text>
-                <Text style={styles.qualityScoreLabel}>
-                  score de qualité{'\n'}
-                  <Text style={styles.qualityScoreHint}>
-                    multiplie tes vues pour donner ton poids dans le partage
+            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+              <View style={styles.qualityHead}>
+                <QualityRing value={projection.quality} label="score" />
+                <View style={styles.qualityText}>
+                  <Text style={styles.qualityTitle}>
+                    Multiplie tes vues pour donner ton poids dans le partage
                   </Text>
-                </Text>
-              </View>
-
-              <QualityBar
-                label="Attention"
-                percentile={projection.percentiles.attention}
-                weight={weights.attention}
-                raw={`${Math.round(num(projection.rates.attention) / 1000)} s / vue`}
-              />
-              <QualityBar
-                label="Rétention"
-                percentile={projection.percentiles.retention}
-                weight={weights.retention}
-                raw={`${compact(projection.raw.followsGained)} abonnés · ${compact(projection.raw.returningViewers)} revenus`}
-              />
-              <QualityBar
-                label="DAU gagnée"
-                percentile={projection.percentiles.dau}
-                weight={weights.dau}
-                raw={`${compact(projection.raw.dauGained)} réactivations`}
-              />
-              <QualityBar
-                label="Signaux négatifs"
-                percentile={projection.percentiles.penalty}
-                weight={weights.penalty}
-                raw={`${compact(projection.raw.negatives)} au total`}
-                negative
-              />
-
-              <GlassButton
-                label={showDetail ? 'Masquer le détail' : 'Comment ça se calcule'}
-                variant="ghost"
-                icon={showDetail ? 'chevron-up' : 'chevron-down'}
-                onPress={() => {
-                  expand();
-                  setShowDetail((v) => !v);
-                }}
-                fullWidth
-                style={styles.detailToggle}
-              />
-
-              {showDetail && (
-                <View style={styles.detail}>
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.detailStrong}>Attention</Text> — le temps réellement passé
-                    sur tes publications, rapporté à leurs vues. C’est le seul signal qu’on ne
-                    peut pas fabriquer, donc celui qui pèse le plus.
-                  </Text>
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.detailStrong}>Rétention</Text> — les abonnés gagnés et les
-                    gens qui reviennent te lire un autre jour.
-                  </Text>
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.detailStrong}>DAU gagnée</Text> — les comptes qui n’étaient
-                    pas actifs la veille et dont ta publication a ouvert la journée. Tu les as
-                    ramenés.
-                  </Text>
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.detailStrong}>Signaux négatifs</Text> — les « pas
-                    intéressé », les signalements, les publications retirées. Ils se retranchent.
-                  </Text>
-                  <Text style={styles.detailLine}>
-                    Chaque signal est un <Text style={styles.detailStrong}>rang</Text>, pas un
-                    volume : un petit compte très suivi passe devant un gros compte tiède. Les
-                    interactions venues de comptes créés en rafale comptent pour zéro.
+                  <Text style={styles.qualitySub}>
+                    Quatre signaux, chacun compté comme un RANG dans le vivier de la semaine — pas
+                    comme un volume. Un petit compte très suivi passe devant un gros compte tiède.
                   </Text>
                 </View>
-              )}
+              </View>
+
+              <View style={styles.signals}>
+                <SignalBar
+                  label="Attention"
+                  percentile={projection.percentiles.attention}
+                  weight={weights.attention}
+                  raw={`${money(num(projection.rates.attention) / 1000, 1)} s / vue`}
+                />
+                <SignalBar
+                  label="Rétention"
+                  percentile={projection.percentiles.retention}
+                  weight={weights.retention}
+                  raw={`${compact(projection.raw.followsGained)} abonnés · ${compact(
+                    projection.raw.returningViewers,
+                  )} revenus`}
+                />
+                <SignalBar
+                  label="DAU gagnée"
+                  percentile={projection.percentiles.dau}
+                  weight={weights.dau}
+                  raw={`${compact(projection.raw.dauGained)} réactivations`}
+                />
+                <SignalBar
+                  label="Signaux négatifs"
+                  percentile={projection.percentiles.penalty}
+                  weight={weights.penalty}
+                  raw={`${compact(projection.raw.negatives)} au total`}
+                  negative
+                />
+              </View>
+
+              <Disclosure label="Ce que mesure chaque signal">
+                <DisclosureLine term="Attention">
+                  le temps réellement passé sur tes publications, rapporté à leurs vues. C’est le
+                  seul signal qu’on ne peut pas fabriquer, donc celui qui pèse le plus.
+                </DisclosureLine>
+                <DisclosureLine term="Rétention">
+                  les abonnés gagnés et les gens qui reviennent te lire un autre jour.
+                </DisclosureLine>
+                <DisclosureLine term="DAU gagnée">
+                  les comptes qui n’étaient pas actifs la veille et dont ta publication a ouvert la
+                  journée. Tu les as ramenés.
+                </DisclosureLine>
+                <DisclosureLine term="Signaux négatifs">
+                  les « pas intéressé », les signalements, les publications retirées. Ils se
+                  retranchent.
+                </DisclosureLine>
+                <DisclosureLine>
+                  Les interactions venues de comptes créés en rafale comptent pour zéro.
+                </DisclosureLine>
+              </Disclosure>
             </GlassCard>
           </>
         )}
 
-        {/* --- 4. Récompenses supplémentaires ------------------------------ */}
+        {/* --- 5. Ce qui a porté ta part ------------------------------- */}
+        {!!visibleContent.length && (
+          <>
+            <SectionLabel>Ce qui a porté ta part</SectionLabel>
+            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+              {visibleContent.map((row, index) => (
+                <ContentRow
+                  key={row.id}
+                  rank={index + 1}
+                  content={row.content}
+                  views={row.views}
+                  amount={row.amount}
+                  share={row.share}
+                  symbol={symbol}
+                  onPress={() => navigation?.navigate?.('TweetDetail', { tweetId: row.id })}
+                />
+              ))}
+
+              {hiddenContentCount > 0 && (
+                <GlassButton
+                  label={`Voir les ${hiddenContentCount} autres`}
+                  variant="ghost"
+                  icon="chevron-down"
+                  onPress={() => {
+                    expand();
+                    setShowAllContent(true);
+                  }}
+                  fullWidth
+                />
+              )}
+
+              {/* L'avertissement n'est pas une précaution de forme : sans lui,
+                  ces montants se liraient comme des versements par publication,
+                  ce que le pot ne fait pas. */}
+              <View style={styles.estimateRow}>
+                <Ionicons name="calculator-outline" size={14} color={colors.textMuted} />
+                <Text style={styles.estimateText}>
+                  Estimation. Le pot verse une part unique par semaine, jamais au tweet : ta part
+                  projetée est ici répartie au prorata des vues de tes publications des 7 derniers
+                  jours.
+                </Text>
+              </View>
+            </GlassCard>
+          </>
+        )}
+
+        {/* --- 6. Récompenses ------------------------------------------ */}
         {!!data?.bonusCatalog?.length && (
           <>
             <SectionLabel>Récompenses</SectionLabel>
-            <GlassCard contentStyle={styles.cardBody}>
+            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
               {data.bonusCatalog
                 .filter((b) => b.enabled)
                 .map((bonus) => {
                   const won = earnedKeys.has(bonus.key);
                   return (
-                    <View
-                      key={bonus.key}
-                      style={[styles.bonus, won && styles.bonusWon]}
-                    >
-                      <View style={[styles.bonusIcon, won && styles.bonusIconWon]}>
-                        <Ionicons
-                          name={won ? 'sparkles' : 'sparkles-outline'}
-                          size={16}
-                          color={won ? colors.accent : colors.textSecondary}
-                        />
-                      </View>
+                    <View key={bonus.key} style={[styles.bonus, won && styles.bonusWon]}>
+                      <Ionicons
+                        name={won ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={16}
+                        color={won ? colors.success : colors.textMuted}
+                      />
                       <View style={styles.bonusBody}>
-                        <View style={styles.bonusTitleRow}>
-                          <Text style={[styles.bonusTitle, won && styles.bonusTitleWon]}>
-                            {bonus.label}
-                          </Text>
-                          <Text style={[styles.bonusMult, won && styles.bonusMultWon]}>
-                            +{Math.round((num(bonus.multiplier, 1) - 1) * 100)} %
-                          </Text>
-                        </View>
-                        <Text style={styles.bonusDesc}>{bonus.description}</Text>
+                        <Text style={[styles.bonusTitle, won && styles.bonusTitleWon]} numberOfLines={1}>
+                          {bonus.label}
+                        </Text>
+                        <Text style={styles.bonusDesc} numberOfLines={2}>
+                          {bonus.description}
+                        </Text>
                       </View>
+                      <Text style={[styles.bonusMult, won && styles.bonusMultWon]}>
+                        +{Math.round((num(bonus.multiplier, 1) - 1) * 100)} %
+                      </Text>
                     </View>
                   );
                 })}
-              <Text style={styles.note}>
-                Une récompense multiplie ton poids dans le partage — elle ne puise pas dans le pot,
-                elle déplace une part vers toi.
-              </Text>
+
+              <Disclosure label="Comment une récompense agit">
+                <DisclosureLine>
+                  Elle multiplie ton poids dans le partage — elle ne puise pas dans le pot, elle
+                  déplace une part vers toi. Le pot, lui, ne change pas de taille.
+                </DisclosureLine>
+              </Disclosure>
             </GlassCard>
           </>
         )}
 
-        {/* --- 5. D'où vient l'argent -------------------------------------- */}
+        {/* --- 7. D'où vient l'argent ---------------------------------- */}
         {pool && (
           <>
             <SectionLabel>Le pot de la semaine</SectionLabel>
-            <GlassCard contentStyle={styles.cardBody}>
-              <View style={styles.poolRow}>
-                <Text style={styles.poolLabel}>Entré en trésorerie</Text>
-                <Text style={styles.poolValue}>
-                  {money(pool.inflows)} {symbol}
-                </Text>
+            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+              <View style={styles.grid}>
+                <MetricTile
+                  label="Entré en trésorerie"
+                  value={money(pool.inflows, 0)}
+                  unit={symbol}
+                  hint={`${compact(pool.inflowTransactions)} opérations`}
+                />
+                <MetricTile
+                  label="Reversé aux créateurs"
+                  value={money(pool.pool, 0)}
+                  unit={symbol}
+                  hint={`${percent(pool.shareOfInflows)} des entrées`}
+                  tone="accent"
+                />
               </View>
-              <View style={styles.poolRow}>
-                <Text style={styles.poolLabel}>
-                  Reversé aux créateurs ({percent(pool.shareOfInflows)})
-                </Text>
-                <Text style={[styles.poolValue, styles.poolValueAccent]}>
-                  {money(pool.pool)} {symbol}
-                </Text>
-              </View>
-              <View style={styles.poolRow}>
-                <Text style={styles.poolLabel}>Créateurs qui se le partagent</Text>
-                <Text style={styles.poolValue}>{compact(data?.currentPeriod?.cohortSize)}</Text>
-              </View>
-              <Text style={styles.note}>
-                Le pot vaut une part de ce que la plateforme a réellement encaissé cette semaine —
-                campagnes publicitaires, abonnements Plus et Pro, commissions. Il ne peut jamais
-                dépasser ce qui est entré, donc la monétisation ne peut pas coûter plus qu’elle ne
-                rapporte.
-              </Text>
+
               {pool.cappedByTreasury && (
                 <View style={styles.warnRow}>
-                  <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+                  <Ionicons name="information-circle-outline" size={15} color={colors.warning} />
                   <Text style={styles.warnText}>
                     Le pot est plafonné cette semaine pour préserver la trésorerie.
                   </Text>
                 </View>
               )}
+
+              <Disclosure label="D’où sort cet argent">
+                <DisclosureLine>
+                  Le pot vaut une part de ce que la plateforme a réellement encaissé cette
+                  semaine — campagnes publicitaires, abonnements Plus et Pro, commissions. Il ne
+                  peut jamais dépasser ce qui est entré, donc la monétisation ne peut pas coûter
+                  plus qu’elle ne rapporte.
+                </DisclosureLine>
+              </Disclosure>
             </GlassCard>
           </>
         )}
 
-        {/* --- 6. Verrou d'éligibilité ------------------------------------- */}
-        {!eligible && (
-          <GlassCard contentStyle={styles.cardBody}>
-            <View style={styles.lockHead}>
-              <Ionicons name="lock-closed-outline" size={18} color={colors.warning} />
-              <Text style={styles.lockTitle}>Pas encore payé</Text>
-            </View>
-            <Text style={styles.lockReason}>
-              {program?.programStatus === 'pending'
-                ? 'Ta candidature au programme est en cours de revue.'
-                : lockedReason
-                  || 'Il te faut un abonnement Plus ou Pro actif et une entrée dans le programme de monétisation.'}
-            </Text>
-            <Text style={styles.note}>
-              Les chiffres ci-dessus sont bien les tiens : c’est exactement ce que tu toucherais.
-            </Text>
-            {program?.programStatus !== 'pending' && (
-              <GlassButton
-                label="Voir les conditions"
-                icon="trophy-outline"
-                variant="secondary"
-                onPress={() => navigation?.navigate?.('MonetizationProgram')}
-                fullWidth
-                style={styles.detailToggle}
-              />
-            )}
-          </GlassCard>
-        )}
-
-        {/* --- 7. Historique ------------------------------------------------ */}
-        {!!data?.history?.length && (
+        {/* --- 8. Historique ------------------------------------------- */}
+        {!!history.length && (
           <>
             <SectionLabel>Historique</SectionLabel>
-            {data.history.map((entry) => {
-              const open = openPeriod === entry.periodKey;
-              return (
-                <GlassCard
-                  key={entry.periodKey}
-                  contentStyle={styles.historyBody}
-                  onPress={() => {
-                    expand();
-                    setOpenPeriod(open ? null : entry.periodKey);
-                  }}
-                >
-                  <View style={styles.historyRow}>
-                    <View style={styles.historyLeft}>
-                      <Text style={styles.historyPeriod}>
-                        {periodLabel(entry.periodStart, entry.periodEnd)}
-                      </Text>
-                      <Text style={styles.historyMeta}>
-                        {compact(entry.qualifiedViews)} vues · qualité {percent(entry.quality)}
-                      </Text>
-                    </View>
-                    <View style={styles.historyRight}>
-                      <Text style={styles.historyAmount}>
-                        {money(entry.amount)} {symbol}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.historyStatus,
-                          entry.status === 'claimable' && styles.historyStatusPending,
-                        ]}
-                      >
-                        {entry.status === 'claimed' ? 'encaissé' : 'à encaisser'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {open && (
-                    <View style={styles.historyDetail}>
-                      <View style={styles.historyDetailRow}>
-                        <Text style={styles.historyDetailLabel}>RPM</Text>
-                        <Text style={styles.historyDetailValue}>
-                          {money(entry.rpm)} {symbol} / 1000
-                        </Text>
-                      </View>
-                      <View style={styles.historyDetailRow}>
-                        <Text style={styles.historyDetailLabel}>Récompenses</Text>
-                        <Text style={styles.historyDetailValue}>
-                          ×{num(entry.bonusMultiplier, 1).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={styles.historyDetailRow}>
-                        <Text style={styles.historyDetailLabel}>Vivier</Text>
-                        <Text style={styles.historyDetailValue}>
-                          {compact(entry.breakdown?.cohortSize)} créateurs
-                        </Text>
-                      </View>
-                      {!!entry.claimedAt && (
-                        <View style={styles.historyDetailRow}>
-                          <Text style={styles.historyDetailLabel}>Encaissé le</Text>
-                          <Text style={styles.historyDetailValue}>
-                            {new Date(entry.claimedAt).toLocaleDateString('fr-FR')}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </GlassCard>
-              );
-            })}
+            {history.map((entry) => (
+              <PayoutRow
+                key={entry.periodKey}
+                label={periodLabel(entry.periodStart, entry.periodEnd)}
+                amount={entry.amount}
+                symbol={symbol}
+                status={entry.status}
+                views={entry.qualifiedViews}
+                quality={entry.quality}
+                rpm={entry.rpm}
+                bonusMultiplier={entry.bonusMultiplier}
+                cohortSize={num(entry.breakdown?.cohortSize) || undefined}
+                claimedAt={entry.claimedAt}
+                ratio={historyMax > 0 ? num(entry.amount) / historyMax : 0}
+                expanded={openPeriod === entry.periodKey}
+                onToggle={() => togglePeriod(entry.periodKey)}
+                claiming={claimingKey === entry.periodKey}
+                onClaim={() =>
+                  claimOne(
+                    entry.periodKey,
+                    `Semaine du ${periodLabel(entry.periodStart, entry.periodEnd)}`,
+                  )
+                }
+              />
+            ))}
           </>
         )}
 
-        {!data?.history?.length && !projection && (
+        {!history.length && !projection && (
           <EmptyState
             icon="stats-chart-outline"
-            title="Rien à afficher pour l'instant"
+            title="Rien à afficher pour l’instant"
             message="Publie, laisse tourner une semaine, et ta première part apparaîtra ici après la clôture du lundi."
           />
         )}
@@ -785,199 +945,222 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  content: { padding: 16 },
-  skeleton: { marginBottom: 14, borderRadius: radius.lg },
+  content: { paddingHorizontal: 16, paddingTop: 4 },
+  skeleton: { marginBottom: 12, borderRadius: radius.lg },
 
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    padding: 12,
-    marginBottom: 14,
+    padding: 11,
+    marginBottom: 12,
     borderRadius: radius.md,
     backgroundColor: withAlpha(colors.warning, 0.12),
   },
-  errorText: { flex: 1, color: colors.warning, fontFamily: fonts.regular, fontSize: 13 },
+  errorText: { flex: 1, fontFamily: fonts.regular, fontSize: 12.5, color: colors.warning },
 
   /* Héro */
-  hero: { marginBottom: 20 },
-  heroContent: { padding: 20 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
-  heroBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
+  hero: { marginBottom: 16 },
+  heroContent: { padding: 18 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  kicker: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  pill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
     backgroundColor: colors.accentMuted,
   },
-  heroKicker: {
-    fontFamily: fonts.bold,
-    fontSize: 12,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-    color: colors.textSecondary,
+  pillText: { fontFamily: fonts.bold, fontSize: 10, color: colors.accent },
+
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 7, marginTop: 8 },
+  amount: {
+    fontFamily: fonts.mono,
+    fontSize: 38,
+    letterSpacing: -2,
+    color: colors.textPrimary,
   },
-  heroAmountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  heroAmount: { fontFamily: fonts.bold, fontSize: 40, color: colors.textPrimary, letterSpacing: -1 },
-  heroUnit: { fontFamily: fonts.bold, fontSize: 18, color: colors.accent },
-  heroHint: {
+  amountUnit: { fontFamily: fonts.bold, fontSize: 16, color: colors.accent },
+
+  bars: { marginTop: 16 },
+
+  legend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    height: 22,
     marginTop: 8,
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.textSecondary,
   },
-  heroButton: { marginTop: 16 },
-  heroPeriods: {
+  legendStrong: { flex: 1, fontFamily: fonts.medium, fontSize: 11.5, color: colors.textPrimary },
+  legendValue: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.accent },
+  legendMuted: { flex: 1, fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted },
+  legendHint: { fontFamily: fonts.regular, fontSize: 10, color: colors.textDisabled },
+
+  heroButton: { marginTop: 14 },
+
+  heroFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-    gap: 8,
   },
-  heroPeriodRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  heroPeriodLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
-  heroPeriodValue: { fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary },
+  heroFootItem: { flex: 1 },
+  heroFootLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 9.5,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  heroFootValue: { marginTop: 3, fontFamily: fonts.mono, fontSize: 14, color: colors.textPrimary },
+  heroFootUnit: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
+  heroFootLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  heroFootLinkText: { fontFamily: fonts.medium, fontSize: 12.5, color: colors.accent },
 
   /* Cartes */
-  cardBody: { padding: 16 },
-
-  periodHead: {
+  card: { marginBottom: 16 },
+  cardBody: { padding: 14 },
+  cardHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    gap: 10,
+    marginBottom: 12,
   },
-  periodRange: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary },
-  countdown: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  countdownText: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
-
-  statRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  stat: {
-    flex: 1,
-    padding: 12,
-    borderRadius: radius.md,
+  cardTitle: { flex: 1, fontFamily: fonts.medium, fontSize: 13.5, color: colors.textPrimary },
+  countdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
     backgroundColor: colors.surfaceAlt,
   },
-  statValue: {
-    marginTop: 6,
-    fontFamily: fonts.bold,
-    fontSize: 19,
-    color: colors.textPrimary,
-  },
-  statValueAccent: { color: colors.accent },
-  statLabel: { marginTop: 2, fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
-  statHint: { marginTop: 1, fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary, opacity: 0.75 },
+  countdownText: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textSecondary },
+
+  grid: { flexDirection: 'row', gap: 8, marginBottom: 8 },
 
   note: {
-    marginTop: 4,
+    marginTop: 8,
     fontFamily: fonts.regular,
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textSecondary,
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: colors.textMuted,
   },
 
   warnRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 12,
+    marginTop: 8,
     padding: 10,
     borderRadius: radius.md,
     backgroundColor: withAlpha(colors.warning, 0.1),
   },
-  warnText: { flex: 1, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.warning },
+  warnText: { flex: 1, fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.warning },
 
-  /* Qualité */
-  qualityHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
-  qualityScore: { fontFamily: fonts.bold, fontSize: 32, color: colors.accent, letterSpacing: -0.5 },
-  qualityScoreLabel: { flex: 1, fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary, lineHeight: 18 },
-  qualityScoreHint: { fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary },
-
-  quality: { marginBottom: 16 },
-  qualityHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  qualityLabel: { fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary },
-  qualityWeight: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
-  qualityTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.surfaceElevated,
-    overflow: 'hidden',
+  /* Verrou */
+  lockHead: { flexDirection: 'row', gap: 10 },
+  lockIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: withAlpha(colors.warning, 0.14),
   },
-  qualityFill: { height: 6, borderRadius: 3 },
-  qualityFoot: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  qualityRank: { fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary },
-  qualityRaw: { fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary, opacity: 0.8 },
-
-  detailToggle: { marginTop: 6 },
-  detail: {
-    marginTop: 12,
-    paddingTop: 12,
+  lockHeadText: { flex: 1 },
+  lockTitle: { fontFamily: fonts.bold, fontSize: 14, color: colors.textPrimary },
+  lockReason: {
+    marginTop: 3,
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  criteria: {
+    marginTop: 14,
+    paddingTop: 13,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-    gap: 10,
   },
-  detailLine: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, color: colors.textSecondary },
-  detailStrong: { fontFamily: fonts.bold, color: colors.textPrimary },
+  lockActions: { marginTop: 12, gap: 8 },
+  rejection: {
+    padding: 11,
+    borderRadius: radius.md,
+    backgroundColor: withAlpha(colors.red, 0.1),
+  },
+  rejectionLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 9.5,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: colors.red,
+  },
+  rejectionText: {
+    marginTop: 4,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+
+  /* Qualité */
+  qualityHead: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  qualityText: { flex: 1 },
+  qualityTitle: { fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 17, color: colors.textPrimary },
+  qualitySub: {
+    marginTop: 5,
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+  },
+  signals: {
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+
+  /* Contenus */
+  estimateRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  estimateText: { flex: 1, fontFamily: fonts.regular, fontSize: 10.5, lineHeight: 15, color: colors.textMuted },
 
   /* Récompenses */
   bonus: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 12,
-    marginBottom: 10,
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    marginBottom: 6,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
   },
   bonusWon: { backgroundColor: colors.accentSoft },
-  bonusIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceElevated,
-  },
-  bonusIconWon: { backgroundColor: colors.accentMuted },
   bonusBody: { flex: 1 },
-  bonusTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bonusTitle: { fontFamily: fonts.bold, fontSize: 13, color: colors.textSecondary },
+  bonusTitle: { fontFamily: fonts.medium, fontSize: 12.5, color: colors.textSecondary },
   bonusTitleWon: { color: colors.textPrimary },
-  bonusMult: { fontFamily: fonts.bold, fontSize: 13, color: colors.textSecondary },
-  bonusMultWon: { color: colors.accent },
-  bonusDesc: { marginTop: 3, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.textSecondary },
+  bonusDesc: { marginTop: 2, fontFamily: fonts.regular, fontSize: 10.5, lineHeight: 15, color: colors.textMuted },
+  bonusMult: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textMuted },
+  bonusMultWon: { color: colors.success },
 
-  /* Pot */
-  poolRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  poolLabel: { flex: 1, fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
-  poolValue: { fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary },
-  poolValueAccent: { color: colors.accent },
-
-  /* Verrou */
-  lockHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  lockTitle: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary },
-  lockReason: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, color: colors.textPrimary, marginBottom: 8 },
-
-  /* Historique */
-  historyBody: { padding: 14 },
-  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  historyLeft: { flex: 1 },
-  historyPeriod: { fontFamily: fonts.bold, fontSize: 14, color: colors.textPrimary },
-  historyMeta: { marginTop: 2, fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
-  historyRight: { alignItems: 'flex-end' },
-  historyAmount: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary },
-  historyStatus: { marginTop: 2, fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary },
-  historyStatusPending: { color: colors.accent },
-  historyDetail: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    gap: 7,
-  },
-  historyDetailRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  historyDetailLabel: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
-  historyDetailValue: { fontFamily: fonts.regular, fontSize: 12, color: colors.textPrimary },
-
-  bottomSpinner: { marginTop: 16 },
+  bottomSpinner: { marginTop: 12 },
 });

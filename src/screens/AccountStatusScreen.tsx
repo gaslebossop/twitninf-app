@@ -1,32 +1,52 @@
+/**
+ * État du compte — le pendant lisible de la restriction de portée.
+ *
+ * Miroir de la page « état du compte » de TikTok : un compte restreint sans
+ * savoir pourquoi ni jusqu'à quand ne corrige rien, il devine. L'écran lit
+ * `GET /api/neural-rank/account-status`, jamais un identifiant fourni par le
+ * client — l'API ne sert que le compte authentifié.
+ *
+ * Un second appel, `GET /api/creator-pool/account-status`, apporte ce que le
+ * moteur ne sait pas : les publications retirées ou écartées des
+ * recommandations, et surtout CE QUE COÛTERAIT LA PROCHAINE. Le moteur dit où
+ * en est la portée aujourd'hui ; seul ce registre-là dit comment on y est
+ * arrivé et comment ne pas y retourner.
+ *
+ * Les deux appels sont indépendants : une panne de l'un laisse l'autre
+ * s'afficher, plutôt que de rendre la page entièrement muette.
+ *
+ * Refonte du 2026-08-20 : aligné sur le tableau de bord de monétisation —
+ * même échelle typographique, chiffres en `fonts.mono`, explications repliées
+ * derrière un `Disclosure` au lieu d'être posées entre les faits. L'ajout
+ * principal est l'échelle de quatre crans en tête : « Suppressed » ne dit rien
+ * à personne tant qu'on ne voit pas où ça tombe entre « rien » et « le pire ».
+ */
+
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, radius, statusBarStyle } from '../theme';
-import { AppHeader, Card, EmptyState, ErrorState, ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { colors, fonts, radius, withAlpha, statusBarStyle } from '../theme';
+import {
+  AppHeader,
+  EmptyState,
+  ErrorState,
+  GlassCard,
+  ScreenBackground,
+  ScreenSkeleton,
+} from '../components/ui';
+import {
+  Disclosure,
+  DisclosureLine,
+  MetricTile,
+  compact,
+  fullDate,
+  num,
+} from '../components/monetization';
 import neuralRankService, { type AccountStatus } from '../services/neuralRankService';
 import CreatorPoolService, { type AccountStatus as ContentQualityStatus } from '../services/creatorPoolService';
-
-/**
- * État du compte — le pendant lisible de la restriction de portée.
- *
- * Miroir de la page « état du compte » de TikTok : un compte restreint sans
- * savoir pourquoi ni jusqu'à quand ne corrige rien, il devine. Cet écran lit
- * `GET /api/neural-rank/account-status`, jamais un identifiant fourni par le
- * client — l'API ne sert que le compte authentifié (voir la route côté API).
- *
- * Un second appel, `GET /api/creator-pool/account-status`, apporte ce que le
- * moteur ne sait pas : les publications retirées ou écartées des
- * recommandations, et surtout CE QUE COÛTERAIT LA PROCHAINE. Le moteur dit où
- * en est la portée aujourd'hui ; seul ce registre-là dit comment on y est
- * arrivé et comment ne pas y retourner — c'est la seule information de cet
- * écran qui puisse changer un comportement.
- *
- * Les deux appels sont indépendants : une panne de l'un laisse l'autre
- * s'afficher, plutôt que de rendre la page entièrement muette.
- */
 
 const SURFACE_LABELS: Record<string, string> = {
   for_you: 'Pour toi',
@@ -35,40 +55,50 @@ const SURFACE_LABELS: Record<string, string> = {
   follower_feed: 'Fil d’abonnement',
 };
 
-const LEVEL_ICON: Record<AccountStatus['level_label'], keyof typeof Ionicons.glyphMap> = {
-  clean: 'checkmark-circle',
-  monitoring: 'alert-circle-outline',
-  suppressed: 'eye-off-outline',
-  ghosted: 'eye-off',
-};
+type Level = AccountStatus['level_label'];
 
-const LEVEL_TINT: Record<AccountStatus['level_label'], string> = {
+/**
+ * Les quatre crans, du meilleur au pire.
+ *
+ * L'ordre est celui du moteur ; le rendre visible est tout l'intérêt de
+ * l'échelle : on lit sa position d'un coup d'œil, sans avoir à savoir ce que
+ * « Suppressed » veut dire.
+ */
+const LADDER: { key: Level; short: string }[] = [
+  { key: 'clean', short: 'Normal' },
+  { key: 'monitoring', short: 'Surveillé' },
+  { key: 'suppressed', short: 'Réduit' },
+  { key: 'ghosted', short: 'Masqué' },
+];
+
+const LEVEL_TINT: Record<Level, string> = {
   clean: colors.success,
   monitoring: colors.warning,
   suppressed: colors.like,
   ghosted: colors.like,
 };
 
-function formatDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-}
+const LEVEL_ICON: Record<Level, keyof typeof Ionicons.glyphMap> = {
+  clean: 'checkmark-circle',
+  monitoring: 'alert-circle-outline',
+  suppressed: 'eye-off-outline',
+  ghosted: 'eye-off',
+};
 
 export default function AccountStatusScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
   const [status, setStatus] = useState<AccountStatus | null>(null);
+  const [quality, setQuality] = useState<ContentQualityStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [quality, setQuality] = useState<ContentQualityStatus | null>(null);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
+
     // Volontairement non bloquant : le registre qualité est un complément,
     // son absence ne doit pas empêcher d'afficher le niveau de distribution.
     CreatorPoolService.getAccountStatus()
@@ -88,135 +118,110 @@ export default function AccountStatusScreen() {
     setRefreshing(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-
-  const tint = status ? LEVEL_TINT[status.level_label] : colors.success;
-  const icon = status ? LEVEL_ICON[status.level_label] : 'checkmark-circle';
-  const recoversAt = status ? formatDate(status.recovers_at) : null;
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const body = () => {
     if (loading && !status) return <ScreenSkeleton variant="list" />;
     if (error && !status) return <ErrorState detail={error} onRetry={() => load()} />;
     if (!status) return null;
 
+    const level = status.level_label;
+    const tint = LEVEL_TINT[level] || colors.success;
+    const currentIndex = LADDER.findIndex((l) => l.key === level);
+    const recoversAt = fullDate(status.recovers_at);
+    const clean = level === 'clean';
+
     return (
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load(true)}
+            tintColor={colors.accent}
+          />
+        }
       >
-        <Card style={styles.headline} highlight={status.level_label !== 'clean'}>
+        {/* --- Où j'en suis sur l'échelle ---------------------------- */}
+        <GlassCard style={styles.card} highlight={!clean} contentStyle={styles.headlineBody}>
           <View style={styles.headlineTop}>
-            <Ionicons name={icon} size={28} color={tint} />
-            <View style={styles.headlineTextWrap}>
-              <Text style={[styles.headlineLevel, { color: tint }]}>{status.level}</Text>
+            <View style={[styles.levelIcon, { backgroundColor: withAlpha(tint, 0.14) }]}>
+              <Ionicons name={LEVEL_ICON[level] || 'checkmark-circle'} size={18} color={tint} />
+            </View>
+            <View style={styles.headlineText}>
+              <Text style={[styles.level, { color: tint }]}>{status.level}</Text>
               {status.manual && <Text style={styles.manualTag}>Décision d’équipe</Text>}
             </View>
           </View>
+
+          <View style={styles.ladder}>
+            {LADDER.map((step, index) => (
+              <View key={step.key} style={styles.ladderStep}>
+                <View
+                  style={[
+                    styles.ladderBar,
+                    // Tous les crans jusqu'au niveau courant sont teintés : la
+                    // gravité se lit à la longueur remplie, pas à une couleur
+                    // isolée qu'il faudrait interpréter.
+                    index <= currentIndex && { backgroundColor: tint },
+                  ]}
+                />
+                <Text
+                  style={[styles.ladderLabel, index === currentIndex && { color: tint, fontFamily: fonts.bold }]}
+                  numberOfLines={1}
+                >
+                  {step.short}
+                </Text>
+              </View>
+            ))}
+          </View>
+
           <Text style={styles.summary}>{status.summary}</Text>
-          {recoversAt && (
+
+          {!!recoversAt && (
             <View style={styles.recoverRow}>
-              <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+              <Ionicons name="time-outline" size={13} color={colors.textMuted} />
               <Text style={styles.recoverText}>
                 Restriction allégée le {recoversAt} si rien ne s’ajoute
               </Text>
             </View>
           )}
-        </Card>
+        </GlassCard>
 
-        {status.velocity_throttled && (
-          <Card style={styles.section}>
-            <View style={styles.recoverRow}>
-              <Ionicons name="hourglass-outline" size={16} color={colors.warning} />
-              <Text style={styles.sectionTitle}>Ralenti pendant une heure</Text>
-            </View>
-            <Text style={styles.sectionNote}>
-              Une action récente (suppression d’un post, changement d’avatar ou de bio,
-              plusieurs publications rapprochées) a temporairement réduit ta portée de
-              moitié. Ce n’est pas une sanction — ça s’efface tout seul.
-            </Text>
-          </Card>
-        )}
+        {/* --- Les faits, en chiffres --------------------------------- */}
+        <View style={styles.grid}>
+          <MetricTile
+            label="Avertissements"
+            value={String(num(status.active_strikes))}
+            hint={`expirent en ${num(status.strike_ttl_days)} j`}
+            tone={num(status.active_strikes) > 0 ? 'warning' : 'default'}
+          />
+          <MetricTile
+            label="Surfaces fermées"
+            value={String(status.restricted_surfaces.length)}
+            hint={status.restricted_surfaces.length ? 'voir ci-dessous' : 'aucune'}
+            tone={status.restricted_surfaces.length ? 'warning' : 'default'}
+          />
+          {!!quality?.window && (
+            <MetricTile
+              label={`Écartées / ${quality.window.days} j`}
+              value={compact(quality.window.count)}
+              hint="publications"
+              tone={num(quality.window.count) > 0 ? 'warning' : 'default'}
+            />
+          )}
+        </View>
 
-        {status.restricted_surfaces.length > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Surfaces actuellement fermées</Text>
-            <View style={styles.chipRow}>
-              {status.restricted_surfaces.map((s) => (
-                <View key={s} style={styles.chip}>
-                  <Text style={styles.chipText}>{SURFACE_LABELS[s] || s}</Text>
-                </View>
-              ))}
-            </View>
-            <Text style={styles.sectionNote}>
-              Tes posts restent visibles sur ton profil et pour tes abonnés — ils ne sont
-              simplement plus mis en avant sur ces surfaces.
-            </Text>
-          </Card>
-        )}
-
-        {status.nearing_permanent_ban && (
-          <Card style={[styles.section, styles.banWarning]}>
-            <View style={styles.warnRow}>
-              <Ionicons name="warning-outline" size={18} color={colors.like} />
-              <Text style={styles.banWarningTitle}>Proche d’un bannissement définitif</Text>
-            </View>
-            <Text style={styles.sectionNote}>
-              {status.nearing_permanent_ban.reason} — {status.nearing_permanent_ban.active_strikes}
-              {' '}avertissement{status.nearing_permanent_ban.active_strikes > 1 ? 's' : ''} actif
-              {status.nearing_permanent_ban.active_strikes > 1 ? 's' : ''} sur {status.nearing_permanent_ban.limit}.
-            </Text>
-          </Card>
-        )}
-
-        {status.per_policy.length > 0 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Avertissements actifs</Text>
-            {status.per_policy.map((p) => (
-              <View key={p.policy} style={styles.policyRow}>
-                <View style={styles.policyTextWrap}>
-                  <Text style={styles.policyReason}>{p.reason}</Text>
-                  {p.next_expiry && (
-                    <Text style={styles.policyExpiry}>
-                      Le plus ancien expire le {formatDate(p.next_expiry)}
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.policyCount}>
-                  <Text style={styles.policyCountText}>{p.active_strikes}</Text>
-                </View>
-              </View>
-            ))}
-          </Card>
-        )}
-
-        {/* Publications retirées ou écartées, et le coût de la prochaine.
-            Le moteur ci-dessus dit où en est la portée ; ce bloc-là dit
-            comment on y est arrivé — et c'est le seul de l'écran qui parle du
-            futur, donc le seul qui puisse changer quelque chose. */}
-        {quality?.window && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Publications écartées ces {quality.window.days} jours
-            </Text>
-
-            <View style={styles.qualityCountRow}>
-              <Text style={styles.qualityCount}>{quality.window.count}</Text>
-              <Text style={styles.qualityCountLabel}>
-                {quality.window.count > 1 ? 'publications' : 'publication'} retirée
-                {quality.window.count > 1 ? 's' : ''} ou écartée
-                {quality.window.count > 1 ? 's' : ''} des recommandations
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.nextStep,
-                quality.window.nextIsStrike && styles.nextStepSevere,
-              ]}
-            >
+        {/* --- Ce que coûterait la prochaine -------------------------- */}
+        {!!quality?.window && (
+          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+            <Text style={styles.sectionTitle}>La prochaine marche</Text>
+            <View style={[styles.nextStep, quality.window.nextIsStrike && styles.nextStepSevere]}>
               <Ionicons
-                name={quality.window.nextIsStrike ? 'alert-circle-outline' : 'information-circle-outline'}
+                name={quality.window.nextIsStrike ? 'alert-circle' : 'information-circle-outline'}
                 size={16}
                 color={quality.window.nextIsStrike ? colors.like : colors.textMuted}
               />
@@ -232,40 +237,120 @@ export default function AccountStatusScreen() {
                       }.`}
               </Text>
             </View>
-
-            {quality.events.length > 0 && (
-              <View style={styles.qualityEvents}>
-                {quality.events.slice(0, 6).map((event) => (
-                  <View key={event.id} style={styles.qualityEvent}>
-                    <View style={styles.qualityDot} />
-                    <View style={styles.qualityEventBody}>
-                      <Text style={styles.qualityEventLabel}>{event.label}</Text>
-                      {!!event.reason && (
-                        <Text style={styles.qualityEventReason} numberOfLines={2}>
-                          {event.reason}
-                        </Text>
-                      )}
-                    </View>
-                    <Text style={styles.qualityEventDate}>
-                      {new Date(event.occurredAt).toLocaleDateString('fr-FR', {
-                        day: 'numeric',
-                        month: 'short',
-                      })}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <Text style={styles.sectionNote}>
-              Une publication écartée des recommandations reste en ligne, sur ton profil et
-              dans le fil de tes abonnés. Ce n’est pas une sanction — seule la répétition
-              rapprochée touche le compte.
-            </Text>
-          </Card>
+          </GlassCard>
         )}
 
-        {status.level_label === 'clean' && status.per_policy.length === 0 && (
+        {status.velocity_throttled && (
+          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+            <View style={styles.rowHead}>
+              <Ionicons name="hourglass-outline" size={15} color={colors.warning} />
+              <Text style={styles.sectionTitle}>Ralenti pendant une heure</Text>
+            </View>
+            <Text style={styles.note}>
+              Une action récente (suppression d’un post, changement d’avatar ou de bio, plusieurs
+              publications rapprochées) a temporairement réduit ta portée de moitié. Ce n’est pas
+              une sanction — ça s’efface tout seul.
+            </Text>
+          </GlassCard>
+        )}
+
+        {status.restricted_surfaces.length > 0 && (
+          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+            <Text style={styles.sectionTitle}>Surfaces actuellement fermées</Text>
+            <View style={styles.chipRow}>
+              {status.restricted_surfaces.map((s) => (
+                <View key={s} style={styles.chip}>
+                  <Ionicons name="close" size={11} color={colors.like} />
+                  <Text style={styles.chipText}>{SURFACE_LABELS[s] || s}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.note}>
+              Tes posts restent visibles sur ton profil et pour tes abonnés — ils ne sont
+              simplement plus mis en avant sur ces surfaces.
+            </Text>
+          </GlassCard>
+        )}
+
+        {status.nearing_permanent_ban && (
+          <GlassCard style={[styles.card, styles.banCard]} contentStyle={styles.cardBody}>
+            <View style={styles.rowHead}>
+              <Ionicons name="warning" size={16} color={colors.like} />
+              <Text style={[styles.sectionTitle, { color: colors.like }]}>
+                Proche d’un bannissement définitif
+              </Text>
+            </View>
+            <Text style={styles.note}>{status.nearing_permanent_ban.reason}</Text>
+            <View style={styles.banCount}>
+              <Text style={styles.banCountValue}>
+                {num(status.nearing_permanent_ban.active_strikes)}
+                <Text style={styles.banCountLimit}> / {num(status.nearing_permanent_ban.limit)}</Text>
+              </Text>
+              <Text style={styles.banCountLabel}>avertissements actifs sur cette règle</Text>
+            </View>
+          </GlassCard>
+        )}
+
+        {status.per_policy.length > 0 && (
+          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+            <Text style={styles.sectionTitle}>Avertissements actifs</Text>
+            {status.per_policy.map((p) => (
+              <View key={p.policy} style={styles.policyRow}>
+                <View style={styles.policyText}>
+                  <Text style={styles.policyReason} numberOfLines={2}>
+                    {p.reason}
+                  </Text>
+                  {!!p.next_expiry && (
+                    <Text style={styles.policyExpiry}>
+                      Le plus ancien expire le {fullDate(p.next_expiry)}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.policyCount}>
+                  <Text style={styles.policyCountText}>{num(p.active_strikes)}</Text>
+                </View>
+              </View>
+            ))}
+          </GlassCard>
+        )}
+
+        {!!quality?.events?.length && (
+          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
+            <Text style={styles.sectionTitle}>Journal</Text>
+            {quality.events.slice(0, 8).map((event) => (
+              <View key={event.id} style={styles.event}>
+                <View style={styles.eventDot} />
+                <View style={styles.eventBody}>
+                  <Text style={styles.eventLabel}>{event.label}</Text>
+                  {!!event.reason && (
+                    <Text style={styles.eventReason} numberOfLines={2}>
+                      {event.reason}
+                    </Text>
+                  )}
+                </View>
+                <Text style={styles.eventDate}>
+                  {new Date(event.occurredAt).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </Text>
+              </View>
+            ))}
+
+            <Disclosure label="Ce qu’une publication écartée change vraiment">
+              <DisclosureLine>
+                Elle reste en ligne, sur ton profil et dans le fil de tes abonnés. Ce n’est pas
+                une sanction — seule la répétition rapprochée touche le compte.
+              </DisclosureLine>
+              <DisclosureLine>
+                Un avertissement expire seul au bout de {num(status.strike_ttl_days)} jours. Rien
+                n’est à faire pour qu’il tombe : il suffit qu’il ne s’en ajoute pas.
+              </DisclosureLine>
+            </Disclosure>
+          </GlassCard>
+        )}
+
+        {clean && status.per_policy.length === 0 && (
           <EmptyState
             icon="shield-checkmark-outline"
             title="Aucun avertissement"
@@ -293,74 +378,104 @@ export default function AccountStatusScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
-  scroll: { paddingHorizontal: 20, paddingTop: 4, gap: 14 },
+  scroll: { paddingHorizontal: 16, paddingTop: 4 },
 
-  headline: { padding: 18 },
-  headlineTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headlineTextWrap: { flex: 1 },
-  headlineLevel: { fontSize: 20, fontFamily: fonts.bold },
-  manualTag: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.medium, marginTop: 2 },
-  summary: { color: colors.textSecondary, fontSize: 14.5, lineHeight: 21, marginTop: 12, fontFamily: fonts.regular },
-  recoverRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
-  recoverText: { color: colors.textMuted, fontSize: 12.5, fontFamily: fonts.medium },
+  card: { marginBottom: 12 },
+  cardBody: { padding: 14 },
 
-  section: { padding: 16, gap: 4 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 15, fontFamily: fonts.semibold, marginBottom: 8 },
-  sectionNote: { color: colors.textMuted, fontSize: 12.5, lineHeight: 18, fontFamily: fonts.regular, marginTop: 8 },
+  /* En-tête */
+  headlineBody: { padding: 16 },
+  headlineTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  levelIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  headlineText: { flex: 1 },
+  level: { fontFamily: fonts.bold, fontSize: 18, letterSpacing: -0.3 },
+  manualTag: { marginTop: 1, fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  ladder: { flexDirection: 'row', gap: 6, marginTop: 16 },
+  ladderStep: { flex: 1 },
+  ladderBar: { height: 4, borderRadius: 2, backgroundColor: colors.surfaceElevated },
+  ladderLabel: {
+    marginTop: 6,
+    textAlign: 'center',
+    fontFamily: fonts.regular,
+    fontSize: 9.5,
+    color: colors.textMuted,
+  },
+
+  summary: {
+    marginTop: 14,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textSecondary,
+  },
+  recoverRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 11 },
+  recoverText: { flex: 1, fontFamily: fonts.regular, fontSize: 11.5, color: colors.textMuted },
+
+  grid: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+
+  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  sectionTitle: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.textPrimary, marginBottom: 9 },
+  note: {
+    marginTop: 8,
+    fontFamily: fonts.regular,
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: colors.textMuted,
+  },
+
+  nextStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+    padding: 11,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  chipText: { color: colors.textSecondary, fontSize: 12.5, fontFamily: fonts.medium },
+  nextStepSevere: { borderWidth: 1, borderColor: withAlpha(colors.like, 0.5) },
+  nextStepText: { flex: 1, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.textSecondary },
 
-  banWarning: { borderColor: colors.like, borderWidth: 1 },
-  warnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  banWarningTitle: { color: colors.like, fontSize: 14.5, fontFamily: fonts.semibold },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceAlt,
+  },
+  chipText: { fontFamily: fonts.medium, fontSize: 11.5, color: colors.textSecondary },
+
+  banCard: { borderWidth: 1, borderColor: withAlpha(colors.like, 0.55) },
+  banCount: { flexDirection: 'row', alignItems: 'baseline', gap: 9, marginTop: 11 },
+  banCountValue: { fontFamily: fonts.mono, fontSize: 20, color: colors.like },
+  banCountLimit: { fontSize: 13, color: colors.textMuted },
+  banCountLabel: { flex: 1, fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted },
 
   policyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    gap: 10,
+    paddingVertical: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  policyTextWrap: { flex: 1, paddingRight: 10 },
-  policyReason: { color: colors.textPrimary, fontSize: 13.5, fontFamily: fonts.medium },
-  policyExpiry: { color: colors.textMuted, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 2 },
+  policyText: { flex: 1 },
+  policyReason: { fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 17, color: colors.textPrimary },
+  policyExpiry: { marginTop: 2, fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
   policyCount: {
-    minWidth: 26,
-    height: 26,
-    borderRadius: 13,
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
     paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceAlt,
   },
-  policyCountText: { color: colors.textPrimary, fontSize: 13, fontFamily: fonts.bold },
+  policyCountText: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textPrimary },
 
-  qualityCountRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  qualityCount: { color: colors.textPrimary, fontSize: 30, fontFamily: fonts.bold },
-  qualityCountLabel: { flex: 1, color: colors.textSecondary, fontSize: 13, lineHeight: 18, fontFamily: fonts.regular },
-
-  nextStep: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    padding: 12,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
-  },
-  nextStepSevere: { borderWidth: 1, borderColor: colors.like },
-  nextStepText: { flex: 1, color: colors.textSecondary, fontSize: 12.5, lineHeight: 18, fontFamily: fonts.regular },
-
-  qualityEvents: { marginTop: 12 },
-  qualityEvent: {
+  event: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
@@ -368,9 +483,9 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  qualityDot: { width: 6, height: 6, borderRadius: 3, marginTop: 6, backgroundColor: colors.warning },
-  qualityEventBody: { flex: 1 },
-  qualityEventLabel: { color: colors.textPrimary, fontSize: 13, fontFamily: fonts.medium },
-  qualityEventReason: { color: colors.textMuted, fontSize: 11.5, lineHeight: 16, fontFamily: fonts.regular, marginTop: 2 },
-  qualityEventDate: { color: colors.textMuted, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 1 },
+  eventDot: { width: 5, height: 5, borderRadius: 3, marginTop: 6, backgroundColor: colors.warning },
+  eventBody: { flex: 1 },
+  eventLabel: { fontFamily: fonts.medium, fontSize: 12.5, color: colors.textPrimary },
+  eventReason: { marginTop: 2, fontFamily: fonts.regular, fontSize: 11, lineHeight: 15, color: colors.textMuted },
+  eventDate: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted, marginTop: 1 },
 });
