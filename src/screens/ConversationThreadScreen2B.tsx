@@ -57,6 +57,8 @@ import Reanimated, {
 import { io } from 'socket.io-client';
 import { colors, statusBarStyle } from '../theme';
 import { paper, paperFonts, isPaperDark } from '../theme/paper2b';
+// La feuille est propre a Messages : le fil garde la sienne (voir le fichier).
+import { sheet } from '../theme/messages2b';
 import { AppStatusBar, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
 import unreadService from '../services/unreadService';
@@ -1785,14 +1787,14 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                 label={conversationTitle}
                 hasStory={!isGroup && !!peerStories?.stories?.length}
                 seen={!peerStories?.has_unseen}
-                gapColor={paper.bg}
+                gapColor={sheet.bg}
                 ringWidth={2}
               />
             </TouchableOpacity>
             <View style={styles.headerTextBlock}>
               <View style={styles.headerNameRow}>
                 {isGroup && (
-                  <Ionicons name="people" size={13} color={paper.inkSoft} style={{ marginRight: 4 }} />
+                  <Ionicons name="people" size={13} color={sheet.inkSoft} style={{ marginRight: 4 }} />
                 )}
                 <Text
                   style={[
@@ -1876,7 +1878,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     uri={avatarUri}
                     label={conversationTitle}
                     hasStory={false}
-                    gapColor={paper.bg}
+                    gapColor={sheet.bg}
                   />
                   <Text style={styles.introName}>{conversationTitle || 'Conversation'}</Text>
                   <Text style={styles.introSub}>
@@ -1934,7 +1936,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                       <Ionicons
                         name="chevron-back"
                         size={14}
-                        color={cancelArmed ? '#FF3B30' : paper.inkMeta}
+                        color={cancelArmed ? '#FF3B30' : sheet.inkMeta}
                       />
                       <Text
                         style={[styles.recordingSlideHintText, cancelArmed && styles.recordingSlideHintTextActive]}
@@ -1949,7 +1951,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     value={text}
                     onChangeText={setText}
                     placeholder="Message…"
-                    placeholderTextColor={paper.inkMeta}
+                    placeholderTextColor={sheet.inkMeta}
                     multiline
                     maxLength={1000}
                   />
@@ -1963,13 +1965,13 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     {!isRecording && (
                       <TouchableOpacity onPress={pickAndSendImage} disabled={attachmentSending} hitSlop={hitSlop}>
                         {attachmentSending ? (
-                          <ActivityIndicator size="small" color={paper.inkSoft} />
+                          <ActivityIndicator size="small" color={sheet.inkSoft} />
                         ) : (
-                          <Ionicons name="image-outline" size={22} color={paper.inkSoft} />
+                          <Ionicons name="image-outline" size={22} color={sheet.inkSoft} />
                         )}
                       </TouchableOpacity>
                     )}
-                    {!isRecording && <Ionicons name="happy-outline" size={22} color={paper.inkSoft} />}
+                    {!isRecording && <Ionicons name="happy-outline" size={22} color={sheet.inkSoft} />}
                     <GestureDetector gesture={micGesture}>
                       <Reanimated.View
                         style={[
@@ -1981,7 +1983,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                         <Ionicons
                           name={isRecording ? 'mic' : 'mic-outline'}
                           size={20}
-                          color={isRecording ? '#fff' : paper.inkSoft}
+                          color={isRecording ? '#fff' : sheet.inkSoft}
                         />
                       </Reanimated.View>
                     </GestureDetector>
@@ -2096,7 +2098,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: paper.bg },
+  root: { flex: 1, backgroundColor: sheet.bg },
   container: { flex: 1, backgroundColor: 'transparent' },
 
   // Header
@@ -2118,7 +2120,7 @@ const styles = StyleSheet.create({
     fontFamily: paperFonts.strong,
     flexShrink: 1,
   },
-  headerSub: { color: paper.inkMeta, fontSize: 12, marginTop: 1, fontFamily: paperFonts.body },
+  headerSub: { color: sheet.inkMeta, fontSize: 12, marginTop: 1, fontFamily: paperFonts.body },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   headerIconBtn: { padding: 7 },
 
@@ -2133,13 +2135,13 @@ const styles = StyleSheet.create({
     fontFamily: paperFonts.display,
     marginTop: 12,
   },
-  introSub: { color: paper.inkMeta, fontSize: 13, marginTop: 4, fontFamily: paperFonts.body },
+  introSub: { color: sheet.inkMeta, fontSize: 13, marginTop: 4, fontFamily: paperFonts.body },
   introBtn: {
     marginTop: 14,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
   },
   introBtnText: { color: paper.ink, fontSize: 13, fontFamily: paperFonts.strong },
 
@@ -2149,18 +2151,18 @@ const styles = StyleSheet.create({
   msgRowRight: { justifyContent: 'flex-end', paddingRight: 2 },
   avatarSlot: { width: 32, alignItems: 'center', justifyContent: 'flex-end', marginRight: 6 },
   rowAvatar: { width: 26, height: 26, borderRadius: 13 },
-  rowAvatarFallback: { backgroundColor: paper.bgBand, alignItems: 'center', justifyContent: 'center' },
+  rowAvatarFallback: { backgroundColor: sheet.band, alignItems: 'center', justifyContent: 'center' },
   rowAvatarText: { color: paper.ink, fontSize: 11, fontFamily: paperFonts.strong },
 
   groupSenderRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 44, marginBottom: 4, marginTop: 8 },
-  groupSenderName: { color: paper.inkMeta, fontSize: 11, fontFamily: paperFonts.strong },
+  groupSenderName: { color: sheet.inkMeta, fontSize: 11, fontFamily: paperFonts.strong },
 
   messageColumn: { maxWidth: '82%', alignItems: 'flex-start' },
   messageColumnMine: { alignItems: 'flex-end' },
   bubbleTouch: { maxWidth: '100%' },
   bubble: { paddingHorizontal: 14, paddingVertical: 9 },
   bubbleMine: { backgroundColor: paper.accent },
-  bubbleOther: { backgroundColor: paper.bgBand },
+  bubbleOther: { backgroundColor: sheet.band },
   bubbleTextMe: { color: paper.onAccent, fontSize: 15, lineHeight: 21, fontFamily: paperFonts.body },
   bubbleTextOther: { color: paper.ink, fontSize: 15, lineHeight: 21, fontFamily: paperFonts.body },
   storyReplyCard: {
@@ -2171,23 +2173,23 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   storyReplyLabel: {
-    color: paper.inkMeta,
+    color: sheet.inkMeta,
     fontSize: 11.5,
     lineHeight: 15,
     fontFamily: paperFonts.strong,
     marginBottom: 5,
   },
-  storyReplyLabelMine: { color: paper.inkSoft, textAlign: 'right' },
+  storyReplyLabelMine: { color: sheet.inkSoft, textAlign: 'right' },
   storyReplyPreview: {
     width: '100%',
     aspectRatio: 0.72,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.overlayStrong,
   },
-  storyReplyPlaceholder: { backgroundColor: paper.bgBand },
+  storyReplyPlaceholder: { backgroundColor: sheet.band },
   storyReplyMedia: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -2225,7 +2227,7 @@ const styles = StyleSheet.create({
     // de déborder de la bulle.
     maxWidth: '100%',
     height: 220,
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
   },
 
   voiceBubble: {
@@ -2235,7 +2237,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   voiceBubbleMine: { backgroundColor: paper.accent },
-  voiceBubbleOther: { backgroundColor: paper.bgBand },
+  voiceBubbleOther: { backgroundColor: sheet.band },
   voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   voicePlayBtn: {
     width: 32,
@@ -2266,7 +2268,7 @@ const styles = StyleSheet.create({
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30' },
   recordingTimer: { color: paper.ink, fontSize: 14, fontFamily: paperFonts.monoStrong },
   recordingSlideHint: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' },
-  recordingSlideHintText: { color: paper.inkMeta, fontSize: 12.5, fontFamily: paperFonts.bodyStrong },
+  recordingSlideHintText: { color: sheet.inkMeta, fontSize: 12.5, fontFamily: paperFonts.bodyStrong },
   recordingSlideHintTextActive: { color: '#FF3B30' },
 
   micButton: {
@@ -2299,7 +2301,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
     borderRadius: 12,
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -2308,14 +2310,14 @@ const styles = StyleSheet.create({
   },
   reactionPillMine: { borderColor: paper.accent },
   reactionPillEmoji: { fontSize: 13 },
-  reactionPillCount: { color: paper.inkSoft, fontSize: 11, fontFamily: paperFonts.monoStrong },
+  reactionPillCount: { color: sheet.inkSoft, fontSize: 11, fontFamily: paperFonts.monoStrong },
 
   reactionBar: {
     position: 'absolute',
     width: REACTION_BAR_WIDTH,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
     borderRadius: 28,
     paddingHorizontal: REACTION_BAR_PADDING,
     paddingVertical: 6,
@@ -2346,23 +2348,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.overlayMedium,
   },
 
-  messageTime: { color: paper.inkMeta, fontSize: 10.5, marginTop: 3, fontFamily: paperFonts.mono },
+  messageTime: { color: sheet.inkMeta, fontSize: 10.5, marginTop: 3, fontFamily: paperFonts.mono },
   messageTimeRight: { textAlign: 'right', marginRight: 6 },
   messageTimeLeft: { marginLeft: 44 },
 
   separator: { alignItems: 'center', marginVertical: 14 },
-  separatorText: { color: paper.inkMeta, fontSize: 11, fontFamily: paperFonts.strong },
+  separatorText: { color: sheet.inkMeta, fontSize: 11, fontFamily: paperFonts.strong },
 
   // Accusés de lecture
   seenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4, marginTop: 4, gap: 4 },
   seenAvatar: { width: 14, height: 14, borderRadius: 7 },
   seenAvatarText: { color: paper.ink, fontSize: 7, fontFamily: paperFonts.strong },
-  seenLabel: { color: paper.inkMeta, fontSize: 11, fontFamily: paperFonts.bodyStrong },
+  seenLabel: { color: sheet.inkMeta, fontSize: 11, fontFamily: paperFonts.bodyStrong },
 
   // Typing
   typingRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingBottom: 8 },
   typingBubble: {
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
     borderRadius: 20,
     borderBottomLeftRadius: 6,
     paddingHorizontal: 14,
@@ -2371,7 +2373,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  typingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: paper.inkSoft },
+  typingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: sheet.inkSoft },
 
   // Composer
   inputBar: {
@@ -2393,7 +2395,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: paper.bg,
+    backgroundColor: sheet.bg,
     borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: paper.outline,

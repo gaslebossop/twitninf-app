@@ -47,6 +47,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { statusBarStyle } from '../theme';
 import { paper, paperFonts, ps, GUTTER_W, ROW_PAD_X, ROW_GAP } from '../theme/paper2b';
+// La feuille est propre a Messages : le fil garde la sienne (voir le fichier).
+import { sheet } from '../theme/messages2b';
 import { AppStatusBar, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import { LIST_TUNING } from '../utils/listTuning';
 import apiService from '../services/api';
@@ -350,7 +352,7 @@ export default function MessagesScreen2B({ navigation }: any) {
             label={item.displayName}
             hasStory={hasStory}
             seen={hasStory && !unseenStoryUserIds.has(targetId)}
-            gapColor={paper.bg}
+            gapColor={sheet.bg}
           />
           {item.isAI && (
             <View style={styles.aiBadge}>
@@ -461,17 +463,17 @@ export default function MessagesScreen2B({ navigation }: any) {
               {/* Recherche */}
               <View style={styles.searchWrap}>
                 <View style={styles.searchBar}>
-                  <Ionicons name="search" size={17} color={paper.inkMeta} />
+                  <Ionicons name="search" size={17} color={sheet.inkMeta} />
                   <TextInput
                     style={styles.searchInput}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     placeholder="Rechercher"
-                    placeholderTextColor={paper.inkMeta}
+                    placeholderTextColor={sheet.inkMeta}
                   />
                   {searchQuery.length > 0 && (
                     <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={hitSlop}>
-                      <Ionicons name="close-circle" size={17} color={paper.inkMeta} />
+                      <Ionicons name="close-circle" size={17} color={sheet.inkMeta} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -481,7 +483,7 @@ export default function MessagesScreen2B({ navigation }: any) {
               <StoriesTray
                 currentUser={me}
                 refreshSignal={storiesRefresh}
-                backgroundColor={paper.bg}
+                backgroundColor={sheet.bg}
                 style={styles.tray}
                 onOpenProfile={openProfile}
                 onSendMessage={sendStoryReply}
@@ -565,7 +567,7 @@ const AVATAR = ps(46);
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: paper.bg },
+  root: { flex: 1, backgroundColor: sheet.bg },
   container: { flex: 1, backgroundColor: 'transparent' },
 
   // ── En-tête : un filet, jamais un aplat ──
@@ -642,7 +644,7 @@ const styles = StyleSheet.create({
   requestsIcon: { width: GUTTER_W, alignItems: 'center' },
   requestsTitle: { color: paper.ink, fontSize: ps(16), fontFamily: paperFonts.strong },
   requestsSubtitle: {
-    color: paper.inkMeta,
+    color: sheet.inkMeta,
     fontSize: ps(13),
     marginTop: ps(2),
     fontFamily: paperFonts.body,
@@ -673,7 +675,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: paper.bg,
+    borderColor: sheet.bg,
   },
   groupBadge: {
     position: 'absolute',
@@ -682,11 +684,11 @@ const styles = StyleSheet.create({
     width: ps(19),
     height: ps(19),
     borderRadius: ps(10),
-    backgroundColor: paper.bgBand,
+    backgroundColor: sheet.band,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: paper.bg,
+    borderColor: sheet.bg,
   },
   // La pastille de non-lu se pose SOUS l'avatar, dans la colonne — là où une
   // ligne du fil pose son compteur de cœurs.
@@ -709,14 +711,14 @@ const styles = StyleSheet.create({
   },
   nameUnread: { fontFamily: paperFonts.strong },
   time: {
-    color: paper.inkMeta,
+    color: sheet.inkMeta,
     fontSize: ps(11),
     fontFamily: paperFonts.mono,
     marginLeft: 'auto',
     paddingLeft: ps(8),
   },
   preview: {
-    color: paper.inkMeta,
+    color: sheet.inkMeta,
     fontSize: ps(14),
     lineHeight: ps(19),
     marginTop: ps(3),
@@ -732,7 +734,7 @@ const styles = StyleSheet.create({
     letterSpacing: ps(-0.5),
   },
   emptySubtitle: {
-    color: paper.inkMeta,
+    color: sheet.inkMeta,
     fontSize: ps(15),
     textAlign: 'center',
     marginTop: ps(10),

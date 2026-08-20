@@ -29,7 +29,7 @@
 
 import { Dimensions, PixelRatio } from 'react-native';
 
-import { isDarkTheme } from './colors';
+import { colors, isDarkTheme } from './colors';
 
 /**
  * Largeur pour laquelle la maquette 2B a été dessinée. Toutes les valeurs
@@ -94,16 +94,10 @@ export interface Paper2BPalette {
   /**
    * Fond de page.
    *
-   * Le papier lui-même, et non `colors.bg` : le test s'appelle « papier », il
-   * lui fallait une feuille. Blanc cassé chaud en clair, encre chaude en
-   * sombre — assez pour qu'on voie le grain, assez peu pour que ce ne soit
-   * pas de la crème.
-   *
-   * La note précédente redoutait qu'un fil d'une teinte et un profil d'une
-   * autre se voient à l'aller-retour : c'est exact, et c'est pourquoi TOUT
-   * écran du test lit ce jeton — y compris ceux montés sous
-   * `ScreenBackground`, qui peint `colors.bg` en dur et doit donc être
-   * recouvert (voir `MessagesScreen2B`, `ConversationThreadScreen2B`).
+   * C'est celui de l'app (`colors.bg`), PAS un blanc cassé propre au test : un
+   * fil d'une teinte et un profil d'une autre se voient à chaque aller-retour
+   * entre les deux. La refonte porte sur la structure du fil, pas sur la
+   * couleur du papier.
    */
   bg: string;
   /** Bande du « post du jour » — un cran de fond, pas une carte. */
@@ -145,21 +139,15 @@ export interface Paper2BPalette {
   reposted: string;
 }
 
-// Les deux palettes portent désormais leurs propres surfaces — plus aucune
-// n'est empruntée à `colors` : c'est `isDarkTheme()` plus bas qui choisit
-// laquelle sert, et le choix est figé pour la session.
+// `colors` est déjà résolu au thème courant quand ce module est chargé (voir
+// `theme/colors.ts`), donc les deux palettes lisent la même source pour leurs
+// surfaces : c'est `isDarkTheme()` plus bas qui choisit laquelle sert.
 const LIGHT: Paper2BPalette = {
-  bg: '#F7F4ED',
-  bgBand: '#EFEBE1',
+  bg: colors.bg,
+  bgBand: colors.surface,
   ink: '#17161A',
-  // Teinter le papier coûte du contraste : sur `#F7F4ED`, les deux gris
-  // d'origine (`#6E6C75`/`#77747E`) tombent à 4,70:1 et 4,17:1 — ce dernier
-  // sous le seuil du petit texte, et tous deux sous le seuil SUR LA BANDE.
-  // Ré-encrés d'un cran, ils tiennent 5,80:1 et 4,96:1 sur le papier, 5,35:1
-  // et 4,58:1 sur la bande (l'horodatage passait déjà sous la barre avant ce
-  // changement, à 4,10:1).
-  inkSoft: '#605E68',
-  inkMeta: '#6B6873',
+  inkSoft: '#6E6C75',
+  inkMeta: '#77747E',
   inkIdle: '#B0ADB6',
   hairline: 'rgba(23,22,26,0.12)',
   gutterLine: 'rgba(23,22,26,0.14)',
@@ -174,11 +162,8 @@ const LIGHT: Paper2BPalette = {
 };
 
 const DARK: Paper2BPalette = {
-  // Quasi-noir CHAUD, pas le `#0A0A0A` neutre de Pulse : c'est la même feuille
-  // vue de nuit. L'encre reste `#F4F2ED`, et l'écart bg → bande garde le
-  // palier d'élévation dont le sombre a besoin (l'ombre n'y porte pas).
-  bg: '#131210',
-  bgBand: '#1C1A17',
+  bg: colors.bg,
+  bgBand: colors.surface,
   ink: '#F4F2ED',
   inkSoft: '#A3A0AA',
   inkMeta: '#918E99',
