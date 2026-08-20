@@ -68,6 +68,17 @@ export const FLAGS = {
    * et `theme/paper2b.ts` — que le test soit adopte ou abandonne.
    */
   FEED_2B: 'fil.refonte2b',
+
+  /**
+   * Variantes A/B des tweets (`enableExperiments`), jusque-là réservées à
+   * Windows — le mobile n'envoyait jamais `ab_test`.
+   *
+   * Posé le 2026-08-20 à 10 %, SANS montée automatique : ouverture
+   * progressive délibérée, pas une fonctionnalité qui monte toute seule.
+   * Bucket sur `user_id` (défaut) pour qu'un même lecteur ne voie pas le
+   * texte d'un tweet changer à chaque rafraîchissement.
+   */
+  AB_TEST: 'fil.abtest',
 } as const;
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS];

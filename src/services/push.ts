@@ -216,12 +216,16 @@ export async function setupFranceDailyLocalNotifications() {
         });
       } catch (error) {
         // Fallback de compatibilite (Expo Go / plateformes qui ignorent timezone).
+        // Sans le discriminant `type`, ce trigger etait invalide pour les
+        // versions recentes d'expo-notifications (« The `trigger` object you
+        // provided is invalid ») — jete silencieusement par le catch englobant,
+        // aucun rappel n'etait jamais programme.
         await Notifications.scheduleNotificationAsync({
           content,
           trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour,
-            minute: 0,
-            repeats: true
+            minute: 0
           } as any
         });
         console.log(`🔔 Rappels FR - fallback applique pour ${hour}:00`);
