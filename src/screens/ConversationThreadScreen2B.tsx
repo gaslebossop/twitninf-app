@@ -324,7 +324,7 @@ function formatTime(value?: string) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDuration(ms?: number) {
@@ -410,10 +410,14 @@ function VoiceLine({
   uri,
   durationMs,
   waveform,
+  fromMe,
+  bubbleRadius,
 }: {
   uri: string;
   durationMs?: number;
   waveform?: number[];
+  fromMe: boolean;
+  bubbleRadius: any;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -521,15 +525,15 @@ function VoiceLine({
   const activeBarIndex = Math.round(progress * (WAVEFORM_BAR_COUNT - 1));
 
   return (
-    <View style={styles.voiceRow}>
+    <View style={[styles.voiceBubble, fromMe ? styles.bubbleMine : styles.bubbleOther, bubbleRadius]}>
       <TouchableOpacity onPress={toggle} hitSlop={hitSlop} style={styles.voicePlayBtn}>
         {isLoading ? (
-          <ActivityIndicator size="small" color={paper.accent} />
+          <ActivityIndicator size="small" color={fromMe ? paper.onAccent : paper.ink} />
         ) : (
           <Ionicons
             name={isPlaying ? 'pause' : 'play'}
-            size={15}
-            color={paper.accent}
+            size={16}
+            color={fromMe ? paper.onAccent : paper.ink}
             style={!isPlaying ? { marginLeft: 1 } : undefined}
           />
         )}
@@ -540,13 +544,17 @@ function VoiceLine({
             key={i}
             style={[
               styles.voiceBar,
-              { height: 4 + amplitude * 20 },
-              i <= activeBarIndex ? styles.voiceBarPlayed : styles.voiceBarIdle,
+              // Amplitude plancher : des barres toutes plates ne se lisent plus
+              // comme un son, elles se lisent comme une ligne pointillee.
+              { height: ps(6) + amplitude * ps(16) },
+              i <= activeBarIndex
+                ? (fromMe ? styles.voiceBarPlayedMine : styles.voiceBarPlayedOther)
+                : (fromMe ? styles.voiceBarIdleMine : styles.voiceBarIdleOther),
             ]}
           />
         ))}
       </View>
-      <Text style={styles.voiceDuration}>
+      <Text style={[styles.voiceDuration, fromMe && styles.voiceDurationMine]}>
         {formatDuration(positionMs > 0 ? positionMs : totalMs)}
       </Text>
     </View>
@@ -606,7 +614,6 @@ function formatSeparator(value?: string) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const time = formatTime(value);
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const startOfMessageDay = new Date(date);
@@ -614,10 +621,10 @@ function formatSeparator(value?: string) {
   const dayDiff = Math.round(
     (startOfToday.getTime() - startOfMessageDay.getTime()) / (24 * 60 * 60 * 1000),
   );
-  if (dayDiff <= 0) return time;
-  if (dayDiff === 1) return `Hier ${time}`;
-  if (dayDiff < 7) return `${date.toLocaleDateString([], { weekday: 'long' })} ${time}`;
-  return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+  if (dayDiff <= 0) return `AUJOURD'HUI ${formatTime(value)}`;
+  if (dayDiff === 1) return 'HIER';
+  if (dayDiff < 7) return date.toLocaleDateString('fr-FR', { weekday: 'long' }).toUpperCase();
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }).toUpperCase();
 }
 
 /**
@@ -676,6 +683,7 @@ const SEEN_AVATAR_OVERLAP = { marginLeft: -5 } as const;
 
 interface MessageEntryProps {
   entry: DecoratedMessage;
+  isGroup: boolean;
   myId: string | null;
   expanded: boolean;
   /** Faux sur toutes les bulles sauf la dernière sortante, une fois vue. */
@@ -690,11 +698,15 @@ interface MessageEntryProps {
   onReact: (messageId: string, emoji: string) => void;
 }
 
-/** Rayon des seuls éléments qui en gardent un : les médias. */
-const MEDIA_RADIUS = ps(10);
+/** Rayon d'une bulle, et sa version resserrée à l'intérieur d'une salve. */
+const BUBBLE_R = ps(18);
+const BUBBLE_R_TIGHT = ps(6);
+/** Une bulle ne dépasse jamais cette part de la largeur : la ligne reste lisible. */
+const BUBBLE_MAX = '78%';
 
 const MessageEntry = memo(function MessageEntry({
   entry,
+  isGroup,
   myId,
   expanded,
   showSeen,
@@ -713,19 +725,43 @@ const MessageEntry = memo(function MessageEntry({
   const attachmentType = item.metadata?.attachment_type;
   const attachmentUrl = item.metadata?.attachment_url;
   const groupedReactions = groupReactions(item.reactions);
-  const mediaRadius = { borderRadius: MEDIA_RADIUS };
+
+  /**
+   * Le coin côté auteur se resserre à l'intérieur d'une salve : les messages
+   * envoyés coup sur coup forment un bloc continu au lieu de trois pastilles
+   * détachées. C'est le groupage recommandé partout, et il évite d'empiler
+   * trois fois le même horodatage.
+   */
+  const bubbleRadius = fromMe
+    ? {
+        borderTopLeftRadius: BUBBLE_R,
+        borderBottomLeftRadius: BUBBLE_R,
+        borderTopRightRadius: isFirstOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
+        borderBottomRightRadius: isLastOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
+      }
+    : {
+        borderTopRightRadius: BUBBLE_R,
+        borderBottomRightRadius: BUBBLE_R,
+        borderTopLeftRadius: isFirstOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
+        borderBottomLeftRadius: isLastOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
+      };
 
   // Lecture pure (aucune mutation ici) : `freshIdsRef` est alimenté à
   // l'arrivée du message, pas au rendu. Fondu-glissé court et SANS ressort :
   // le message se pose, il ne rebondit pas.
   const isFreshMessage = freshIdsRef.current.has(messageId);
 
-  const authorName = fromMe ? 'Vous' : sender?.username || 'user';
-  const lit = !fromMe && nameIsLit(sender?.profile_customization);
+  /**
+   * L'avatar n'apparaît QUE dans un groupe, et seulement au pied de la salve.
+   * En tête-à-tête, l'en-tête de l'écran dit déjà à qui on parle : le répéter
+   * à chaque message vole 44 px de largeur à toutes les lignes pour une
+   * information qu'on a sous les yeux.
+   */
+  const showAvatar = isGroup && !fromMe;
 
   return (
     <Reanimated.View
-      style={{ marginBottom: isLastOfGroup ? ps(14) : ps(3) }}
+      style={{ marginBottom: isLastOfGroup ? ps(12) : ps(2) }}
       entering={
         isFreshMessage ? FadeInDown.duration(200).easing(Easing.out(Easing.cubic)) : undefined
       }
@@ -736,74 +772,58 @@ const MessageEntry = memo(function MessageEntry({
         </Text>
       )}
 
-      {/* Une ligne de la MÊME grille que le fil : gouttière, écart, contenu.
-          C'est la gouttière qui dit qui parle — plus la position à l'écran. */}
-      <View style={styles.entry}>
-        <View style={styles.gutter}>
-          {isFirstOfGroup ? (
-            fromMe ? (
-              // Les messages sortants n'ont pas d'avatar : un repère d'accent
-              // suffit, et il tient la colonne comme le ferait une vignette.
-              <View style={styles.mineMark} />
-            ) : senderAvatar ? (
-              <Image source={{ uri: senderAvatar }} style={styles.entryAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
-            ) : (
-              <View style={[styles.entryAvatar, styles.entryAvatarFallback]}>
-                <Text style={styles.entryAvatarText}>
-                  {String(sender?.username || 'U').slice(0, 1).toUpperCase()}
-                </Text>
-              </View>
-            )
-          ) : null}
-          {/* Le rail ne descend qu'ENTRE deux messages d'une même salve. Sous
-              le dernier, il pendrait dans le vide — le défaut que le fil
-              documente déjà. */}
-          {!isLastOfGroup && <View style={[styles.rail, fromMe && styles.railMine]} />}
-        </View>
-
-        <View style={styles.entryBody}>
-          {/* La salve s'ouvre par son auteur et son heure : la forme d'un
-              relevé. En tête seulement — répéter le nom à chaque ligne en
-              ferait un procès-verbal. */}
-          {isFirstOfGroup && (
-            <View style={styles.authorLine}>
-              <Text
-                style={[
-                  styles.authorName,
-                  fromMe && styles.authorNameMine,
-                  lit && {
-                    color: certifiedNameColors(
-                      sender?.verification_style as any,
-                      sender?.profile_customization,
-                    ).from,
-                  },
-                ]}
-                numberOfLines={1}
-              >
-                {authorName}
-              </Text>
-              {!fromMe && !!sender?.verified && (
-                <VerifiedBadge
-                  verificationStyle={(sender?.verification_style as any) || 'default'}
-                  size={11}
-                  tint={
-                    certifiedNameColors(
-                      sender?.verification_style as any,
-                      sender?.profile_customization,
-                    ).from
-                  }
-                />
-              )}
-              <Text style={styles.authorTime}>
-                {formatTime(item.created_at || item.createdAt)}
-              </Text>
-            </View>
+      {/* Le nom n'est utile qu'en groupe : ailleurs il redit l'en-tête. */}
+      {isGroup && !fromMe && isFirstOfGroup && (
+        <View style={styles.groupSenderRow}>
+          <Text
+            style={[
+              styles.groupSenderName,
+              nameIsLit(sender?.profile_customization) && {
+                color: certifiedNameColors(
+                  sender?.verification_style as any,
+                  sender?.profile_customization,
+                ).from,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            {sender?.username || 'user'}
+          </Text>
+          {!!sender?.verified && (
+            <VerifiedBadge
+              verificationStyle={(sender?.verification_style as any) || 'default'}
+              size={10}
+              tint={
+                certifiedNameColors(
+                  sender?.verification_style as any,
+                  sender?.profile_customization,
+                ).from
+              }
+            />
           )}
+        </View>
+      )}
 
+      <View style={[styles.msgRow, fromMe ? styles.msgRowRight : styles.msgRowLeft]}>
+        {showAvatar && (
+          <View style={styles.avatarSlot}>
+            {isLastOfGroup &&
+              (senderAvatar ? (
+                <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
+              ) : (
+                <View style={[styles.rowAvatar, styles.rowAvatarFallback]}>
+                  <Text style={styles.rowAvatarText}>
+                    {String(sender?.username || 'U').slice(0, 1).toUpperCase()}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        )}
+
+        <View style={[styles.messageColumn, fromMe && styles.messageColumnMine]}>
           <StoryReplyReference message={item} fromMe={fromMe} />
-
           <TouchableOpacity
-            activeOpacity={0.75}
+            activeOpacity={0.85}
             onPress={() =>
               attachmentType === 'image' && attachmentUrl
                 ? onOpenImage(attachmentUrl)
@@ -814,25 +834,33 @@ const MessageEntry = memo(function MessageEntry({
               onLongPress(messageId, pageX, pageY);
             }}
             delayLongPress={280}
-            style={styles.entryTouch}
+            style={styles.bubbleTouch}
           >
             {attachmentType === 'image' && attachmentUrl ? (
-              <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, mediaRadius]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
+              <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, bubbleRadius]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
             ) : attachmentType === 'audio' && attachmentUrl ? (
               <VoiceLine
                 uri={attachmentUrl}
                 durationMs={item.metadata?.duration_ms}
                 waveform={item.metadata?.waveform}
+                fromMe={fromMe}
+                bubbleRadius={bubbleRadius}
               />
             ) : (
-              // Même encre des deux côtés : ce qui distingue l'auteur est la
-              // gouttière, pas la couleur du texte ni celle d'un fond.
-              <Text style={styles.messageText}>{item.content}</Text>
+              <View
+                style={[styles.bubble, fromMe ? styles.bubbleMine : styles.bubbleOther, bubbleRadius]}
+              >
+                <Text style={fromMe ? styles.bubbleTextMine : styles.bubbleTextOther}>
+                  {item.content}
+                </Text>
+              </View>
             )}
           </TouchableOpacity>
 
           {groupedReactions.length > 0 && (
-            <View style={styles.reactionPillRow}>
+            <View
+              style={[styles.reactionPillRow, fromMe ? styles.reactionPillRowMine : styles.reactionPillRowOther]}
+            >
               {groupedReactions.map((g) => (
                 <ReactionPill
                   key={g.emoji}
@@ -847,11 +875,15 @@ const MessageEntry = memo(function MessageEntry({
             </View>
           )}
 
-          {/* L'appui révèle la date complète : la ligne d'auteur ne porte que
-              l'heure, elle ne dit pas de quel jour il s'agit. */}
-          {expanded && (
-            <Text style={styles.entryFullDate}>
-              {formatSeparator(item.created_at || item.createdAt)}
+          {/*
+            UN horodatage par salve, au pied du dernier message — pas un par
+            bulle. Trois messages envoyés dans la même minute portaient trois
+            fois la même heure, juste sous le séparateur qui la donnait déjà.
+            L'appui sur une bulle révèle l'heure de CE message précis.
+          */}
+          {(isLastOfGroup || expanded) && (
+            <Text style={[styles.messageTime, fromMe ? styles.messageTimeRight : styles.messageTimeLeft]}>
+              {formatTime(item.created_at || item.createdAt)}
             </Text>
           )}
         </View>
@@ -875,8 +907,8 @@ const MessageEntry = memo(function MessageEntry({
                 key={a.key}
                 style={
                   a.overlap
-                    ? [styles.seenAvatar, styles.entryAvatarFallback, SEEN_AVATAR_OVERLAP]
-                    : [styles.seenAvatar, styles.entryAvatarFallback]
+                    ? [styles.seenAvatar, styles.rowAvatarFallback, SEEN_AVATAR_OVERLAP]
+                    : [styles.seenAvatar, styles.rowAvatarFallback]
                 }
               >
                 <Text style={styles.seenAvatarText}>{a.initial}</Text>
@@ -1745,6 +1777,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       return (
         <MessageEntry
           entry={item}
+          isGroup={isGroup}
           myId={myId}
           expanded={expandedMessageId === messageId}
           showSeen={showSeen}
@@ -1842,9 +1875,9 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               <Text style={styles.headerSub} numberOfLines={1}>
                 {typingLabel ||
                   (typingUsers.length > 0
-                    ? 'EN TRAIN D\'ÉCRIRE…'
+                    ? 'en train d\'Écrire…'
                     : isGroup
-                      ? `${memberCount} MEMBRE${memberCount > 1 ? 'S' : ''}`
+                      ? `${memberCount} membre${memberCount > 1 ? 's' : ''}`
                       : `@${conversationUsername || 'user'}`)}
               </Text>
             </View>
@@ -1907,7 +1940,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                   <Text style={styles.introName}>{conversationTitle || 'Conversation'}</Text>
                   <Text style={styles.introSub}>
                     {isGroup
-                      ? `GROUPE · ${memberCount} MEMBRE${memberCount > 1 ? 'S' : ''}`
+                      ? `Groupe · ${memberCount} membre${memberCount > 1 ? 's' : ''}`
                       : `@${conversationUsername || 'user'}`}
                   </Text>
                   <TouchableOpacity style={styles.introBtn} onPress={openPeer} activeOpacity={0.8}>
@@ -1923,15 +1956,15 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                 s'annonce sans encore rien dire. */}
             {typingUsers.length > 0 && (
               <View style={styles.typingRow}>
-                <View style={styles.gutter}>
+                <View style={styles.avatarSlot}>
                   {(() => {
                     const uri = getAvatarUri(
                       participantMap[String(typingUsers[0]?.user_id || '')]?.avatar || conversationAvatar || null,
                     );
                     return uri ? (
-                      <Image source={{ uri }} style={styles.entryAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
+                      <Image source={{ uri }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
                     ) : (
-                      <View style={[styles.entryAvatar, styles.entryAvatarFallback]} />
+                      <View style={[styles.rowAvatar, styles.rowAvatarFallback]} />
                     );
                   })()}
                 </View>
@@ -2141,13 +2174,11 @@ const styles = StyleSheet.create({
     letterSpacing: ps(-0.3),
     flexShrink: 1,
   },
-  // La ligne d'état parle la voix des métas : capitales espacées, chasse fixe.
   headerSub: {
     color: sheet.inkMeta,
-    fontSize: ps(10),
-    letterSpacing: ps(1),
-    marginTop: ps(2),
-    fontFamily: paperFonts.mono,
+    fontSize: ps(12),
+    marginTop: ps(1),
+    fontFamily: paperFonts.body,
   },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   headerIconBtn: { padding: ps(7) },
@@ -2157,8 +2188,8 @@ const styles = StyleSheet.create({
   // ── Ouverture de la transcription ──
   threadIntro: {
     alignItems: 'center',
-    paddingTop: ps(30),
-    paddingBottom: ps(30),
+    paddingTop: ps(22),
+    paddingBottom: ps(22),
     paddingHorizontal: ROW_PAD_X,
   },
   introName: {
@@ -2171,9 +2202,8 @@ const styles = StyleSheet.create({
   },
   introSub: {
     color: sheet.inkMeta,
-    fontSize: ps(10),
-    letterSpacing: ps(1.4),
-    fontFamily: paperFonts.mono,
+    fontSize: ps(13),
+    fontFamily: paperFonts.body,
     marginTop: ps(6),
   },
   // Pas de bouton plein : un mot, souligné d'un filet d'accent.
@@ -2192,98 +2222,89 @@ const styles = StyleSheet.create({
     letterSpacing: ps(1.5),
     fontFamily: paperFonts.mono,
     textAlign: 'center',
-    paddingTop: ps(20),
-    paddingBottom: ps(14),
+    paddingTop: ps(14),
+    paddingBottom: ps(10),
   },
 
-  // ── Une entrée, dans la grille exacte du fil ──
-  entry: { flexDirection: 'row', gap: ROW_GAP, paddingHorizontal: ROW_PAD_X },
-  gutter: { width: GUTTER_W, alignItems: 'center' },
-  entryAvatar: { width: ENTRY_AVATAR, height: ENTRY_AVATAR, borderRadius: ENTRY_AVATAR / 2 },
-  entryAvatarFallback: {
+  // ── Une bulle ──
+  // L'alignement gauche/droite est le repere principal de l'emetteur : c'est
+  // lui qui permet de savoir qui parle SANS lire. Le supprimer au profit d'une
+  // colonne unique rendait l'ecran illisible, c'est la lecon de la version
+  // precedente.
+  msgRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: ROW_PAD_X },
+  msgRowLeft: { justifyContent: 'flex-start' },
+  msgRowRight: { justifyContent: 'flex-end' },
+  avatarSlot: { width: ps(30), alignItems: 'center', justifyContent: 'flex-end', marginRight: ps(7) },
+  rowAvatar: { width: ps(26), height: ps(26), borderRadius: ps(13) },
+  rowAvatarFallback: {
     backgroundColor: sheet.band,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  entryAvatarText: { color: paper.ink, fontSize: ps(13), fontFamily: paperFonts.strong },
-  // Le repère des messages sortants : il tient la colonne à la place d'un
-  // avatar, sans en emprunter la forme — ce n'est pas un visage, c'est moi.
-  mineMark: {
-    width: ps(9),
-    height: ps(9),
-    borderRadius: ps(2),
-    backgroundColor: paper.accent,
-    marginTop: ps(9),
-  },
-  // Un vrai filet d'un pixel : le mettre à l'échelle le rendrait flou.
-  rail: {
-    width: 1,
-    flex: 1,
-    minHeight: ps(10),
-    marginTop: ps(6),
-    backgroundColor: paper.gutterLine,
-  },
-  railMine: { backgroundColor: paper.accent, opacity: 0.4 },
+  rowAvatarText: { color: paper.ink, fontSize: ps(11), fontFamily: paperFonts.strong },
 
-  entryBody: { flex: 1, minWidth: 0, paddingBottom: ps(2) },
-  authorLine: { flexDirection: 'row', alignItems: 'center', gap: ps(5), marginBottom: ps(4) },
-  authorName: {
-    color: paper.ink,
-    fontSize: ps(13),
-    fontFamily: paperFonts.strong,
-    letterSpacing: ps(-0.2),
-    flexShrink: 1,
+  groupSenderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(4),
+    marginLeft: ROW_PAD_X + ps(37),
+    marginBottom: ps(4),
+    marginTop: ps(8),
   },
-  authorNameMine: { color: paper.accent },
-  authorTime: {
-    color: sheet.inkMeta,
-    fontSize: ps(10),
-    fontFamily: paperFonts.mono,
-    marginLeft: 'auto',
-    paddingLeft: ps(8),
-  },
+  groupSenderName: { color: sheet.inkMeta, fontSize: ps(12), fontFamily: paperFonts.strong },
 
-  entryTouch: { alignSelf: 'flex-start', maxWidth: '100%' },
-  messageText: {
-    color: paper.ink,
-    fontSize: ps(17),
-    lineHeight: ps(24),
+  messageColumn: { maxWidth: BUBBLE_MAX, alignItems: 'flex-start' },
+  messageColumnMine: { alignItems: 'flex-end' },
+  bubbleTouch: { maxWidth: '100%' },
+  bubble: { paddingHorizontal: ps(14), paddingVertical: ps(9) },
+  bubbleMine: { backgroundColor: paper.accent },
+  bubbleOther: { backgroundColor: sheet.band },
+  bubbleTextMine: {
+    color: paper.onAccent,
+    fontSize: ps(16),
+    lineHeight: ps(22),
     fontFamily: paperFonts.body,
   },
-  entryFullDate: {
-    color: sheet.inkMeta,
-    fontSize: ps(10),
-    letterSpacing: ps(1),
-    fontFamily: paperFonts.mono,
-    marginTop: ps(5),
+  bubbleTextOther: {
+    color: paper.ink,
+    fontSize: ps(16),
+    lineHeight: ps(22),
+    fontFamily: paperFonts.body,
   },
 
   attachmentImage: {
     width: ps(220),
-    // Sur un écran étroit la colonne de contenu peut descendre sous 220 pt :
-    // l'image se réduit alors au lieu de déborder de la grille.
+    // Sur un ecran etroit la colonne peut descendre sous 220 pt : l'image se
+    // reduit alors au lieu de deborder de la bulle.
     maxWidth: '100%',
     height: ps(220),
     backgroundColor: sheet.band,
-    marginTop: ps(2),
   },
 
+  // UN horodatage par salve, discret, du cote de son auteur.
+  messageTime: { color: sheet.inkMeta, fontSize: ps(10), fontFamily: paperFonts.mono, marginTop: ps(3) },
+  messageTimeRight: { textAlign: 'right', marginRight: ps(4) },
+  messageTimeLeft: { marginLeft: ps(4) },
+
   // ── Message vocal, posé sur le papier ──
-  voiceRow: { flexDirection: 'row', alignItems: 'center', gap: ps(9), paddingVertical: ps(4) },
-  voicePlayBtn: {
-    width: ps(30),
-    height: ps(30),
-    borderRadius: ps(15),
-    borderWidth: 1,
-    borderColor: paper.accent,
+  voiceBubble: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: ps(9),
+    paddingHorizontal: ps(11),
+    paddingVertical: ps(10),
+    width: ps(228),
+    maxWidth: '100%',
   },
-  voiceWaveform: { flexDirection: 'row', alignItems: 'center', gap: 2.5, height: ps(24) },
-  voiceBar: { width: 2.5, borderRadius: 1.5 },
-  voiceBarIdle: { backgroundColor: paper.outline },
-  voiceBarPlayed: { backgroundColor: paper.accent },
+  voicePlayBtn: { width: ps(26), alignItems: 'center', justifyContent: 'center' },
+  voiceWaveform: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2.5, height: ps(24) },
+  voiceBar: { flex: 1, maxWidth: 3, borderRadius: 1.5 },
+  voiceBarIdleMine: { backgroundColor: paper.onAccent, opacity: 0.4 },
+  voiceBarPlayedMine: { backgroundColor: paper.onAccent },
+  voiceBarIdleOther: { backgroundColor: paper.outline },
+  voiceBarPlayedOther: { backgroundColor: paper.accent },
   voiceDuration: { color: sheet.inkMeta, fontSize: ps(10.5), fontFamily: paperFonts.mono },
+  voiceDurationMine: { color: paper.onAccent, opacity: 0.75 },
 
   // ── Renvoi vers une story ──
   storyReply: { marginBottom: ps(6) },
@@ -2322,18 +2343,21 @@ const styles = StyleSheet.create({
   },
 
   // ── Réactions ──
-  reactionPillRow: { flexDirection: 'row', gap: ps(4), marginTop: ps(5) },
+  reactionPillRow: { flexDirection: 'row', gap: ps(4), marginTop: ps(4) },
+  reactionPillRowMine: { alignSelf: 'flex-end' },
+  reactionPillRowOther: { alignSelf: 'flex-start' },
+  // Une surface pleine et discrete : cernee de rouge, la pastille se lisait
+  // comme une erreur, pas comme une reaction.
   reactionPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: ps(3),
-    borderWidth: 1,
-    borderColor: paper.hairline,
+    backgroundColor: sheet.band,
     borderRadius: ps(12),
     paddingHorizontal: ps(7),
     paddingVertical: ps(3),
   },
-  reactionPillMine: { borderColor: paper.accent },
+  reactionPillMine: { backgroundColor: paper.pillWash },
   reactionPillEmoji: { fontSize: ps(12) },
   reactionPillCount: { color: sheet.inkMeta, fontSize: ps(10), fontFamily: paperFonts.mono },
 
@@ -2387,12 +2411,19 @@ const styles = StyleSheet.create({
   // ── « écrit… » ──
   typingRow: {
     flexDirection: 'row',
-    gap: ROW_GAP,
     paddingHorizontal: ROW_PAD_X,
     paddingBottom: ps(8),
     alignItems: 'center',
   },
-  typingDots: { flexDirection: 'row', alignItems: 'center', gap: ps(4) },
+  typingDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(4),
+    backgroundColor: sheet.band,
+    borderRadius: ps(14),
+    paddingHorizontal: ps(12),
+    paddingVertical: ps(9),
+  },
   typingDot: { width: ps(6), height: ps(6), borderRadius: ps(3), backgroundColor: sheet.inkMeta },
 
   // ── Compositeur : une ligne réglée ──
@@ -2403,12 +2434,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: paper.hairline,
   },
-  inputWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: ps(12) },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: ps(12),
+    borderBottomWidth: 1,
+    borderBottomColor: paper.hairline,
+    paddingBottom: ps(6),
+  },
   input: {
     flex: 1,
     color: paper.ink,
-    fontSize: ps(17),
-    lineHeight: ps(23),
+    fontSize: ps(16),
+    lineHeight: ps(22),
     fontFamily: paperFonts.body,
     maxHeight: ps(120),
     paddingVertical: ps(6),
