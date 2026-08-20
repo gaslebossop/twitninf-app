@@ -474,7 +474,6 @@ function TweetRowGutter({
           // jamais, sans rien à l'écran pour le dire.
           onLongPress={superHeartEnabled ? handleSuperLikeLongPress : undefined}
           delayLongPress={420}
-          disabled={isAd}
           activeOpacity={0.6}
           hitSlop={{ top: 8, bottom: 8, left: 12, right: 8 }}
           accessibilityLabel={isLiked ? 'Retirer le j’aime' : 'Aimer ce tweet'}
@@ -496,11 +495,9 @@ function TweetRowGutter({
               />
             </Animated.View>
           </View>
-          {!isAd && (
-            <Text style={[S.countMain, isReply && S.countMainReply, isLiked && S.countOn]}>
-              {fmtCount(tweet.stats?.likes || 0)}
-            </Text>
-          )}
+          <Text style={[S.countMain, isReply && S.countMainReply, isLiked && S.countOn]}>
+            {fmtCount(tweet.stats?.likes || 0)}
+          </Text>
         </TouchableOpacity>
 
         {/* Repost — replacé ici plutôt que supprimé (voir l'en-tête du
