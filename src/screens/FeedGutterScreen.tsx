@@ -59,6 +59,7 @@ import {
   Image,
   AppState,
   Dimensions,
+  Share,
   type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -81,7 +82,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { apiService, progressiveRecommendationService } from '../services';
-import { neuralRankService } from '../services/neuralRankService';
+import { neuralRankService, signalsFromTweet } from '../services/neuralRankService';
 import { Tweet, RecommendationItem, RecommendationRequest, ProgressiveRecommendationRequest, ProgressiveRecommendationItem } from '../types/api';
 import Avatar from '../components/Avatar';
 import BanAlertBanner from '../components/BanAlertBanner';
@@ -1171,7 +1172,7 @@ export default function FeedGutterScreen() {
         trackTweetInteraction(tweetId, wasLiked ? 'unlike' : 'like', { tab: activeTab, previous_likes: currentLikes, algorithm: currentAlgorithm });
         if (activeTab === 'forYou') {
           sendRecommendationFeedback(tweetId, wasLiked ? 'dislike' : 'like');
-          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasLiked ? 'unlike' : 'like' });
+          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasLiked ? 'unlike' : 'like', ...signalsFor(tweetId) });
         }
       }
     } catch {
@@ -1253,7 +1254,7 @@ export default function FeedGutterScreen() {
         trackTweetInteraction(tweetId, wasRetweeted ? 'unretweet' : 'retweet', { tab: activeTab, previous_retweets: currentRetweets, algorithm: currentAlgorithm });
         if (activeTab === 'forYou') {
           sendRecommendationFeedback(tweetId, wasRetweeted ? 'skip' : 'share');
-          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasRetweeted ? 'unretweet' : 'retweet' });
+          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasRetweeted ? 'unretweet' : 'retweet', ...signalsFor(tweetId) });
         }
       }
     } catch {
@@ -1261,35 +1262,78 @@ export default function FeedGutterScreen() {
     } finally { retweetLockRef.current[tweetId] = false; }
   }, [activeTab, currentAlgorithm, trackTweetInteraction, offlineEnabled, online, queueAction]);
 
+  /**
+   * Signaux joints à chaque geste : auteur à créditer, et version A/B vue.
+   *
+   * `tweetsRef` et non `tweets` : ces handlers sont capturés une fois par des
+   * `useCallback` stables (c'est ce qui évite de re-rendre toutes les lignes),
+   * donc une lecture du state serait figée au contenu du montage.
+   */
+  const signalsFor = useCallback(
+    (tweetId: string) =>
+      signalsFromTweet(tweetsRef.current.find((t) => String(t.id) === String(tweetId))),
+    [],
+  );
+
   const handleBookmark = async (tweetId: string) => {
-    try {
-      await trackingService.trackBookmark(tweetId);
-    } catch (error) {
+    trackingService.trackBookmark(tweetId, signalsFor(tweetId)).catch((error) => {
       console.warn('Erreur tracking bookmark:', error);
+    });
+    const response = await apiService.bookmarkTweet(tweetId);
+    if (response.success) {
+      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
+    } else {
+      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
     }
   };
 
   const handleSkip = async (tweetId: string) => {
     try {
-      await trackingService.trackSkip(tweetId);
+      await trackingService.trackSkip(tweetId, signalsFor(tweetId));
     } catch (error) {
       console.warn('Erreur tracking skip:', error);
     }
+    // « Il n'apparaîtra plus dans ton fil » : le moteur ne marque vu que ce
+    // qui pèse positivement, et un skip pèse -0.5 — il ne suffit donc pas à
+    // faire disparaître la ligne. On tient la promesse ici, tout de suite.
+    setTweets((prev) => prev.filter((t) => String(t.id) !== String(tweetId)));
   };
 
   const handleBlock = async (tweetId: string) => {
-    try {
-      await trackingService.trackBlock(tweetId);
-    } catch (error) {
+    const { authorId } = signalsFor(tweetId);
+    if (!authorId) return;
+    const confirmed = await confirmAsync({
+      title: 'Bloquer ce compte ?',
+      message: 'Il ne pourra plus vous contacter ni voir votre profil, et ses tweets disparaîtront de votre fil.',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    trackingService.trackBlock(tweetId, signalsFor(tweetId)).catch((error) => {
       console.warn('Erreur tracking block:', error);
+    });
+    const response = await apiService.blockUser(authorId);
+    if (response.success) {
+      toast.success('Compte bloqué');
+      setTweets((prev) => prev.filter((t) => String(t.user_id) !== String(authorId)));
+    } else {
+      toast.error(response.message || 'Impossible de bloquer ce compte');
     }
   };
 
   const handleShare = async (tweetId: string) => {
-    try {
-      await trackingService.trackShare(tweetId);
-    } catch (error) {
+    trackingService.trackShare(tweetId, signalsFor(tweetId)).catch((error) => {
       console.warn('Erreur tracking share:', error);
+    });
+    const response = await apiService.shareTweet(tweetId);
+    if (!response.success || !response.data?.share_link) {
+      toast.error(response.message || 'Impossible de partager ce tweet');
+      return;
+    }
+    try {
+      await Share.share({ message: response.data.share_link, url: response.data.share_link });
+    } catch (error) {
+      console.warn('Erreur ouverture feuille de partage:', error);
     }
   };
 
@@ -1314,7 +1358,7 @@ export default function FeedGutterScreen() {
     });
 
     // Le suivi analytics reste, mais il ne remplace plus le signalement.
-    trackingService.trackReport(tweetId).catch((error) => {
+    trackingService.trackReport(tweetId, signalsFor(tweetId)).catch((error) => {
       console.warn('Erreur tracking report:', error);
     });
   };
@@ -1498,6 +1542,15 @@ export default function FeedGutterScreen() {
           tweet_id: tweetId,
           tab: activeTab,
           position: payload?.index,
+        });
+        // Aller voir QUI a écrit un tweet est un signal d'intérêt fort (1.5 au
+        // barème du moteur, plus qu'un like). Il n'était envoyé nulle part :
+        // `trackProfileView` existait sans un seul appelant. Le tweet reste la
+        // cible — c'est lui qui a été vu et qui a donné envie —, l'auteur part
+        // à part pour que le boost temps réel et le bandit le voient.
+        trackingService.trackProfileView(tweetId, {
+          ...signalsFor(tweetId),
+          authorId: String(author.id),
         });
         (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
         break;
@@ -1811,7 +1864,7 @@ export default function FeedGutterScreen() {
               neuralRankService.trackInteraction({
                 tweetId: item.id,
                 interactionType: more ? 'interested' : 'not_interested',
-                authorId: author?.id ? String(author.id) : undefined,
+                ...signalsFromTweet(item),
               });
               trackCustomAction('algo_check_answer', item.id, 'tweet', {
                 liked: more,
@@ -2000,6 +2053,7 @@ export default function FeedGutterScreen() {
   const handleOpenExploreProfile = useCallback((tweet: Tweet) => {
     const author = (tweet as any)?.originalTweet?.author || tweet.author;
     if (!author?.id) return;
+    trackingService.trackProfileView(tweet.id, signalsFromTweet(tweet));
     setImmersiveIndex(null);
     (navigation as any).navigate('UserProfile', { userId: author.id, username: author.username });
   }, [navigation]);
@@ -2051,7 +2105,7 @@ export default function FeedGutterScreen() {
           previous_likes: tweet.stats?.likes || 0,
           algorithm: 'trending',
         });
-        neuralRankService.trackInteraction({ tweetId, interactionType: next ? 'like' : 'unlike' });
+        neuralRankService.trackInteraction({ tweetId, interactionType: next ? 'like' : 'unlike', ...signalsFromTweet(tweet) });
       }
     } catch {
       applyLiked(!next);
@@ -2086,6 +2140,7 @@ export default function FeedGutterScreen() {
       else neuralRankService.trackInteraction({
         tweetId,
         interactionType: wasRetweeted ? 'unretweet' : 'retweet',
+        ...signalsFromTweet(tweet),
       });
     } catch {
       applyRetweeted(wasRetweeted);
@@ -2141,11 +2196,10 @@ export default function FeedGutterScreen() {
    * voulues évitées, contre 43 % pour un refus au niveau du compte).
    */
   const handleExploreInterest = useCallback((tweet: Tweet, interested: boolean) => {
-    const author = (tweet as any)?.originalTweet?.author || tweet.author;
     neuralRankService.trackInteraction({
       tweetId: tweet.id,
       interactionType: interested ? 'interested' : 'not_interested',
-      authorId: author?.id ? String(author.id) : undefined,
+      ...signalsFromTweet(tweet),
     });
     // Un « non » doit se voir tout de suite : le tweet quitte la grille au
     // retour, au lieu d'y être encore après qu'on a dit ne pas en vouloir.
@@ -2167,6 +2221,7 @@ export default function FeedGutterScreen() {
       dwellMedia: media.videoUrl ? 'video' : media.hasVisual ? 'image' : 'text',
       contentChars: displayContentOf(tweet).length,
       videoDurationMs,
+      ...signalsFromTweet(tweet),
     });
   }, []);
 

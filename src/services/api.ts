@@ -1368,6 +1368,78 @@ class ApiService {
     }
   }
 
+  async bookmarkTweet(id: string): Promise<ApiResponse<{ bookmarked: boolean; tweet_id: string }>> {
+    try {
+      const response = await this.makeRequest(`/api/tweets/${id}/bookmark`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la mise en favori';
+      console.error('❌ Erreur de favori:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
+  async blockUser(userId: string): Promise<ApiResponse<{ blocked: boolean; blocked_user_id: string }>> {
+    try {
+      const response = await this.makeRequest(`/api/users/${userId}/block`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors du blocage';
+      console.error('❌ Erreur de blocage:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
+  async unblockUser(userId: string): Promise<ApiResponse<{ blocked: boolean; unblocked_user_id: string }>> {
+    try {
+      const response = await this.makeRequest(`/api/users/${userId}/unblock`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors du déblocage';
+      console.error('❌ Erreur de déblocage:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
+  async shareTweet(id: string): Promise<ApiResponse<{ share_link: string; tweet_id: string }>> {
+    try {
+      const response = await this.makeRequest(`/api/tweets/${id}/share`, {
+        method: 'POST',
+        requiresAuth: true,
+      });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors du partage';
+      console.error('❌ Erreur de partage:', errorMessage);
+      return {
+        success: false,
+        message: errorMessage,
+        errors: []
+      };
+    }
+  }
+
   /**
    * Incrémenter les vues de plusieurs tweets en une seule requête (optimisé).
    * `source: 'explore'` fait aussi incrémenter `explore_view_count` côté
