@@ -3,9 +3,32 @@
  *
  * CLONE de `MessagesScreen.tsx`. Toute la logique — chargement des
  * conversations, invitations, anneaux de story, recherche, tabulation
- * Principal/Général — est reprise telle quelle et doit le RESTER : seule la
- * palette change (`theme/paper2b.ts`), en clair comme en sombre. L'original
+ * Principal/Général — est reprise telle quelle et doit le RESTER. L'original
  * n'est pas touché ; il continue de servir tout compte sans le drapeau.
+ *
+ * ── L'objet : un REGISTRE de correspondance ──────────────────────────────
+ * Pas une pile de cartes de chat. Une page réglée où chaque ligne est un
+ * correspondant : qui, ce qui s'est dit en dernier, et quand. La refonte ne
+ * s'arrête donc pas à la couleur — la page entre dans la MÊME grille que le
+ * fil (`GUTTER_W` / `ROW_GAP` / `ROW_PAD_X`), sinon on quitte le papier au
+ * premier onglet.
+ *
+ * ── Ce que la gouttière porte ici ────────────────────────────────────────
+ * Dans le fil, la colonne de 52 px porte le cœur et son compteur. Ici elle
+ * porte l'interlocuteur (avatar + anneau de story) et, juste dessous, l'état
+ * de la ligne : la pastille de non-lu, à l'endroit EXACT où une ligne du fil
+ * pose son compteur. Un seul endroit à regarder pour savoir où on en est.
+ *
+ * ── Ce qui disparaît ─────────────────────────────────────────────────────
+ * L'icône d'appareil photo en bout de chaque ligne. À l'échelle d'un écran
+ * c'était vingt-cinq cibles grises pesant autant que les noms — précisément
+ * la rangée d'icônes que 2B existe pour supprimer (voir `TweetRowGutter`).
+ * Le raccourci reste accessible depuis la story de la personne.
+ *
+ * Et les aplats : la barre de recherche grise devient une ligne réglée, le
+ * bandeau des demandes une ligne de la même grille, la pastille de comptage
+ * un nombre en chasse fixe. Ce qui structure la page est un filet, jamais
+ * une couleur — c'est la règle de `TweetDetailGutterScreen`.
  */
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
@@ -23,7 +46,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { statusBarStyle } from '../theme';
-import { paper, paperFonts } from '../theme/paper2b';
+import { paper, paperFonts, ps, GUTTER_W, ROW_PAD_X, ROW_GAP } from '../theme/paper2b';
 import { AppStatusBar, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import { LIST_TUNING } from '../utils/listTuning';
 import apiService from '../services/api';
@@ -318,9 +341,11 @@ export default function MessagesScreen2B({ navigation }: any) {
 
     return (
       <TouchableOpacity style={styles.row} onPress={() => openConversation(item)} activeOpacity={0.65}>
-        <View style={styles.rowAvatar}>
+        {/* La gouttière : l'interlocuteur, puis l'état de la ligne dessous. */}
+        <View style={styles.gutter}>
+          <View style={styles.avatarWrap}>
           <StoryRing
-            size={56}
+            size={AVATAR}
             uri={avatarUri}
             label={item.displayName}
             hasStory={hasStory}
@@ -337,15 +362,18 @@ export default function MessagesScreen2B({ navigation }: any) {
               <Ionicons name="people" size={10} color={paper.ink} />
             </View>
           )}
+          </View>
+          {/* Même place que le compteur d'une ligne du fil. */}
+          {item.unread && <View style={styles.unreadDot} />}
         </View>
 
-        <View style={styles.rowBody}>
-          <View style={styles.rowNameLine}>
+        <View style={styles.content}>
+          <View style={styles.nameLine}>
             <PremiumDisplayName
               text={item.displayName}
               baseStyle={{
-                ...styles.rowName,
-                ...(item.unread ? styles.rowNameUnread : null),
+                ...styles.name,
+                ...(item.unread ? styles.nameUnread : null),
               }}
               isPremium={false}
               fontId="system"
@@ -362,19 +390,13 @@ export default function MessagesScreen2B({ navigation }: any) {
                 tint={certifiedNameColors(item.verificationStyle as any, item.customization).from}
               />
             )}
+            {/* L'horodatage tient le bord droit, en chasse fixe : une colonne
+                de dates ne se balaie que si les chiffres s'alignent. */}
+            <Text style={styles.time}>{formatRelativeTime(item.lastTs)}</Text>
           </View>
-          <Text style={[styles.rowPreview, item.unread && styles.rowPreviewUnread]} numberOfLines={1}>
+          <Text style={[styles.preview, item.unread && styles.previewUnread]} numberOfLines={2}>
             {item.lastMessageFromMe ? `Vous : ${item.lastMessage}` : item.lastMessage}
-            <Text style={styles.rowTime}>{`  ·  ${formatRelativeTime(item.lastTs)}`}</Text>
           </Text>
-        </View>
-
-        <View style={styles.rowTrailing}>
-          {item.unread ? (
-            <View style={styles.unreadDot} />
-          ) : (
-            <Ionicons name="camera-outline" size={23} color={paper.inkSoft} />
-          )}
         </View>
       </TouchableOpacity>
     );
@@ -388,7 +410,9 @@ export default function MessagesScreen2B({ navigation }: any) {
       <SafeAreaView style={styles.container} edges={['top']}>
         <AppStatusBar />
 
-        {/* ── Header Instagram : identité à gauche, actions à droite ── */}
+        {/* Un chevron, un titre, sur un filet — comme la publication ouverte.
+            Le chevron « ▾ » décoratif à côté du pseudo est retiré : il
+            n'ouvrait rien, la ligne entière menait déjà au profil. */}
         <View style={styles.header}>
           {navigation.canGoBack?.() ? (
             <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={hitSlop} style={styles.headerBack}>
@@ -406,7 +430,6 @@ export default function MessagesScreen2B({ navigation }: any) {
             <Text style={styles.headerUsername} numberOfLines={1}>
               {me?.username || 'messages'}
             </Text>
-            <Ionicons name="chevron-down" size={16} color={paper.ink} />
           </TouchableOpacity>
 
           <View style={styles.headerActions}>
@@ -474,8 +497,8 @@ export default function MessagesScreen2B({ navigation }: any) {
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.tabLabel, tab === value && styles.tabLabelActive]}>
-                      {value === 'primary' ? 'Principal' : 'Général'}
-                      {value === 'general' && generalCount > 0 ? ` (${generalCount})` : ''}
+                      {value === 'primary' ? 'PRINCIPAL' : 'GÉNÉRAL'}
+                      {value === 'general' && generalCount > 0 ? ` ${generalCount}` : ''}
                     </Text>
                     <View style={[styles.tabUnderline, tab === value && styles.tabUnderlineActive]} />
                   </TouchableOpacity>
@@ -489,19 +512,20 @@ export default function MessagesScreen2B({ navigation }: any) {
                   activeOpacity={0.7}
                   onPress={() => navigation.navigate('NewConversation', { initialTab: 'invites' })}
                 >
+                  {/* L'icône tient la gouttière, comme un avatar : la ligne
+                      des demandes est une ligne du registre, pas un encart. */}
                   <View style={styles.requestsIcon}>
                     <Ionicons name="mail-unread-outline" size={22} color={paper.ink} />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.content}>
                     <Text style={styles.requestsTitle}>Demandes de messages</Text>
                     <Text style={styles.requestsSubtitle}>
                       {invitations.length} nouvelle{invitations.length > 1 ? 's' : ''} demande
                       {invitations.length > 1 ? 's' : ''}
                     </Text>
                   </View>
-                  <View style={styles.requestsCount}>
-                    <Text style={styles.requestsCountText}>{invitations.length}</Text>
-                  </View>
+                  {/* Un nombre, pas une pastille pleine : rien à toucher ici. */}
+                  <Text style={styles.requestsCount}>{invitations.length}</Text>
                 </TouchableOpacity>
               )}
 
@@ -513,9 +537,6 @@ export default function MessagesScreen2B({ navigation }: any) {
           ListEmptyComponent={
             loading ? null : (
               <View style={styles.emptyWrap}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons name="chatbubble-outline" size={38} color={paper.ink} />
-                </View>
                 <Text style={styles.emptyTitle}>
                   {tab === 'primary' ? 'Aucun message' : 'Rien dans Général'}
                 </Text>
@@ -538,105 +559,116 @@ export default function MessagesScreen2B({ navigation }: any) {
   );
 }
 
+/** L'avatar tient dans la gouttière sans la remplir : 46 dans 52. */
+const AVATAR = ps(46);
+
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: paper.bg },
   container: { flex: 1, backgroundColor: 'transparent' },
 
+  // ── En-tête : un filet, jamais un aplat ──
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    paddingHorizontal: ps(14),
+    paddingVertical: ps(10),
+    borderBottomWidth: 1,
+    borderBottomColor: paper.hairline,
   },
-  headerBack: { padding: 4 },
-  headerBackSpacer: { width: 8 },
-  headerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingLeft: 4 },
+  headerBack: { padding: ps(4), marginLeft: ps(-4) },
+  headerBackSpacer: { width: ps(2) },
+  headerIdentity: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingLeft: ps(2) },
   headerUsername: {
     color: paper.ink,
-    fontSize: 21,
+    fontSize: ps(21),
     fontFamily: paperFonts.display,
-    letterSpacing: -0.4,
-    maxWidth: '80%',
+    letterSpacing: ps(-0.42),
+    maxWidth: '86%',
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingRight: 10 },
-  headerAction: { padding: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: ps(18) },
+  headerAction: { padding: ps(2) },
 
   listContent: {},
 
-  searchWrap: { paddingHorizontal: 14, paddingBottom: 10 },
+  // ── Recherche : une ligne réglée, pas une boîte grise ──
+  searchWrap: { paddingHorizontal: ROW_PAD_X, paddingTop: ps(12), paddingBottom: ps(4) },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: paper.bgBand,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 40,
+    gap: ps(9),
+    borderBottomWidth: 1,
+    borderBottomColor: paper.hairline,
+    paddingBottom: ps(9),
   },
-  searchInput: { flex: 1, color: paper.ink, fontSize: 15, padding: 0 },
+  searchInput: {
+    flex: 1,
+    color: paper.ink,
+    fontSize: ps(16),
+    fontFamily: paperFonts.body,
+    padding: 0,
+  },
 
-  tray: { borderBottomWidth: 0, paddingVertical: 6 },
+  tray: { borderBottomWidth: 0, paddingVertical: ps(8) },
 
+  // ── Onglets : la voix des méta de 2B, capitales espacées en chasse fixe ──
   tabs: {
     flexDirection: 'row',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     borderBottomColor: paper.hairline,
   },
   tab: { flex: 1, alignItems: 'center' },
   tabLabel: {
-    color: paper.inkMeta,
-    fontSize: 14,
-    fontFamily: paperFonts.strong,
-    paddingVertical: 12,
+    color: paper.inkIdle,
+    fontSize: ps(11),
+    letterSpacing: ps(1.5),
+    fontFamily: paperFonts.mono,
+    paddingVertical: ps(13),
   },
   tabLabelActive: { color: paper.ink },
   tabUnderline: { height: 1.5, width: '100%', backgroundColor: 'transparent' },
   tabUnderlineActive: { backgroundColor: paper.ink },
 
+  // ── Demandes : une ligne du registre ──
   requestsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    gap: ROW_GAP,
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(14),
+    paddingBottom: ps(14),
   },
-  requestsIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: paper.bgBand,
-    alignItems: 'center',
-    justifyContent: 'center',
+  requestsIcon: { width: GUTTER_W, alignItems: 'center' },
+  requestsTitle: { color: paper.ink, fontSize: ps(16), fontFamily: paperFonts.strong },
+  requestsSubtitle: {
+    color: paper.inkMeta,
+    fontSize: ps(13),
+    marginTop: ps(2),
+    fontFamily: paperFonts.body,
   },
-  requestsTitle: { color: paper.ink, fontSize: 15, fontFamily: paperFonts.strong },
-  requestsSubtitle: { color: paper.accent, fontSize: 13, marginTop: 2, fontFamily: paperFonts.body },
-  requestsCount: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    paddingHorizontal: 6,
-    backgroundColor: paper.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  requestsCountText: { color: paper.onAccent, fontSize: 12, fontFamily: paperFonts.monoStrong },
+  requestsCount: { color: paper.accent, fontSize: ps(14), fontFamily: paperFonts.monoStrong },
 
+  // ── La ligne, dans la grille exacte du fil ──
+  // Pas de filet entre deux lignes : le fil 2B n'en pose pas non plus, le
+  // rythme vient du rembourrage et de la colonne. En ajouter ici rouvrirait
+  // la page en tranches et casserait l'accord avec le fil.
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    gap: ROW_GAP,
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(13),
+    paddingBottom: ps(13),
   },
-  rowAvatar: { marginRight: 12 },
+  gutter: { width: GUTTER_W, alignItems: 'center' },
+  avatarWrap: { width: AVATAR, height: AVATAR },
   aiBadge: {
     position: 'absolute',
-    right: 0,
+    right: ps(-1),
     bottom: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: ps(18),
+    height: ps(18),
+    borderRadius: ps(9),
     backgroundColor: paper.accent,
     alignItems: 'center',
     justifyContent: 'center',
@@ -645,57 +677,68 @@ const styles = StyleSheet.create({
   },
   groupBadge: {
     position: 'absolute',
-    right: 0,
+    right: ps(-1),
     bottom: 0,
-    width: 19,
-    height: 19,
-    borderRadius: 10,
+    width: ps(19),
+    height: ps(19),
+    borderRadius: ps(10),
     backgroundColor: paper.bgBand,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: paper.bg,
   },
-  rowBody: { flex: 1, marginRight: 10 },
-  rowNameLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  rowName: {
+  // La pastille de non-lu se pose SOUS l'avatar, dans la colonne — là où une
+  // ligne du fil pose son compteur de cœurs.
+  unreadDot: {
+    width: ps(7),
+    height: ps(7),
+    borderRadius: ps(4),
+    backgroundColor: paper.accent,
+    marginTop: ps(7),
+  },
+
+  content: { flex: 1, minWidth: 0 },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: ps(5) },
+  name: {
     color: paper.ink,
-    fontSize: 15,
+    fontSize: ps(16),
     fontFamily: paperFonts.body,
+    letterSpacing: ps(-0.3),
     flexShrink: 1,
   },
-  rowNameUnread: { fontFamily: paperFonts.strong },
-  rowPreview: {
+  nameUnread: { fontFamily: paperFonts.strong },
+  time: {
     color: paper.inkMeta,
-    fontSize: 14,
-    marginTop: 3,
+    fontSize: ps(11),
+    fontFamily: paperFonts.mono,
+    marginLeft: 'auto',
+    paddingLeft: ps(8),
+  },
+  preview: {
+    color: paper.inkMeta,
+    fontSize: ps(14),
+    lineHeight: ps(19),
+    marginTop: ps(3),
     fontFamily: paperFonts.body,
   },
-  rowPreviewUnread: { color: paper.ink, fontFamily: paperFonts.bodyStrong },
-  rowTime: { color: paper.inkMeta, fontFamily: paperFonts.mono },
-  rowTrailing: { width: 26, alignItems: 'flex-end' },
-  unreadDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: paper.accent },
+  previewUnread: { color: paper.ink, fontFamily: paperFonts.bodyStrong },
 
-  loadingWrap: { paddingVertical: 28, alignItems: 'center' },
-  emptyWrap: { alignItems: 'center', paddingTop: 52, paddingHorizontal: 40 },
-  emptyIcon: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    borderWidth: 1.5,
-    borderColor: paper.outline,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+  emptyWrap: { alignItems: 'center', paddingTop: ps(56), paddingHorizontal: ps(44) },
+  emptyTitle: {
+    color: paper.ink,
+    fontSize: ps(22),
+    fontFamily: paperFonts.display,
+    letterSpacing: ps(-0.5),
   },
-  emptyTitle: { color: paper.ink, fontSize: 20, fontFamily: paperFonts.display },
   emptySubtitle: {
     color: paper.inkMeta,
-    fontSize: 14,
+    fontSize: ps(15),
     textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
+    marginTop: ps(10),
+    lineHeight: ps(21),
+    fontFamily: paperFonts.body,
   },
-  emptyCta: { marginTop: 18 },
-  emptyCtaText: { color: paper.accent, fontSize: 15, fontFamily: paperFonts.strong },
+  emptyCta: { marginTop: ps(20) },
+  emptyCtaText: { color: paper.accent, fontSize: ps(15), fontFamily: paperFonts.strong },
 });
