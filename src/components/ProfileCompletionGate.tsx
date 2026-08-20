@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,6 +24,20 @@ type StoredPermission = 'granted' | 'denied' | 'restricted' | 'unavailable';
 // Simple attente du profil : l'ordre vient de la file, pas de ce delai
 // (voir REGISTRATION_WINDOW_MS dans StartupPopupContext).
 const STARTUP_SETTLE_MS = 250;
+/**
+ * Age au-dela duquel un retour au premier plan vaut une nouvelle connexion.
+ *
+ * La capture ne se faisait qu'au demarrage A FROID. Or une application mobile
+ * n'est presque jamais relancee : elle est mise de cote et reprise. Quelqu'un
+ * qui rouvre twitninf trois fois par jour sans jamais le tuer ne poussait donc
+ * sa position qu'une fois — et la presence sur la Carte NF expire au bout de
+ * 8 h (`ttl_hours`). Resultat : une epingle qui disparait alors que la personne
+ * est en train de s'en servir.
+ *
+ * Une demi-heure laisse la presence largement fraiche sans rejouer une capture
+ * a chaque va-et-vient entre deux applications.
+ */
+const REFRESH_AFTER_MS = 30 * 60 * 1000;
 const makeCaptureKey = (userId: string) =>
   `${userId}:${Date.now()}:${Math.random().toString(36).slice(2, 12)}`;
 
@@ -49,6 +64,8 @@ export default function ProfileCompletionGate() {
   // donc à chaque changement d'identité, jamais entre deux rendus du même
   // utilisateur.
   const captureAttempted = useRef(false);
+  /** Horodatage de la derniere capture reussie, pour l'echeance ci-dessus. */
+  const lastCaptureAt = useRef(0);
 
   const needsDemographics = Boolean(user && !user.demographics_validated_at);
   const consent = user?.location_consent_status || 'undetermined';
@@ -88,6 +105,7 @@ export default function ProfileCompletionGate() {
       capturedAt: new Date().toISOString(),
     });
     if (!response.success) throw new Error(response.message || 'Enregistrement impossible');
+    lastCaptureAt.current = Date.now();
     setCaptured(true);
     await refreshCurrentUser();
   }, [refreshCurrentUser]);
@@ -124,6 +142,7 @@ export default function ProfileCompletionGate() {
       capturedAt: new Date(position.timestamp).toISOString(),
     });
     if (!response.success) throw new Error(response.message || 'Enregistrement impossible');
+    lastCaptureAt.current = Date.now();
     setCaptured(true);
   }, [captured]);
 
@@ -161,6 +180,31 @@ export default function ProfileCompletionGate() {
     })();
     return () => { cancelled = true; };
   }, [captured, captureLocation, consent, ready, storePermissionOnly, user?.id]);
+
+  /**
+   * Le retour au premier plan vaut une nouvelle connexion.
+   *
+   * On ne recapture rien ici : on rouvre simplement la porte que l'effet
+   * ci-dessus referme apres son premier succes. Lui seul sait quoi envoyer, et
+   * il relit la permission systeme au passage — une autorisation revoquee dans
+   * les reglages de l'appareil pendant que l'application dormait est donc vue
+   * a ce moment-la, pas au prochain lancement.
+   *
+   * La cle de capture n'est PAS regeneree : cote serveur, `capture_key`
+   * dedoublonne l'evenement de localisation, qui reste donc un par session —
+   * seule la Carte NF est rafraichie (`updatePosition` lit la charge utile
+   * envoyee, pas la ligne deja en base). On ne cree pas une trace personnelle
+   * supplementaire pour repousser une echeance de presence.
+   */
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      if (Date.now() - lastCaptureAt.current < REFRESH_AFTER_MS) return;
+      captureAttempted.current = false;
+      setCaptured(false);
+    });
+    return () => subscription.remove();
+  }, []);
 
   const saveDemographics = async () => {
     const parsedAge = Number(age);

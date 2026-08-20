@@ -78,6 +78,24 @@ const PRIORITY: StartupPopupId[] = [
   'navbar', 'profile',
 ];
 
+/**
+ * Étapes qui se posent SUR l'application au lieu de la remplacer.
+ *
+ * Toutes les autres sont des pages plein écran : le fond opaque du parcours
+ * (`StartupFlowBackdrop`) les sert, en empêchant le fil de réapparaître dans
+ * les interstices. `feed2b` est l'exception — c'est une visite guidée dont les
+ * bulles désignent le VRAI fil, avec un voile percé d'un trou sur l'élément
+ * montré. Masquer l'application sous elle vide le trou de son contenu, et
+ * pendant les secondes ou la visite mesure ses ancres il ne reste plus rien du
+ * tout à l'écran : un aplat `colors.bg`, donc noir en thème sombre et blanc en
+ * clair. C'est ce qu'on voyait à l'étape 2 du parcours de connexion.
+ *
+ * Une étape listée ici garde l'exclusivité du créneau — une modale native
+ * ouverte en même temps passerait par-dessus son voile — mais renonce au
+ * masque.
+ */
+const TRANSPARENT: StartupPopupId[] = ['feed2b'];
+
 interface StartupPopupContextValue {
   request: (id: StartupPopupId) => void;
   release: (id: StartupPopupId) => void;
@@ -88,6 +106,8 @@ interface StartupPopupContextValue {
   stepCount: number;
   /** Étapes encore en attente, recensement initial compris. */
   pendingCount: number;
+  /** Faut-il masquer l'application derrière le parcours (voir `TRANSPARENT`). */
+  masked: boolean;
 }
 
 const StartupPopupContext = createContext<StartupPopupContextValue>({
@@ -97,6 +117,7 @@ const StartupPopupContext = createContext<StartupPopupContextValue>({
   stepIndex: 0,
   stepCount: 0,
   pendingCount: 0,
+  masked: false,
 });
 
 export function StartupPopupProvider({ children }: { children: ReactNode }) {
@@ -174,9 +195,19 @@ export function StartupPopupProvider({ children }: { children: ReactNode }) {
   const stepCount = flowIds.length;
   const stepIndex = current ? flowIds.indexOf(current) + 1 : 0;
 
+  /**
+   * Le masque suit l'étape COURANTE, pas la file entière : pendant une étape
+   * transparente, une étape opaque encore en attente derrière elle ne doit pas
+   * rallumer le fond. Quand `current` est nul — fenêtre de recensement, ou
+   * relais entre deux étapes — on masque : c'est justement l'interstice que ce
+   * fond existe pour couvrir.
+   */
+  const masked =
+    pending.length > 0 && !(current !== null && TRANSPARENT.includes(current));
+
   const value = useMemo(
-    () => ({ request, release, current, stepIndex, stepCount, pendingCount: pending.length }),
-    [request, release, current, stepIndex, stepCount, pending.length],
+    () => ({ request, release, current, stepIndex, stepCount, pendingCount: pending.length, masked }),
+    [request, release, current, stepIndex, stepCount, pending.length, masked],
   );
 
   return (
@@ -210,11 +241,13 @@ export function useStartupFlowProgress(): { stepIndex: number; stepCount: number
 }
 
 /**
- * Vrai tant qu'il reste une étape à passer, y compris pendant le recensement
- * initial et entre deux étapes. Sert à masquer l'application derrière le
- * parcours : sans ça, le fil réapparaît un instant à chaque « Continuer ».
+ * Vrai quand l'application doit être masquée derrière le parcours : il reste
+ * une étape à passer, recensement initial et interstices compris, ET l'étape
+ * courante est une page plein écran. Sans ce masque, le fil réapparaît un
+ * instant à chaque « Continuer » ; avec lui sous une étape transparente, il n'y
+ * a plus rien à voir du tout (voir `TRANSPARENT`).
  */
-export function useStartupFlowActive(): boolean {
-  const { pendingCount } = useContext(StartupPopupContext);
-  return pendingCount > 0;
+export function useStartupFlowMask(): boolean {
+  const { masked } = useContext(StartupPopupContext);
+  return masked;
 }

@@ -11,16 +11,20 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { colors, fonts, gradients, statusBarStyle, withAlpha } from '../theme';
-import { useStartupFlowActive, useStartupFlowProgress } from '../contexts/StartupPopupContext';
+import { useStartupFlowMask, useStartupFlowProgress } from '../contexts/StartupPopupContext';
 
 /**
- * Fond opaque affiché pendant tout le parcours de démarrage, y compris entre
- * deux étapes. Les étapes se peignent par-dessus ; lui garantit simplement que
+ * Fond opaque affiché pendant le parcours de démarrage, y compris entre deux
+ * étapes. Les étapes se peignent par-dessus ; lui garantit simplement que
  * l'application ne réapparaît jamais dans les interstices.
+ *
+ * Il se retire sous les étapes qui se posent SUR l'application au lieu de la
+ * remplacer (voir `TRANSPARENT` dans StartupPopupContext) : leur contenu, c'est
+ * l'application elle-même.
  */
 export function StartupFlowBackdrop() {
-  const active = useStartupFlowActive();
-  if (!active) return null;
+  const masked = useStartupFlowMask();
+  if (!masked) return null;
   return <View style={styles.backdrop} pointerEvents="auto" />;
 }
 
