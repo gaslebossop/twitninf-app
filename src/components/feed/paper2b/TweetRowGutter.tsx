@@ -667,7 +667,12 @@ function TweetRowGutter({
         )}
 
         {!isContentLocked && !!videoUrl && (
-          <TweetVideo videoUrl={videoUrl} thumbnailUrl={videoThumbnailUrl} onBeforeOpen={blockRowPress} />
+          <TweetVideo
+            videoUrl={videoUrl}
+            thumbnailUrl={videoThumbnailUrl}
+            onBeforeOpen={blockRowPress}
+            onDuration={(ms) => onAction({ type: 'videoDuration', tweetId: String(tweet.id), payload: ms })}
+          />
         )}
 
         {!isContentLocked && !!displayAudioUrl && (

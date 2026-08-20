@@ -25,9 +25,17 @@ interface TweetVideoProps {
   thumbnailUrl?: string;
   /** Appelé avant de lancer la lecture — neutralise l'appui de la ligne, même logique que `TweetImages`. */
   onBeforeOpen?: () => void;
+  /**
+   * Durée réelle de la vidéo, dès qu'`expo-av` la connaît. N'existe nulle
+   * part dans le modèle `Tweet` — c'est le lecteur qui l'apprend, comme dans
+   * `ExploreImmersive`. Sans elle, le dwell du fil retombe sur un forfait de
+   * 8 s côté moteur et le raisonnement en taux de complétion ne s'applique
+   * jamais à une vidéo du fil.
+   */
+  onDuration?: (durationMs: number) => void;
 }
 
-export default function TweetVideo({ videoUrl, thumbnailUrl, onBeforeOpen }: TweetVideoProps) {
+export default function TweetVideo({ videoUrl, thumbnailUrl, onBeforeOpen, onDuration }: TweetVideoProps) {
   const [playing, setPlaying] = useState(false);
   const [buffering, setBuffering] = useState(true);
 
@@ -42,6 +50,9 @@ export default function TweetVideo({ videoUrl, thumbnailUrl, onBeforeOpen }: Twe
           shouldPlay
           onPlaybackStatusUpdate={(status) => {
             if ('isBuffering' in status) setBuffering(!!status.isBuffering);
+            if ('isLoaded' in status && status.isLoaded && status.durationMillis) {
+              onDuration?.(status.durationMillis);
+            }
           }}
         />
         {buffering && (

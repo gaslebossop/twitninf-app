@@ -64,7 +64,7 @@ const C = {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface TweetRowAction {
-  type: 'like' | 'superlike' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report' | 'openContest';
+  type: 'like' | 'superlike' | 'retweet' | 'reply' | 'share' | 'options' | 'open' | 'profile' | 'openQuote' | 'report' | 'openContest' | 'videoDuration';
   tweetId: string;
   payload?: any;
 }
@@ -537,7 +537,12 @@ function TweetRow({
             )}
 
             {!isContentLocked && videoUrl && (
-              <TweetVideo videoUrl={videoUrl} thumbnailUrl={videoThumbnailUrl} onBeforeOpen={blockRowPress} />
+              <TweetVideo
+                videoUrl={videoUrl}
+                thumbnailUrl={videoThumbnailUrl}
+                onBeforeOpen={blockRowPress}
+                onDuration={(ms) => onAction({ type: 'videoDuration', tweetId: String(tweet.id), payload: ms })}
+              />
             )}
 
             {!isContentLocked && !!displayAudioUrl && (

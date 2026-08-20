@@ -1406,6 +1406,16 @@ export default function TweetsScreen() {
   const handleRowAction = useCallback((action: TweetRowAction) => {
     const { type, tweetId, payload } = action;
 
+    // Pure télémétrie du lecteur vidéo, pas un geste délibéré : ne doit ni
+    // remettre à zéro la série de silence de l'algo-check, ni tomber dans le
+    // switch ci-dessous.
+    if (type === 'videoDuration') {
+      if (typeof payload === 'number' && payload > 0) {
+        videoDurationsRef.current[String(tweetId)] = payload;
+      }
+      return;
+    }
+
     // Un utilisateur qui agit parle déjà à l'algorithme : la série de silence
     // repart de zéro, et la question ne viendra pas l'interrompre.
     algoCheckRef.current = afterInteraction(algoCheckRef.current);
@@ -1546,6 +1556,9 @@ export default function TweetsScreen() {
    * contenus longs « marchent mieux ». Meme raisonnement que
    * `handleExploreDwell`, qui alimente deja la grille Explorer.
    */
+  /** Durees remontees par TweetVideo (action 'videoDuration'), par id de tweet. */
+  const videoDurationsRef = useRef<Record<string, number>>({});
+
   const dwellMeta = useCallback((tweetId: string) => {
     const tweet = tweetsRef.current.find((t) => String(t.id) === String(tweetId));
     if (!tweet) return null;
@@ -1556,6 +1569,7 @@ export default function TweetsScreen() {
       media: (media.videoUrl ? 'video' : media.hasVisual ? 'image' : 'text') as
         'text' | 'image' | 'video',
       contentChars: displayContentOf(tweet).length,
+      videoDurationMs: media.videoUrl ? videoDurationsRef.current[String(tweetId)] : undefined,
       // Une vue publicitaire n'entre pas dans la paie : le pot ecarte deja les
       // sources `AD_SOURCES`, autant ne pas depenser de reseau pour elle.
       sponsored: !!(tweet as any).is_ad,
