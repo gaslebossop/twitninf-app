@@ -13,16 +13,18 @@
 export { default as MetricTile } from './MetricTile';
 export type { MetricTone } from './MetricTile';
 
-export { default as EarningsBars } from './EarningsBars';
-export type { EarningsBar, BarKind } from './EarningsBars';
+export { default as SectionHeading } from './SectionHeading';
 
-export { default as QualityRing } from './QualityRing';
-export { default as SignalBar } from './SignalBar';
 export { default as PayoutRow } from './PayoutRow';
 export { default as ContentRow } from './ContentRow';
 export { default as CriterionRow } from './CriterionRow';
 export { default as ProgramOverview } from './ProgramOverview';
 export { default as Disclosure, DisclosureLine } from './Disclosure';
+
+// Primitives « relevé » — voir l'en-tête de `statement.tsx` pour la règle
+// qu'elles imposent (aucune carte, chiffres à chasse fixe, une couleur par
+// rôle). L'écran des gains est bâti dessus.
+export { Rule, Eyebrow, Figure, LedgerRow, ShareBar } from './statement';
 
 export {
   num,

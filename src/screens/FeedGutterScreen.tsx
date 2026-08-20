@@ -262,6 +262,18 @@ export default function FeedGutterScreen() {
   const { trackTweetInteraction, trackProfileInteraction, trackSettingChange, trackCustomAction } = useTweetScreenTracking('TweetsScreen');
 
   const [tweets, setTweets] = useState<Tweet[]>([]);
+  /**
+   * État de favori connu CETTE session, par tweetId — le serveur ne renvoie
+   * pas encore `is_bookmarked` sur les tweets du fil (voir la passation
+   * NeuralRank), donc un tweet déjà mis en favori lors d'une session
+   * précédente réaffiche « Ajouter aux favoris » tant qu'on n'y retouche
+   * pas ici. Mis à jour depuis la réponse du serveur, jamais deviné.
+   */
+  const [bookmarkedTweets, setBookmarkedTweets] = useState<Record<string, boolean>>({});
+  /** Un favori en cours pour ce tweet : un second appui pendant l'aller-retour
+   * réseau annulerait le premier (create puis destroy en quelques ms) au lieu
+   * de le confirmer — déjà arrivé en pratique. */
+  const bookmarkInFlightRef = useRef<Set<string>>(new Set());
   /** Tweet dont on est en train de fixer le prix, `null` quand la feuille est fermée. */
   const [paywallTarget, setPaywallTarget] = useState<string | null>(null);
   // Miroir en ref : permet aux handlers d'être stables (donc mémoïsables et
@@ -1276,14 +1288,21 @@ export default function FeedGutterScreen() {
   );
 
   const handleBookmark = async (tweetId: string) => {
-    trackingService.trackBookmark(tweetId, signalsFor(tweetId)).catch((error) => {
-      console.warn('Erreur tracking bookmark:', error);
-    });
-    const response = await apiService.bookmarkTweet(tweetId);
-    if (response.success) {
-      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
-    } else {
-      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+    if (bookmarkInFlightRef.current.has(tweetId)) return;
+    bookmarkInFlightRef.current.add(tweetId);
+    try {
+      trackingService.trackBookmark(tweetId, signalsFor(tweetId)).catch((error) => {
+        console.warn('Erreur tracking bookmark:', error);
+      });
+      const response = await apiService.bookmarkTweet(tweetId);
+      if (response.success) {
+        setBookmarkedTweets((prev) => ({ ...prev, [tweetId]: !!response.data?.bookmarked }));
+        toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
+      } else {
+        toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+      }
+    } finally {
+      bookmarkInFlightRef.current.delete(tweetId);
     }
   };
 
@@ -1424,7 +1443,11 @@ export default function FeedGutterScreen() {
           },
         ]
       : [
-          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: () => handleBookmark(tweetId) },
+          {
+            label: bookmarkedTweets[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarkedTweets[tweetId] ? 'bookmark' : 'bookmark-outline',
+            onPress: () => handleBookmark(tweetId),
+          },
           {
             label: 'Ignorer ce tweet',
             icon: 'eye-off-outline',

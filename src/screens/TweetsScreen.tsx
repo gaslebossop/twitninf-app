@@ -215,6 +215,9 @@ export default function TweetsScreen() {
   const { trackTweetInteraction, trackProfileInteraction, trackSettingChange, trackCustomAction } = useTweetScreenTracking('TweetsScreen');
 
   const [tweets, setTweets] = useState<Tweet[]>([]);
+  /** État de favori connu cette session — voir FeedGutterScreen pour le détail. */
+  const [bookmarkedTweets, setBookmarkedTweets] = useState<Record<string, boolean>>({});
+  const bookmarkInFlightRef = useRef<Set<string>>(new Set());
   /** Tweet dont on est en train de fixer le prix, `null` quand la feuille est fermée. */
   const [paywallTarget, setPaywallTarget] = useState<string | null>(null);
   // Miroir en ref : permet aux handlers d'être stables (donc mémoïsables et
@@ -1195,14 +1198,21 @@ export default function TweetsScreen() {
   );
 
   const handleBookmark = async (tweetId: string) => {
-    trackingService.trackBookmark(tweetId, signalsFor(tweetId)).catch((error) => {
-      console.warn('Erreur tracking bookmark:', error);
-    });
-    const response = await apiService.bookmarkTweet(tweetId);
-    if (response.success) {
-      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
-    } else {
-      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+    if (bookmarkInFlightRef.current.has(tweetId)) return;
+    bookmarkInFlightRef.current.add(tweetId);
+    try {
+      trackingService.trackBookmark(tweetId, signalsFor(tweetId)).catch((error) => {
+        console.warn('Erreur tracking bookmark:', error);
+      });
+      const response = await apiService.bookmarkTweet(tweetId);
+      if (response.success) {
+        setBookmarkedTweets((prev) => ({ ...prev, [tweetId]: !!response.data?.bookmarked }));
+        toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
+      } else {
+        toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+      }
+    } finally {
+      bookmarkInFlightRef.current.delete(tweetId);
     }
   };
 
@@ -1343,7 +1353,11 @@ export default function TweetsScreen() {
           },
         ]
       : [
-          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: () => handleBookmark(tweetId) },
+          {
+            label: bookmarkedTweets[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarkedTweets[tweetId] ? 'bookmark' : 'bookmark-outline',
+            onPress: () => handleBookmark(tweetId),
+          },
           {
             label: 'Ignorer ce tweet',
             icon: 'eye-off-outline',

@@ -1,21 +1,37 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, fonts, radius, withAlpha } from '../../theme';
+import { colors, fonts } from '../../theme';
 import Tappable from '../ui/Tappable';
 import { compact, money, num, percent } from './format';
 
 /**
  * Une publication et la part qu'elle a portée.
  *
- * Le montant est précédé d'un `≈` et jamais présenté autrement : le pot ne
- * paie pas au tweet, cette ligne est une répartition au prorata des vues (voir
- * `services/contentEarningsSplit.ts`). Le signe est là pour qu'on ne puisse
- * pas confondre cette estimation avec un versement — c'était précisément le
- * défaut de l'ancienne page, qui affichait comme acquis un chiffre recalculé.
+ * ── Ce que cette ligne était, et pourquoi ça ne marchait pas ────────────────
+ * Une carte grise arrondie, un badge de rang en pastille, une barre de
+ * progression, et du texte à 10,5 px. C'est-à-dire, à elle seule, tout le
+ * vocabulaire « tableau de bord généré » que le reste de l'écran a justement
+ * abandonné — et ça se voyait : la liste tranchait avec la page.
  *
- * Le rang à gauche n'est pas décoratif : il donne le classement sans avoir à
- * comparer les barres entre elles.
+ * Trois retraits, chacun pour une raison précise :
+ *
+ * - **La carte.** Le reste de l'écran n'en a aucune ; la structure vient des
+ *   filets. Une carte par ligne fabriquait N îlots là où il faut une liste.
+ * - **Le badge de rang.** La liste est déjà triée par montant décroissant :
+ *   la position DIT le rang. Le numéroter en plus, c'est encoder deux fois la
+ *   même information — le tic « 01 / 02 / 03 » qui n'a de sens que si l'ordre
+ *   porte une information que la position ne donne pas.
+ * - **La barre.** Le pourcentage est écrit juste à côté, en toutes lettres.
+ *   Une jauge par ligne ajoutait un quatrième graphique à l'écran pour
+ *   redire un nombre déjà lisible.
+ *
+ * Ce qui reste : le texte de la publication à la taille où on le lit vraiment
+ * (17 px, l'échelle native), le montant à chasse fixe aligné à droite, et une
+ * ligne de mesure dessous. Le `≈` ne bouge pas : le pot ne paie pas au tweet,
+ * cette ligne est une répartition au prorata des vues (voir
+ * `services/contentEarningsSplit.ts`), et le signe interdit de la confondre
+ * avec un versement.
  */
 
 interface Props {
@@ -27,80 +43,75 @@ interface Props {
   share: number;
   symbol: string;
   onPress?: () => void;
+  /** Sans filet : la première ligne suit déjà le sur-titre du bloc. */
+  first?: boolean;
 }
 
-export default function ContentRow({ rank, content, views, amount, share, symbol, onPress }: Props) {
+export default function ContentRow({
+  content,
+  views,
+  amount,
+  share,
+  symbol,
+  onPress,
+  first,
+}: Props) {
   const pct = Math.max(0, Math.min(1, num(share)));
 
   return (
     <Tappable
       onPress={onPress}
       disabled={!onPress}
-      style={styles.wrap}
-      scaleTo={0.99}
+      style={[styles.row, !first && styles.rowDivided]}
+      scaleTo={0.995}
       accessibilityRole={onPress ? 'button' : undefined}
     >
-      <View style={styles.head}>
-        <View style={[styles.rank, rank === 1 && styles.rankFirst]}>
-          <Text style={[styles.rankText, rank === 1 && styles.rankTextFirst]}>{rank}</Text>
-        </View>
-
+      <View style={styles.top}>
         <Text style={styles.content} numberOfLines={2}>
           {content || 'Publication sans texte'}
         </Text>
-      </View>
-
-      <View style={styles.track}>
-        <View style={[styles.fill, { width: `${Math.max(2, pct * 100)}%` }]} />
-      </View>
-
-      <View style={styles.foot}>
-        <Text style={styles.meta} numberOfLines={1}>
-          {compact(views)} vues · {percent(pct)} de tes vues
-        </Text>
-        <Text style={styles.amount}>
+        <Text style={styles.amount} numberOfLines={1}>
           ≈ {money(amount)}
           <Text style={styles.symbol}> {symbol}</Text>
         </Text>
       </View>
+
+      <Text style={styles.meta} numberOfLines={1}>
+        {compact(views)} vues · {percent(pct)} de tes vues
+      </Text>
     </Tappable>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
+  row: { paddingVertical: 16 },
+  rowDivided: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
 
-  head: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  rank: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceElevated,
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  content: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 17,
+    lineHeight: 23,
+    color: colors.textPrimary,
   },
-  rankFirst: { backgroundColor: colors.accentMuted },
-  rankText: { fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted },
-  rankTextFirst: { color: colors.accent },
-
-  content: { flex: 1, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 17, color: colors.textPrimary },
-
-  track: {
-    height: 3,
-    marginTop: 10,
-    borderRadius: 2,
-    backgroundColor: withAlpha(colors.textMuted, 0.16),
-    overflow: 'hidden',
+  amount: {
+    fontFamily: fonts.mono,
+    fontSize: 17,
+    lineHeight: 23,
+    color: colors.gold,
+    fontVariant: ['tabular-nums'],
   },
-  fill: { height: 3, borderRadius: 2, backgroundColor: colors.accent },
+  symbol: { fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted },
 
-  foot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 7 },
-  meta: { flex: 1, fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
-  amount: { fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary },
-  symbol: { fontFamily: fonts.regular, fontSize: 10, color: colors.textMuted },
+  meta: {
+    marginTop: 8,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textMuted,
+  },
 });

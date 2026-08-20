@@ -5,13 +5,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts, radius, withAlpha } from '../../theme';
 import GlassButton from '../ui/GlassButton';
 import GlassCard from '../ui/GlassCard';
-import SectionLabel from '../ui/SectionLabel';
+import CriterionRow from './CriterionRow';
+import Disclosure, { DisclosureLine } from './Disclosure';
+import SectionHeading from './SectionHeading';
 import type {
   MonetizationProgramEligibility,
 } from '../../services/monetizationProgramService';
 import type { QualityRates } from '../../services/creatorPoolService';
-import CriterionRow from './CriterionRow';
-import Disclosure, { DisclosureLine } from './Disclosure';
 import { compact, fullDate, money, num, percent } from './format';
 
 /**
@@ -29,6 +29,11 @@ import { compact, fullDate, money, num, percent } from './format';
  *
  * Les chiffres du pot sont ceux de la plateforme, pas ceux du lecteur : ils
  * donnent l'ordre de grandeur de ce qui se partage, sans rien lui promettre.
+ *
+ * La présentation est celle du tableau de bord des gains (passe du
+ * 2026-08-20) : panneau d'accueil surélevé à filet d'accent, titres portés
+ * par un filet, listes à filets internes. Un prospect doit retrouver la
+ * même écriture que celle qu'il verra une fois admis.
  */
 
 interface Props {
@@ -63,37 +68,40 @@ export default function ProgramOverview({
   return (
     <>
       {/* --- Ce que c'est ------------------------------------------------ */}
-      <GlassCard style={styles.card} highlight contentStyle={styles.heroBody}>
-        <View style={styles.heroIcon}>
-          <Ionicons name="trophy" size={20} color={colors.accent} />
-        </View>
-        <Text style={styles.heroTitle}>Programme de monétisation</Text>
-        <Text style={styles.heroText}>
-          Chaque lundi, une part de ce que la plateforme a réellement encaissé dans la semaine est
-          partagée entre les créateurs du programme. Pas de paiement au tweet, pas de contrat
-          publicitaire à négocier : une part, calculée sur l’attention que ton contenu a vraiment
-          retenue.
-        </Text>
-
-        {!!pool && (
-          <View style={styles.poolStrip}>
-            <View style={styles.poolItem}>
-              <Text style={styles.poolValue}>
-                {money(pool.pool, 0)} <Text style={styles.poolUnit}>{symbol}</Text>
-              </Text>
-              <Text style={styles.poolLabel}>partagés cette semaine</Text>
-            </View>
-            <View style={styles.poolDivider} />
-            <View style={styles.poolItem}>
-              <Text style={styles.poolValue}>{compact(cohortSize)}</Text>
-              <Text style={styles.poolLabel}>créateurs se le partagent</Text>
-            </View>
+      <GlassCard style={styles.hero} contentStyle={styles.heroFlush}>
+        <View style={styles.heroAccentBar} />
+        <View style={styles.heroBody}>
+          <View style={styles.heroIcon}>
+            <Ionicons name="trophy" size={20} color={colors.accent} />
           </View>
-        )}
+          <Text style={styles.heroTitle}>Programme de monétisation</Text>
+          <Text style={styles.heroText}>
+            Chaque lundi, une part de ce que la plateforme a réellement encaissé dans la semaine est
+            partagée entre les créateurs du programme. Pas de paiement au tweet, pas de contrat
+            publicitaire à négocier : une part, calculée sur l’attention que ton contenu a vraiment
+            retenue.
+          </Text>
+
+          {!!pool && (
+            <View style={styles.poolStrip}>
+              <View style={styles.poolItem}>
+                <Text style={styles.poolValue}>
+                  {money(pool.pool, 0)} <Text style={styles.poolUnit}>{symbol}</Text>
+                </Text>
+                <Text style={styles.poolLabel}>partagés cette semaine</Text>
+              </View>
+              <View style={styles.poolDivider} />
+              <View style={styles.poolItem}>
+                <Text style={styles.poolValue}>{compact(cohortSize)}</Text>
+                <Text style={styles.poolLabel}>créateurs se le partagent</Text>
+              </View>
+            </View>
+          )}
+        </View>
       </GlassCard>
 
       {/* --- Où j'en suis ------------------------------------------------ */}
-      <SectionLabel>Les conditions</SectionLabel>
+      <SectionHeading>Les conditions</SectionHeading>
       <GlassCard style={styles.card} contentStyle={styles.body}>
         <View style={styles.progressHead}>
           <Text style={styles.progressCount}>
@@ -165,7 +173,9 @@ export default function ProgramOverview({
       <GlassCard style={styles.card} contentStyle={styles.body}>
         {pending ? (
           <View style={styles.statusBox}>
-            <Ionicons name="hourglass-outline" size={18} color={colors.warning} />
+            <View style={styles.statusIcon}>
+              <Ionicons name="hourglass-outline" size={16} color={colors.warning} />
+            </View>
             <View style={styles.statusBody}>
               <Text style={styles.statusTitle}>Candidature en cours de revue</Text>
               <Text style={styles.statusText}>
@@ -177,7 +187,9 @@ export default function ProgramOverview({
         ) : rejected ? (
           <>
             <View style={styles.statusBox}>
-              <Ionicons name="close-circle-outline" size={18} color={colors.red} />
+              <View style={[styles.statusIcon, styles.statusIconRejected]}>
+                <Ionicons name="close-circle-outline" size={16} color={colors.red} />
+              </View>
               <View style={styles.statusBody}>
                 <Text style={styles.statusTitle}>Candidature refusée</Text>
                 <Text style={styles.statusText}>
@@ -217,7 +229,9 @@ export default function ProgramOverview({
           </>
         ) : (
           <View style={styles.statusBox}>
-            <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
+            <View style={styles.statusIcon}>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.textMuted} />
+            </View>
             <View style={styles.statusBody}>
               <Text style={styles.statusTitle}>Candidature pas encore ouverte</Text>
               <Text style={styles.statusText}>
@@ -231,7 +245,7 @@ export default function ProgramOverview({
       </GlassCard>
 
       {/* --- Comment on est payé ------------------------------------------ */}
-      <SectionLabel>Comment on est payé</SectionLabel>
+      <SectionHeading>Comment on est payé</SectionHeading>
       <GlassCard style={styles.card} contentStyle={styles.body}>
         <Step
           index={1}
@@ -316,15 +330,23 @@ function Step({
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 16 },
+  card: { marginBottom: 14 },
   body: { padding: 14 },
 
-  /* Pitch */
+  /* Panneau d'accueil — même écriture que le héro des gains : surface
+     surélevée, bord franc, filet d'accent. Le prospect entre par la même
+     porte que celle du tableau de bord qu'on lui promet. */
+  hero: {
+    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.borderStrong,
+  },
+  heroFlush: { padding: 0 },
+  heroAccentBar: { height: 3, backgroundColor: colors.accent },
   heroBody: { padding: 18 },
   heroIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: radius.round,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accentMuted,
@@ -370,14 +392,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 9,
     padding: 11,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     backgroundColor: colors.surfaceAlt,
   },
   subRowDone: { backgroundColor: withAlpha(colors.success, 0.1) },
   subText: { flex: 1, fontFamily: fonts.medium, fontSize: 12.5, color: colors.textSecondary },
 
   /* Candidature */
-  statusBox: { flexDirection: 'row', gap: 11 },
+  statusBox: { flexDirection: 'row', gap: 11, alignItems: 'flex-start' },
+  statusIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.round,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  statusIconRejected: { backgroundColor: colors.redMuted },
   statusBody: { flex: 1 },
   statusTitle: { fontFamily: fonts.bold, fontSize: 14, color: colors.textPrimary },
   statusText: {
@@ -403,7 +434,7 @@ const styles = StyleSheet.create({
   stepDot: {
     width: 22,
     height: 22,
-    borderRadius: 11,
+    borderRadius: radius.round,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accentMuted,

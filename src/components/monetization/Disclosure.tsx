@@ -69,14 +69,17 @@ export function DisclosureLine({ term, children }: { term?: string; children: Re
   );
 }
 
+/* Échelle native : footnote 13/18 pour le déclencheur, subheadline 15/21 pour
+   le texte déplié. Une explication qu'on ouvre exprès doit se lire, pas se
+   déchiffrer — elle était à 11,5 px. */
 const styles = StyleSheet.create({
-  wrap: { marginTop: 10 },
-  divided: { paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  wrap: { marginTop: 16 },
+  divided: { paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
 
-  head: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  label: { flex: 1, fontFamily: fonts.medium, fontSize: 12, color: colors.textMuted },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 },
+  label: { flex: 1, fontFamily: fonts.medium, fontSize: 15, color: colors.textSecondary },
 
-  body: { marginTop: 10, gap: 9 },
-  line: { fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 17, color: colors.textSecondary },
+  body: { marginTop: 12, gap: 12 },
+  line: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 21, color: colors.textSecondary },
   term: { fontFamily: fonts.bold, color: colors.textPrimary },
 });

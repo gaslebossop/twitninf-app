@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { colors, fonts, withAlpha } from '../../theme';
+import { colors, fonts, radius, withAlpha } from '../../theme';
 import { num } from './format';
 
 /**
@@ -15,6 +15,10 @@ import { num } from './format';
  * Le reste à parcourir est écrit en clair sous la barre quand le critère n'est
  * pas atteint — « il te manque 4 200 vues » est actionnable, « 58 % » ne l'est
  * pas.
+ *
+ * L'icône du critère vit dans le même badge carré arrondi que les rangs du
+ * tableau de bord : une seule convention de pastille pour toute la
+ * monétisation, plutôt qu'un rond ici et un carré là.
  */
 
 interface Props {
@@ -22,7 +26,7 @@ interface Props {
   label: string;
   /** Valeur actuelle, déjà formatée. */
   current: string;
-  /** Seuil à franchir, déjà formaté. */
+  /** Seuil à franchir, déjà formatée. */
   target: string;
   /** Progression 0–1, bornée à 1 par le composant. */
   ratio: number;
@@ -65,13 +69,13 @@ export default function CriterionRow({ icon, label, current, target, ratio, done
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 13 },
+  wrap: { marginBottom: 14 },
 
   head: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 7 },
   icon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceElevated,
@@ -85,13 +89,13 @@ const styles = StyleSheet.create({
   target: { fontFamily: fonts.regular, fontSize: 10, color: colors.textMuted },
 
   track: {
-    height: 4,
-    borderRadius: 2,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: withAlpha(colors.textMuted, 0.18),
     overflow: 'hidden',
   },
-  fill: { height: 4, borderRadius: 2, backgroundColor: colors.accent },
+  fill: { height: 5, borderRadius: 2.5, backgroundColor: colors.accent },
   fillDone: { backgroundColor: colors.success },
 
-  remaining: { marginTop: 5, fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
+  remaining: { marginTop: 6, fontFamily: fonts.regular, fontSize: 10.5, lineHeight: 15, color: colors.textMuted },
 });

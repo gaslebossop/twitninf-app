@@ -128,6 +128,9 @@ export default function UserProfileScreen() {
   const [activeTab, setActiveTab] = useState<'tweets' | 'replies' | 'media' | 'likes'>('tweets');
   /** Non-null si ce profil est bloqué, dans un sens ou l'autre — voir le rendu dédié plus bas. */
   const [blockedState, setBlockedState] = useState<'by_me' | 'by_them' | null>(null);
+  /** État de favori connu cette session — voir FeedGutterScreen pour le détail. */
+  const [bookmarkedTweets, setBookmarkedTweets] = useState<{ [key: string]: boolean }>({});
+  const bookmarkInFlightRef = useRef<Set<string>>(new Set());
   const [likedTweets, setLikedTweets] = useState<{ [key: string]: boolean }>({});
   const [retweetedTweets, setRetweetedTweets] = useState<{ [key: string]: boolean }>({});
   const [tabLoading, setTabLoading] = useState(false);
@@ -442,11 +445,18 @@ export default function UserProfileScreen() {
   }, [blockedState]);
 
   const handleBookmark = useCallback(async (tweetId: string) => {
-    const response = await apiService.bookmarkTweet(tweetId);
-    if (response.success) {
-      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
-    } else {
-      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+    if (bookmarkInFlightRef.current.has(tweetId)) return;
+    bookmarkInFlightRef.current.add(tweetId);
+    try {
+      const response = await apiService.bookmarkTweet(tweetId);
+      if (response.success) {
+        setBookmarkedTweets((prev) => ({ ...prev, [tweetId]: !!response.data?.bookmarked }));
+        toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
+      } else {
+        toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+      }
+    } finally {
+      bookmarkInFlightRef.current.delete(tweetId);
     }
   }, []);
 
@@ -480,7 +490,11 @@ export default function UserProfileScreen() {
           },
         ]
       : [
-          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: () => handleBookmark(tweetId) },
+          {
+            label: bookmarkedTweets[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarkedTweets[tweetId] ? 'bookmark' : 'bookmark-outline',
+            onPress: () => handleBookmark(tweetId),
+          },
           {
             label: 'Ignorer ce tweet',
             icon: 'eye-off-outline',
@@ -498,7 +512,7 @@ export default function UserProfileScreen() {
         ];
 
     showActionSheet({ items: entries });
-  }, [tweets, currentUser?.id, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport, handleBlockToggle]);
+  }, [tweets, currentUser?.id, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport, handleBlockToggle, bookmarkedTweets]);
 
   /**
    * L'état d'interaction vit à côté des tweets : on le fusionne une fois par
@@ -699,6 +713,39 @@ export default function UserProfileScreen() {
           <TouchableOpacity style={S.retryButton} onPress={fetchUserProfile}>
             <Text style={S.retryButtonText}>Réessayer</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── BLOCKED STATE ── retour anticipé : la mise en page normale plus bas
+  // (avatar, banniere, bouton Suivre, stats...) ne connait pas `blockedState`
+  // et l'aurait affichee telle quelle — seuls les tweets etaient masques
+  // avant ce correctif, ce qui laissait passer la photo et le bouton Suivre.
+  if (blockedState) {
+    return (
+      <View style={S.container}>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={PROFILE_BODY_BG} />
+        <View style={[S.stickyHeader, { paddingTop: headerTopInset }]}>
+          <BackButton navigation={navigation} />
+          <View style={S.headerCenter} />
+        </View>
+        <View style={S.errorContainer}>
+          <View style={S.blockedAvatarPlaceholder}>
+            <Ionicons name="person" size={40} color={colors.textSecondary} />
+          </View>
+          <Text style={S.errorTitle}>@{userProfile.username}</Text>
+          <Text style={S.errorText}>
+            {blockedState === 'by_me' ? 'Vous avez bloqué ce compte' : 'Ce compte vous a bloqué'}
+          </Text>
+          {blockedState === 'by_me' && (
+            <TouchableOpacity
+              style={S.retryButton}
+              onPress={() => handleBlockToggle(userProfile.id, userProfile.username)}
+            >
+              <Text style={S.retryButtonText}>Débloquer</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -949,14 +996,16 @@ export default function UserProfileScreen() {
                     </TouchableOpacity>
                   </Animated.View>
                 )}
-                {!isOwnProfile && blockedState !== 'by_them' && (
+                {/* `blockedState` est toujours nul ici : le retour anticipé plus haut
+                    intercepte tout profil bloqué avant d'atteindre cette mise en page. */}
+                {!isOwnProfile && (
                   <TouchableOpacity
                     style={S.profileOptionsBtn}
                     onPress={() => showActionSheet({
                       items: [{
-                        label: blockedState === 'by_me' ? 'Débloquer ce compte' : 'Bloquer ce compte',
+                        label: 'Bloquer ce compte',
                         icon: 'ban-outline',
-                        destructive: blockedState !== 'by_me',
+                        destructive: true,
                         onPress: () => handleBlockToggle(userProfile.id, userProfile.username),
                       }],
                     })}
@@ -1160,36 +1209,34 @@ export default function UserProfileScreen() {
 
           <View style={S.divider} />
 
-          {/* Tabs (underline style) — inutiles sur un profil bloqué, qui ne montre jamais de contenu */}
-          {!blockedState && (
-            <View
-              style={[
-                S.tabsBar,
-                themed && { borderBottomColor: withAlpha(profileAccent, 0.28) },
-              ]}
-            >
-              {([
-                { key: 'tweets', label: 'Posts' },
-                { key: 'replies', label: 'Réponses' },
-                { key: 'media', label: 'Médias' },
-                { key: 'likes', label: "J'aime" },
-              ] as const).map((tab) => (
-                <TouchableOpacity
-                  key={tab.key}
-                  style={[S.tabItem, activeTab === tab.key && S.tabItemActive]}
-                  onPress={() => handleTabChange(tab.key)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[S.tabLabel, activeTab === tab.key && S.tabLabelActive]}>
-                    {tab.label}
-                  </Text>
-                  {activeTab === tab.key && (
-                    <View style={[S.tabUnderline, themed && { backgroundColor: profileAccent }]} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          {/* Tabs (underline style) */}
+          <View
+            style={[
+              S.tabsBar,
+              themed && { borderBottomColor: withAlpha(profileAccent, 0.28) },
+            ]}
+          >
+            {([
+              { key: 'tweets', label: 'Posts' },
+              { key: 'replies', label: 'Réponses' },
+              { key: 'media', label: 'Médias' },
+              { key: 'likes', label: "J'aime" },
+            ] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab.key}
+                style={[S.tabItem, activeTab === tab.key && S.tabItemActive]}
+                onPress={() => handleTabChange(tab.key)}
+                activeOpacity={0.85}
+              >
+                <Text style={[S.tabLabel, activeTab === tab.key && S.tabLabelActive]}>
+                  {tab.label}
+                </Text>
+                {activeTab === tab.key && (
+                  <View style={[S.tabUnderline, themed && { backgroundColor: profileAccent }]} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/* Tweet list */}
             {tabLoading && (
@@ -1198,28 +1245,7 @@ export default function UserProfileScreen() {
           </>
         }
         ListEmptyComponent={
-          tabLoading ? null : blockedState ? (
-              <View style={S.emptyContainer}>
-                <Ionicons name="ban" size={48} color={colors.borderSubtle} />
-                <Text style={S.emptyTitle}>
-                  {blockedState === 'by_me' ? 'Vous avez bloqué ce compte' : 'Ce compte vous a bloqué'}
-                </Text>
-                {blockedState === 'by_me' && (
-                  <>
-                    <Text style={S.emptyText}>
-                      Il ne peut plus vous contacter ni voir votre profil, et son contenu n'apparaît plus dans votre fil.
-                    </Text>
-                    <TouchableOpacity
-                      style={S.unblockCta}
-                      onPress={() => handleBlockToggle(userProfile.id, userProfile.username)}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={S.unblockCtaText}>Débloquer</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            ) : isLockedPrivateProfile ? (
+          tabLoading ? null : isLockedPrivateProfile ? (
               <View style={S.emptyContainer}>
                 <Ionicons name="lock-closed" size={48} color={colors.borderSubtle} />
                 <Text style={S.emptyTitle}>Ce compte est privé</Text>
@@ -1304,6 +1330,14 @@ const S = StyleSheet.create({
     color: colors.white,
     fontSize: 15,
     fontWeight: '700', fontFamily: fonts.bold,
+  },
+  blockedAvatarPlaceholder: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Sticky header
@@ -1692,17 +1726,5 @@ const S = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-  },
-  unblockCta: {
-    marginTop: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 11,
-    borderRadius: 22,
-    backgroundColor: colors.accent,
-  },
-  unblockCtaText: {
-    fontFamily: fonts.semibold,
-    fontSize: 14,
-    color: colors.white,
   },
 });

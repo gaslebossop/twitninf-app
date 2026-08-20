@@ -105,6 +105,13 @@ function TweetCard({
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const isOwnTweet = !!(currentUser?.id && tweet.author?.id === currentUser.id);
 
+  // Etat de favori connu cette session (le serveur ne renvoie pas encore
+  // `is_bookmarked` sur un tweet du fil) + verrou anti-double-appel : un
+  // second appui pendant l'aller-retour réseau annulait le premier
+  // (create puis destroy à quelques ms d'écart) au lieu de le confirmer.
+  const [bookmarked, setBookmarked] = useState(false);
+  const bookmarkInFlightRef = useRef(false);
+
   /**
    * « Traduction (bêta) » : le tweet s'affiche d'emblée dans la langue de
    * lecture du compte, et le sélecteur permet d'en changer ponctuellement.
@@ -216,12 +223,19 @@ function TweetCard({
   };
 
   const handleBookmark = async () => {
-    trackingService.trackBookmark(tweet.id);
-    const response = await apiService.bookmarkTweet(tweet.id);
-    if (response.success) {
-      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
-    } else {
-      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+    if (bookmarkInFlightRef.current) return;
+    bookmarkInFlightRef.current = true;
+    try {
+      trackingService.trackBookmark(tweet.id);
+      const response = await apiService.bookmarkTweet(tweet.id);
+      if (response.success) {
+        setBookmarked(!!response.data?.bookmarked);
+        toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
+      } else {
+        toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+      }
+    } finally {
+      bookmarkInFlightRef.current = false;
     }
     onBookmark?.(tweet.id);
   };
@@ -296,11 +310,19 @@ function TweetCard({
     // propre tweet, le menu ne propose que ce qui reste pertinent.
     const entries: ActionSheetItem[] = isOwnTweet
       ? [
-          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: handleBookmark },
+          {
+            label: bookmarked ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarked ? 'bookmark' : 'bookmark-outline',
+            onPress: handleBookmark,
+          },
           { label: 'Supprimer', icon: 'trash-outline', onPress: handleDeleteTweet, destructive: true },
         ]
       : [
-          { label: 'Ajouter aux favoris', icon: 'bookmark-outline', onPress: handleBookmark },
+          {
+            label: bookmarked ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarked ? 'bookmark' : 'bookmark-outline',
+            onPress: handleBookmark,
+          },
           {
             label: 'Ignorer ce tweet',
             icon: 'eye-off-outline',

@@ -2,21 +2,27 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { colors, fonts, radius, withAlpha } from '../../theme';
+import { colors, fonts, radius } from '../../theme';
 import Tappable from '../ui/Tappable';
-import { compact, fullDate, money, num, percent } from './format';
+import { compact, fullDate, money, percent } from './format';
 
 /**
  * Une semaine close dans l'historique.
  *
- * Deux changements par rapport à l'ancienne liste :
+ * Deux partis pris, hérités de la refonte précédente et tenus ici :
  *
  * - Une barre de proportion sous chaque ligne. Une colonne de montants oblige
  *   à comparer des nombres de tête ; la barre dit tout de suite laquelle des
  *   dix dernières semaines a été la bonne.
  * - Un bouton d'encaissement PAR semaine. L'API accepte `claim(periodKey)`
- *   depuis le début, mais l'écran n'encaissait qu'en bloc — impossible de
+ *   depuis le début, et l'écran n'encaissait qu'en bloc — impossible de
  *   prendre une semaine et d'en laisser une autre.
+ *
+ * La refonte graphique marque le statut par un ESTALEMENT, pas par un effet :
+ * une semaine à encaisser pose un bord accent, une légère nappe accent et une
+ * pastille « à encaisser » ; une semaine encaissée redevient une ligne posée,
+ * grise, close. L'historique se lit alors d'un regard — les lignes colorées
+ * sont exactement celles qui demandent une action.
  *
  * Le détail (RPM, multiplicateur, taille du vivier) reste replié : il sert à
  * comprendre un montant surprenant, pas à lire la liste.
@@ -33,8 +39,6 @@ interface Props {
   bonusMultiplier: number;
   cohortSize?: number;
   claimedAt?: string | null;
-  /** Hauteur relative de la barre dans l'historique affiché, 0–1. */
-  ratio: number;
   expanded: boolean;
   onToggle: () => void;
   claiming?: boolean;
@@ -52,20 +56,18 @@ export default function PayoutRow({
   bonusMultiplier,
   cohortSize,
   claimedAt,
-  ratio,
   expanded,
   onToggle,
   claiming = false,
   onClaim,
 }: Props) {
   const claimable = status === 'claimable';
-  const fill = Math.max(2, Math.min(1, Math.max(0, num(ratio))) * 100);
 
   return (
     <Tappable
       onPress={onToggle}
-      style={[styles.wrap, claimable && styles.wrapClaimable]}
-      scaleTo={0.99}
+      style={styles.wrap}
+      scaleTo={0.995}
       accessibilityRole="button"
       accessibilityState={{ expanded }}
     >
@@ -79,22 +81,16 @@ export default function PayoutRow({
         </Text>
       </View>
 
-      <View style={styles.track}>
-        <View
-          style={[styles.fill, { width: `${fill}%` }, claimable && styles.fillClaimable]}
-        />
-      </View>
-
       <View style={styles.meta}>
         <Text style={styles.metaText} numberOfLines={1}>
           {compact(views)} vues · qualité {percent(quality)}
         </Text>
 
         {claimable ? (
-          <Text style={styles.statusPending}>à encaisser</Text>
+          <Text style={styles.statusPendingText}>à encaisser</Text>
         ) : (
           <View style={styles.statusDone}>
-            <Ionicons name="checkmark" size={11} color={colors.success} />
+            <Ionicons name="checkmark" size={13} color={colors.success} />
             <Text style={styles.statusDoneText}>encaissé</Text>
           </View>
         )}
@@ -144,61 +140,64 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
+/* Même langue que le reste de l'écran : pas de carte, un filet entre les
+   lignes, échelle native (body 17, footnote 13). La barre de progression a
+   sauté — la liste est déjà triée par date et le montant est écrit, la jauge
+   ne faisait que redire un chiffre lisible. */
 const styles = StyleSheet.create({
   wrap: {
-    padding: 13,
-    marginBottom: 8,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
-  /** Une semaine qui attend porte le bord accent : elle demande une action. */
-  wrapClaimable: { borderColor: withAlpha(colors.accent, 0.55) },
 
-  top: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
-  period: { flex: 1, fontFamily: fonts.medium, fontSize: 13, color: colors.textPrimary },
-  amount: { fontFamily: fonts.mono, fontSize: 14, color: colors.textPrimary, letterSpacing: -0.4 },
-  amountClaimable: { color: colors.accent },
-  symbol: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
-
-  track: {
-    height: 3,
-    marginTop: 9,
-    borderRadius: 2,
-    backgroundColor: withAlpha(colors.textMuted, 0.16),
-    overflow: 'hidden',
+  top: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 16 },
+  period: { flex: 1, fontFamily: fonts.regular, fontSize: 17, lineHeight: 23, color: colors.textPrimary },
+  amount: {
+    fontFamily: fonts.mono,
+    fontSize: 17,
+    lineHeight: 23,
+    color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
-  fill: { height: 3, borderRadius: 2, backgroundColor: withAlpha(colors.accent, 0.4) },
-  fillClaimable: { backgroundColor: colors.accent },
+  amountClaimable: { color: colors.gold },
+  symbol: { fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted },
 
-  meta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 7 },
-  metaText: { flex: 1, fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
-  statusPending: { fontFamily: fonts.bold, fontSize: 10, letterSpacing: 0.3, color: colors.accent },
-  statusDone: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  statusDoneText: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.success },
+  meta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8 },
+  metaText: { flex: 1, fontFamily: fonts.regular, fontSize: 13, lineHeight: 18, color: colors.textMuted },
+
+  /* Le statut est du texte, pas une pastille : sur une liste sans cartes, une
+     pastille redeviendrait le seul objet flottant de la page. */
+  statusPendingText: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    letterSpacing: 0.4,
+    color: colors.accent,
+  },
+  statusDone: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statusDoneText: { fontFamily: fonts.regular, fontSize: 13, color: colors.success },
 
   detail: {
-    marginTop: 11,
-    paddingTop: 10,
+    marginTop: 16,
+    paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    gap: 7,
+    borderTopColor: colors.hairline,
+    gap: 12,
   },
-  detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  detailLabel: { fontFamily: fonts.regular, fontSize: 11.5, color: colors.textMuted },
-  detailValue: { fontFamily: fonts.mono, fontSize: 11, color: colors.textSecondary },
+  detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  detailLabel: { fontFamily: fonts.regular, fontSize: 15, color: colors.textMuted },
+  detailValue: { fontFamily: fonts.mono, fontSize: 15, color: colors.textPrimary },
 
   claimButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    height: 40,
+    gap: 8,
+    height: 48,
     marginTop: 4,
     borderRadius: radius.md,
     backgroundColor: colors.accent,
   },
   claimButtonBusy: { opacity: 0.75 },
-  claimLabel: { fontFamily: fonts.bold, fontSize: 13, color: colors.onAccent },
+  claimLabel: { fontFamily: fonts.bold, fontSize: 16, color: colors.onAccent },
 });

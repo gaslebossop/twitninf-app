@@ -96,13 +96,20 @@ export default function BookmarksScreen() {
   // Retirer un favori depuis cette liste retire toujours la ligne : il n'y a
   // pas d'ambiguïté ajout/retrait ici comme sur le fil, la carte n'a de sens
   // que tant qu'elle reste un favori.
+  const bookmarkInFlightRef = useRef<Set<string>>(new Set());
   const handleBookmark = useCallback(async (tweetId: string) => {
-    const response = await apiService.bookmarkTweet(tweetId);
-    if (response.success) {
-      setTweets((prev) => prev.filter((t) => t.id !== tweetId));
-      toast.success('Retiré des favoris');
-    } else {
-      toast.error(response.message || 'Impossible de retirer ce favori');
+    if (bookmarkInFlightRef.current.has(tweetId)) return;
+    bookmarkInFlightRef.current.add(tweetId);
+    try {
+      const response = await apiService.bookmarkTweet(tweetId);
+      if (response.success) {
+        setTweets((prev) => prev.filter((t) => t.id !== tweetId));
+        toast.success('Retiré des favoris');
+      } else {
+        toast.error(response.message || 'Impossible de retirer ce favori');
+      }
+    } finally {
+      bookmarkInFlightRef.current.delete(tweetId);
     }
   }, []);
 

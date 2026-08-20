@@ -1,28 +1,37 @@
 /**
- * Monétisation — tableau de bord du créateur.
+ * Monétisation — le relevé du créateur.
  *
- * Refonte du 2026-08-20 (seconde passe). Ce que la version précédente ratait,
- * bien qu'elle affichât les bons chiffres :
+ * ── Refonte du 2026-08-20 (quatrième passe) ────────────────────────────────
+ * Les trois passes précédentes ont itéré À L'INTÉRIEUR du même paradigme :
+ * huit sections identiques (un titre + une carte), un anneau de score, des
+ * barres de progression, une grille de tuiles, quatre accordéons explicatifs.
+ * Quand chaque bloc porte le même poids visuel, aucun n'en a — c'est le
+ * gabarit « tableau de bord » que produit tout générateur par défaut, et il a
+ * été rejeté comme tel (« ça fait dashboard IA »).
  *
- * - Sept cartes identiques empilées, chacune précédée d'un intertitre : la
- *   somme à encaisser et « le pot de la semaine » avaient le même poids
- *   visuel. Rien ne disait où regarder en premier.
- * - Aucune donnée graphique. Douze semaines d'historique en colonne de
- *   nombres, qu'il fallait comparer de tête pour savoir si ça montait.
- * - Six paragraphes de pédagogie affichés en permanence entre les chiffres.
- *   On les lit une fois ; ensuite ils font défiler l'écran pour rien. Ils sont
- *   désormais tous derrière un `Disclosure`.
- * - Les montants en police de texte, donc non alignés d'une ligne à l'autre.
- *   Le repo a `fonts.mono` exactement pour ça.
+ * Le changement n'est donc pas cosmétique, c'est un changement de sujet :
+ * cette page n'est pas de l'analytique, c'est de l'ARGENT — une part
+ * hebdomadaire d'un pot partagé. Elle emprunte au RELEVÉ, pas au dashboard.
+ * Voir `components/monetization/statement.tsx` pour la règle complète ; en
+ * résumé : aucune carte, la structure vient des filets ; tout chiffre à
+ * chasse fixe pour que les virgules s'alignent ; une couleur par rôle (l'or
+ * pour la monnaie, le magenta pour l'action et pour ta part).
  *
- * Cette page réunit maintenant les trois écrans qui étaient séparés : les
- * gains, l'entrée dans le programme (critères et candidature, remontés tout en
- * haut quand ils bloquent le paiement) et un accès à l'état du compte.
- * `MonetizationProgramScreen` et `AccountStatusScreen` restent pour le détail.
+ * ── La signature ───────────────────────────────────────────────────────────
+ * Presque tous les écrans de gains disent « tu as gagné X ». Ici l'argent est
+ * une PART d'un pot que d'autres créateurs découpent en même temps : c'est ce
+ * qu'il y a de plus caractéristique dans ce produit, et ça n'apparaissait
+ * nulle part. `ShareBar` le montre — le pot en crans, les tiens allumés. Une
+ * seule animation sur tout l'écran, et c'est celle-là.
+ *
+ * Cette page réunit les trois écrans qui étaient séparés : les gains,
+ * l'entrée dans le programme (critères et candidature, via `ProgramOverview`)
+ * et un accès à l'état du compte. `MonetizationProgramScreen` et
+ * `AccountStatusScreen` restent pour le détail.
  *
  * L'ordre de lecture va du RÉSULTAT vers sa CAUSE : combien j'ai → ce qui
- * m'en empêche, le cas échéant → ce que la semaine rapporte → pourquoi → ce
- * qui l'a porté → d'où vient l'argent → l'historique.
+ * m'en empêche, le cas échéant → quelle part du pot → pourquoi → ce qui l'a
+ * portée → d'où vient l'argent → l'historique.
  */
 
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -58,10 +67,8 @@ import {
   EmptyState,
   ErrorState,
   GlassButton,
-  GlassCard,
   GlassIconButton,
   ScreenBackground,
-  SectionLabel,
   Skeleton,
   Tappable,
   celebrateReward,
@@ -71,22 +78,21 @@ import {
   ContentRow,
   Disclosure,
   DisclosureLine,
-  EarningsBars,
-  MetricTile,
+  Eyebrow,
+  Figure,
+  LedgerRow,
   PayoutRow,
   ProgramOverview,
-  QualityRing,
-  SignalBar,
+  Rule,
+  ShareBar,
   compact,
   deltaRatio,
   money,
   num,
   percent,
   periodLabel,
-  shortDate,
   signedPercent,
   timeUntil,
-  type EarningsBar,
 } from '../components/monetization';
 
 if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExperimental) {
@@ -104,6 +110,16 @@ const CLAIM_ALL = '__all__';
 
 /** Combien de publications avant le repli. Au-delà, la liste devient un fil. */
 const CONTENT_PREVIEW = 4;
+
+/**
+ * Un percentile `[0, 1]` dit en rang lisible.
+ *
+ * « 80ᵉ / 100 » se comprend d'un coup d'œil et se compare d'une ligne à
+ * l'autre ; une jauge remplie aux quatre cinquièmes demande d'être mesurée à
+ * l'œil, et ajoutait un quatrième graphique à un écran qui en avait déjà
+ * trop. Borné à 1 : personne n'est « 0ᵉ ».
+ */
+const percentileRank = (value: unknown) => Math.max(1, Math.round(num(value) * 100));
 
 interface Props {
   navigation: any;
@@ -126,7 +142,6 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [claimingKey, setClaimingKey] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
-  const [selectedBar, setSelectedBar] = useState<string | null>(null);
   const [openPeriod, setOpenPeriod] = useState<string | null>(null);
   const [showAllContent, setShowAllContent] = useState(false);
 
@@ -201,49 +216,6 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
     () => history.reduce((acc, h) => acc + num(h.amount), 0),
     [history],
   );
-
-  const historyMax = useMemo(
-    () => history.reduce((acc, h) => Math.max(acc, num(h.amount)), 0),
-    [history],
-  );
-
-  /** Sept semaines closes, dans l'ordre du temps, plus la semaine en cours. */
-  const bars = useMemo<EarningsBar[]>(() => {
-    const chronological = [...history].sort(
-      (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime(),
-    );
-    const rows: EarningsBar[] = chronological.slice(-7).map((h) => ({
-      key: h.periodKey,
-      short: shortDate(h.periodStart),
-      amount: num(h.amount),
-      kind: h.status === 'claimed' ? 'claimed' : 'claimable',
-    }));
-
-    if (projection && data?.currentPeriod?.key) {
-      rows.push({
-        key: data.currentPeriod.key,
-        short: shortDate(data.currentPeriod.start),
-        amount: num(projection.amount),
-        kind: 'projected',
-      });
-    }
-    return rows;
-  }, [history, projection, data?.currentPeriod?.key, data?.currentPeriod?.start]);
-
-  /** Le détail de la barre tapée, sinon rien : la légende reste une ligne. */
-  const selected = useMemo(() => {
-    if (!selectedBar) return null;
-    const bar = bars.find((b) => b.key === selectedBar);
-    if (!bar) return null;
-    const entry = history.find((h) => h.periodKey === selectedBar);
-    return {
-      label: entry
-        ? periodLabel(entry.periodStart, entry.periodEnd)
-        : periodLabel(data?.currentPeriod?.start, data?.currentPeriod?.end),
-      amount: bar.amount,
-      kind: bar.kind,
-    };
-  }, [selectedBar, bars, history, data?.currentPeriod?.start, data?.currentPeriod?.end]);
 
   /**
    * Variation de la projection par rapport à la dernière semaine close.
@@ -454,6 +426,8 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
   }
 
   const claimingAll = claimingKey === CLAIM_ALL;
+  const hasClaimable = claimableTotal > 0;
+  const enabledBonuses = (data?.bonusCatalog || []).filter((b) => b.enabled);
 
   /* ---------------------------------------------------------------- */
   /* Écran                                                             */
@@ -484,65 +458,28 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
           </View>
         )}
 
-        {/* --- 1. Ce qu'il y a à encaisser ----------------------------- */}
-        <GlassCard style={styles.hero} highlight contentStyle={styles.heroContent}>
-          <View style={styles.heroTop}>
-            <Text style={styles.kicker}>
-              {claimableTotal > 0 ? 'À encaisser' : 'Rien à encaisser'}
-            </Text>
-            {claimableCount > 1 && (
-              <View style={styles.pill}>
-                <Text style={styles.pillText}>{claimableCount} semaines</Text>
-              </View>
-            )}
-          </View>
+        {/* --- 1. Le chiffre ------------------------------------------- */}
+        {/* Plein cadre, posé directement sur le noir : le seul bloc de l'écran
+            sans filet ni conteneur. La question que le créateur vient poser
+            est « combien » — elle trouve sa réponse avant le premier mot. */}
+        <View style={styles.figureBlock}>
+          <Eyebrow>{hasClaimable ? 'À encaisser' : 'Projection de la semaine'}</Eyebrow>
 
-          <View style={styles.amountRow}>
-            <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-              {money(claimableTotal)}
-            </Text>
-            <Text style={styles.amountUnit}>{symbol}</Text>
-          </View>
+          <Figure
+            value={money(hasClaimable ? claimableTotal : num(projection?.amount))}
+            unit={symbol}
+            tone={hasClaimable ? 'money' : 'muted'}
+          />
 
-          {bars.length > 0 && (
-            <>
-              <EarningsBars
-                bars={bars}
-                symbol={symbol}
-                selectedKey={selectedBar}
-                onSelect={(key) => setSelectedBar((current) => (current === key ? null : key))}
-                style={styles.bars}
-              />
+          <Text style={styles.figureMeta}>
+            {hasClaimable
+              ? claimableCount > 1
+                ? `${claimableCount} semaines · figé à la clôture, ne bougera plus`
+                : 'Figé à la clôture, ne bougera plus'
+              : `Estimation · clôture dans ${timeUntil(data?.currentPeriod?.end)}`}
+          </Text>
 
-              {/* Une seule ligne, qui change de contenu : soit la légende des
-                  barres, soit le détail de celle qu'on vient de taper. La
-                  hauteur ne bouge pas, donc rien ne saute sous le doigt. */}
-              <View style={styles.legend}>
-                {selected ? (
-                  <>
-                    <Text style={styles.legendStrong} numberOfLines={1}>
-                      {selected.label}
-                    </Text>
-                    <Text style={styles.legendValue}>
-                      {selected.kind === 'projected' ? '≈ ' : ''}
-                      {money(selected.amount)} {symbol}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.legendMuted} numberOfLines={1}>
-                      {claimableTotal > 0
-                        ? 'Montant figé à la clôture. Il ne bougera plus.'
-                        : `Clôture dans ${timeUntil(data?.currentPeriod?.end)}`}
-                    </Text>
-                    <Text style={styles.legendHint}>appuie sur une barre</Text>
-                  </>
-                )}
-              </View>
-            </>
-          )}
-
-          {claimableTotal > 0 && (
+          {hasClaimable && (
             <GlassButton
               label={claimingAll ? 'Encaissement…' : `Encaisser ${money(claimableTotal)} ${symbol}`}
               icon="arrow-down-circle-outline"
@@ -550,353 +487,368 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
               disabled={!!claimingKey}
               loading={claimingAll}
               fullWidth
-              style={styles.heroButton}
+              style={styles.claimButton}
             />
           )}
 
-          <View style={styles.heroFoot}>
-            <View style={styles.heroFootItem}>
-              <Text style={styles.heroFootLabel}>Total gagné</Text>
-              <Text style={styles.heroFootValue}>
-                {money(lifetimeTotal)} <Text style={styles.heroFootUnit}>{symbol}</Text>
+          <View style={styles.figureFoot}>
+            <Text style={styles.figureFootLabel}>
+              Total gagné{'   '}
+              <Text style={styles.figureFootValue}>
+                {money(lifetimeTotal)} {symbol}
               </Text>
-            </View>
+            </Text>
 
             <Tappable
-              style={styles.heroFootLink}
+              style={styles.figureFootLink}
               onPress={() => navigation?.navigate?.('WalletDetail')}
               accessibilityRole="button"
             >
-              <Text style={styles.heroFootLinkText}>Portefeuille</Text>
+              <Text style={styles.figureFootLinkText}>Portefeuille</Text>
               <Ionicons name="chevron-forward" size={13} color={colors.accent} />
             </Tappable>
           </View>
-        </GlassCard>
+        </View>
 
         {/* --- 2. Le paiement est suspendu ----------------------------- */}
         {/* Seul un créateur DÉJÀ dans le programme arrive ici : les prospects
             sont partis sur `ProgramOverview` plus haut. Le blocage vient donc
             d'autre chose que des seuils d'entrée — un abonnement expiré, le
-            plus souvent — et afficher les critères d'admission n'aiderait pas. */}
+            plus souvent — et afficher les critères d'admission n'aiderait pas.
+            Teinté en avertissement, bord compris : c'est le seul état de
+            l'écran qui retarde un versement, il doit se voir. */}
         {!eligible && (
-          <GlassCard style={styles.card} contentStyle={styles.cardBody}>
-            <View style={styles.lockHead}>
-              <View style={styles.lockIcon}>
-                <Ionicons name="lock-closed" size={14} color={colors.warning} />
-              </View>
-              <View style={styles.lockHeadText}>
-                <Text style={styles.lockTitle}>Paiement suspendu</Text>
-                <Text style={styles.lockReason}>
-                  {lockedReason
-                    || 'Il te faut un abonnement Plus ou Pro actif pour encaisser tes parts.'}
-                </Text>
-                <Text style={styles.note}>
-                  Tes chiffres continuent d’être comptés : ce que tu vois ci-dessous est
-                  exactement ce que tu toucheras une fois débloqué.
-                </Text>
-              </View>
-            </View>
-          </GlassCard>
-        )}
-
-        {/* --- 3. La semaine en cours ---------------------------------- */}
-        <SectionLabel>Cette semaine</SectionLabel>
-        <GlassCard style={styles.card} contentStyle={styles.cardBody}>
-          <View style={styles.cardHead}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {periodLabel(data?.currentPeriod?.start, data?.currentPeriod?.end)}
-            </Text>
-            <View style={styles.countdown}>
-              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-              <Text style={styles.countdownText}>{timeUntil(data?.currentPeriod?.end)}</Text>
+          <View style={styles.notice}>
+            <Ionicons name="lock-closed" size={14} color={colors.warning} />
+            <View style={styles.noticeText}>
+              <Text style={styles.noticeTitle}>Paiement suspendu</Text>
+              <Text style={styles.noticeBody}>
+                {lockedReason
+                  || 'Il te faut un abonnement Plus ou Pro actif pour encaisser tes parts.'}
+                {' '}Tes chiffres continuent d’être comptés : ce que tu vois plus bas est
+                exactement ce que tu toucheras une fois débloqué.
+              </Text>
             </View>
           </View>
+        )}
 
-          {projection ? (
-            <>
-              <View style={styles.grid}>
-                <MetricTile
-                  label="Part projetée"
-                  value={money(projection.amount)}
-                  unit={symbol}
-                  hint={weekDelta !== null ? `${signedPercent(weekDelta)} vs sem. passée` : 'première semaine'}
-                  tone="accent"
-                />
-                <MetricTile
-                  label="RPM"
-                  value={money(projection.rpm)}
-                  unit={symbol}
-                  hint="pour 1000 vues"
-                />
-              </View>
-              <View style={styles.grid}>
-                <MetricTile
-                  label="Part du pot"
-                  value={percent(projection.share, 2)}
-                  hint={`sur ${compact(data?.currentPeriod?.cohortSize)} créateurs`}
-                />
-                <MetricTile
-                  label="Vues qualifiées"
-                  value={compact(projection.qualifiedViews)}
-                  hint={`${compact(projection.rawViews)} brutes`}
-                />
-              </View>
-              <View style={styles.grid}>
-                <MetricTile
-                  label="Spectateurs"
-                  value={compact(projection.distinctViewers)}
-                  hint="comptes distincts"
-                />
-                <MetricTile
+        {/* --- 3. LA SIGNATURE : ta part du pot ------------------------ */}
+        {/* Le fait le plus caractéristique de ce produit, et il n'apparaissait
+            nulle part : l'argent n'est pas gagné à l'unité, il est DÉCOUPÉ
+            dans un pot que d'autres créateurs découpent en même temps. D'où
+            les crans plutôt qu'une jauge — des parts discrètes partagées. */}
+        {projection ? (
+          <View style={styles.block}>
+            <Rule />
+            <View style={styles.blockHead}>
+              <Eyebrow>Ta part du pot</Eyebrow>
+              <Text style={styles.blockMeta}>
+                {periodLabel(data?.currentPeriod?.start, data?.currentPeriod?.end)}
+              </Text>
+            </View>
+
+            <View style={styles.shareLine}>
+              <Text style={styles.sharePct}>{percent(projection.share, 2)}</Text>
+              {!!pool && (
+                <Text style={styles.sharePot}>
+                  de {money(pool.pool, 0)} {symbol}
+                </Text>
+              )}
+            </View>
+
+            <ShareBar share={num(projection.share)} cohortSize={data?.currentPeriod?.cohortSize} />
+
+            <View style={styles.ledger}>
+              <LedgerRow
+                first
+                label="Part projetée"
+                value={money(projection.amount)}
+                unit={symbol}
+                tone="money"
+                hint={
+                  weekDelta !== null
+                    ? `${signedPercent(weekDelta)} vs semaine passée`
+                    : 'première semaine'
+                }
+              />
+              <LedgerRow
+                label="RPM"
+                value={money(projection.rpm)}
+                unit={symbol}
+                hint="pour 1000 vues"
+              />
+              <LedgerRow
+                label="Vues qualifiées"
+                value={compact(projection.qualifiedViews)}
+                hint={`${compact(projection.rawViews)} brutes`}
+              />
+              <LedgerRow
+                label="Spectateurs"
+                value={compact(projection.distinctViewers)}
+                hint="comptes distincts"
+              />
+              {bonusMultiplier > 1 && (
+                <LedgerRow
                   label="Récompenses"
                   value={`× ${money(bonusMultiplier, 2)}`}
+                  tone="success"
                   hint={
                     projection.bonuses?.capped
                       ? 'plafonné'
                       : `${earnedKeys.size} obtenue${earnedKeys.size > 1 ? 's' : ''}`
                   }
-                  tone={bonusMultiplier > 1 ? 'success' : 'default'}
                 />
-              </View>
-
-              {!projection.hasRealDwell && (
-                <View style={styles.warnRow}>
-                  <Ionicons name="information-circle-outline" size={15} color={colors.warning} />
-                  <Text style={styles.warnText}>
-                    Aucun temps de lecture réel n’a été mesuré cette semaine. L’attention est
-                    estimée, donc décotée de {percent(1 - num(projection.attentionFactor, 1))}.
-                  </Text>
-                </View>
               )}
+            </View>
 
-              <Disclosure label="Pourquoi ce chiffre bouge">
-                <DisclosureLine>
-                  C’est une projection, pas une promesse. Ta part dépend de ce que font les{' '}
-                  {compact(data?.currentPeriod?.cohortSize)} autres créateurs de la semaine : elle
-                  baisse s’ils publient mieux, monte s’ils lèvent le pied, même si tes propres
-                  chiffres ne changent pas.
-                </DisclosureLine>
-                <DisclosureLine>
-                  Elle se fige à la clôture du lundi. À partir de là, le montant affiché est
-                  exactement celui qui sera versé — encaisser ne déclenche aucun recalcul.
-                </DisclosureLine>
-              </Disclosure>
-            </>
-          ) : (
+            {!projection.hasRealDwell && (
+              <View style={styles.warnRow}>
+                <Ionicons name="information-circle-outline" size={14} color={colors.warning} />
+                <Text style={styles.warnText}>
+                  Aucun temps de lecture réel mesuré cette semaine. L’attention est estimée, donc
+                  décotée de {percent(1 - num(projection.attentionFactor, 1))}.
+                </Text>
+              </View>
+            )}
+
+            <Disclosure label="Pourquoi ce chiffre bouge">
+              <DisclosureLine>
+                C’est une projection, pas une promesse. Ta part dépend de ce que font les{' '}
+                {compact(data?.currentPeriod?.cohortSize)} autres créateurs de la semaine : elle
+                baisse s’ils publient mieux, monte s’ils lèvent le pied, même si tes propres
+                chiffres ne changent pas.
+              </DisclosureLine>
+              <DisclosureLine>
+                Elle se fige à la clôture du lundi. À partir de là, le montant affiché est
+                exactement celui qui sera versé — encaisser ne déclenche aucun recalcul.
+              </DisclosureLine>
+            </Disclosure>
+          </View>
+        ) : (
+          <View style={styles.block}>
+            <Rule />
             <EmptyState
               compact
               icon="eye-off-outline"
               title="Aucune vue cette semaine"
-              message="Dès la première vue sur une publication, ta projection apparaît ici."
+              message="Dès la première vue sur une publication, ta part apparaît ici."
             />
-          )}
-        </GlassCard>
+          </View>
+        )}
 
-        {/* --- 4. Pourquoi ce montant ---------------------------------- */}
+        {/* --- 4. Pourquoi cette part ---------------------------------- */}
         {projection && weights && (
-          <>
-            <SectionLabel>Ta qualité</SectionLabel>
-            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
-              <View style={styles.qualityHead}>
-                <QualityRing value={projection.quality} label="score" />
-                <View style={styles.qualityText}>
-                  <Text style={styles.qualityTitle}>
-                    Multiplie tes vues pour donner ton poids dans le partage
-                  </Text>
-                  <Text style={styles.qualitySub}>
-                    Quatre signaux, chacun compté comme un RANG dans le vivier de la semaine — pas
-                    comme un volume. Un petit compte très suivi passe devant un gros compte tiède.
-                  </Text>
-                </View>
-              </View>
+          <View style={styles.block}>
+            <Rule />
+            <View style={styles.blockHead}>
+              <Eyebrow>Ta qualité</Eyebrow>
+              <Text style={styles.blockMetaStrong}>{money(projection.quality, 3)}</Text>
+            </View>
 
-              <View style={styles.signals}>
-                <SignalBar
-                  label="Attention"
-                  percentile={projection.percentiles.attention}
-                  weight={weights.attention}
-                  raw={`${money(num(projection.rates.attention) / 1000, 1)} s / vue`}
-                />
-                <SignalBar
-                  label="Rétention"
-                  percentile={projection.percentiles.retention}
-                  weight={weights.retention}
-                  raw={`${compact(projection.raw.followsGained)} abonnés · ${compact(
-                    projection.raw.returningViewers,
-                  )} revenus`}
-                />
-                <SignalBar
-                  label="DAU gagnée"
-                  percentile={projection.percentiles.dau}
-                  weight={weights.dau}
-                  raw={`${compact(projection.raw.dauGained)} réactivations`}
-                />
-                <SignalBar
-                  label="Signaux négatifs"
-                  percentile={projection.percentiles.penalty}
-                  weight={weights.penalty}
-                  raw={`${compact(projection.raw.negatives)} au total`}
-                  negative
-                />
-              </View>
+            <Text style={styles.blockIntro}>
+              Elle multiplie tes vues pour donner ton poids dans le partage. Chaque signal compte
+              comme un RANG dans le vivier de la semaine, pas comme un volume : un petit compte
+              très suivi passe devant un gros compte tiède.
+            </Text>
 
-              <Disclosure label="Ce que mesure chaque signal">
-                <DisclosureLine term="Attention">
-                  le temps réellement passé sur tes publications, rapporté à leurs vues. C’est le
-                  seul signal qu’on ne peut pas fabriquer, donc celui qui pèse le plus.
-                </DisclosureLine>
-                <DisclosureLine term="Rétention">
-                  les abonnés gagnés et les gens qui reviennent te lire un autre jour.
-                </DisclosureLine>
-                <DisclosureLine term="DAU gagnée">
-                  les comptes qui n’étaient pas actifs la veille et dont ta publication a ouvert la
-                  journée. Tu les as ramenés.
-                </DisclosureLine>
-                <DisclosureLine term="Signaux négatifs">
-                  les « pas intéressé », les signalements, les publications retirées. Ils se
-                  retranchent.
-                </DisclosureLine>
-                <DisclosureLine>
-                  Les interactions venues de comptes créés en rafale comptent pour zéro.
-                </DisclosureLine>
-              </Disclosure>
-            </GlassCard>
-          </>
+            {/* Le rang, pas la barre. Un percentile EST un classement — l'écrire
+                « 80ᵉ / 100 » le dit mieux qu'une jauge remplie aux 4/5, et évite
+                le quatrième graphique de l'écran. */}
+            <View style={styles.ledger}>
+              <LedgerRow
+                first
+                label="Attention"
+                value={`${percentileRank(projection.percentiles.attention)}ᵉ`}
+                unit="/100"
+                tone="accent"
+                hint={`${money(num(projection.rates.attention) / 1000, 1)} s par vue · poids ${percent(weights.attention, 0)}`}
+              />
+              <LedgerRow
+                label="Rétention"
+                value={`${percentileRank(projection.percentiles.retention)}ᵉ`}
+                unit="/100"
+                hint={`${compact(projection.raw.followsGained)} abonnés · ${compact(
+                  projection.raw.returningViewers,
+                )} revenus · poids ${percent(weights.retention, 0)}`}
+              />
+              <LedgerRow
+                label="DAU gagnée"
+                value={`${percentileRank(projection.percentiles.dau)}ᵉ`}
+                unit="/100"
+                hint={`${compact(projection.raw.dauGained)} réactivations · poids ${percent(weights.dau, 0)}`}
+              />
+              <LedgerRow
+                label="Signaux négatifs"
+                value={`${percentileRank(projection.percentiles.penalty)}ᵉ`}
+                unit="/100"
+                tone={num(projection.raw.negatives) > 0 ? 'muted' : 'default'}
+                hint={`${compact(projection.raw.negatives)} au total · retranché à ${percent(weights.penalty, 0)}`}
+              />
+            </View>
+
+            <Disclosure label="Ce que mesure chaque signal">
+              <DisclosureLine term="Attention">
+                le temps réellement passé sur tes publications, rapporté à leurs vues. C’est le
+                seul signal qu’on ne peut pas fabriquer, donc celui qui pèse le plus.
+              </DisclosureLine>
+              <DisclosureLine term="Rétention">
+                les abonnés gagnés et les gens qui reviennent te lire un autre jour.
+              </DisclosureLine>
+              <DisclosureLine term="DAU gagnée">
+                les comptes qui n’étaient pas actifs la veille et dont ta publication a ouvert la
+                journée. Tu les as ramenés.
+              </DisclosureLine>
+              <DisclosureLine term="Signaux négatifs">
+                les « pas intéressé », les signalements, les publications retirées. Ils se
+                retranchent.
+              </DisclosureLine>
+              <DisclosureLine>
+                Les interactions venues de comptes créés en rafale comptent pour zéro.
+              </DisclosureLine>
+            </Disclosure>
+          </View>
         )}
 
         {/* --- 5. Ce qui a porté ta part ------------------------------- */}
         {!!visibleContent.length && (
-          <>
-            <SectionLabel>Ce qui a porté ta part</SectionLabel>
-            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
-              {visibleContent.map((row, index) => (
-                <ContentRow
-                  key={row.id}
-                  rank={index + 1}
-                  content={row.content}
-                  views={row.views}
-                  amount={row.amount}
-                  share={row.share}
-                  symbol={symbol}
-                  onPress={() => navigation?.navigate?.('TweetDetail', { tweetId: row.id })}
-                />
-              ))}
+          <View style={styles.block}>
+            <Rule />
+            <View style={styles.blockHead}>
+              <Eyebrow>Ce qui a porté ta part</Eyebrow>
+            </View>
+            {visibleContent.map((row, index) => (
+              <ContentRow
+                key={row.id}
+                first={index === 0}
+                rank={index + 1}
+                content={row.content}
+                views={row.views}
+                amount={row.amount}
+                share={row.share}
+                symbol={symbol}
+                onPress={() => navigation?.navigate?.('TweetDetail', { tweetId: row.id })}
+              />
+            ))}
 
-              {hiddenContentCount > 0 && (
-                <GlassButton
-                  label={`Voir les ${hiddenContentCount} autres`}
-                  variant="ghost"
-                  icon="chevron-down"
-                  onPress={() => {
-                    expand();
-                    setShowAllContent(true);
-                  }}
-                  fullWidth
-                />
-              )}
+            {hiddenContentCount > 0 && (
+              <GlassButton
+                label={`Voir les ${hiddenContentCount} autres`}
+                variant="ghost"
+                icon="chevron-down"
+                onPress={() => {
+                  expand();
+                  setShowAllContent(true);
+                }}
+                fullWidth
+                style={styles.moreButton}
+              />
+            )}
 
-              {/* L'avertissement n'est pas une précaution de forme : sans lui,
-                  ces montants se liraient comme des versements par publication,
-                  ce que le pot ne fait pas. */}
-              <View style={styles.estimateRow}>
-                <Ionicons name="calculator-outline" size={14} color={colors.textMuted} />
-                <Text style={styles.estimateText}>
-                  Estimation. Le pot verse une part unique par semaine, jamais au tweet : ta part
-                  projetée est ici répartie au prorata des vues de tes publications des 7 derniers
-                  jours.
-                </Text>
-              </View>
-            </GlassCard>
-          </>
+            {/* L'avertissement n'est pas une précaution de forme : sans lui,
+                ces montants se liraient comme des versements par publication,
+                ce que le pot ne fait pas. */}
+            <View style={styles.estimateRow}>
+              <Ionicons name="calculator-outline" size={14} color={colors.textMuted} />
+              <Text style={styles.estimateText}>
+                Estimation. Le pot verse une part unique par semaine, jamais au tweet : ta part
+                projetée est ici répartie au prorata des vues de tes publications des 7 derniers
+                jours.
+              </Text>
+            </View>
+          </View>
         )}
 
         {/* --- 6. Récompenses ------------------------------------------ */}
-        {!!data?.bonusCatalog?.length && (
-          <>
-            <SectionLabel>Récompenses</SectionLabel>
-            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
-              {data.bonusCatalog
-                .filter((b) => b.enabled)
-                .map((bonus) => {
-                  const won = earnedKeys.has(bonus.key);
-                  return (
-                    <View key={bonus.key} style={[styles.bonus, won && styles.bonusWon]}>
-                      <Ionicons
-                        name={won ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={16}
-                        color={won ? colors.success : colors.textMuted}
-                      />
-                      <View style={styles.bonusBody}>
-                        <Text style={[styles.bonusTitle, won && styles.bonusTitleWon]} numberOfLines={1}>
-                          {bonus.label}
-                        </Text>
-                        <Text style={styles.bonusDesc} numberOfLines={2}>
-                          {bonus.description}
-                        </Text>
-                      </View>
-                      <Text style={[styles.bonusMult, won && styles.bonusMultWon]}>
-                        +{Math.round((num(bonus.multiplier, 1) - 1) * 100)} %
-                      </Text>
-                    </View>
-                  );
-                })}
+        {!!enabledBonuses.length && (
+          <View style={styles.block}>
+            <Rule />
+            <View style={styles.blockHead}>
+              <Eyebrow>Récompenses</Eyebrow>
+              <Text style={styles.blockMeta}>
+                {earnedKeys.size} sur {enabledBonuses.length}
+              </Text>
+            </View>
 
-              <Disclosure label="Comment une récompense agit">
-                <DisclosureLine>
-                  Elle multiplie ton poids dans le partage — elle ne puise pas dans le pot, elle
-                  déplace une part vers toi. Le pot, lui, ne change pas de taille.
-                </DisclosureLine>
-              </Disclosure>
-            </GlassCard>
-          </>
+            <View style={styles.ledger}>
+              {enabledBonuses.map((bonus, index) => {
+                const won = earnedKeys.has(bonus.key);
+                return (
+                  <LedgerRow
+                    key={bonus.key}
+                    first={index === 0}
+                    label={bonus.label}
+                    hint={bonus.description}
+                    value={`+${Math.round((num(bonus.multiplier, 1) - 1) * 100)} %`}
+                    tone={won ? 'success' : 'muted'}
+                  />
+                );
+              })}
+            </View>
+
+            <Disclosure label="Comment une récompense agit">
+              <DisclosureLine>
+                Elle multiplie ton poids dans le partage — elle ne puise pas dans le pot, elle
+                déplace une part vers toi. Le pot, lui, ne change pas de taille.
+              </DisclosureLine>
+            </Disclosure>
+          </View>
         )}
 
         {/* --- 7. D'où vient l'argent ---------------------------------- */}
         {pool && (
-          <>
-            <SectionLabel>Le pot de la semaine</SectionLabel>
-            <GlassCard style={styles.card} contentStyle={styles.cardBody}>
-              <View style={styles.grid}>
-                <MetricTile
-                  label="Entré en trésorerie"
-                  value={money(pool.inflows, 0)}
-                  unit={symbol}
-                  hint={`${compact(pool.inflowTransactions)} opérations`}
-                />
-                <MetricTile
-                  label="Reversé aux créateurs"
-                  value={money(pool.pool, 0)}
-                  unit={symbol}
-                  hint={`${percent(pool.shareOfInflows)} des entrées`}
-                  tone="accent"
-                />
+          <View style={styles.block}>
+            <Rule />
+            <View style={styles.blockHead}>
+              <Eyebrow>Le pot de la semaine</Eyebrow>
+            </View>
+
+            <View style={styles.ledger}>
+              <LedgerRow
+                first
+                label="Entré en trésorerie"
+                value={money(pool.inflows, 0)}
+                unit={symbol}
+                hint={`${compact(pool.inflowTransactions)} opérations`}
+              />
+              <LedgerRow
+                label="Reversé aux créateurs"
+                value={money(pool.pool, 0)}
+                unit={symbol}
+                tone="money"
+                hint={`${percent(pool.shareOfInflows)} des entrées`}
+              />
+            </View>
+
+            {pool.cappedByTreasury && (
+              <View style={styles.warnRow}>
+                <Ionicons name="information-circle-outline" size={14} color={colors.warning} />
+                <Text style={styles.warnText}>
+                  Le pot est plafonné cette semaine pour préserver la trésorerie.
+                </Text>
               </View>
+            )}
 
-              {pool.cappedByTreasury && (
-                <View style={styles.warnRow}>
-                  <Ionicons name="information-circle-outline" size={15} color={colors.warning} />
-                  <Text style={styles.warnText}>
-                    Le pot est plafonné cette semaine pour préserver la trésorerie.
-                  </Text>
-                </View>
-              )}
-
-              <Disclosure label="D’où sort cet argent">
-                <DisclosureLine>
-                  Le pot vaut une part de ce que la plateforme a réellement encaissé cette
-                  semaine — campagnes publicitaires, abonnements Plus et Pro, commissions. Il ne
-                  peut jamais dépasser ce qui est entré, donc la monétisation ne peut pas coûter
-                  plus qu’elle ne rapporte.
-                </DisclosureLine>
-              </Disclosure>
-            </GlassCard>
-          </>
+            <Disclosure label="D’où sort cet argent">
+              <DisclosureLine>
+                Le pot vaut une part de ce que la plateforme a réellement encaissé cette
+                semaine — campagnes publicitaires, abonnements Plus et Pro, commissions. Il ne
+                peut jamais dépasser ce qui est entré, donc la monétisation ne peut pas coûter
+                plus qu’elle ne rapporte.
+              </DisclosureLine>
+            </Disclosure>
+          </View>
         )}
 
         {/* --- 8. Historique ------------------------------------------- */}
         {!!history.length && (
-          <>
-            <SectionLabel>Historique</SectionLabel>
+          <View style={styles.block}>
+            <Rule />
+            <View style={styles.blockHead}>
+              <Eyebrow>Historique</Eyebrow>
+              <Text style={styles.blockMeta}>
+                {history.length} semaine{history.length > 1 ? 's' : ''}
+              </Text>
+            </View>
             {history.map((entry) => (
               <PayoutRow
                 key={entry.periodKey}
@@ -910,7 +862,6 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
                 bonusMultiplier={entry.bonusMultiplier}
                 cohortSize={num(entry.breakdown?.cohortSize) || undefined}
                 claimedAt={entry.claimedAt}
-                ratio={historyMax > 0 ? num(entry.amount) / historyMax : 0}
                 expanded={openPeriod === entry.periodKey}
                 onToggle={() => togglePeriod(entry.periodKey)}
                 claiming={claimingKey === entry.periodKey}
@@ -922,7 +873,7 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
                 }
               />
             ))}
-          </>
+          </View>
         )}
 
         {!history.length && !projection && (
@@ -943,224 +894,151 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Échelle de type native (iOS), appliquée sans exception :
+ *   body 17/22 · callout 16/21 · subheadline 15/20 · footnote 13/18
+ * Rien en dessous de 13. Un relevé se lit à bout de bras ; la première
+ * version de cet écran descendait à 11–12,5 px sur du texte de contenu, ce
+ * qui le rendait illisible quelle que soit la qualité de la mise en page.
+ *
+ * Espacement sur grille de 4.
+ */
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 4 },
+  content: { paddingHorizontal: 20, paddingTop: 8 },
   skeleton: { marginBottom: 12, borderRadius: radius.lg },
 
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 11,
-    marginBottom: 12,
-    borderRadius: radius.md,
-    backgroundColor: withAlpha(colors.warning, 0.12),
-  },
-  errorText: { flex: 1, fontFamily: fonts.regular, fontSize: 12.5, color: colors.warning },
-
-  /* Héro */
-  hero: { marginBottom: 16 },
-  heroContent: { padding: 18 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  kicker: {
-    fontFamily: fonts.bold,
-    fontSize: 10,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
-  },
-  pill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentMuted,
-  },
-  pillText: { fontFamily: fonts.bold, fontSize: 10, color: colors.accent },
-
-  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 7, marginTop: 8 },
-  amount: {
-    fontFamily: fonts.mono,
-    fontSize: 38,
-    letterSpacing: -2,
-    color: colors.textPrimary,
-  },
-  amountUnit: { fontFamily: fonts.bold, fontSize: 16, color: colors.accent },
-
-  bars: { marginTop: 16 },
-
-  legend: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
-    height: 22,
-    marginTop: 8,
+    padding: 14,
+    marginBottom: 16,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    backgroundColor: withAlpha(colors.warning, 0.1),
+    borderColor: withAlpha(colors.warning, 0.32),
   },
-  legendStrong: { flex: 1, fontFamily: fonts.medium, fontSize: 11.5, color: colors.textPrimary },
-  legendValue: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.accent },
-  legendMuted: { flex: 1, fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted },
-  legendHint: { fontFamily: fonts.regular, fontSize: 10, color: colors.textDisabled },
+  errorText: { flex: 1, fontFamily: fonts.regular, fontSize: 15, lineHeight: 20, color: colors.warning },
 
-  heroButton: { marginTop: 14 },
+  /* ── 1. Le chiffre ───────────────────────────────────────────────
+     Aucun fond, aucun bord : posé sur le noir de l'écran. C'est ce qui le
+     distingue de tout le reste — les autres blocs sont introduits par un
+     filet, lui n'a besoin de rien. */
+  figureBlock: { paddingTop: 20, paddingBottom: 8 },
+  figureMeta: {
+    marginTop: 14,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.textSecondary,
+  },
+  claimButton: { marginTop: 24 },
 
-  heroFoot: {
+  figureFoot: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    marginTop: 24,
   },
-  heroFootItem: { flex: 1 },
-  heroFootLabel: {
-    fontFamily: fonts.bold,
-    fontSize: 9.5,
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
-  },
-  heroFootValue: { marginTop: 3, fontFamily: fonts.mono, fontSize: 14, color: colors.textPrimary },
-  heroFootUnit: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.textMuted },
-  heroFootLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  heroFootLinkText: { fontFamily: fonts.medium, fontSize: 12.5, color: colors.accent },
+  figureFootLabel: { fontFamily: fonts.regular, fontSize: 15, color: colors.textMuted },
+  figureFootValue: { fontFamily: fonts.mono, fontSize: 15, color: colors.textPrimary },
+  figureFootLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  figureFootLinkText: { fontFamily: fonts.medium, fontSize: 15, color: colors.accent },
 
-  /* Cartes */
-  card: { marginBottom: 16 },
-  cardBody: { padding: 14 },
-  cardHead: {
+  /* ── Avertissement bloquant ──────────────────────────────────────
+     Le seul état de l'écran qui retarde un versement. Teinté, mais toujours
+     sans carte : un liseré à gauche suffit à le détacher. */
+  notice: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.warning,
+    backgroundColor: withAlpha(colors.warning, 0.07),
+  },
+  noticeText: { flex: 1, gap: 6 },
+  noticeTitle: { fontFamily: fonts.bold, fontSize: 17, lineHeight: 22, color: colors.warning },
+  noticeBody: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.textSecondary,
+  },
+
+  /* ── Bloc générique ──────────────────────────────────────────────
+     Un filet, un sur-titre, du contenu. C'est TOUTE la structure de la page :
+     pas d'autre conteneur, donc pas de hiérarchie inventée. */
+  block: { marginTop: 32 },
+  blockHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 12,
+    gap: 12,
+    marginTop: 24,
+    marginBottom: 16,
   },
-  cardTitle: { flex: 1, fontFamily: fonts.medium, fontSize: 13.5, color: colors.textPrimary },
-  countdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceAlt,
-  },
-  countdownText: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textSecondary },
-
-  grid: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-
-  note: {
-    marginTop: 8,
+  blockMeta: { fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted },
+  blockMetaStrong: { fontFamily: fonts.mono, fontSize: 20, color: colors.textPrimary },
+  blockIntro: {
+    marginBottom: 20,
     fontFamily: fonts.regular,
-    fontSize: 11.5,
-    lineHeight: 17,
-    color: colors.textMuted,
+    fontSize: 16,
+    lineHeight: 23,
+    color: colors.textSecondary,
   },
 
+  /* ── 3. La signature : part du pot ───────────────────────────────
+     Le pourcentage est le second chiffre le plus gros de l'écran, juste
+     après le montant — c'est la mesure qui explique tous les autres. */
+  shareLine: { flexDirection: 'row', alignItems: 'baseline', gap: 10, marginBottom: 18 },
+  sharePct: {
+    fontFamily: fonts.mono,
+    fontSize: 40,
+    lineHeight: 46,
+    letterSpacing: -1.5,
+    color: colors.accent,
+  },
+  sharePot: { fontFamily: fonts.regular, fontSize: 16, color: colors.textSecondary },
+
+  ledger: { marginTop: 20 },
+
+  /* ── Notes ───────────────────────────────────────────────────────── */
   warnRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    padding: 10,
-    borderRadius: radius.md,
-    backgroundColor: withAlpha(colors.warning, 0.1),
-  },
-  warnText: { flex: 1, fontFamily: fonts.regular, fontSize: 11.5, lineHeight: 16, color: colors.warning },
-
-  /* Verrou */
-  lockHead: { flexDirection: 'row', gap: 10 },
-  lockIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: withAlpha(colors.warning, 0.14),
-  },
-  lockHeadText: { flex: 1 },
-  lockTitle: { fontFamily: fonts.bold, fontSize: 14, color: colors.textPrimary },
-  lockReason: {
-    marginTop: 3,
-    fontFamily: fonts.regular,
-    fontSize: 12.5,
-    lineHeight: 18,
-    color: colors.textSecondary,
-  },
-  criteria: {
-    marginTop: 14,
-    paddingTop: 13,
+    gap: 10,
+    marginTop: 20,
+    paddingTop: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: colors.hairline,
   },
-  lockActions: { marginTop: 12, gap: 8 },
-  rejection: {
-    padding: 11,
-    borderRadius: radius.md,
-    backgroundColor: withAlpha(colors.red, 0.1),
-  },
-  rejectionLabel: {
-    fontFamily: fonts.bold,
-    fontSize: 9.5,
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-    color: colors.red,
-  },
-  rejectionText: {
-    marginTop: 4,
+  warnText: {
+    flex: 1,
     fontFamily: fonts.regular,
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.warning,
   },
 
-  /* Qualité */
-  qualityHead: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
-  qualityText: { flex: 1 },
-  qualityTitle: { fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 17, color: colors.textPrimary },
-  qualitySub: {
-    marginTop: 5,
-    fontFamily: fonts.regular,
-    fontSize: 11,
-    lineHeight: 16,
-    color: colors.textMuted,
-  },
-  signals: {
-    paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
+  moreButton: { marginTop: 16 },
 
-  /* Contenus */
   estimateRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-    padding: 10,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
-  },
-  estimateText: { flex: 1, fontFamily: fonts.regular, fontSize: 10.5, lineHeight: 15, color: colors.textMuted },
-
-  /* Récompenses */
-  bonus: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 10,
-    marginBottom: 6,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
-  bonusWon: { backgroundColor: colors.accentSoft },
-  bonusBody: { flex: 1 },
-  bonusTitle: { fontFamily: fonts.medium, fontSize: 12.5, color: colors.textSecondary },
-  bonusTitleWon: { color: colors.textPrimary },
-  bonusDesc: { marginTop: 2, fontFamily: fonts.regular, fontSize: 10.5, lineHeight: 15, color: colors.textMuted },
-  bonusMult: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textMuted },
-  bonusMultWon: { color: colors.success },
+  estimateText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
+  },
 
-  bottomSpinner: { marginTop: 12 },
+  bottomSpinner: { marginTop: 16 },
 });
