@@ -148,3 +148,55 @@ test('activeCount reflète ce qui est en cours de mesure', () => {
   t.pause(T0 + 2000);
   assert.equal(t.activeCount(), 0);
 });
+
+/**
+ * Le defaut qui a motive `flush` : `onViewableItemsChanged` ne parle que
+ * lorsque la visibilite CHANGE. Un tweet regarde longuement sans que rien ne
+ * bouge a l'ecran ne produisait donc aucune sortie, donc aucun segment — la
+ * lecture la plus attentive etait exactement celle qui ne comptait pas.
+ */
+test('flush émet le temps en cours sans attendre la sortie', () => {
+  const t = new DwellSessionTracker();
+  t.sync(['a'], T0);
+  assert.deepEqual(t.flush(T0 + 10000), [{ id: 'a', dwellMs: 10000 }]);
+});
+
+test('flush ne coupe pas la mesure : le chronomètre repart de l’instant du flush', () => {
+  const t = new DwellSessionTracker();
+  t.sync(['a'], T0);
+  t.flush(T0 + 10000);
+  // Le temps continue d'être compté, sans recompter les 10 s déjà envoyées.
+  assert.deepEqual(t.sync([], T0 + 15000), [{ id: 'a', dwellMs: 5000 }]);
+  assert.equal(t.activeCount(), 0);
+});
+
+test('flush répété n’envoie pas deux fois le même temps', () => {
+  const t = new DwellSessionTracker();
+  t.sync(['a'], T0);
+  assert.deepEqual(t.flush(T0 + 5000), [{ id: 'a', dwellMs: 5000 }]);
+  assert.deepEqual(t.flush(T0 + 5000), [], 'aucun temps neuf : rien à envoyer');
+  assert.deepEqual(t.flush(T0 + 7000), [{ id: 'a', dwellMs: 2000 }]);
+});
+
+test('flush laisse tourner ce qui n’atteint pas encore le seuil', () => {
+  const t = new DwellSessionTracker();
+  t.sync(['a'], T0);
+  assert.deepEqual(t.flush(T0 + 500), [], 'trop court pour être envoyé');
+  assert.equal(t.activeCount(), 1, 'mais toujours en cours de mesure');
+  assert.deepEqual(t.flush(T0 + 1600), [{ id: 'a', dwellMs: 1600 }], 'le résidu est conservé');
+});
+
+test('flush sur un tweet qui n’est plus visible ne le ressuscite pas', () => {
+  const t = new DwellSessionTracker();
+  t.sync(['a'], T0);
+  t.sync([], T0 + 3000);
+  assert.deepEqual(t.flush(T0 + 9000), [], 'plus rien ne tourne');
+  assert.equal(t.activeCount(), 0);
+});
+
+test('flush respecte le plafond de session', () => {
+  const t = new DwellSessionTracker();
+  t.sync(['a'], T0);
+  assert.deepEqual(t.flush(T0 + MAX_DWELL_MS), [{ id: 'a', dwellMs: MAX_DWELL_MS }]);
+  assert.deepEqual(t.flush(T0 + 2 * MAX_DWELL_MS), [], 'plafond atteint');
+});

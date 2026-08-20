@@ -39,6 +39,21 @@ import { DwellSessionTracker, type DwellSegment } from '../services/dwellSession
  */
 const IDLE_MS = 90_000;
 
+/**
+ * Période d'émission du temps en cours.
+ *
+ * Sans elle, rien ne partait tant qu'un tweet ne SORTAIT pas de l'écran :
+ * `onViewableItemsChanged` ne parle que lorsque la visibilité change. Quelqu'un
+ * qui s'arrête sur une publication et la lit — exactement le comportement que
+ * le signal Attention cherche à mesurer — ne produisait aucune donnée, et une
+ * app fermée d'un coup perdait tout ce qui était en cours.
+ *
+ * Vingt secondes : assez court pour qu'une lecture longue soit enregistrée par
+ * tranches même si l'app est tuée, assez long pour ne pas transformer un fil
+ * ouvert en robinet de requêtes.
+ */
+const FLUSH_MS = 20_000;
+
 export interface DwellMeta {
   /** Auteur, pour ne pas mesurer sa propre lecture. */
   authorId?: string | null;
@@ -137,6 +152,17 @@ export function useDwellTracking({ getMeta, viewerId, enabled = true }: Options 
     },
     [emit, armIdleTimer],
   );
+
+  // Émission périodique de ce qui est en cours de lecture. Le chronomètre
+  // n'est pas interrompu : `flush` referme et rouvre à l'instant même, donc
+  // rien n'est recompté et la lecture se poursuit sans coupure.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!enabledRef.current || !focusedRef.current) return;
+      emit(trackerRef.current.flush(Date.now()));
+    }, FLUSH_MS);
+    return () => clearInterval(timer);
+  }, [emit]);
 
   // Passage en arrière-plan : le temps hors de l'app ne se compte jamais.
   // `inactive` compte aussi — sur iOS c'est le centre de contrôle, un appel

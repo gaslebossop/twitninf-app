@@ -125,6 +125,32 @@ export class DwellSessionTracker {
     return segments;
   }
 
+  /**
+   * Émet le temps déjà écoulé SANS interrompre la mesure.
+   *
+   * C'est la réponse au défaut le plus grave de la première version :
+   * `onViewableItemsChanged` ne parle que lorsque la visibilité CHANGE. Un
+   * tweet regardé longuement, sans que rien ne bouge à l'écran, ne produisait
+   * donc aucune sortie — donc aucun segment. La lecture la plus attentive
+   * était exactement celle qui ne comptait pas, et une app fermée d'un coup
+   * perdait tout ce qui était en cours.
+   *
+   * Chaque chronomètre est fermé puis immédiatement rouvert à `now` : le temps
+   * envoyé n'est jamais recompté, et la lecture continue sans coupure.
+   */
+  flush(now: number): DwellSegment[] {
+    const segments: DwellSegment[] = [];
+    for (const [id, state] of this.sessions) {
+      if (state.startedAt === null) continue;
+      const segment = this.close(id, state, now);
+      if (segment) segments.push(segment);
+      // Rouvert quoi qu'il arrive : même sans segment émis (temps sous le
+      // seuil), le tweet est toujours à l'écran et sa lecture se poursuit.
+      state.startedAt = now;
+    }
+    return segments;
+  }
+
   /** Oublie tout, résidus compris — changement de compte, ou nouveau fil. */
   reset(): void {
     this.sessions.clear();
