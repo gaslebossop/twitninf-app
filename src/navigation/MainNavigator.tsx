@@ -91,6 +91,8 @@ import VideoCaptionScreen from '../screens/VideoCaptionScreen';
 import type { VideoOverlay } from '../utils/videoFilters';
 import TwitNinfVideo from '../screens/twitninfvideo';
 import MessagesScreen from '../screens/MessagesScreen';
+/** 🧪 Clone « 2B — Gouttière » du précédent, monté sur `FLAGS.FEED_2B`. */
+import MessagesScreen2B from '../screens/MessagesScreen2B';
 import LiveViewerScreen from '../screens/LiveViewerScreen';
 import GoLiveScreen from '../screens/GoLiveScreen';
 import KosporBirthdayPopup from '../components/KosporBirthdayPopup';
@@ -104,6 +106,8 @@ import DeveloperPortalScreen from '../screens/DeveloperPortalScreen';
 import NewConversationScreen from '../screens/NewConversationScreen';
 import ProfileCustomizationScreen from '../screens/ProfileCustomizationScreen';
 import ConversationThreadScreen from '../screens/ConversationThreadScreen';
+/** 🧪 Clone « 2B — Gouttière » du précédent, monté sur `FLAGS.FEED_2B`. */
+import ConversationThreadScreen2B from '../screens/ConversationThreadScreen2B';
 import FollowRequestsScreen from '../screens/FollowRequestsScreen';
 import UserConnectionsScreen from '../screens/UserConnectionsScreen';
 import BookmarksScreen from '../screens/BookmarksScreen';
@@ -947,7 +951,7 @@ function MainNavigatorInner() {
 
       <MainStack.Screen
         name="Messages"
-        component={MessagesScreen}
+        component={feed2B ? MessagesScreen2B : MessagesScreen}
         options={{
           presentation: 'card',
           headerShown: false,
@@ -1064,7 +1068,7 @@ function MainNavigatorInner() {
 
       <MainStack.Screen
         name="ConversationThread"
-        component={ConversationThreadScreen}
+        component={feed2B ? ConversationThreadScreen2B : ConversationThreadScreen}
         options={{
           presentation: 'card',
           headerShown: false,

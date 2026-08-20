@@ -117,7 +117,7 @@ import FeedGutterScreen from '../screens/FeedGutterScreen';
 import SearchScreen from '../screens/SearchScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import MessagesScreen from '../screens/MessagesScreen';
+import MessagesScreen2B from '../screens/MessagesScreen2B';
 import CasinoScreen from '../screens/CasinoScreen';
 import CommunityReviewScreen from '../screens/CommunityReviewScreen';
 import TradingScreen from '../screens/TradingScreen';
@@ -202,7 +202,7 @@ const PUBLISH_KEY = '__publish__';
  */
 const OPTIONAL_SCREENS: Record<OptionalTabKey, { route: string; component: React.ComponentType<any> }> = {
   video: { route: 'Video', component: TwitNinfVideo },
-  messages: { route: 'Messages', component: MessagesScreen },
+  messages: { route: 'Messages', component: MessagesScreen2B },
   casino: { route: 'Casino', component: CasinoScreen },
   revue: { route: 'Revue', component: CommunityReviewScreen },
   trading: { route: 'Trading', component: TradingScreen },
@@ -676,7 +676,7 @@ export default function BottomTabNavigator2B() {
             options={{ freezeOnBlur: false }}
           />
           <Tab.Screen name="Recherche" component={SearchScreen} />
-          <Tab.Screen name="Messages" component={MessagesScreen} />
+          <Tab.Screen name="Messages" component={MessagesScreen2B} />
           {liveCount > 0 && <Tab.Screen name={LIVE_ROUTE} component={LivesScreen} />}
           {optional.map((key) => (
             <Tab.Screen
