@@ -23,6 +23,7 @@ import { Video, ResizeMode, Audio } from 'expo-av';
 import { apiService } from '../services';
 import { publishVideoTweet, type VideoUploadPhase } from '../services/videoTweetService';
 import { neuralRankService } from '../services/neuralRankService';
+import trackingService from '../services/trackingService';
 import { CreateTweetRequest, SpotifyTrack, Tweet } from '../types/api';
 import TweetCard from '../components/TweetCard';
 import { useEvents } from '../contexts/EventContext';
@@ -799,6 +800,16 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         // Signaler à NeuralRank la publication du tweet pour invalider les caches feed
         const newTweetId = response.data?.tweet?.id || response.data?.id;
         if (newTweetId) neuralRankService.onPublish(String(newTweetId));
+
+        // Une réponse publiée est une interaction avec le tweet PARENT, et
+        // c'est le deuxième geste le plus lourd du barème du moteur (3.5). Il
+        // n'était émis que depuis `TweetCard` — donc jamais quand la réponse
+        // partait d'un fil. Posé ici, il couvre tous les points d'entrée du
+        // compositeur d'un coup. L'auteur du parent est laissé au serveur, qui
+        // sait le retrouver : on ne l'a pas forcément sous la main ici.
+        if (parentTweetId) {
+          trackingService.trackComment(String(parentTweetId));
+        }
 
         // Verrou payant, une fois l'identifiant connu.
         //

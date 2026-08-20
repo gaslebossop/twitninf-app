@@ -39,6 +39,8 @@ import { useEvents } from '../contexts/EventContext';
 import { getEventTheme } from '../themes/eventThemes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { toast } from '../components/ui/Toast';
+import trackingService from '../services/trackingService';
+import { signalsFromTweet } from '../services/neuralRankService';
 
 interface RouteParams {
   tweetId: string;
@@ -771,6 +773,11 @@ export default function TweetDetailScreen() {
         setTweet({ ...tweet, stats: { ...(tweet.stats || {}), replies: current + 1 } } as Tweet);
         setReplyText('');
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        // Répondre est le deuxième geste le plus lourd du barème du moteur
+        // (3.5, derrière le retweet). Il n'était émis que depuis `TweetCard`,
+        // monté seulement dans Profil et Recherche : répondre depuis un fil ou
+        // depuis cette page ne comptait pas.
+        trackingService.trackComment(tweet.id, signalsFromTweet(tweet));
       }
     } finally {
       setIsReplying(false);

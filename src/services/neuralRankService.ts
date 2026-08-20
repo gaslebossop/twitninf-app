@@ -47,6 +47,45 @@ export interface NeuralRankTrackRequest {
    * non voulues, « ne plus recommander cette chaîne » 43 %.
    */
   authorId?: string;
+  /**
+   * Version A/B réellement affichée, quand le tweet en portait une.
+   *
+   * Sans ces deux champs le moteur retombe sur l'affectation stockée en base.
+   * Ça marche tant que rien ne bouge, mais une expérience conclue entre le
+   * moment où la page a été servie et celui où le geste a lieu attribue alors
+   * l'interaction à la variante GAGNANTE plutôt qu'à celle qui était sous les
+   * yeux — l'expérience se mesure elle-même à l'envers.
+   */
+  experimentId?: string;
+  variantId?: string;
+}
+
+/**
+ * Signaux qu'un écran peut joindre gratuitement à une interaction, parce qu'il
+ * tient déjà l'objet tweet.
+ *
+ * Trois mécanismes du moteur ne se déclenchent QUE si l'auteur est connu — le
+ * filtrage collaboratif, le boost temps réel de 30 minutes et le bandit
+ * d'exploration (voir `rust-recommender/src/handlers/tracking.rs`). L'API sait
+ * désormais le retrouver toute seule, mais ça lui coûte une requête : quand
+ * l'écran l'a sous la main, autant l'envoyer.
+ *
+ * **Retweet pur : c'est l'auteur d'ORIGINE.** Créditer le retweeteur ferait
+ * apprendre au moteur une affinité pour quelqu'un qui n'a rien écrit. Même
+ * règle que `utils/engagementTarget` côté API.
+ */
+export function signalsFromTweet(tweet: any): Pick<
+  NeuralRankTrackRequest,
+  'authorId' | 'experimentId' | 'variantId'
+> {
+  if (!tweet) return {};
+  const author = tweet?.originalTweet?.author || tweet?.author;
+  const ab = tweet?.ab_test;
+  return {
+    authorId: author?.id ? String(author.id) : undefined,
+    experimentId: ab?.experiment_id ? String(ab.experiment_id) : undefined,
+    variantId: ab?.variant_id ? String(ab.variant_id) : undefined,
+  };
 }
 
 /**
