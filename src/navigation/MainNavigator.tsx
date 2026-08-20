@@ -106,6 +106,8 @@ import ProfileCustomizationScreen from '../screens/ProfileCustomizationScreen';
 import ConversationThreadScreen from '../screens/ConversationThreadScreen';
 import FollowRequestsScreen from '../screens/FollowRequestsScreen';
 import UserConnectionsScreen from '../screens/UserConnectionsScreen';
+import BookmarksScreen from '../screens/BookmarksScreen';
+import BlockedAccountsScreen from '../screens/BlockedAccountsScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import ContestScreen from '../screens/ContestScreen';
 import CreateContestScreen from '../screens/CreateContestScreen';
@@ -237,6 +239,8 @@ export type MainStackParamList = {
     title?: string;
   };
   FollowRequests: undefined;
+  Bookmarks: undefined;
+  BlockedAccounts: undefined;
   UserConnections: {
     userId: string;
     username?: string;
@@ -1079,6 +1083,16 @@ function MainNavigatorInner() {
         name="UserConnections"
         component={UserConnectionsScreen}
         options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="Bookmarks"
+        component={BookmarksScreen}
+        options={{ presentation: 'card', headerShown: false }}
+      />
+      <MainStack.Screen
+        name="BlockedAccounts"
+        component={BlockedAccountsScreen}
+        options={{ presentation: 'card', headerShown: false }}
       />
 
       <MainStack.Screen

@@ -10,6 +10,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Share,
 } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -193,24 +194,36 @@ function TweetCard({
     }
   };
 
-  const handleShare = () => {
-    if (onShare) {
-      // 📊 Track share
-      trackingService.trackShare(tweet.id);
-      onShare(tweet.id);
+  // `onShare`/`onBookmark` restent facultatifs : ils ne servent plus qu'à
+  // prévenir l'écran pour sa propre tenue de liste (ex. retirer une carte).
+  // L'action réelle, elle, ne dépend plus de ce que l'écran a branché — sinon
+  // ProfileScreen/SearchScreen, qui ne passaient rien, rendaient ces boutons
+  // décoratifs : le partage n'ouvrait aucune feuille, le favori ne
+  // persistait rien.
+  const handleShare = async () => {
+    trackingService.trackShare(tweet.id);
+    const response = await apiService.shareTweet(tweet.id);
+    if (response.success && response.data?.share_link) {
+      try {
+        await Share.share({ message: response.data.share_link, url: response.data.share_link });
+      } catch {
+        // Feuille de partage annulée — rien à signaler.
+      }
+    } else {
+      toast.error(response.message || 'Impossible de partager ce tweet');
     }
+    onShare?.(tweet.id);
   };
 
-  const handleBookmark = () => {
-    if (onBookmark) {
-      // 📊 Track bookmark
-      trackingService.trackBookmark(tweet.id);
-      onBookmark(tweet.id);
+  const handleBookmark = async () => {
+    trackingService.trackBookmark(tweet.id);
+    const response = await apiService.bookmarkTweet(tweet.id);
+    if (response.success) {
+      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
     } else {
-      // Fallback action si pas de handler défini
-      trackingService.trackBookmark(tweet.id);
-      toast.success('Tweet ajouté aux favoris');
+      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
     }
+    onBookmark?.(tweet.id);
   };
 
   const handleSkip = () => {
@@ -232,15 +245,20 @@ function TweetCard({
     const author = tweet.author;
     confirmAsync({
       title: `Bloquer @${author.username} ?`,
-      message: 'Ses tweets disparaissent de ton fil et il ne peut plus te contacter.',
+      message: 'Il ne pourra plus vous contacter ni voir votre profil, et ses tweets disparaîtront de votre fil.',
       confirmLabel: 'Bloquer',
       icon: 'ban-outline',
       destructive: true,
-    }).then((ok) => {
+    }).then(async (ok) => {
       if (!ok) return;
       trackingService.trackBlock(author.id);
-      onBlock?.(author.id);
-      toast.success(`@${author.username} a été bloqué`);
+      const response = await apiService.blockUser(author.id);
+      if (response.success) {
+        toast.success(`@${author.username} a été bloqué`);
+        onBlock?.(author.id);
+      } else {
+        toast.error(response.message || 'Impossible de bloquer ce compte');
+      }
     });
   };
 

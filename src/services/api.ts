@@ -1368,6 +1368,34 @@ class ApiService {
     }
   }
 
+  async getBookmarks(options: { limit?: number; offset?: number } = {}): Promise<ApiResponse<{ tweets: Tweet[]; pagination: PaginationInfo }>> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (options.limit) queryParams.append('limit', String(options.limit));
+      if (options.offset) queryParams.append('offset', String(options.offset));
+      const endpoint = `/api/tweets/bookmarks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const response = await this.makeRequest(endpoint, { requiresAuth: true });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la récupération des favoris';
+      return { success: false, message: errorMessage, errors: [] };
+    }
+  }
+
+  async getBlockedUsers(options: { limit?: number; offset?: number } = {}): Promise<ApiResponse<{ users: User[]; pagination: PaginationInfo }>> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (options.limit) queryParams.append('limit', String(options.limit));
+      if (options.offset) queryParams.append('offset', String(options.offset));
+      const endpoint = `/api/users/blocked${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const response = await this.makeRequest(endpoint, { requiresAuth: true });
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de la récupération des comptes bloqués';
+      return { success: false, message: errorMessage, errors: [] };
+    }
+  }
+
   async bookmarkTweet(id: string): Promise<ApiResponse<{ bookmarked: boolean; tweet_id: string }>> {
     try {
       const response = await this.makeRequest(`/api/tweets/${id}/bookmark`, {

@@ -586,6 +586,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               )}
 
               <TouchableOpacity
+                style={[S.bannerSettings, { top: Math.max(insets.top, 8) + 4, right: 56 }]}
+                onPress={() => navigation.navigate('Bookmarks')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="bookmark-outline" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[S.bannerSettings, { top: Math.max(insets.top, 8) + 4 }]}
                 onPress={() => navigation.navigate('Settings', { returnTo: 'ProfileScreen' })}
                 activeOpacity={0.8}

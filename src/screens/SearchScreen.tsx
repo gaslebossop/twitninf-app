@@ -914,34 +914,6 @@ export default function SearchScreen() {
     });
   }, [navigation]);
 
-  // Gestion du partage
-  const handleShare = useCallback((tweetId: string) => {
-    // Implémenter le partage
-    toast.info('Partage', {
-      description: 'Fonctionnalité de partage à venir',
-    });
-  }, []);
-
-  const handleBookmark = (tweetId: string) => {
-    // 📌 Bookmark
-    console.log('Bookmark:', tweetId);
-    toast.success('Tweet ajouté aux favoris');
-  };
-
-  const handleSkip = (tweetId: string) => {
-    // ⏭️ Skip
-    console.log('Skip:', tweetId);
-    toast.info('Tweet ignoré', {
-      description: 'Ce tweet n\'apparaîtra plus',
-    });
-  };
-
-  const handleBlock = (userId: string) => {
-    // 🚫 Block
-    console.log('Block:', userId);
-    toast.success('Cet utilisateur a été bloqué');
-  };
-
   /* Le decor de l'etat vide : le bloc n'apparait qu'une fois la pluie prete. */
   const { pret: pluiePrete, onSettled: onDecorPluie } = useSceneReveal();
 
@@ -981,7 +953,6 @@ export default function SearchScreen() {
         onLike={handleLike}
         onRetweet={handleRetweet}
         onReply={handleReply}
-        onShare={handleShare}
         compact={false}
       />
     </View>

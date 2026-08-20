@@ -19,6 +19,7 @@ import {
   Platform,
   ActivityIndicator,
   StatusBar,
+  Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -125,6 +126,8 @@ export default function UserProfileScreen() {
   const [followStatus, setFollowStatus] = useState<'active' | 'pending' | null>(null);
   const [followLoading, setFollowLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'tweets' | 'replies' | 'media' | 'likes'>('tweets');
+  /** Non-null si ce profil est bloqué, dans un sens ou l'autre — voir le rendu dédié plus bas. */
+  const [blockedState, setBlockedState] = useState<'by_me' | 'by_them' | null>(null);
   const [likedTweets, setLikedTweets] = useState<{ [key: string]: boolean }>({});
   const [retweetedTweets, setRetweetedTweets] = useState<{ [key: string]: boolean }>({});
   const [tabLoading, setTabLoading] = useState(false);
@@ -260,10 +263,24 @@ export default function UserProfileScreen() {
         response = await apiService.getUserProfileByUsername(username);
       }
       if (response?.success && response.data) {
-        setUserProfile(response.data.user);
-        if (username && !userId) await fetchTweetsAfterProfile(response.data.user.id);
-        if (isAuthenticated && currentUser?.id !== response.data.user.id) {
-          await checkFollowStatus(response.data.user.id);
+        const blocked = (response.data as any).blocked || null;
+        setBlockedState(blocked);
+        // Un profil bloqué ne porte pas de `stats` (voir `minimalBlockedUser`
+        // côté serveur) : la mise en page plus bas lit `userProfile.stats.*`
+        // sans garde, un objet manquant y ferait planter l'écran.
+        setUserProfile(blocked
+          ? { ...response.data.user, stats: { followers: 0, following: 0, tweets: 0, likes: 0 } } as UserProfile
+          : response.data.user);
+        // Un profil bloqué ne rend qu'une identité minimale (voir
+        // `minimalBlockedUser` côté serveur) : ni tweets ni statut de suivi
+        // n'ont de sens à charger par-dessus.
+        if (!blocked) {
+          if (username && !userId) await fetchTweetsAfterProfile(response.data.user.id);
+          if (isAuthenticated && currentUser?.id !== response.data.user.id) {
+            await checkFollowStatus(response.data.user.id);
+          }
+        } else {
+          setTweets([]);
         }
       } else {
         setError(response?.message || 'Erreur lors du chargement du profil');
@@ -370,16 +387,67 @@ export default function UserProfileScreen() {
     }
   }, []);
 
-  const handleShare = useCallback((tweetId: string) => { }, []);
+  const handleShare = useCallback(async (tweetId: string) => {
+    const response = await apiService.shareTweet(tweetId);
+    if (!response.success || !response.data?.share_link) {
+      toast.error(response.message || 'Impossible de partager ce tweet');
+      return;
+    }
+    try {
+      await Share.share({ message: response.data.share_link, url: response.data.share_link });
+    } catch {
+      // Feuille de partage annulée — rien à signaler.
+    }
+  }, []);
 
   const handleDeleteTweet = useCallback((tweetId: string) => {
     setTweets((current) => current.filter((tweet) => tweet.id !== tweetId));
   }, []);
 
-  const handleBookmark = useCallback((tweetId: string) => {
-    // 📌 Bookmark
-    console.log('Bookmark:', tweetId);
-    toast.success('Tweet ajouté aux favoris');
+  /**
+   * Point d'entrée unique pour bloquer/débloquer CE profil — appelé aussi
+   * bien depuis le bouton d'en-tête que depuis « Bloquer cet utilisateur »
+   * dans le menu d'un de ses tweets. Même action réelle des deux côtés :
+   * bloquer depuis un tweet n'a jamais eu de raison de peser moins que
+   * bloquer depuis l'en-tête.
+   */
+  const handleBlockToggle = useCallback(async (targetUserId: string, targetUsername?: string) => {
+    if (blockedState === 'by_me') {
+      const response = await apiService.unblockUser(targetUserId);
+      if (response.success) {
+        setBlockedState(null);
+        toast.success(targetUsername ? `@${targetUsername} débloqué` : 'Compte débloqué');
+        fetchUserProfile();
+      } else {
+        toast.error(response.message || 'Impossible de débloquer ce compte');
+      }
+      return;
+    }
+
+    const confirmed = await confirmAsync({
+      title: targetUsername ? `Bloquer @${targetUsername} ?` : 'Bloquer ce compte ?',
+      message: 'Il ne pourra plus vous contacter ni voir votre profil, et ses tweets disparaîtront de votre fil.',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    const response = await apiService.blockUser(targetUserId);
+    if (response.success) {
+      toast.success(targetUsername ? `@${targetUsername} a été bloqué` : 'Compte bloqué');
+      setBlockedState('by_me');
+      setTweets([]);
+    } else {
+      toast.error(response.message || 'Impossible de bloquer ce compte');
+    }
+  }, [blockedState]);
+
+  const handleBookmark = useCallback(async (tweetId: string) => {
+    const response = await apiService.bookmarkTweet(tweetId);
+    if (response.success) {
+      toast.success(response.data?.bookmarked ? 'Ajouté aux favoris' : 'Retiré des favoris');
+    } else {
+      toast.error(response.message || 'Impossible de mettre ce tweet en favori');
+    }
   }, []);
 
   const [reportTarget, setReportTarget] = useState<{ id: string; label?: string } | null>(null);
@@ -424,13 +492,13 @@ export default function UserProfileScreen() {
           {
             label: 'Bloquer cet utilisateur',
             icon: 'ban-outline',
-            onPress: () => tweet?.author?.id && handleBlock(tweet.author.id),
+            onPress: () => tweet?.author?.id && handleBlockToggle(tweet.author.id, tweet.author.username),
             destructive: true,
           },
         ];
 
     showActionSheet({ items: entries });
-  }, [tweets, currentUser?.id, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport]);
+  }, [tweets, currentUser?.id, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport, handleBlockToggle]);
 
   /**
    * L'état d'interaction vit à côté des tweets : on le fusionne une fois par
@@ -511,12 +579,6 @@ export default function UserProfileScreen() {
     ),
     [handleRowAction, rowContext],
   );
-
-  const handleBlock = (userId: string) => {
-    // 🚫 Block
-    console.log('Block:', userId);
-    toast.success('Cet utilisateur a été bloqué');
-  };
 
   const checkFollowStatus = async (targetUserId?: string) => {
     const userIdToCheck = targetUserId || userId || userProfile?.id;
@@ -887,6 +949,23 @@ export default function UserProfileScreen() {
                     </TouchableOpacity>
                   </Animated.View>
                 )}
+                {!isOwnProfile && blockedState !== 'by_them' && (
+                  <TouchableOpacity
+                    style={S.profileOptionsBtn}
+                    onPress={() => showActionSheet({
+                      items: [{
+                        label: blockedState === 'by_me' ? 'Débloquer ce compte' : 'Bloquer ce compte',
+                        icon: 'ban-outline',
+                        destructive: blockedState !== 'by_me',
+                        onPress: () => handleBlockToggle(userProfile.id, userProfile.username),
+                      }],
+                    })}
+                    activeOpacity={0.85}
+                    aria-label="Plus d'options"
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={17} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                )}
               </Animated.View>
             </View>
 
@@ -1081,34 +1160,36 @@ export default function UserProfileScreen() {
 
           <View style={S.divider} />
 
-          {/* Tabs (underline style) */}
-          <View
-            style={[
-              S.tabsBar,
-              themed && { borderBottomColor: withAlpha(profileAccent, 0.28) },
-            ]}
-          >
-            {([
-              { key: 'tweets', label: 'Posts' },
-              { key: 'replies', label: 'Réponses' },
-              { key: 'media', label: 'Médias' },
-              { key: 'likes', label: "J'aime" },
-            ] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab.key}
-                style={[S.tabItem, activeTab === tab.key && S.tabItemActive]}
-                onPress={() => handleTabChange(tab.key)}
-                activeOpacity={0.85}
-              >
-                <Text style={[S.tabLabel, activeTab === tab.key && S.tabLabelActive]}>
-                  {tab.label}
-                </Text>
-                {activeTab === tab.key && (
-                  <View style={[S.tabUnderline, themed && { backgroundColor: profileAccent }]} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* Tabs (underline style) — inutiles sur un profil bloqué, qui ne montre jamais de contenu */}
+          {!blockedState && (
+            <View
+              style={[
+                S.tabsBar,
+                themed && { borderBottomColor: withAlpha(profileAccent, 0.28) },
+              ]}
+            >
+              {([
+                { key: 'tweets', label: 'Posts' },
+                { key: 'replies', label: 'Réponses' },
+                { key: 'media', label: 'Médias' },
+                { key: 'likes', label: "J'aime" },
+              ] as const).map((tab) => (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[S.tabItem, activeTab === tab.key && S.tabItemActive]}
+                  onPress={() => handleTabChange(tab.key)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[S.tabLabel, activeTab === tab.key && S.tabLabelActive]}>
+                    {tab.label}
+                  </Text>
+                  {activeTab === tab.key && (
+                    <View style={[S.tabUnderline, themed && { backgroundColor: profileAccent }]} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Tweet list */}
             {tabLoading && (
@@ -1117,7 +1198,28 @@ export default function UserProfileScreen() {
           </>
         }
         ListEmptyComponent={
-          tabLoading ? null : isLockedPrivateProfile ? (
+          tabLoading ? null : blockedState ? (
+              <View style={S.emptyContainer}>
+                <Ionicons name="ban" size={48} color={colors.borderSubtle} />
+                <Text style={S.emptyTitle}>
+                  {blockedState === 'by_me' ? 'Vous avez bloqué ce compte' : 'Ce compte vous a bloqué'}
+                </Text>
+                {blockedState === 'by_me' && (
+                  <>
+                    <Text style={S.emptyText}>
+                      Il ne peut plus vous contacter ni voir votre profil, et son contenu n'apparaît plus dans votre fil.
+                    </Text>
+                    <TouchableOpacity
+                      style={S.unblockCta}
+                      onPress={() => handleBlockToggle(userProfile.id, userProfile.username)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={S.unblockCtaText}>Débloquer</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            ) : isLockedPrivateProfile ? (
               <View style={S.emptyContainer}>
                 <Ionicons name="lock-closed" size={48} color={colors.borderSubtle} />
                 <Text style={S.emptyTitle}>Ce compte est privé</Text>
@@ -1295,6 +1397,14 @@ const S = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileOptionsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1582,5 +1692,17 @@ const S = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  unblockCta: {
+    marginTop: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 11,
+    borderRadius: 22,
+    backgroundColor: colors.accent,
+  },
+  unblockCtaText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: colors.white,
   },
 });

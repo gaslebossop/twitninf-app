@@ -295,6 +295,20 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'shield-checkmark-outline',
               () => navigation.navigate('PrivacyData')
             )}
+
+            {renderActionButton(
+              'Favoris',
+              'Les tweets que vous avez mis de côté',
+              'bookmark-outline',
+              () => navigation.navigate('Bookmarks')
+            )}
+
+            {renderActionButton(
+              'Comptes bloqués',
+              'Voir et débloquer les comptes que vous avez bloqués',
+              'ban-outline',
+              () => navigation.navigate('BlockedAccounts')
+            )}
           </Animated.View>
 
           {/* Section Navigation — onglets optionnels de la navbar (mobile uniquement) */}
