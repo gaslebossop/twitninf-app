@@ -41,6 +41,7 @@ import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
 import { linkGAuthAccount } from '../services/gAuthLogin';
 import { useFlag } from '../contexts/FeatureFlagContext';
+import { useFeed2BTour } from '../components/tour/Feed2BTour';
 import { FLAGS } from '../config/featureFlagKeys';
 
 const { width, height } = Dimensions.get('window');
@@ -53,6 +54,8 @@ interface SettingsScreenProps {
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const nfMapEnabled = useFlag(FLAGS.NF_MAP);
   const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
+  const feed2BEnabled = useFlag(FLAGS.FEED_2B);
+  const { start: startFeed2BTour } = useFeed2BTour();
   const { user, refreshCurrentUser } = useAuth();
   const { isAdmin, isSuperAdmin } = useAdminPermissions();
   const { activeEvent, hasActiveEvent } = useEvents();
@@ -328,6 +331,21 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'Choisis les raccourcis affichés en bas de l\'écran',
               'options-outline',
               () => navigation.navigate('NavbarCustomization')
+            )}
+
+            {/* Réservé aux comptes du test : présenter un fil que la personne
+                n'a pas donnerait une page décrivant une interface introuvable. */}
+            {feed2BEnabled && renderActionButton(
+              'Revoir la visite du fil',
+              'La gouttière, la question de l\'algorithme et Explorer, désignés sur le vrai fil',
+              'sparkles-outline',
+              () => {
+                // On arme la visite PUIS on ramène au fil : les bulles se
+                // posent sur des éléments réels, elles n'ont rien à désigner
+                // depuis l'écran des réglages.
+                startFeed2BTour();
+                navigation.navigate('MainTabs');
+              }
             )}
 
             {renderActionButton(

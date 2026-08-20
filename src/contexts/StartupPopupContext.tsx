@@ -28,7 +28,7 @@ import React, {
  */
 export type StartupPopupId =
   | 'language' | 'patch' | 'birthday' | 'navbar' | 'profile'
-  | 'consent' | 'follow_onboarding' | 'update' | 'sleep';
+  | 'consent' | 'follow_onboarding' | 'update' | 'sleep' | 'feed2b';
 
 /**
  * Du plus bloquant au plus accessoire.
@@ -70,7 +70,12 @@ const PRIORITY: StartupPopupId[] = [
   // signal et sert un fil générique. Cette étape conditionne donc tout ce que
   // la personne verra ensuite, y compris pendant les popups suivantes.
   'follow_onboarding',
-  'language', 'patch', 'birthday', 'navbar', 'profile',
+  'language', 'patch', 'birthday',
+  // Avant le choix des onglets : `navbar` fait choisir des raccourcis DANS une
+  // barre que la personne n'a jamais vue. Présenter le fil d'abord donne le
+  // contexte qui rend ce choix compréhensible.
+  'feed2b',
+  'navbar', 'profile',
 ];
 
 interface StartupPopupContextValue {

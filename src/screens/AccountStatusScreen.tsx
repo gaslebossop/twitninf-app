@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radius, statusBarStyle } from '../theme';
 import { AppHeader, Card, EmptyState, ErrorState, ScreenBackground, ScreenSkeleton } from '../components/ui';
 import neuralRankService, { type AccountStatus } from '../services/neuralRankService';
+import CreatorPoolService, { type AccountStatus as ContentQualityStatus } from '../services/creatorPoolService';
 
 /**
  * État du compte — le pendant lisible de la restriction de portée.
@@ -15,6 +16,16 @@ import neuralRankService, { type AccountStatus } from '../services/neuralRankSer
  * savoir pourquoi ni jusqu'à quand ne corrige rien, il devine. Cet écran lit
  * `GET /api/neural-rank/account-status`, jamais un identifiant fourni par le
  * client — l'API ne sert que le compte authentifié (voir la route côté API).
+ *
+ * Un second appel, `GET /api/creator-pool/account-status`, apporte ce que le
+ * moteur ne sait pas : les publications retirées ou écartées des
+ * recommandations, et surtout CE QUE COÛTERAIT LA PROCHAINE. Le moteur dit où
+ * en est la portée aujourd'hui ; seul ce registre-là dit comment on y est
+ * arrivé et comment ne pas y retourner — c'est la seule information de cet
+ * écran qui puisse changer un comportement.
+ *
+ * Les deux appels sont indépendants : une panne de l'un laisse l'autre
+ * s'afficher, plutôt que de rendre la page entièrement muette.
  */
 
 const SURFACE_LABELS: Record<string, string> = {
@@ -53,10 +64,17 @@ export default function AccountStatusScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quality, setQuality] = useState<ContentQualityStatus | null>(null);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
+    // Volontairement non bloquant : le registre qualité est un complément,
+    // son absence ne doit pas empêcher d'afficher le niveau de distribution.
+    CreatorPoolService.getAccountStatus()
+      .then(setQuality)
+      .catch(() => setQuality(null));
+
     const res = await neuralRankService.getAccountStatus();
     if (res.success && res.data) {
       setStatus(res.data);
@@ -172,6 +190,81 @@ export default function AccountStatusScreen() {
           </Card>
         )}
 
+        {/* Publications retirées ou écartées, et le coût de la prochaine.
+            Le moteur ci-dessus dit où en est la portée ; ce bloc-là dit
+            comment on y est arrivé — et c'est le seul de l'écran qui parle du
+            futur, donc le seul qui puisse changer quelque chose. */}
+        {quality?.window && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Publications écartées ces {quality.window.days} jours
+            </Text>
+
+            <View style={styles.qualityCountRow}>
+              <Text style={styles.qualityCount}>{quality.window.count}</Text>
+              <Text style={styles.qualityCountLabel}>
+                {quality.window.count > 1 ? 'publications' : 'publication'} retirée
+                {quality.window.count > 1 ? 's' : ''} ou écartée
+                {quality.window.count > 1 ? 's' : ''} des recommandations
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.nextStep,
+                quality.window.nextIsStrike && styles.nextStepSevere,
+              ]}
+            >
+              <Ionicons
+                name={quality.window.nextIsStrike ? 'alert-circle-outline' : 'information-circle-outline'}
+                size={16}
+                color={quality.window.nextIsStrike ? colors.like : colors.textMuted}
+              />
+              <Text style={styles.nextStepText}>
+                {quality.window.count === 0
+                  ? 'Un premier cas ne coûte rien de plus qu’un avis — c’est la répétition rapprochée qui compte.'
+                  : quality.window.nextIsStrike
+                    ? 'Un cas de plus inscrit un avertissement daté à ton dossier ; il expire seul au bout de 90 jours.'
+                    : `Un cas de plus réduirait ta portée pendant ${
+                        quality.window.nextPenaltyDays === 1
+                          ? '24 heures'
+                          : `${quality.window.nextPenaltyDays} jours`
+                      }.`}
+              </Text>
+            </View>
+
+            {quality.events.length > 0 && (
+              <View style={styles.qualityEvents}>
+                {quality.events.slice(0, 6).map((event) => (
+                  <View key={event.id} style={styles.qualityEvent}>
+                    <View style={styles.qualityDot} />
+                    <View style={styles.qualityEventBody}>
+                      <Text style={styles.qualityEventLabel}>{event.label}</Text>
+                      {!!event.reason && (
+                        <Text style={styles.qualityEventReason} numberOfLines={2}>
+                          {event.reason}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.qualityEventDate}>
+                      {new Date(event.occurredAt).toLocaleDateString('fr-FR', {
+                        day: 'numeric',
+                        month: 'short',
+                      })}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={styles.sectionNote}>
+              Une publication écartée des recommandations reste en ligne, sur ton profil et
+              dans le fil de tes abonnés. Ce n’est pas une sanction — seule la répétition
+              rapprochée touche le compte.
+            </Text>
+          </Card>
+        )}
+
         {status.level_label === 'clean' && status.per_policy.length === 0 && (
           <EmptyState
             icon="shield-checkmark-outline"
@@ -250,4 +343,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   policyCountText: { color: colors.textPrimary, fontSize: 13, fontFamily: fonts.bold },
+
+  qualityCountRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  qualityCount: { color: colors.textPrimary, fontSize: 30, fontFamily: fonts.bold },
+  qualityCountLabel: { flex: 1, color: colors.textSecondary, fontSize: 13, lineHeight: 18, fontFamily: fonts.regular },
+
+  nextStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  nextStepSevere: { borderWidth: 1, borderColor: colors.like },
+  nextStepText: { flex: 1, color: colors.textSecondary, fontSize: 12.5, lineHeight: 18, fontFamily: fonts.regular },
+
+  qualityEvents: { marginTop: 12 },
+  qualityEvent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  qualityDot: { width: 6, height: 6, borderRadius: 3, marginTop: 6, backgroundColor: colors.warning },
+  qualityEventBody: { flex: 1 },
+  qualityEventLabel: { color: colors.textPrimary, fontSize: 13, fontFamily: fonts.medium },
+  qualityEventReason: { color: colors.textMuted, fontSize: 11.5, lineHeight: 16, fontFamily: fonts.regular, marginTop: 2 },
+  qualityEventDate: { color: colors.textMuted, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 1 },
 });

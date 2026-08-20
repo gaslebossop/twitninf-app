@@ -1,31 +1,61 @@
 /**
- * Monétisation des tweets — gains, éligibilité et statistiques de l'écosystème TWC.
+ * Monétisation créateur — pot hebdomadaire en NF.
+ *
+ * Écran refait entièrement le 2026-08-20. Ce qu'il remplace et pourquoi :
+ *
+ * - L'ancienne page affichait un montant RECALCULÉ à chaque ouverture, puis en
+ *   versait un autre au moment du clic. Ici, le chiffre du bandeau vient d'une
+ *   part FIGÉE à la clôture du lundi : ce qui est affiché est ce qui est versé,
+ *   et encaisser ne déclenche aucun calcul.
+ * - Elle listait `tweet.views` / `tweet.likes` là où l'API renvoyait ces
+ *   champs sous `stats` — chaque ligne affichait donc `undefined`. Toutes les
+ *   valeurs de cet écran sont désormais typées (`creatorPoolService.ts`) et
+ *   passées par `num()`, qui ne laisse jamais sortir autre chose qu'un nombre.
+ * - Elle parlait de « TWC ». Le symbole réellement en base est **NF** ; il est
+ *   maintenant lu depuis la réponse plutôt qu'écrit en dur.
+ *
+ * Le principe de lecture de l'écran : on descend du RÉSULTAT vers sa CAUSE.
+ * Combien j'ai → combien la semaine en cours rapporte → pourquoi (les quatre
+ * signaux, avec mon rang) → ce qui peut l'augmenter → d'où vient l'argent.
+ * Quelqu'un qui s'arrête à la première carte a déjà l'essentiel ; quelqu'un
+ * qui descend comprend comment le faire monter.
  */
-import React, { useState, useEffect } from 'react';
+
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   RefreshControl,
-  Alert,
   ActivityIndicator,
-  Modal,
-  useWindowDimensions,
+  StatusBar,
   LayoutAnimation,
   Platform,
   UIManager,
-  StatusBar,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { useAuth } from '../contexts/AuthContext';
-import TweetMonetizationService from '../services/tweetMonetizationService';
-import MonetizationProgramService, { MonetizationProgramEligibility } from '../services/monetizationProgramService';
-import NewEconomyService from '../services/newEconomyService';
-import CurrencyService from '../services/currencyService';
+import CreatorPoolService, {
+  CreatorPoolDashboard,
+  PeriodProjection,
+} from '../services/creatorPoolService';
+import MonetizationProgramService, {
+  MonetizationProgramEligibility,
+} from '../services/monetizationProgramService';
 import { colors, fonts, withAlpha, radius, statusBarStyle } from '../theme';
-import { AppHeader, ScreenBackground, GlassCard, GlassButton, SectionLabel, Skeleton, celebrateReward } from '../components/ui';
+import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
+import {
+  AppHeader,
+  ScreenBackground,
+  GlassCard,
+  GlassButton,
+  SectionLabel,
+  EmptyState,
+  Skeleton,
+  celebrateReward,
+} from '../components/ui';
 import { toast } from '../components/ui/Toast';
 
 if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExperimental) {
@@ -33,462 +63,278 @@ if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExp
 }
 
 /** Bref, sans rebond — un dépliage répond à un tap, pas à un montage. */
-const expandAnim = () =>
+const expand = () =>
   LayoutAnimation.configureNext(
     LayoutAnimation.create(180, LayoutAnimation.Types.easeOut, LayoutAnimation.Properties.opacity)
   );
 
-interface TweetEligibility {
-  isEligible: boolean;
-  score: number;
-  factors: {
-    length: number;
-    engagement: number;
-    user: number;
-    quality: number;
-    age: number;
-  };
-  reasons: string[];
+/* ------------------------------------------------------------------ */
+/* Formatage                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Garde-fou unique de l'écran.
+ *
+ * Toute valeur numérique venue du réseau passe par ici. C'est la réponse
+ * directe au défaut de l'ancienne page : un champ renommé côté serveur y
+ * devenait `undefined`, puis s'affichait tel quel au milieu d'une phrase. Ici
+ * il devient `0`, et un zéro se voit tout de suite comme une anomalie.
+ */
+function num(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-interface PreviewEarnings {
-  totalRewards: number;
-  currentBalance: number;
-  newBalance: number;
-  eligibleTweets: number;
-  tweetDetails: Array<{
-    tweetId: string;
-    reward: number;
-    views: number;
-    likes: number;
-    comments: number;
-    retweets: number;
-    content: string;
-  }>;
-  currency: string;
+function money(value: unknown, decimals = 2): string {
+  return num(value).toLocaleString('fr-FR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
-interface EligibleTweet {
-  id: string;
-  content: string;
-  createdAt: string;
-  likesCount: number;
-  retweetsCount: number;
-  repliesCount: number;
-  eligibility: TweetEligibility;
-  reward: number;
-  multipliers: any;
-  factors: any;
+function compact(value: unknown): string {
+  const n = Math.round(num(value));
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.0', '')} M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace('.0', '')} k`;
+  return n.toLocaleString('fr-FR');
 }
 
-interface MonetizationStats {
-  currency: {
-    symbol: string;
-    name: string;
-    circulatingSupply: number;
-    currentPrice: number;
-  };
-  wallets: {
-    totalUsers: number;
-    totalEarned: number;
-    totalPurchased: number;
-    totalSpent: number;
-    totalLoyaltyPoints: number;
-  };
-  rewards: {
-    totalRewards: number;
-    totalAmount: number;
-    averageAmount: number;
-  };
+function percent(value: unknown): string {
+  return `${Math.round(num(value) * 100)} %`;
 }
 
-const fmt = (n: number) => (Number.isFinite(n) ? n.toFixed(2) : '0.00');
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+/** « 3 j 04 h » — assez précis pour situer la clôture, sans faux compte à rebours. */
+function timeUntil(iso: string | undefined): string {
+  if (!iso) return '—';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return 'imminente';
+  const hours = Math.floor(ms / 3_600_000);
+  const days = Math.floor(hours / 24);
+  if (days >= 1) return `${days} j ${String(hours % 24).padStart(2, '0')} h`;
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  return `${hours} h ${String(minutes).padStart(2, '0')} min`;
 }
 
-/* ── Petits composants de présentation ─────────────────────────────────── */
-
-function ScoreBar({ score, eligible }: { score: number; eligible: boolean }) {
-  const pct = Math.max(0, Math.min(100, Math.round(score)));
-  const tint = eligible ? colors.success : pct >= 50 ? colors.warning : colors.textMuted;
-  return (
-    <View style={styles.scoreRow}>
-      <View style={styles.scoreTrack}>
-        <View style={[styles.scoreFill, { width: `${pct}%`, backgroundColor: tint }]} />
-      </View>
-      <Text style={[styles.scoreValue, { color: tint }]}>{pct}%</Text>
-    </View>
-  );
+function periodLabel(startIso?: string, endIso?: string): string {
+  if (!startIso) return '';
+  const start = new Date(startIso);
+  const end = endIso ? new Date(new Date(endIso).getTime() - 1) : null;
+  const fmt = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return end ? `${fmt(start)} — ${fmt(end)}` : fmt(start);
 }
 
-const FACTOR_LABELS: Array<[keyof TweetEligibility['factors'], string]> = [
-  ['length', 'Longueur'],
-  ['engagement', 'Engagement'],
-  ['user', 'Compte'],
-  ['quality', 'Qualité'],
-  ['age', 'Ancienneté'],
-];
+/* ------------------------------------------------------------------ */
+/* Briques d'affichage                                                 */
+/* ------------------------------------------------------------------ */
 
-function TweetCard({ tweet }: { tweet: EligibleTweet }) {
-  const [expanded, setExpanded] = useState(false);
-  const toggle = () => {
-    expandAnim();
-    setExpanded((v) => !v);
-  };
-
-  const factors = tweet.eligibility.factors || ({} as TweetEligibility['factors']);
-  const factorTotal = FACTOR_LABELS.reduce((sum, [key]) => sum + (factors[key] || 0), 0) || 1;
-  const eligible = tweet.eligibility.isEligible;
-  const pct = Math.max(0, Math.min(100, Math.round(tweet.eligibility.score)));
-  const scoreTint = eligible ? colors.success : pct >= 50 ? colors.warning : colors.textMuted;
-
-  return (
-    <GlassCard style={styles.tweetCard}>
-      {/* Ligne principale — même grammaire que les lignes de transaction du
-          portefeuille : icône d'état, contenu, montant en gros à droite. Le
-          gain de CE tweet doit se lire d'un coup d'œil, pas seulement dans
-          la modale de collecte. */}
-      <View style={styles.tweetMainRow}>
-        <View style={[styles.tweetStatusIcon, { backgroundColor: withAlpha(eligible ? colors.success : colors.textMuted, 0.16) }]}>
-          <Ionicons name={eligible ? 'checkmark' : 'close'} size={18} color={eligible ? colors.success : colors.textMuted} />
-        </View>
-
-        <View style={styles.tweetBody}>
-          <Text style={styles.tweetContent} numberOfLines={2}>
-            {tweet.content}
-          </Text>
-          <View style={styles.tweetMetaRow}>
-            <Text style={styles.tweetMetaText}>{formatDate(tweet.createdAt)}</Text>
-            <View style={styles.tweetMetaDot} />
-            <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
-            <Text style={styles.tweetMetaText}>{tweet.likesCount}</Text>
-            <Ionicons name="repeat-outline" size={12} color={colors.textMuted} style={{ marginLeft: 8 }} />
-            <Text style={styles.tweetMetaText}>{tweet.retweetsCount}</Text>
-            <Ionicons name="chatbubble-outline" size={12} color={colors.textMuted} style={{ marginLeft: 8 }} />
-            <Text style={styles.tweetMetaText}>{tweet.repliesCount}</Text>
-          </View>
-        </View>
-
-        <View style={styles.tweetRewardBlock}>
-          {eligible ? (
-            <Text style={styles.tweetRewardValue} numberOfLines={1}>
-              +{tweet.reward.toFixed(2)}
-              <Text style={styles.tweetRewardCurrency}> TWC</Text>
-            </Text>
-          ) : (
-            <Text style={styles.tweetRewardMuted}>—</Text>
-          )}
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={styles.scoreToggleRow}
-        onPress={toggle}
-        activeOpacity={0.7}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Text style={styles.scoreToggleText}>
-          Score d'éligibilité <Text style={{ color: scoreTint, fontFamily: fonts.bold }}>{pct}%</Text>
-        </Text>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
-      </TouchableOpacity>
-
-      {expanded && (
-        <View style={styles.detailsPanel}>
-          <ScoreBar score={tweet.eligibility.score} eligible={eligible} />
-
-          {FACTOR_LABELS.map(([key, label]) => (
-            <View key={key} style={styles.factorRow}>
-              <Text style={styles.factorLabel}>{label}</Text>
-              <View style={styles.factorTrack}>
-                <View
-                  style={[
-                    styles.factorFill,
-                    { width: `${Math.max(4, ((factors[key] || 0) / factorTotal) * 100)}%` },
-                  ]}
-                />
-              </View>
-            </View>
-          ))}
-
-          {tweet.eligibility.reasons?.length > 0 && (
-            <View style={styles.reasonsList}>
-              {tweet.eligibility.reasons.map((reason, index) => (
-                <Text key={`${tweet.id}-reason-${index}`} style={styles.reasonText}>
-                  •  {reason}
-                </Text>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-    </GlassCard>
-  );
-}
-
-function EmptyState({
-  icon,
-  title,
-  subtitle,
-  actionLabel,
-  onAction,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  subtitle: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <GlassCard style={styles.emptyCard} contentStyle={styles.emptyCardContent}>
-      <View style={styles.emptyIconWrap}>
-        <Ionicons name={icon} size={30} color={colors.textSecondary} />
-      </View>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptySubtitle}>{subtitle}</Text>
-      {actionLabel && onAction && (
-        <GlassButton label={actionLabel} onPress={onAction} variant="secondary" style={{ marginTop: 18 }} />
-      )}
-    </GlassCard>
-  );
-}
-
-function StatTile({
+function Stat({
   icon,
   label,
   value,
-  tint,
-  wide,
+  hint,
+  tone = 'default',
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
-  tint: string;
-  wide?: boolean;
+  hint?: string;
+  tone?: 'default' | 'accent';
 }) {
   return (
-    <GlassCard style={[styles.statTile, wide && styles.statTileWide]}>
-      <View style={[styles.statIcon, { backgroundColor: withAlpha(tint, 0.16) }]}>
-        <Ionicons name={icon} size={17} color={tint} />
-      </View>
-      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
+    <View style={styles.stat}>
+      <Ionicons
+        name={icon}
+        size={16}
+        color={tone === 'accent' ? colors.accent : colors.textSecondary}
+      />
+      <Text style={[styles.statValue, tone === 'accent' && styles.statValueAccent]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </GlassCard>
+      {!!hint && <Text style={styles.statHint}>{hint}</Text>}
+    </View>
   );
 }
 
-/* ── Écran principal ────────────────────────────────────────────────────── */
+/**
+ * Une composante de qualité, avec le rang dans le vivier.
+ *
+ * La barre montre le RANG (0 = dernier, 100 % = premier), pas la valeur brute :
+ * « 42 ms de lecture moyenne » ne dit rien à personne, « mieux que 78 % des
+ * créateurs cette semaine » dit tout. La valeur brute reste en légende pour qui
+ * veut vérifier.
+ */
+function QualityBar({
+  label,
+  percentile,
+  weight,
+  raw,
+  negative = false,
+}: {
+  label: string;
+  percentile: number;
+  weight: number;
+  raw: string;
+  negative?: boolean;
+}) {
+  const pct = Math.max(0, Math.min(1, num(percentile)));
+  const tint = negative ? colors.warning : colors.accent;
 
-const TweetMonetizationScreen = ({ navigation }: any) => {
+  return (
+    <View style={styles.quality}>
+      <View style={styles.qualityHead}>
+        <Text style={styles.qualityLabel}>{label}</Text>
+        <Text style={styles.qualityWeight}>
+          {negative ? '−' : ''}
+          {Math.round(num(weight) * 100)} %
+        </Text>
+      </View>
+      <View style={styles.qualityTrack}>
+        <View
+          style={[
+            styles.qualityFill,
+            { width: `${Math.max(2, pct * 100)}%`, backgroundColor: tint },
+          ]}
+        />
+      </View>
+      <View style={styles.qualityFoot}>
+        <Text style={styles.qualityRank}>
+          {negative
+            ? `Plus signalé que ${Math.round(pct * 100)} % du vivier`
+            : `Devant ${Math.round(pct * 100)} % du vivier`}
+        </Text>
+        <Text style={styles.qualityRaw}>{raw}</Text>
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Écran                                                               */
+/* ------------------------------------------------------------------ */
+
+interface Props {
+  navigation: any;
+}
+
+export default function TweetMonetizationScreen({ navigation }: Props) {
   const { user, isAuthenticated } = useAuth();
-  const { width } = useWindowDimensions();
-  const isWide = width >= 768;
+  const { width } = useResponsiveLayout();
+  const isWide = width >= 700;
+  // La barre d'onglets est posée en absolu au-dessus du contenu. Le contexte
+  // vaut `undefined` quand l'écran est poussé sur la pile plutôt qu'affiché
+  // comme onglet — d'où le repli, plutôt que `useBottomTabBarHeight` qui lève.
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
 
+  const [data, setData] = useState<CreatorPoolDashboard | null>(null);
+  const [program, setProgram] = useState<MonetizationProgramEligibility | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [eligibleTweets, setEligibleTweets] = useState<EligibleTweet[]>([]);
-  const [stats, setStats] = useState<MonetizationStats | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'tweets' | 'stats'>('tweets');
+  const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showEarningsModal, setShowEarningsModal] = useState(false);
-  const [previewData, setPreviewData] = useState<PreviewEarnings | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [programEligibility, setProgramEligibility] = useState<MonetizationProgramEligibility | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [openPeriod, setOpenPeriod] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      loadData();
-    } else {
+  const load = useCallback(async () => {
+    if (!isAuthenticated || !user) return;
+    try {
+      setError(null);
+      // Les deux ensemble : la page doit pouvoir dire « tu n'es pas encore
+      // dans le programme » ET montrer les vrais chiffres derrière.
+      const [dashboard, eligibility] = await Promise.all([
+        CreatorPoolService.getDashboard(),
+        MonetizationProgramService.getStatus().catch(() => null),
+      ]);
+      setData(dashboard);
+      setProgram(eligibility);
+    } catch (e: any) {
+      setError(e?.message || 'Impossible de charger tes gains');
+    } finally {
       setLoading(false);
-      setError('Vous devez être connecté pour accéder à la monétisation des tweets.');
+      setRefreshing(false);
     }
   }, [isAuthenticated, user]);
 
-  const getDemoData = (): EligibleTweet[] => [
-    {
-      id: 'demo-tweet-1',
-      content: 'Ceci est un tweet de démonstration avec #hashtag et @mention pour tester la monétisation !',
-      createdAt: new Date().toISOString(),
-      likesCount: 25,
-      retweetsCount: 10,
-      repliesCount: 5,
-      eligibility: {
-        isEligible: true,
-        score: 85,
-        factors: { length: 20, engagement: 30, user: 25, quality: 10, age: 15 },
-        reasons: [
-          'Tweet suffisamment long',
-          'Engagement suffisant',
-          'Utilisateur avec de nombreux followers',
-          'Contenu de qualité avec hashtags/mentions',
-          'Tweet récent (moins de 7 jours)',
-          'Tweet éligible à la monétisation',
-        ],
-      },
-      reward: 2.5,
-      multipliers: { engagement: 1.5, user: 2.0, followers: 1.2, quality: 1.1, economy: 1.0 },
-      factors: { likes: 25, retweets: 10, replies: 5, hashtags: 2, isVerified: true, followersCount: 5000 },
-    },
-    {
-      id: 'demo-tweet-2',
-      content: 'Un autre tweet de test pour la monétisation #TwitNin #Test',
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      likesCount: 8,
-      retweetsCount: 3,
-      repliesCount: 2,
-      eligibility: {
-        isEligible: false,
-        score: 45,
-        factors: { length: 15, engagement: 15, user: 10, quality: 5, age: 15 },
-        reasons: [
-          'Tweet trop court (minimum 50 caractères)',
-          'Engagement insuffisant (minimum 10 interactions)',
-          'Utilisateur avec peu de followers',
-          'Contenu de qualité avec hashtags/mentions',
-          'Tweet récent (moins de 7 jours)',
-          'Tweet non éligible (score insuffisant)',
-        ],
-      },
-      reward: 0,
-      multipliers: { engagement: 0.5, user: 1.0, followers: 0.8, quality: 1.0, economy: 1.0 },
-      factors: { likes: 8, retweets: 3, replies: 2, hashtags: 2, isVerified: false, followersCount: 500 },
-    },
-  ];
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const getDemoStats = (): MonetizationStats => ({
-    currency: { symbol: 'TWC', name: 'TwitCoins', circulatingSupply: 0, currentPrice: 0.01 },
-    wallets: { totalUsers: 0, totalEarned: 0, totalPurchased: 0, totalSpent: 0, totalLoyaltyPoints: 0 },
-    rewards: { totalRewards: 0, totalAmount: 0, averageAmount: 0 },
-  });
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      if (!isAuthenticated || !user) {
-        throw new Error('Utilisateur non authentifié. Veuillez vous reconnecter.');
-      }
-
-      try {
-        const tweetsData = await TweetMonetizationService.getUserEligibleTweets(user.id);
-        setEligibleTweets(tweetsData.tweets || []);
-
-        try {
-          setProgramEligibility(await MonetizationProgramService.getStatus());
-        } catch {
-          setProgramEligibility(null);
-        }
-
-        const statsData = await TweetMonetizationService.getMonetizationStats();
-
-        // Le cours affiché doit rester identique à celui de NewEconomyScreen/WalletDetail —
-        // même monnaie, même source, pour ne jamais montrer deux prix différents.
-        try {
-          // L'ID était codé en dur sur l'ancien identifiant de TwitCoins, qui
-          // n'existe plus en base (la monnaie a été recréée) — 500 systématique.
-          // `CurrencyService` résout le bon ID par symbole (NF), avec l'ancien
-          // comme secours seulement si cet appel échoue à son tour.
-          const currencyId = await CurrencyService.getTwitCoinsCurrencyId();
-          const walletData = await NewEconomyService.getUserWallet(currencyId);
-          setStats({ ...statsData, currency: { ...statsData.currency, currentPrice: walletData.currency.currentPrice } });
-        } catch {
-          setStats(statsData);
-        }
-      } catch (serviceError: any) {
-        setEligibleTweets(getDemoData());
-        setStats(getDemoStats());
-        setError(`Service indisponible, données de démonstration affichées : ${serviceError?.message || ''}`);
-      }
-    } catch (criticalError: any) {
-      setError(`Erreur de chargement : ${criticalError?.message || ''}`);
-      setEligibleTweets(getDemoData());
-      setStats(getDemoStats());
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onRefresh = async () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setError(null);
-    await loadData();
-    setRefreshing(false);
-  };
+    load();
+  }, [load]);
 
-  const previewEarnings = async () => {
-    if (!isAuthenticated || !user) {
-      toast.error('Vous devez être connecté pour voir vos gains.');
-      return;
-    }
-    setPreviewLoading(true);
-    try {
-      const result = await TweetMonetizationService.previewEarnings();
-      setPreviewData(result);
-      setShowEarningsModal(true);
-    } catch (previewError) {
-      toast.error('Impossible de prévisualiser tes gains pour le moment.');
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
+  const symbol = data?.currency?.symbol || 'NF';
+  const claimableTotal = num(data?.claimable?.total);
+  const claimableCount = num(data?.claimable?.count);
+  const projection: PeriodProjection | null = data?.currentPeriod?.projection || null;
 
-  const processAllTweets = async () => {
+  const handleClaim = useCallback(async () => {
+    if (claiming || claimableTotal <= 0) return;
+    setClaiming(true);
     try {
-      setProcessing(true);
-      const result = await TweetMonetizationService.processEligibleTweets();
-      setShowEarningsModal(false);
-      setPreviewData(null);
-      loadData();
-      // Encaisser ses tweets est le seul moment de l'écran où l'on gagne
-      // vraiment quelque chose : il se voit, au lieu de se lire dans un coin.
+      const result = await CreatorPoolService.claim();
+      const total = num(result?.total);
+      // La célébration porte le montant RÉELLEMENT versé par le serveur, pas
+      // celui qu'affichait l'écran : si les deux divergeaient un jour, c'est
+      // le versement qui fait foi.
       celebrateReward({
-        amount: result.totalRewards,
-        label: `${result.eligibleCount} tweet${result.eligibleCount > 1 ? 's' : ''} encaissé${result.eligibleCount > 1 ? 's' : ''}`,
+        amount: total,
+        unit: symbol,
+        label: claimableCount > 1 ? `${claimableCount} semaines encaissées` : 'Part créateur',
       });
-    } catch (processError) {
-      toast.error('Impossible de traiter tes tweets pour le moment.');
+      await load();
+    } catch (e: any) {
+      toast.error('Encaissement impossible', { description: e?.message });
     } finally {
-      setProcessing(false);
+      setClaiming(false);
     }
-  };
+  }, [claiming, claimableTotal, claimableCount, symbol, load]);
 
-  const goToCreateTweet = () => {
-    navigation?.navigate?.('CreateTweet');
-  };
+  const contentWidth = useMemo(
+    () => [
+      isWide ? { maxWidth: 680, alignSelf: 'center' as const, width: '100%' as const } : null,
+      { paddingBottom: 32 + tabBarHeight },
+    ],
+    [isWide, tabBarHeight]
+  );
 
-  if (loading) {
+  /* --- États bloquants ------------------------------------------------ */
+
+  if (!isAuthenticated || !user) {
     return (
       <ScreenBackground>
         <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
-        <AppHeader navigation={navigation} title="Monétisation" subtitle="Gagne des TWC avec tes tweets" />
-        <View style={styles.content}>
-          <Skeleton width="100%" height={148} rounded={16} style={{ marginBottom: 20 }} />
-          <View style={styles.tabRow}>
-            <Skeleton width="100%" height={42} rounded={12} />
-            <Skeleton width="100%" height={42} rounded={12} />
-          </View>
-          <Skeleton width="100%" height={120} rounded={16} style={{ marginBottom: 12 }} />
-          <Skeleton width="100%" height={120} rounded={16} />
+        <AppHeader navigation={navigation} title="Monétisation" />
+        <View style={[styles.content, contentWidth]}>
+          <EmptyState
+            icon="lock-closed-outline"
+            title="Connexion requise"
+            message={`Connecte-toi pour suivre tes gains en ${symbol} et encaisser tes parts.`}
+          />
         </View>
       </ScreenBackground>
     );
   }
 
-  // Cet écran est à la fois un onglet de la navbar ET un écran poussé depuis
-  // Réglages/Portefeuille (voir BottomTabNavigator + MainNavigator). Sur un
-  // onglet, `canGoBack()` peut renvoyer vrai à cause de l'historique d'un
-  // navigateur PARENT (le Stack racine) — ce n'est pas ce qu'on veut savoir.
-  // Seul le type du navigateur qui possède CET écran fait foi : jamais de
-  // flèche retour quand on est affiché comme onglet.
-  const notAuthenticated = !isAuthenticated || !user;
-  const eligibleCount = eligibleTweets.filter((t) => t.eligibility.isEligible).length;
-  const contentMaxWidth = isWide ? { maxWidth: 640, alignSelf: 'center' as const, width: '100%' as const } : null;
+  if (loading && !data) {
+    return (
+      <ScreenBackground>
+        <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
+        <AppHeader navigation={navigation} title="Monétisation" />
+        <View style={[styles.content, contentWidth]}>
+          <Skeleton height={148} style={styles.skeleton} />
+          <Skeleton height={104} style={styles.skeleton} />
+          <Skeleton height={220} style={styles.skeleton} />
+        </View>
+      </ScreenBackground>
+    );
+  }
+
+  const eligible = !!projection?.eligible;
+  const lockedReason = projection?.lockedReason || null;
+  const pool = data?.currentPeriod?.pool;
+  const weights = data?.weights;
+  const earnedBonuses = projection?.bonuses?.earned || [];
+  const earnedKeys = new Set(earnedBonuses.map((b) => b.key));
 
   return (
     <ScreenBackground>
@@ -496,401 +342,642 @@ const TweetMonetizationScreen = ({ navigation }: any) => {
       <AppHeader
         navigation={navigation}
         title="Monétisation"
-        subtitle="Gagne des TWC avec tes tweets"
+        subtitle={`Ta part du pot hebdomadaire en ${symbol}`}
+        right={
+          <GlassButton
+            label="Mon compte"
+            variant="ghost"
+            icon="shield-checkmark-outline"
+            onPress={() => navigation?.navigate?.('AccountStatus')}
+          />
+        }
       />
 
-      {notAuthenticated ? (
-        <View style={[styles.content, contentMaxWidth]}>
-          <EmptyState
-            icon="lock-closed-outline"
-            title="Connexion requise"
-            subtitle="Connecte-toi pour suivre l'éligibilité de tes tweets et collecter tes gains en TWC."
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, contentWidth]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
           />
-        </View>
-      ) : programEligibility && programEligibility.programStatus !== 'approved' ? (
-        <View style={[styles.content, contentMaxWidth]}>
-          <EmptyState
-            icon={programEligibility.programStatus === 'pending' ? 'time-outline' : 'trophy-outline'}
-            title={
-              programEligibility.programStatus === 'pending'
-                ? 'Candidature en cours de revue'
-                : 'Rejoins le programme de monétisation'
-            }
-            subtitle={
-              programEligibility.programStatus === 'pending'
-                ? 'On vérifie ton compte manuellement — reviens un peu plus tard.'
-                : 'Avant de toucher des TWC sur tes tweets, ton compte doit être accepté dans le programme de monétisation.'
-            }
-            actionLabel={programEligibility.programStatus === 'pending' ? undefined : 'Voir les conditions'}
-            onAction={
-              programEligibility.programStatus === 'pending'
-                ? undefined
-                : () => navigation?.navigate?.('MonetizationProgram')
-            }
-          />
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.content, contentMaxWidth]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}
-        >
-          {error && (
-            <View style={styles.errorBanner}>
-              <Ionicons name="warning-outline" size={18} color={colors.warning} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
+        }
+      >
+        {!!error && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning-outline" size={18} color={colors.warning} />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
 
-          {/* Carte héro — pas de chiffre inventé : le solde réel n'est connu qu'après aperçu. */}
-          <GlassCard style={styles.heroCard} highlight contentStyle={styles.heroCardContent}>
-            <View style={styles.heroIcon}>
-              <Ionicons name="cash-outline" size={24} color={colors.accent} />
+        {/* --- 1. Ce qu'il y a à encaisser --------------------------------- */}
+        <GlassCard style={styles.hero} highlight contentStyle={styles.heroContent}>
+          <View style={styles.heroTop}>
+            <View style={styles.heroBadge}>
+              <Ionicons name="wallet-outline" size={18} color={colors.accent} />
             </View>
-            <Text style={styles.heroTitle}>Récupère tes gains</Text>
-            <Text style={styles.heroSubtitle}>
-              {eligibleCount > 0
-                ? `${eligibleCount} tweet${eligibleCount > 1 ? 's' : ''} éligible${eligibleCount > 1 ? 's' : ''} en attente de collecte.`
-                : 'Vérifie tes tweets éligibles et récupère ce qui t\'est dû, quand tu veux.'}
+            <Text style={styles.heroKicker}>
+              {claimableTotal > 0 ? 'Prêt à encaisser' : 'Rien à encaisser'}
             </Text>
-            <GlassButton
-              label="Voir mes gains disponibles"
-              icon="wallet-outline"
-              onPress={previewEarnings}
-              loading={previewLoading}
-              fullWidth
-              style={{ marginTop: 16 }}
-            />
-          </GlassCard>
-
-          {/* Segmented control */}
-          <View style={styles.tabRow}>
-            {([
-              { key: 'tweets', label: 'Mes tweets', icon: 'documents-outline' },
-              { key: 'stats', label: 'Statistiques', icon: 'stats-chart-outline' },
-            ] as const).map((tab) => {
-              const active = selectedTab === tab.key;
-              return (
-                <TouchableOpacity
-                  key={tab.key}
-                  style={[styles.tabChip, active && styles.tabChipActive]}
-                  onPress={() => setSelectedTab(tab.key)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name={tab.icon} size={16} color={active ? colors.accent : colors.textSecondary} />
-                  <Text style={[styles.tabChipText, active && styles.tabChipTextActive]}>{tab.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
           </View>
 
-          {selectedTab === 'tweets' ? (
-            <View>
-              <View style={styles.sectionHeaderRow}>
-                <SectionLabel style={{ marginBottom: 0 }}>Tweets éligibles ({eligibleTweets.length})</SectionLabel>
-              </View>
+          <View style={styles.heroAmountRow}>
+            <Text style={styles.heroAmount}>{money(claimableTotal)}</Text>
+            <Text style={styles.heroUnit}>{symbol}</Text>
+          </View>
 
-              {eligibleTweets.length === 0 ? (
-                <EmptyState
-                  icon="chatbubble-ellipses-outline"
-                  title="Aucun tweet à évaluer"
-                  subtitle="Publie du contenu engageant pour commencer à gagner des TWC."
-                  actionLabel="Créer un tweet"
-                  onAction={goToCreateTweet}
-                />
-              ) : (
-                eligibleTweets.map((tweet) => <TweetCard key={tweet.id} tweet={tweet} />)
-              )}
-            </View>
-          ) : (
-            <View>
-              <SectionLabel>Écosystème TWC</SectionLabel>
-              <Text style={styles.statsHint}>Chiffres de toute la communauté TwitNinf, pas seulement ton compte.</Text>
-              <View style={styles.statsGrid}>
-                <StatTile icon="people-outline" label="Créateurs rémunérés" value={String(stats?.wallets.totalUsers ?? 0)} tint={colors.accent} />
-                <StatTile icon="cash-outline" label="TWC distribués" value={fmt(stats?.wallets.totalEarned ?? 0)} tint={colors.success} />
-                <StatTile icon="trophy-outline" label="Récompenses versées" value={String(stats?.rewards.totalRewards ?? 0)} tint={colors.gold} />
-                <StatTile icon="trending-up-outline" label="Récompense moyenne" value={`${fmt(stats?.rewards.averageAmount ?? 0)} TWC`} tint={colors.cyan} />
-              </View>
+          <Text style={styles.heroHint}>
+            {claimableTotal > 0
+              ? claimableCount > 1
+                ? `${claimableCount} semaines closes t'attendent. Le montant est figé : il ne bougera plus.`
+                : 'Montant figé à la clôture de lundi. Il ne bougera plus.'
+              : `La semaine en cours se clôture dans ${timeUntil(data?.currentPeriod?.end)}. Ta part sera figée à ce moment-là.`}
+          </Text>
 
-              <SectionLabel style={{ marginTop: 8 }}>Cours du token</SectionLabel>
-              <GlassCard style={styles.priceCard}>
-                <View style={styles.priceRow}>
-                  <View>
-                    <Text style={styles.priceLabel}>Prix actuel</Text>
-                    <Text style={styles.priceValue}>${(stats?.currency.currentPrice ?? 0).toFixed(4)}</Text>
-                  </View>
-                  <View style={styles.priceDivider} />
-                  <View>
-                    <Text style={styles.priceLabel}>Supply en circulation</Text>
-                    <Text style={styles.priceValue}>{(stats?.currency.circulatingSupply ?? 0).toLocaleString('fr-FR')}</Text>
-                  </View>
+          {claimableTotal > 0 ? (
+            <GlassButton
+              label={claiming ? 'Encaissement…' : `Encaisser ${money(claimableTotal)} ${symbol}`}
+              icon="arrow-down-circle-outline"
+              onPress={handleClaim}
+              disabled={claiming}
+              loading={claiming}
+              fullWidth
+              style={styles.heroButton}
+            />
+          ) : null}
+
+          {!!data?.claimable?.periods?.length && claimableCount > 1 && (
+            <View style={styles.heroPeriods}>
+              {data.claimable.periods.map((p) => (
+                <View key={p.periodKey} style={styles.heroPeriodRow}>
+                  <Text style={styles.heroPeriodLabel}>
+                    {periodLabel(p.periodStart, p.periodEnd)}
+                  </Text>
+                  <Text style={styles.heroPeriodValue}>
+                    {money(p.amount)} {symbol}
+                  </Text>
                 </View>
-              </GlassCard>
+              ))}
             </View>
           )}
+        </GlassCard>
 
-          <View style={{ height: 32 }} />
-        </ScrollView>
-      )}
-
-      {/* Bottom sheet de collecte */}
-      <Modal visible={showEarningsModal} animationType="slide" transparent onRequestClose={() => setShowEarningsModal(false)}>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.modalBackdrop} onPress={() => setShowEarningsModal(false)} activeOpacity={1} />
-
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Tes gains</Text>
-                <Text style={styles.modalSubtitle}>Prêts à être collectés</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowEarningsModal(false)} style={styles.modalClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={22} color={colors.textPrimary} />
-              </TouchableOpacity>
+        {/* --- 2. La semaine en cours -------------------------------------- */}
+        <SectionLabel>Cette semaine</SectionLabel>
+        <GlassCard contentStyle={styles.cardBody}>
+          <View style={styles.periodHead}>
+            <Text style={styles.periodRange}>
+              {periodLabel(data?.currentPeriod?.start, data?.currentPeriod?.end)}
+            </Text>
+            <View style={styles.countdown}>
+              <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
+              <Text style={styles.countdownText}>{timeUntil(data?.currentPeriod?.end)}</Text>
             </View>
+          </View>
 
-            {previewData && (
-              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-                <View style={styles.balanceRow}>
-                  <View style={styles.balanceBlock}>
-                    <Text style={styles.balanceLabel}>Solde actuel</Text>
-                    <Text style={styles.balanceValue}>{fmt(previewData.currentBalance)} TWC</Text>
-                  </View>
-                  <View style={styles.balanceBlock}>
-                    <Text style={styles.balanceLabel}>Gains disponibles</Text>
-                    <Text style={[styles.balanceValue, { color: colors.success }]}>+{fmt(previewData.totalRewards)} TWC</Text>
-                  </View>
-                  <View style={styles.balanceBlock}>
-                    <Text style={styles.balanceLabel}>Nouveau solde</Text>
-                    <Text style={styles.balanceValue}>{fmt(previewData.newBalance)} TWC</Text>
-                  </View>
+          {projection ? (
+            <>
+              <View style={styles.statRow}>
+                <Stat
+                  icon="trending-up-outline"
+                  label="Part projetée"
+                  value={`${money(projection.amount)} ${symbol}`}
+                  tone="accent"
+                />
+                <Stat
+                  icon="speedometer-outline"
+                  label="RPM"
+                  value={money(projection.rpm)}
+                  hint={`${symbol} / 1000 vues`}
+                />
+              </View>
+              <View style={styles.statRow}>
+                <Stat
+                  icon="eye-outline"
+                  label="Vues qualifiées"
+                  value={compact(projection.qualifiedViews)}
+                  hint={`${compact(projection.rawViews)} brutes`}
+                />
+                <Stat
+                  icon="people-outline"
+                  label="Spectateurs"
+                  value={compact(projection.distinctViewers)}
+                  hint="comptes distincts"
+                />
+              </View>
+
+              <Text style={styles.note}>
+                Une projection, pas une promesse : elle bouge tant que la semaine n’est pas
+                close, parce que ta part dépend aussi de ce que font les {compact(data?.currentPeriod?.cohortSize)} autres
+                créateurs de la semaine.
+              </Text>
+
+              {!projection.hasRealDwell && (
+                <View style={styles.warnRow}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+                  <Text style={styles.warnText}>
+                    Aucun temps de lecture réel n’a été mesuré sur ton contenu cette semaine.
+                    L’attention est estimée, donc décotée de {percent(1 - num(projection.attentionFactor, 1))}.
+                  </Text>
                 </View>
+              )}
+            </>
+          ) : (
+            <Text style={styles.note}>
+              Personne n’a encore vu tes publications cette semaine. Dès la première vue, ta
+              projection apparaît ici.
+            </Text>
+          )}
+        </GlassCard>
 
-                <SectionLabel style={{ marginTop: 20 }}>Détail ({previewData.eligibleTweets} tweets)</SectionLabel>
-                {previewData.tweetDetails.map((tweet) => (
-                  <GlassCard key={tweet.tweetId} style={styles.previewTweetCard}>
-                    <Text style={styles.previewTweetContent} numberOfLines={2}>
-                      {tweet.content}
-                    </Text>
-                    <View style={styles.previewMetricsRow}>
-                      <View style={styles.previewMetric}>
-                        <Ionicons name="eye-outline" size={13} color={colors.textSecondary} />
-                        <Text style={styles.previewMetricText}>{tweet.views}</Text>
+        {/* --- 3. Pourquoi ce montant -------------------------------------- */}
+        {projection && weights && (
+          <>
+            <SectionLabel>Ta qualité</SectionLabel>
+            <GlassCard contentStyle={styles.cardBody}>
+              <View style={styles.qualityHeader}>
+                <Text style={styles.qualityScore}>{percent(projection.quality)}</Text>
+                <Text style={styles.qualityScoreLabel}>
+                  score de qualité{'\n'}
+                  <Text style={styles.qualityScoreHint}>
+                    multiplie tes vues pour donner ton poids dans le partage
+                  </Text>
+                </Text>
+              </View>
+
+              <QualityBar
+                label="Attention"
+                percentile={projection.percentiles.attention}
+                weight={weights.attention}
+                raw={`${Math.round(num(projection.rates.attention) / 1000)} s / vue`}
+              />
+              <QualityBar
+                label="Rétention"
+                percentile={projection.percentiles.retention}
+                weight={weights.retention}
+                raw={`${compact(projection.raw.followsGained)} abonnés · ${compact(projection.raw.returningViewers)} revenus`}
+              />
+              <QualityBar
+                label="DAU gagnée"
+                percentile={projection.percentiles.dau}
+                weight={weights.dau}
+                raw={`${compact(projection.raw.dauGained)} réactivations`}
+              />
+              <QualityBar
+                label="Signaux négatifs"
+                percentile={projection.percentiles.penalty}
+                weight={weights.penalty}
+                raw={`${compact(projection.raw.negatives)} au total`}
+                negative
+              />
+
+              <GlassButton
+                label={showDetail ? 'Masquer le détail' : 'Comment ça se calcule'}
+                variant="ghost"
+                icon={showDetail ? 'chevron-up' : 'chevron-down'}
+                onPress={() => {
+                  expand();
+                  setShowDetail((v) => !v);
+                }}
+                fullWidth
+                style={styles.detailToggle}
+              />
+
+              {showDetail && (
+                <View style={styles.detail}>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.detailStrong}>Attention</Text> — le temps réellement passé
+                    sur tes publications, rapporté à leurs vues. C’est le seul signal qu’on ne
+                    peut pas fabriquer, donc celui qui pèse le plus.
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.detailStrong}>Rétention</Text> — les abonnés gagnés et les
+                    gens qui reviennent te lire un autre jour.
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.detailStrong}>DAU gagnée</Text> — les comptes qui n’étaient
+                    pas actifs la veille et dont ta publication a ouvert la journée. Tu les as
+                    ramenés.
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.detailStrong}>Signaux négatifs</Text> — les « pas
+                    intéressé », les signalements, les publications retirées. Ils se retranchent.
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    Chaque signal est un <Text style={styles.detailStrong}>rang</Text>, pas un
+                    volume : un petit compte très suivi passe devant un gros compte tiède. Les
+                    interactions venues de comptes créés en rafale comptent pour zéro.
+                  </Text>
+                </View>
+              )}
+            </GlassCard>
+          </>
+        )}
+
+        {/* --- 4. Récompenses supplémentaires ------------------------------ */}
+        {!!data?.bonusCatalog?.length && (
+          <>
+            <SectionLabel>Récompenses</SectionLabel>
+            <GlassCard contentStyle={styles.cardBody}>
+              {data.bonusCatalog
+                .filter((b) => b.enabled)
+                .map((bonus) => {
+                  const won = earnedKeys.has(bonus.key);
+                  return (
+                    <View
+                      key={bonus.key}
+                      style={[styles.bonus, won && styles.bonusWon]}
+                    >
+                      <View style={[styles.bonusIcon, won && styles.bonusIconWon]}>
+                        <Ionicons
+                          name={won ? 'sparkles' : 'sparkles-outline'}
+                          size={16}
+                          color={won ? colors.accent : colors.textSecondary}
+                        />
                       </View>
-                      <View style={styles.previewMetric}>
-                        <Ionicons name="heart-outline" size={13} color={colors.textSecondary} />
-                        <Text style={styles.previewMetricText}>{tweet.likes}</Text>
-                      </View>
-                      <View style={styles.previewMetric}>
-                        <Ionicons name="chatbubble-outline" size={13} color={colors.textSecondary} />
-                        <Text style={styles.previewMetricText}>{tweet.comments}</Text>
-                      </View>
-                      <View style={styles.previewMetric}>
-                        <Ionicons name="repeat-outline" size={13} color={colors.textSecondary} />
-                        <Text style={styles.previewMetricText}>{tweet.retweets}</Text>
-                      </View>
-                      <View style={styles.previewReward}>
-                        <Text style={styles.previewRewardText}>+{tweet.reward} TWC</Text>
+                      <View style={styles.bonusBody}>
+                        <View style={styles.bonusTitleRow}>
+                          <Text style={[styles.bonusTitle, won && styles.bonusTitleWon]}>
+                            {bonus.label}
+                          </Text>
+                          <Text style={[styles.bonusMult, won && styles.bonusMultWon]}>
+                            +{Math.round((num(bonus.multiplier, 1) - 1) * 100)} %
+                          </Text>
+                        </View>
+                        <Text style={styles.bonusDesc}>{bonus.description}</Text>
                       </View>
                     </View>
-                  </GlassCard>
-                ))}
-              </ScrollView>
-            )}
+                  );
+                })}
+              <Text style={styles.note}>
+                Une récompense multiplie ton poids dans le partage — elle ne puise pas dans le pot,
+                elle déplace une part vers toi.
+              </Text>
+            </GlassCard>
+          </>
+        )}
 
-            <View style={styles.modalFooter}>
-              {previewData && previewData.totalRewards > 0 ? (
-                <GlassButton
-                  label={`Récupérer ${fmt(previewData.totalRewards)} TWC`}
-                  icon="download-outline"
-                  onPress={processAllTweets}
-                  loading={processing}
-                  fullWidth
-                />
-              ) : (
-                <View style={styles.noEarnings}>
-                  <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
-                  <Text style={styles.noEarningsText}>Aucun gain disponible pour l'instant — reviens après ta prochaine publication.</Text>
+        {/* --- 5. D'où vient l'argent -------------------------------------- */}
+        {pool && (
+          <>
+            <SectionLabel>Le pot de la semaine</SectionLabel>
+            <GlassCard contentStyle={styles.cardBody}>
+              <View style={styles.poolRow}>
+                <Text style={styles.poolLabel}>Entré en trésorerie</Text>
+                <Text style={styles.poolValue}>
+                  {money(pool.inflows)} {symbol}
+                </Text>
+              </View>
+              <View style={styles.poolRow}>
+                <Text style={styles.poolLabel}>
+                  Reversé aux créateurs ({percent(pool.shareOfInflows)})
+                </Text>
+                <Text style={[styles.poolValue, styles.poolValueAccent]}>
+                  {money(pool.pool)} {symbol}
+                </Text>
+              </View>
+              <View style={styles.poolRow}>
+                <Text style={styles.poolLabel}>Créateurs qui se le partagent</Text>
+                <Text style={styles.poolValue}>{compact(data?.currentPeriod?.cohortSize)}</Text>
+              </View>
+              <Text style={styles.note}>
+                Le pot vaut une part de ce que la plateforme a réellement encaissé cette semaine —
+                campagnes publicitaires, abonnements Plus et Pro, commissions. Il ne peut jamais
+                dépasser ce qui est entré, donc la monétisation ne peut pas coûter plus qu’elle ne
+                rapporte.
+              </Text>
+              {pool.cappedByTreasury && (
+                <View style={styles.warnRow}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+                  <Text style={styles.warnText}>
+                    Le pot est plafonné cette semaine pour préserver la trésorerie.
+                  </Text>
                 </View>
               )}
+            </GlassCard>
+          </>
+        )}
+
+        {/* --- 6. Verrou d'éligibilité ------------------------------------- */}
+        {!eligible && (
+          <GlassCard contentStyle={styles.cardBody}>
+            <View style={styles.lockHead}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.warning} />
+              <Text style={styles.lockTitle}>Pas encore payé</Text>
             </View>
-          </View>
-        </View>
-      </Modal>
+            <Text style={styles.lockReason}>
+              {program?.programStatus === 'pending'
+                ? 'Ta candidature au programme est en cours de revue.'
+                : lockedReason
+                  || 'Il te faut un abonnement Plus ou Pro actif et une entrée dans le programme de monétisation.'}
+            </Text>
+            <Text style={styles.note}>
+              Les chiffres ci-dessus sont bien les tiens : c’est exactement ce que tu toucherais.
+            </Text>
+            {program?.programStatus !== 'pending' && (
+              <GlassButton
+                label="Voir les conditions"
+                icon="trophy-outline"
+                variant="secondary"
+                onPress={() => navigation?.navigate?.('MonetizationProgram')}
+                fullWidth
+                style={styles.detailToggle}
+              />
+            )}
+          </GlassCard>
+        )}
+
+        {/* --- 7. Historique ------------------------------------------------ */}
+        {!!data?.history?.length && (
+          <>
+            <SectionLabel>Historique</SectionLabel>
+            {data.history.map((entry) => {
+              const open = openPeriod === entry.periodKey;
+              return (
+                <GlassCard
+                  key={entry.periodKey}
+                  contentStyle={styles.historyBody}
+                  onPress={() => {
+                    expand();
+                    setOpenPeriod(open ? null : entry.periodKey);
+                  }}
+                >
+                  <View style={styles.historyRow}>
+                    <View style={styles.historyLeft}>
+                      <Text style={styles.historyPeriod}>
+                        {periodLabel(entry.periodStart, entry.periodEnd)}
+                      </Text>
+                      <Text style={styles.historyMeta}>
+                        {compact(entry.qualifiedViews)} vues · qualité {percent(entry.quality)}
+                      </Text>
+                    </View>
+                    <View style={styles.historyRight}>
+                      <Text style={styles.historyAmount}>
+                        {money(entry.amount)} {symbol}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.historyStatus,
+                          entry.status === 'claimable' && styles.historyStatusPending,
+                        ]}
+                      >
+                        {entry.status === 'claimed' ? 'encaissé' : 'à encaisser'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {open && (
+                    <View style={styles.historyDetail}>
+                      <View style={styles.historyDetailRow}>
+                        <Text style={styles.historyDetailLabel}>RPM</Text>
+                        <Text style={styles.historyDetailValue}>
+                          {money(entry.rpm)} {symbol} / 1000
+                        </Text>
+                      </View>
+                      <View style={styles.historyDetailRow}>
+                        <Text style={styles.historyDetailLabel}>Récompenses</Text>
+                        <Text style={styles.historyDetailValue}>
+                          ×{num(entry.bonusMultiplier, 1).toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={styles.historyDetailRow}>
+                        <Text style={styles.historyDetailLabel}>Vivier</Text>
+                        <Text style={styles.historyDetailValue}>
+                          {compact(entry.breakdown?.cohortSize)} créateurs
+                        </Text>
+                      </View>
+                      {!!entry.claimedAt && (
+                        <View style={styles.historyDetailRow}>
+                          <Text style={styles.historyDetailLabel}>Encaissé le</Text>
+                          <Text style={styles.historyDetailValue}>
+                            {new Date(entry.claimedAt).toLocaleDateString('fr-FR')}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </GlassCard>
+              );
+            })}
+          </>
+        )}
+
+        {!data?.history?.length && !projection && (
+          <EmptyState
+            icon="stats-chart-outline"
+            title="Rien à afficher pour l'instant"
+            message="Publie, laisse tourner une semaine, et ta première part apparaîtra ici après la clôture du lundi."
+          />
+        )}
+
+        {refreshing && <ActivityIndicator color={colors.accent} style={styles.bottomSpinner} />}
+      </ScrollView>
     </ScreenBackground>
   );
-};
+}
+
+/* ------------------------------------------------------------------ */
+/* Styles                                                              */
+/* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  content: { padding: 16, paddingBottom: 8 },
+  content: { padding: 16 },
+  skeleton: { marginBottom: 14, borderRadius: radius.lg },
 
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: withAlpha(colors.warning, 0.12),
-    borderWidth: 1,
-    borderColor: withAlpha(colors.warning, 0.35),
-    borderRadius: radius.lg,
+    gap: 8,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 14,
+    borderRadius: radius.md,
+    backgroundColor: withAlpha(colors.warning, 0.12),
   },
-  errorText: { flex: 1, fontSize: 12.5, color: colors.textPrimary, lineHeight: 17 },
+  errorText: { flex: 1, color: colors.warning, fontFamily: fonts.regular, fontSize: 13 },
 
-  heroCard: { marginBottom: 20 },
-  heroCardContent: { alignItems: 'flex-start' },
-  heroIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: colors.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  heroTitle: { fontSize: 19, fontFamily: fonts.display, color: colors.textPrimary, marginBottom: 4 },
-  heroSubtitle: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 19 },
-
-  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  tabChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  tabChipActive: { borderColor: colors.accent, backgroundColor: colors.accentMuted },
-  tabChipText: { fontSize: 13, fontFamily: fonts.semibold, color: colors.textSecondary },
-  tabChipTextActive: { color: colors.accent },
-
-  sectionHeaderRow: { marginBottom: 12 },
-  statsHint: { fontSize: 12, color: colors.textMuted, marginTop: -6, marginBottom: 12 },
-
-  emptyCard: { marginBottom: 8 },
-  emptyCardContent: { alignItems: 'center', paddingVertical: 30 },
-  emptyIconWrap: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    backgroundColor: colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  emptyTitle: { fontSize: 16, fontFamily: fonts.semibold, color: colors.textPrimary, marginBottom: 6, textAlign: 'center' },
-  emptySubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, paddingHorizontal: 12 },
-
-  tweetCard: { marginBottom: 12 },
-
-  tweetMainRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  tweetStatusIcon: {
+  /* Héro */
+  hero: { marginBottom: 20 },
+  heroContent: { padding: 20 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  heroBadge: {
     width: 34,
     height: 34,
-    borderRadius: 11,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1,
+    backgroundColor: colors.accentMuted,
   },
-  tweetBody: { flex: 1 },
-  tweetContent: { fontSize: 14.5, color: colors.textPrimary, lineHeight: 20, marginBottom: 6 },
-  tweetMetaRow: { flexDirection: 'row', alignItems: 'center' },
-  tweetMetaText: { fontSize: 11.5, color: colors.textMuted, fontFamily: fonts.medium, marginLeft: 4 },
-  tweetMetaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textMuted, marginHorizontal: 8 },
-
-  tweetRewardBlock: { alignItems: 'flex-end', minWidth: 64 },
-  tweetRewardValue: { fontSize: 15, fontFamily: fonts.bold, color: colors.success },
-  tweetRewardCurrency: { fontSize: 11, fontFamily: fonts.semibold, color: colors.success, opacity: 0.75 },
-  tweetRewardMuted: { fontSize: 15, fontFamily: fonts.medium, color: colors.textMuted },
-
-  scoreToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  heroKicker: {
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    color: colors.textSecondary,
+  },
+  heroAmountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  heroAmount: { fontFamily: fonts.bold, fontSize: 40, color: colors.textPrimary, letterSpacing: -1 },
+  heroUnit: { fontFamily: fonts.bold, fontSize: 18, color: colors.accent },
+  heroHint: {
+    marginTop: 8,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textSecondary,
+  },
+  heroButton: { marginTop: 16 },
+  heroPeriods: {
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+    gap: 8,
   },
-  scoreToggleText: { fontSize: 12.5, color: colors.textSecondary, fontFamily: fonts.medium },
+  heroPeriodRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  heroPeriodLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
+  heroPeriodValue: { fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary },
 
-  scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
-  scoreTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.surfaceElevated, overflow: 'hidden' },
-  scoreFill: { height: '100%', borderRadius: 3 },
-  scoreValue: { fontSize: 12, fontFamily: fonts.bold, width: 36, textAlign: 'right' },
+  /* Cartes */
+  cardBody: { padding: 16 },
 
-  detailsPanel: { marginTop: 14 },
-  factorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  factorLabel: { fontSize: 11.5, color: colors.textMuted, width: 78 },
-  factorTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: colors.surfaceElevated, overflow: 'hidden' },
-  factorFill: { height: '100%', borderRadius: 3, backgroundColor: colors.cyan },
-  reasonsList: { marginTop: 6, gap: 4 },
-  reasonText: { fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
-
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
-  statTile: { width: '48%', alignItems: 'flex-start' },
-  statTileWide: { width: '23.5%' },
-  statIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  statValue: { fontSize: 18, fontFamily: fonts.bold, color: colors.textPrimary },
-  statLabel: { fontSize: 11.5, color: colors.textMuted, marginTop: 2 },
-
-  priceCard: {},
-  priceRow: { flexDirection: 'row', alignItems: 'center' },
-  priceDivider: { width: StyleSheet.hairlineWidth, height: 36, backgroundColor: colors.border, marginHorizontal: 24 },
-  priceLabel: { fontSize: 11.5, color: colors.textMuted, marginBottom: 4 },
-  priceValue: { fontSize: 17, fontFamily: fonts.bold, color: colors.textPrimary },
-
-  // Modal
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: colors.overlay },
-  modalBackdrop: { ...StyleSheet.absoluteFillObject },
-  modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '85%',
-    minHeight: '45%',
-    paddingBottom: 24,
-  },
-  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
-  modalHeader: {
+  periodHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    marginBottom: 14,
   },
-  modalTitle: { fontSize: 18, fontFamily: fonts.bold, color: colors.textPrimary },
-  modalSubtitle: { fontSize: 12.5, color: colors.textMuted, marginTop: 2 },
-  modalClose: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
-  modalBody: { paddingHorizontal: 20 },
+  periodRange: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary },
+  countdown: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  countdownText: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
 
-  balanceRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18 },
-  balanceBlock: { flex: 1 },
-  balanceLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 4 },
-  balanceValue: { fontSize: 15, fontFamily: fonts.bold, color: colors.textPrimary },
+  statRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  stat: {
+    flex: 1,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  statValue: {
+    marginTop: 6,
+    fontFamily: fonts.bold,
+    fontSize: 19,
+    color: colors.textPrimary,
+  },
+  statValueAccent: { color: colors.accent },
+  statLabel: { marginTop: 2, fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
+  statHint: { marginTop: 1, fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary, opacity: 0.75 },
 
-  previewTweetCard: { marginTop: 10, padding: 14 },
-  previewTweetContent: { fontSize: 13.5, color: colors.textPrimary, lineHeight: 18, marginBottom: 10 },
-  previewMetricsRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  previewMetric: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  previewMetricText: { fontSize: 11.5, color: colors.textSecondary },
-  previewReward: { marginLeft: 'auto', backgroundColor: colors.successMuted, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
-  previewRewardText: { fontSize: 11.5, fontFamily: fonts.bold, color: colors.success },
+  note: {
+    marginTop: 4,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
 
-  modalFooter: { paddingHorizontal: 20, paddingTop: 16 },
-  noEarnings: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surfaceElevated, borderRadius: radius.lg, padding: 14 },
-  noEarningsText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 17 },
+  warnRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: withAlpha(colors.warning, 0.1),
+  },
+  warnText: { flex: 1, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.warning },
+
+  /* Qualité */
+  qualityHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
+  qualityScore: { fontFamily: fonts.bold, fontSize: 32, color: colors.accent, letterSpacing: -0.5 },
+  qualityScoreLabel: { flex: 1, fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary, lineHeight: 18 },
+  qualityScoreHint: { fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary },
+
+  quality: { marginBottom: 16 },
+  qualityHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  qualityLabel: { fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary },
+  qualityWeight: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
+  qualityTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.surfaceElevated,
+    overflow: 'hidden',
+  },
+  qualityFill: { height: 6, borderRadius: 3 },
+  qualityFoot: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  qualityRank: { fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary },
+  qualityRaw: { fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary, opacity: 0.8 },
+
+  detailToggle: { marginTop: 6 },
+  detail: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 10,
+  },
+  detailLine: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 18, color: colors.textSecondary },
+  detailStrong: { fontFamily: fonts.bold, color: colors.textPrimary },
+
+  /* Récompenses */
+  bonus: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  bonusWon: { backgroundColor: colors.accentSoft },
+  bonusIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+  },
+  bonusIconWon: { backgroundColor: colors.accentMuted },
+  bonusBody: { flex: 1 },
+  bonusTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  bonusTitle: { fontFamily: fonts.bold, fontSize: 13, color: colors.textSecondary },
+  bonusTitleWon: { color: colors.textPrimary },
+  bonusMult: { fontFamily: fonts.bold, fontSize: 13, color: colors.textSecondary },
+  bonusMultWon: { color: colors.accent },
+  bonusDesc: { marginTop: 3, fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, color: colors.textSecondary },
+
+  /* Pot */
+  poolRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  poolLabel: { flex: 1, fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
+  poolValue: { fontFamily: fonts.bold, fontSize: 13, color: colors.textPrimary },
+  poolValueAccent: { color: colors.accent },
+
+  /* Verrou */
+  lockHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  lockTitle: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary },
+  lockReason: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, color: colors.textPrimary, marginBottom: 8 },
+
+  /* Historique */
+  historyBody: { padding: 14 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  historyLeft: { flex: 1 },
+  historyPeriod: { fontFamily: fonts.bold, fontSize: 14, color: colors.textPrimary },
+  historyMeta: { marginTop: 2, fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
+  historyRight: { alignItems: 'flex-end' },
+  historyAmount: { fontFamily: fonts.bold, fontSize: 15, color: colors.textPrimary },
+  historyStatus: { marginTop: 2, fontFamily: fonts.regular, fontSize: 11, color: colors.textSecondary },
+  historyStatusPending: { color: colors.accent },
+  historyDetail: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 7,
+  },
+  historyDetailRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  historyDetailLabel: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
+  historyDetailValue: { fontFamily: fonts.regular, fontSize: 12, color: colors.textPrimary },
+
+  bottomSpinner: { marginTop: 16 },
 });
-
-export default TweetMonetizationScreen;

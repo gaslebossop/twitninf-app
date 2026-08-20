@@ -296,19 +296,6 @@ class UserStatsService {
   }
 
   /**
-   * Récupère les métriques de monétisation d'un utilisateur
-   */
-  async getUserMonetizationStats(userId: string, period: string = 'month') {
-    try {
-      const response = await apiService.get(`/api/monetization/revenue?period=${period}`);
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des stats de monétisation:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Récupère les tweets les plus performants d'un utilisateur
    */
   async getTopPerformingTweets(userId: string, limit: number = 20, timeframe: string = '30d') {

@@ -114,6 +114,13 @@ export interface TweetRowGutterProps extends TweetRowProps {
    */
   replyToName?: string;
   /**
+   * Ancre de la visite guidée, posée sur la GOUTTIÈRE et pas sur la ligne
+   * entière : l'étape parle de cette colonne-là, éclairer tout le tweet
+   * désignerait autre chose que ce que dit la bulle. Passée par l'écran, et
+   * seulement sur la première ligne visible.
+   */
+  gutterRef?: React.Ref<View>;
+  /**
    * Rang dans le fil de discussion : 0 pour un tweet racine, 1 pour sa
    * réponse, 2 pour la réponse de sa réponse… Borné à 3 par l'écran, qui suit
    * le `MAX_THREAD_DEPTH = 4` du recommandeur.
@@ -173,6 +180,7 @@ function TweetRowGutter({
   unseenStoryUserIds,
   replyToName,
   threadDepth,
+  gutterRef,
 }: TweetRowGutterProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState<boolean | undefined>(undefined);
@@ -458,7 +466,7 @@ function TweetRowGutter({
       </Animated.View>
 
       {/* ── Gouttière ── */}
-      <View style={S.gutter}>
+      <View style={S.gutter} ref={gutterRef} collapsable={false}>
         {isThreadChild && <View style={S.spineTop} />}
 
         <TouchableOpacity

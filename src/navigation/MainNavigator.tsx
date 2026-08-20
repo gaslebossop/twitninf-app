@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 /**
  * Pile NATIVE (et non plus la pile JS de `@react-navigation/stack`).
  *
@@ -54,7 +54,6 @@ import ScheduledPostsScreen from '../screens/ScheduledPostsScreen';
 import ProfileInsightsScreen from '../screens/ProfileInsightsScreen';
 import UsernameMarketScreen from '../screens/UsernameMarketScreen';
 import EditTweetScreen from '../screens/EditTweetScreen';
-import MonetizationScreen from '../screens/MonetizationScreen';
 import NewEconomyScreen from '../screens/NewEconomyScreen';
 import TradingScreen from '../screens/TradingScreen';
 import WalletDetailScreen from '../screens/WalletDetailScreen';
@@ -97,6 +96,7 @@ import GoLiveScreen from '../screens/GoLiveScreen';
 import KosporBirthdayPopup from '../components/KosporBirthdayPopup';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
+import { Feed2BTourProvider, useFeed2BTour } from '../components/tour/Feed2BTour';
 import { StartupFlowBackdrop } from '../components/StartupStepPage';
 import { NavbarPrefsProvider, useNavbarPrefs } from '../contexts/NavbarPrefsContext';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
@@ -119,6 +119,8 @@ import { navigationRef } from './NavigationService';
 import { colors } from '../theme';
 import BottomTabNavigator2B from './BottomTabNavigator2B';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../contexts/AuthContext';
 import { useFlag } from '../contexts/FeatureFlagContext';
 import { FLAGS } from '../config/featureFlagKeys';
 
@@ -168,7 +170,6 @@ export type MainStackParamList = {
     returnTo?: string;
   };
   AccountStats: undefined;
-  Monetization: undefined;
   NewEconomy: undefined;
   Trading: undefined;
   WalletDetail: undefined;
@@ -281,12 +282,18 @@ const MainStack = createNativeStackNavigator<MainStackParamList>();
 export default function MainNavigator() {
   return (
     <NavbarPrefsProvider>
-      <MainNavigatorInner />
+      {/* Le voile de la visite guidée est rendu par ce fournisseur, APRÈS le
+          navigateur : il doit passer au-dessus du fil, de la barre du bas et
+          des bulles elles-mêmes. */}
+      <Feed2BTourProvider>
+        <MainNavigatorInner />
+      </Feed2BTourProvider>
     </NavbarPrefsProvider>
   );
 }
 
 function MainNavigatorInner() {
+  const { user } = useAuth();
   const { isEventActive, isLoading } = useKosporBirthdayEvent();
   const [showBirthdayPopup, setShowBirthdayPopup] = useState(false);
   const [hasShownPopup, setHasShownPopup] = useState(false);
@@ -300,6 +307,18 @@ function MainNavigatorInner() {
   // soit ouverte à la fois (voir StartupPopupContext).
   const birthdayVisible = useStartupPopupSlot('birthday', showBirthdayPopup);
   const navbarOnboardingVisible = useStartupPopupSlot('navbar', showNavbarOnboarding);
+
+  // Présentation du fil 2B : une seule fois par compte, et seulement pour qui
+  // a le drapeau. Le « déjà vu » est persisté par compte plutôt que par
+  // appareil — un compte qui change de téléphone n'a pas à revoir une page
+  // qu'il a déjà lue, et deux comptes sur le même téléphone ne se volent pas
+  // leur première fois.
+  const { start: startFeed2BTour, active: feed2BTourActive } = useFeed2BTour();
+  const [wantsFeed2BTour, setWantsFeed2BTour] = useState(false);
+  // La visite n'est pas une `<Modal>`, mais elle passe quand même par la file :
+  // une modale native ouverte en même temps s'afficherait PAR-DESSUS le voile,
+  // et la visite désignerait des éléments cachés.
+  const feed2BTourSlot = useStartupPopupSlot('feed2b', wantsFeed2BTour);
 
   // Afficher la popup au lancement si l'événement est actif
   useEffect(() => {
@@ -329,6 +348,53 @@ function MainNavigatorInner() {
       return () => clearTimeout(timer);
     }
   }, [navbarPrefsLoading, navbarConfigured, hasShownNavbarOnboarding]);
+
+  // Le drapeau est lu plus bas (`feed2B`), mais l'effet en a besoin ici — la
+  // constante est déclarée après pour rester à côté de son commentaire
+  // d'origine, donc on relit le drapeau plutôt que de déplacer l'un des deux.
+  const feed2BFlag = useFlag(FLAGS.FEED_2B);
+
+  useEffect(() => {
+    if (!feed2BFlag || !user?.id) return;
+    let cancelled = false;
+    const key = `feed2b_intro_seen_${user.id}`;
+
+    (async () => {
+      try {
+        const seen = await AsyncStorage.getItem(key);
+        if (cancelled || seen) return;
+        // Marqué comme vu à l'OUVERTURE, pas à la fermeture : une page fermée
+        // par un balayage, un plantage ou un changement d'écran ne doit pas
+        // revenir à chaque lancement. Elle reste réouvrable depuis les réglages.
+        await AsyncStorage.setItem(key, '1');
+        if (!cancelled) setWantsFeed2BTour(true);
+      } catch {
+        // Stockage indisponible : on n'affiche pas plutôt que de risquer de
+        // remontrer la page à chaque démarrage.
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [feed2BFlag, user?.id]);
+
+  // La file a donné le créneau : la visite démarre. Elle rend son créneau
+  // quand elle se termine — passée, finie ou interrompue faute d'ancre —,
+  // sans quoi les popups suivantes resteraient bloquées derrière elle.
+  useEffect(() => {
+    if (feed2BTourSlot) startFeed2BTour();
+  }, [feed2BTourSlot, startFeed2BTour]);
+
+  // Le créneau n'est rendu qu'APRÈS que la visite ait réellement démarré :
+  // relâcher dès que `active` est faux le rendrait dans la même image que
+  // l'octroi, avant même que `start()` ait pu poser son état.
+  const feed2BTourRan = useRef(false);
+  useEffect(() => {
+    if (feed2BTourActive) feed2BTourRan.current = true;
+    else if (feed2BTourRan.current) {
+      feed2BTourRan.current = false;
+      setWantsFeed2BTour(false);
+    }
+  }, [feed2BTourActive]);
 
   const handleClosePopup = () => {
     setShowBirthdayPopup(false);
@@ -559,16 +625,6 @@ function MainNavigatorInner() {
       />
       
       <MainStack.Screen 
-        name="Monetization" 
-        component={MonetizationScreen}
-        options={{
-          presentation: 'card',
-          animation: 'slide_from_bottom',
-          headerShown: false,
-        }}
-      />
-      
-      <MainStack.Screen 
         name="NewEconomy" 
         component={NewEconomyScreen}
         options={{
@@ -645,6 +701,7 @@ function MainNavigatorInner() {
           headerShown: false,
         }}
       />
+
 
       <MainStack.Screen
         name="MonetizationProgram"
@@ -1183,6 +1240,7 @@ function MainNavigatorInner() {
       }}
       onCancel={() => setShowNavbarOnboarding(false)}
     />
+
     </>
   );
 }

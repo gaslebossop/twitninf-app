@@ -34,6 +34,9 @@ import { withoutOrphanReplies, threadDepthAt } from '../utils/feed';
 // La supprimer coupait l'apprentissage du moteur pour les comptes du test.
 // Elle est redessinée en 2B : voir `AlgoCheckGutter`.
 import AlgoCheckGutter from '../components/feed/paper2b/AlgoCheckGutter';
+// Visite guidée : les bulles se posent sur CES éléments-là, pas sur des
+// copies. Voir `components/tour/Feed2BTour.tsx`.
+import { useTourAnchor, useTourAction } from '../components/tour/Feed2BTour';
 import {
   initialAlgoCheckState,
   shouldAskAt,
@@ -289,6 +292,13 @@ export default function FeedGutterScreen() {
   const [storyUserIds, setStoryUserIds] = useState<Set<string>>(new Set());
   const [unseenStoryUserIds, setUnseenStoryUserIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  // Ancres de la visite guidée. Elles ne changent rien au rendu : ce sont des
+  // refs posées sur des vues qui existaient déjà.
+  const tabsAnchor = useTourAnchor('tabs');
+  const exploreAnchor = useTourAnchor('explore');
+  const gutterAnchor = useTourAnchor('gutter');
+  const algoAnchor = useTourAnchor('algo');
+
   const [activeTab, setActiveTab] = useState<FeedTab>('forYou');
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
@@ -484,6 +494,11 @@ export default function FeedGutterScreen() {
   const switchTab = useCallback((tab: FeedTab) => {
     handleTabChangeRef.current(tab);
   }, []);
+
+  // La visite guidee bascule elle-meme sur Explorer avant d'en parler : une
+  // bulle qui decrit un mur invisible ne montre rien. On passe par `switchTab`
+  // (et sa ref) plutot que par `handleTabChange`, defini bien plus bas.
+  useTourAction('openExplore', () => switchTab('explore'));
 
   /**
    * Le geste de bascule d'onglet.
@@ -1683,6 +1698,9 @@ export default function FeedGutterScreen() {
         <TweetRowGutter
           tweet={item}
           index={index}
+          /* Seule la première ligne porte l'ancre : la visite désigne « la »
+             gouttière, pas les vingt de la liste. */
+          gutterRef={index === 0 ? gutterAnchor : undefined}
           isThreadParent={!!(next && next.parent_tweet_id === item.id)}
           isThreadChild={!!(prev && item.parent_tweet_id === prev.id)}
           /* Le nom du parent vient d'ICI, pas de la ligne : la charge utile du
@@ -1726,6 +1744,7 @@ export default function FeedGutterScreen() {
       return entering(
         <>
           {row}
+          <View ref={algoAnchor} collapsable={false}>
           <AlgoCheckGutter
             onAnswer={(more) => {
               // Même vocabulaire que la question posée dans Explorer
@@ -1748,10 +1767,11 @@ export default function FeedGutterScreen() {
             }}
             onDismiss={() => closeAlgoCheck(index, item.id)}
           />
+          </View>
         </>
       );
     },
-    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen]
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen, gutterAnchor, algoAnchor]
   );
 
   // Une publicité de tweet garde le VRAI id du tweet (voir `dedupeKey`
@@ -2237,7 +2257,7 @@ export default function FeedGutterScreen() {
         {/* Onglets — le trait actif glisse sur le thread UI. Même machinerie
             que l'original ; en 2B il est dessiné comme un soulignement au
             lieu d'une pastille pleine (voir `S.tabIndicator`). */}
-        <View style={S.tabBar}>
+        <View style={S.tabBar} ref={tabsAnchor} collapsable={false}>
           {/* Piste : couvre toute la barre, padding compris, ce qui met le
               trait et les `x` mesurés dans le même repère. */}
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -2246,6 +2266,9 @@ export default function FeedGutterScreen() {
           {TAB_ORDER.map((tab, index) => (
             <TouchableOpacity
               key={tab}
+              // Seul « Explorer » porte une ancre : c'est le seul onglet dont
+              // la visite parle en propre.
+              ref={tab === 'explore' ? exploreAnchor : undefined}
               style={S.tabItem}
               onPress={() => handleTabChange(tab)}
               onLayout={handleTabLayout(index)}
