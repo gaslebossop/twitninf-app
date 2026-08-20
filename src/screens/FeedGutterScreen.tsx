@@ -107,6 +107,7 @@ import ExploreImmersive from '../components/feed/ExploreImmersive';
 import feedback from '../utils/feedback';
 import { displayContentOf, splitTweetMedia } from '../utils/tweetMedia';
 import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
+import { useDwellTracking } from '../hooks/useDwellTracking';
 import StoriesTray from '../components/StoriesTray';
 import SpotlightBand from '../components/feed/paper2b/SpotlightBand';
 import { PullRefreshLogo } from '../components/ui';
@@ -1579,11 +1580,56 @@ export default function FeedGutterScreen() {
     setAskAtId(null);
   }, []);
 
+  /**
+   * Temps de lecture reellement passe sur chaque tweet du fil.
+   *
+   * La liste savait deja QUI passait a l'ecran ; personne ne chronometrait
+   * entre l'entree et la sortie. Le seul temps de lecture mesure dans l'app
+   * venait du lecteur plein ecran d'Explorer, si bien que le signal Attention
+   * du pot createur — le plus lourd du score de qualite — tournait en
+   * permanence sur une estimation decotee de moitie.
+   *
+   * `getMeta` joint la nature du contenu : un temps brut se confond avec la
+   * LONGUEUR du tweet, et sans elle le moteur apprend seulement que les
+   * contenus longs « marchent mieux ». Meme raisonnement que
+   * `handleExploreDwell`, qui alimente deja la grille Explorer.
+   */
+  const dwellMeta = useCallback((tweetId: string) => {
+    const tweet = tweetsRef.current.find((t) => String(t.id) === String(tweetId));
+    if (!tweet) return null;
+    const media = splitTweetMedia(tweet);
+    const author = (tweet as any)?.originalTweet?.author || tweet.author;
+    return {
+      authorId: author?.id ? String(author.id) : null,
+      media: (media.videoUrl ? 'video' : media.hasVisual ? 'image' : 'text') as
+        'text' | 'image' | 'video',
+      contentChars: displayContentOf(tweet).length,
+      // Une vue publicitaire n'entre pas dans la paie : le pot ecarte deja les
+      // sources `AD_SOURCES`, autant ne pas depenser de reseau pour elle.
+      sponsored: !!(tweet as any).is_ad,
+    };
+  }, []);
+
+  const { notifyVisible: notifyDwell } = useDwellTracking({
+    viewerId: user?.id,
+    getMeta: dwellMeta,
+    // Coupe sur Explorer et sous le lecteur plein ecran.
+    //
+    // `ExploreImmersive` est un CALQUE monte dans cet ecran, pas une route :
+    // ouvrir un tweet en lecture ne fait perdre le focus a personne, et la
+    // liste du fil ne recoit aucun changement de visibilite. Sans cette garde,
+    // son chronometre continuerait de tourner derriere le calque et compterait
+    // une seconde fois le temps que `handleExploreDwell` mesure deja — le
+    // meme temps envoye deux fois, sur deux tweets differents.
+    enabled: activeTab !== 'explore' && immersiveIndex === null,
+  });
+
   // Indirection en ref : `onViewableItemsChanged` doit rester la même fonction
   // pendant toute la vie de la liste, mais doit voir les valeurs à jour.
   const viewTrackingRef = useRef({
     trackView: (_id: string, _v: boolean) => {},
     onView: (_id: string, _index: number) => {},
+    notifyVisible: (_ids: (string | null | undefined)[]) => {},
   });
 
   const onViewableItemsChanged = useRef(
@@ -1591,6 +1637,14 @@ export default function FeedGutterScreen() {
       changed?: Array<{ item: Tweet; index: number | null; isViewable: boolean }>;
       viewableItems: Array<{ item: Tweet; index: number | null; isViewable: boolean }>;
     }) => {
+      // Le chronometre travaille sur la liste COMPLETE des visibles, pas sur
+      // les transitions : un callback manque (remontage de la liste, retour
+      // d'arriere-plan) desynchroniserait un suivi fonde sur `changed` seul,
+      // alors qu'un etat recale a chaque passage se repare tout seul.
+      viewTrackingRef.current.notifyVisible(
+        (viewableItems || []).filter((e) => e.isViewable).map((e) => e.item?.id),
+      );
+
       const entries = Array.isArray(changed) ? changed : viewableItems;
 
       for (const entry of entries) {
@@ -1617,6 +1671,7 @@ export default function FeedGutterScreen() {
   useEffect(() => {
     viewTrackingRef.current = {
       trackView,
+      notifyVisible: notifyDwell,
       onView: (tweetId: string, position: number) => {
         trackTweetInteraction(tweetId, 'view', {
           position,
@@ -1643,7 +1698,7 @@ export default function FeedGutterScreen() {
         }
       },
     };
-  }, [trackView, trackTweetInteraction, activeTab, currentAlgorithm]);
+  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm]);
 
   /**
    * Pastille de la cloche.
