@@ -7,7 +7,7 @@
  * palette change (`theme/paper2b.ts`), en clair comme en sombre. L'original
  * n'est pas touché ; il continue de servir tout compte sans le drapeau.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -21,7 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { statusBarStyle } from '../theme';
 import { paper, paperFonts } from '../theme/paper2b';
 import { AppStatusBar, ScreenSkeleton, AppRefreshControl } from '../components/ui';
@@ -101,8 +101,23 @@ function formatRelativeTime(ts: number): string {
   return `${Math.floor(days / 7)} sem.`;
 }
 
+/**
+ * Repli quand l'écran est poussé sur la PILE et non monté comme onglet :
+ * `Messages` existe aux deux endroits (route de `MainStack` + onglet optionnel
+ * de `BottomTabNavigator2B`), et c'est la même hauteur que le reste de l'app
+ * (`SearchScreen`, `ExploreWall`).
+ */
+const FALLBACK_TAB_BAR_HEIGHT = 85;
+
 export default function MessagesScreen2B({ navigation }: any) {
-  const tabBarHeight = useBottomTabBarHeight();
+  /**
+   * `BottomTabBarHeightContext` rend `undefined` hors navigateur d'onglets ;
+   * `useBottomTabBarHeight` LÈVE (« Couldn't find the bottom tab bar height »).
+   * L'original utilise le hook qui lève alors que son propre commentaire
+   * décrit ce contexte-ci — le bug ne se voyait pas tant que `Messages`
+   * n'était atteint que par l'onglet.
+   */
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
