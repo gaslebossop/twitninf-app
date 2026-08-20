@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -82,13 +82,24 @@ const MAX_ANIMATED_INDEX = 6;
 const STAGGER_MS = 44;
 /** Course de la trajectoire, en points. Assez pour se voir, trop peu pour sauter. */
 const TRAVEL = 22;
+/** Durée de la trajectoire. La décélération longue fait la fluidité. */
+const DURATION_MS = 380;
 
-// `theme/motion.ts` importe `Easing` de react-native, inutilisable dans un
-// worklet : on reprend ici la MÊME courbe (`easing.out`) depuis Reanimated.
-const ENTER = {
-  duration: 380,
-  easing: Easing.bezier(0.16, 1, 0.3, 1),
-};
+export interface EntranceTuning {
+  /**
+   * Plafond d'index au-delà duquel une carte n s'anime pas. Le fil anime 6
+   * GRANDES lignes ; le mur d'Explorer, lui, montre ~5 rangées de 2 petites
+   * cartes à l'écran — garder 6 y laissait la couture entre les rangées
+   * animées et celle d'après, qui apparaissait d'un coup.
+   */
+  maxAnimatedIndex?: number;
+  /** Décalage entre voisins, en ms. */
+  staggerMs?: number;
+  /** Course de la trajectoire, en points. */
+  travel?: number;
+  /** Durée de la trajectoire, en ms. */
+  durationMs?: number;
+}
 
 export interface FeedItemEntranceProps {
   /** Identifiant stable de l'élément (l'id du tweet). */
@@ -105,11 +116,20 @@ export interface FeedItemEntranceProps {
    * À VIDER en même temps qu'on incrémente `generation`.
    */
   seen: Set<string>;
+  /** Réglages du mouvement, propres à la surface (fil = grandes lignes, mur = petites cartes). */
+  tuning?: EntranceTuning;
   children: React.ReactNode;
 }
 
-function FeedItemEntrance({ id, index, generation, seen, children }: FeedItemEntranceProps) {
-  const eligible = index < MAX_ANIMATED_INDEX;
+function FeedItemEntrance({ id, index, generation, seen, tuning, children }: FeedItemEntranceProps) {
+  const maxAnimatedIndex = tuning?.maxAnimatedIndex ?? MAX_ANIMATED_INDEX;
+  const staggerMs = tuning?.staggerMs ?? STAGGER_MS;
+  const travel = tuning?.travel ?? TRAVEL;
+  const enter = useMemo(
+    () => ({ duration: tuning?.durationMs ?? DURATION_MS, easing: Easing.bezier(0.16, 1, 0.3, 1) }),
+    [tuning?.durationMs],
+  );
+  const eligible = index < maxAnimatedIndex;
 
   /**
    * Décision prise UNE FOIS, au premier rendu, par LECTURE PURE du `Set`.
@@ -134,7 +154,7 @@ function FeedItemEntrance({ id, index, generation, seen, children }: FeedItemEnt
   useEffect(() => {
     if (!animateOnMountRef.current) return;
     progress.value = 0;
-    progress.value = withDelay(index * STAGGER_MS, withTiming(1, ENTER));
+    progress.value = withDelay(index * staggerMs, withTiming(1, enter));
     // Volontairement au montage seul : `index` peut changer quand la liste se
     // réordonne, ce qui rejouerait l'arrivée sans qu'il ne se soit rien passé.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,8 +169,8 @@ function FeedItemEntrance({ id, index, generation, seen, children }: FeedItemEnt
       return;
     }
     progress.value = 0;
-    progress.value = withDelay(index * STAGGER_MS, withTiming(1, ENTER));
-  }, [generation, eligible, index, progress]);
+    progress.value = withDelay(index * staggerMs, withTiming(1, enter));
+  }, [generation, eligible, index, progress, staggerMs, enter]);
 
   /**
    * POSITION SEULE. Pas d'`opacity` dans ce style, volontairement : c'est
@@ -158,7 +178,7 @@ function FeedItemEntrance({ id, index, generation, seen, children }: FeedItemEnt
    * opaque en permanence, elle ne fait que rejoindre sa place.
    */
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: (1 - progress.value) * TRAVEL }] as const,
+    transform: [{ translateY: (1 - progress.value) * travel }] as const,
   }));
 
   return <Animated.View style={style}>{children}</Animated.View>;

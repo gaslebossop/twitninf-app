@@ -372,11 +372,19 @@ function MainNavigatorInner() {
           suffit à tout rendre à l'état d'avant, sans publier de version.
           Le drapeau vaut « éteint » tant qu'il n'a pas répondu : le fil
           d'origine est donc toujours ce qui s'affiche par défaut. */}
-      <MainStack.Screen 
-        name="MainTabs" 
+      <MainStack.Screen
+        name="MainTabs"
         component={feed2B ? BottomTabNavigator2B : BottomTabNavigator}
         options={{
           gestureEnabled: false,
+          // Exempté du `freezeOnBlur` global de la pile : cet écran héberge la
+          // pastille animée (Reanimated) de la navbar. Geler/dégeler cet écran
+          // (ex: pousser Réglages par-dessus puis revenir) casse la liaison
+          // entre la shared value et la vue native — l'icône active et le
+          // contenu restent corrects (l'état React survit au gel), mais la
+          // pastille ne suit plus aucun changement d'onglet ensuite, même si
+          // son calcul JS est correct. Les autres écrans gardent le gel.
+          freezeOnBlur: false,
         }}
       />
       

@@ -128,7 +128,6 @@ export default function UserProfileScreen() {
   const [likedTweets, setLikedTweets] = useState<{ [key: string]: boolean }>({});
   const [retweetedTweets, setRetweetedTweets] = useState<{ [key: string]: boolean }>({});
   const [tabLoading, setTabLoading] = useState(false);
-  const scrollRef = useRef<FlatList<Tweet>>(null);
 
   const [isLive, setIsLive] = useState(false);
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -609,7 +608,10 @@ export default function UserProfileScreen() {
     setRefreshing(false);
   };
 
-  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing);
+  // `listRef` remplace l'ancienne `scrollRef` : `useAnimatedRef` expose le
+  // même `.current` (donc `scrollToOffset` marche toujours) tout en donnant à
+  // `usePullRefreshLogo` de quoi lire la traction sur le thread UI.
+  const { pull, scrollHandler, logoKey, listRef: scrollRef } = usePullRefreshLogo(onRefresh, refreshing);
 
   const handleTabChange = (tab: 'tweets' | 'replies' | 'media' | 'likes') => setActiveTab(tab);
 

@@ -1542,7 +1542,8 @@ export default function FeedGutterScreen() {
     onRefresh();
   }, [activeTab, onRefresh]);
 
-  const { pull: feedPull, scrollHandler: onFeedScroll, logoKey } = usePullRefreshLogo(handlePullRefresh, refreshing);
+  const { pull: feedPull, scrollHandler: onFeedScroll, logoKey, listRef: feedListRef } =
+    usePullRefreshLogo(handlePullRefresh, refreshing);
 
   /**
    * État de la question de réglage (« tu en veux moins / plus »).
@@ -2094,6 +2095,58 @@ export default function FeedGutterScreen() {
     });
   }, []);
 
+  /**
+   * Pied et état vide STABILISÉS, même traitement que l'en-tête : écrits en
+   * JSX directement dans les props, ils étaient de nouveaux éléments à chaque
+   * rendu de l'écran — donc un démontage/remontage du pied (squelettes de
+   * chargement compris) à chaque like, chaque compteur, chaque changement
+   * d'état sans rapport avec la fin de liste.
+   */
+  const createTweetRef = useRef(handleCreateTweet);
+  createTweetRef.current = handleCreateTweet;
+
+  const listEmpty = useMemo(
+    () =>
+      isInitialLoading ? (
+        // Ossature plutôt qu'un logo qui tourne : l'attente paraît
+        // beaucoup plus courte et la mise en page ne saute pas.
+        <TweetSkeleton count={6} />
+      ) : (
+        <Animated.View entering={FadeIn.duration(220)} style={S.emptyState}>
+          <View style={S.emptyIconWrap}>
+            <Ionicons name="chatbubble-ellipses-outline" size={ps(38)} color={C.accent} />
+          </View>
+          <Text style={S.emptyTitle}>Rien à afficher</Text>
+          <Text style={S.emptySubtitle}>
+            {activeTab === 'forYou' ? 'Aucune recommandation pour l\'instant' : 'Suivez des comptes pour voir leurs tweets'}
+          </Text>
+          <TouchableOpacity style={S.emptyAction} onPress={() => createTweetRef.current()}>
+            <Text style={S.emptyActionText}>Poster un tweet</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      ),
+    [isInitialLoading, activeTab],
+  );
+
+  const listFooter = useMemo(
+    () => (
+      <>
+        {loadingMore && visibleTweets.length > 0 && <TweetSkeleton count={2} />}
+
+        {!hasMore && visibleTweets.length > 0 && (
+          <View style={S.endRow}>
+            <View style={S.endDivider} />
+            <Text style={S.endText}>Vous êtes à jour</Text>
+            <View style={S.endDivider} />
+          </View>
+        )}
+
+        <View style={{ height: 120 }} />
+      </>
+    ),
+    [loadingMore, hasMore, visibleTweets.length],
+  );
+
   return (
     <View style={S.root}>
     {/* `SafeAreaView` vient de `react-native-safe-area-context`, PAS du coeur
@@ -2257,6 +2310,9 @@ export default function FeedGutterScreen() {
         />
       ) : (
       <Animated.FlatList
+        // Indispensable : c'est par cette ref que la traction est lue sur le
+        // thread UI (voir `usePullRefreshLogo`). Sans elle, pas de logo.
+        ref={feedListRef}
         data={visibleTweets}
         renderItem={renderTweet}
         keyExtractor={keyExtractor}
@@ -2311,41 +2367,8 @@ export default function FeedGutterScreen() {
         removeClippedSubviews={Platform.OS === 'android'}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={listHeader}
-        ListEmptyComponent={
-          isInitialLoading ? (
-            // Ossature plutôt qu'un logo qui tourne : l'attente paraît
-            // beaucoup plus courte et la mise en page ne saute pas.
-            <TweetSkeleton count={6} />
-          ) : (
-            <Animated.View entering={FadeIn.duration(220)} style={S.emptyState}>
-              <View style={S.emptyIconWrap}>
-                <Ionicons name="chatbubble-ellipses-outline" size={ps(38)} color={C.accent} />
-              </View>
-              <Text style={S.emptyTitle}>Rien à afficher</Text>
-              <Text style={S.emptySubtitle}>
-                {activeTab === 'forYou' ? 'Aucune recommandation pour l\'instant' : 'Suivez des comptes pour voir leurs tweets'}
-              </Text>
-              <TouchableOpacity style={S.emptyAction} onPress={handleCreateTweet}>
-                <Text style={S.emptyActionText}>Poster un tweet</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          )
-        }
-        ListFooterComponent={
-          <>
-            {loadingMore && visibleTweets.length > 0 && <TweetSkeleton count={2} />}
-
-            {!hasMore && visibleTweets.length > 0 && (
-              <View style={S.endRow}>
-                <View style={S.endDivider} />
-                <Text style={S.endText}>Vous êtes à jour</Text>
-                <View style={S.endDivider} />
-              </View>
-            )}
-
-            <View style={{ height: 120 }} />
-          </>
-        }
+        ListEmptyComponent={listEmpty}
+        ListFooterComponent={listFooter}
       />
       )}
       </View>

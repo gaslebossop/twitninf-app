@@ -1,7 +1,14 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useAnimatedScrollHandler, useSharedValue, runOnJS } from 'react-native-reanimated';
+import {
+  useAnimatedScrollHandler,
+  useAnimatedReaction,
+  useAnimatedRef,
+  useScrollViewOffset,
+  useSharedValue,
+  runOnJS,
+} from 'react-native-reanimated';
 import { PULL_REFRESH_THRESHOLD } from '../components/ui/PullRefreshLogo';
 import feedback from '../utils/feedback';
 
@@ -41,27 +48,42 @@ export function usePullRefreshLogo(
   const pull = useSharedValue(0);
 
   /**
-   * Fermetures ORDINAIRES, pas des refs mutées à chaque rendu.
+   * ⚠️ Ces trois fonctions DOIVENT garder la même identité d'un rendu à
+   * l'autre — c'est ce qui rend `scrollHandler` stable (voir plus bas).
    *
-   * Une ref dont le `.current` est réécrit à chaque rendu, une fois son
-   * objet capturé par un worklet (ici via `runOnJS`, indirectement), déclenche
-   * l'avertissement Worklets « Tried to modify key `current` of an object
-   * which has been already passed to a worklet » — l'objet a été converti en
-   * « shareable » au premier passage, une réécriture ultérieure côté JS ne
-   * fait donc plus ce qu'on croit. Comme `scrollHandler` est de toute façon
-   * recréé à chaque rendu (jamais mémoïsé, voir plus bas), ces fonctions
-   * peuvent l'être aussi : elles capturent alors la valeur COURANTE sans
-   * indirection.
+   * ── Le bug que ça corrige ───────────────────────────────────────────────
+   * Elles étaient des fermetures ordinaires, recréées à chaque rendu, ce qui
+   * faisait reconstruire `useAnimatedScrollHandler` à chaque rendu — donc
+   * RÉATTACHER le gestionnaire à la liste, y compris EN PLEINE TRACTION. Sur
+   * une surface qui se re-rend peu, ça ne se voyait pas. Sur le fil, qui se
+   * re-rend en continu pendant le défilement (suivi de visibilité, état de la
+   * question de réglage…), le flux d'événements hoquetait et l'animation de
+   * traction devenait saccadée — alors qu'Explorer, dont le composant est
+   * `memo()`isé et ne se re-rend donc pas, restait parfaitement fluide. C'est
+   * exactement l'asymétrie qui a été observée entre « Pour toi » et
+   * « Explorer », deux surfaces pourtant montées dans le même écran.
+   *
+   * ── Pourquoi la ref ne déclenche PAS l'avertissement Worklets ───────────
+   * L'avertissement « Tried to modify key `current` of an object which has
+   * been already passed to a worklet » vise une ref CAPTURÉE PAR UN WORKLET
+   * (donc convertie en « shareable » au premier passage). Ici `latest` n'est
+   * jamais capturée par un worklet : elle n'est lue que DANS ces fonctions
+   * JS ordinaires, que le worklet appelle par `runOnJS`. Une fonction passée
+   * à `runOnJS` reste côté JS avec sa fermeture intacte — seule une poignée
+   * vers elle traverse. La ref peut donc être réécrite librement.
    */
+  const latest = useRef({ onRefresh, refreshing, onScrollFrame });
+  latest.current = { onRefresh, refreshing, onScrollFrame };
+
   const trigger = useCallback(() => {
     if (Platform.OS !== 'ios') return;
-    if (refreshing) return;
-    onRefresh();
-  }, [refreshing, onRefresh]);
+    if (latest.current.refreshing) return;
+    latest.current.onRefresh();
+  }, []);
 
   const forwardScrollFrame = useCallback((offsetY: number, contentHeight: number, layoutHeight: number) => {
-    onScrollFrame?.({ offsetY, contentHeight, layoutHeight });
-  }, [onScrollFrame]);
+    latest.current.onScrollFrame?.({ offsetY, contentHeight, layoutHeight });
+  }, []);
 
   const hasScrollFrame = !!onScrollFrame;
 
@@ -77,6 +99,30 @@ export function usePullRefreshLogo(
   const notifyThreshold = useCallback(() => {
     feedback.pullThreshold();
   }, []);
+
+  /**
+   * ⚠️ `listRef` EST OBLIGATOIRE : à poser en `ref=` sur la liste animée de
+   * chaque surface. Sans lui, `pull` reste à zéro et le logo ne sort jamais.
+   *
+   * ── Pourquoi l'offset n'est plus lu depuis `onScroll` ───────────────────
+   * `pull` était alimenté par le worklet `onScroll` ci-dessous. Ça marche sur
+   * un `ScrollView` nu (Explorer) : Reanimated attache alors son gestionnaire
+   * directement à la vue native, et le worklet tourne sur le thread UI.
+   *
+   * Sur une `FlatList`, non : `VirtualizedList` a besoin de `onScroll` pour
+   * son propre travail (fenêtrage, visibilité) et COMPOSE le sien avec celui
+   * qu'on lui passe. Reanimated ne reçoit donc plus son objet-gestionnaire
+   * mais une fonction JS ordinaire, et retombe sur le THREAD JS. Le
+   * défilement, lui, reste natif donc parfaitement fluide — d'où le symptôme
+   * exact observé sur « Pour toi » : la liste suit le doigt sans un accroc
+   * pendant que le logo, lui, saccade. Les deux surfaces qui saccadaient
+   * (fil, profil) sont précisément les deux `FlatList`.
+   *
+   * `useScrollViewOffset` ne passe par aucune prop d'événement : il lit
+   * l'offset de la vue native sur le thread UI. Le chemin de la `FlatList`
+   * est donc contourné, pas contourné à moitié.
+   */
+  const listRef = useAnimatedRef<any>();
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
@@ -104,7 +150,7 @@ export function usePullRefreshLogo(
       if (over < PULL_REFRESH_THRESHOLD) return;
       runOnJS(trigger)();
     },
-  });
+  }, [hasScrollFrame]);
 
   /**
    * `logoKey` : À POSER EN `key=` SUR `<PullRefreshLogo>`, jamais sur la liste.
@@ -141,7 +187,7 @@ export function usePullRefreshLogo(
     }, [pull]),
   );
 
-  return { pull, scrollHandler, logoKey };
+  return { pull, scrollHandler, logoKey, listRef };
 }
 
 export { PULL_REFRESH_THRESHOLD };

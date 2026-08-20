@@ -337,7 +337,7 @@ export default function NotificationsScreen() {
     setRefreshing(false);
   };
 
-  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing);
+  const { pull, scrollHandler, logoKey, listRef } = usePullRefreshLogo(onRefresh, refreshing);
 
   const handleMarkAllAsRead = async () => {
     try {
@@ -516,6 +516,9 @@ export default function NotificationsScreen() {
       <View style={styles.listWrap}>
       {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
       <Animated.FlatList
+        // Voir `usePullRefreshLogo` : la traction est lue par cette ref, sur
+        // le thread UI, pas par `onScroll` (que `VirtualizedList` compose).
+        ref={listRef}
         style={styles.list}
         refreshControl={Platform.OS === 'ios' ? undefined : (
           <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />

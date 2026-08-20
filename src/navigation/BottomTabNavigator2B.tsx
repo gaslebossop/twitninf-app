@@ -190,6 +190,9 @@ function metricsFor(slotWidth: number) {
  */
 const LIVE_ROUTE = 'Live';
 
+/** Clé de mesure du bouton « Publier » — il n'a pas de `route.key` (pas un onglet). */
+const PUBLISH_KEY = '__publish__';
+
 /**
  * Onglets optionnels : clé de préférence → route et écran.
  *
@@ -362,10 +365,24 @@ function PaperTabBar({
   const refreshCount = React.useCallback(async () => {
     // Identifiant passé plutôt que redemandé au serveur, et sondage à trois
     // minutes : mêmes raisons que dans `BottomTabNavigator`.
+    //
+    // `currentUserId` vient d'`AuthContext`, qui démarre à `null` et se peuple
+    // de façon async. Sans cette garde, l'appel IMMÉDIAT que déclenche
+    // `useForegroundInterval` au montage partait avec `meId=null` : dans
+    // `getMessagesUnreadCount`, ça rend `lastMessageFromMe` faux pour TOUTE
+    // conversation, donc une conversation où le DERNIER message est le vôtre
+    // (en attente de réponse) était comptée à tort comme non lue — pastille
+    // fantôme jusqu'au prochain tick (3 min).
+    if (!currentUserId) return;
     setMessageCount(await unreadService.getMessagesUnreadCount(currentUserId));
   }, [currentUserId]);
   useForegroundInterval(refreshCount, 180000);
   React.useEffect(() => unreadService.subscribe(refreshCount), [refreshCount]);
+  // Dès que l'identifiant devient disponible (auth résolue après le premier
+  // rendu), on recalcule tout de suite plutôt que d'attendre le tick suivant.
+  React.useEffect(() => {
+    if (currentUserId) refreshCount();
+  }, [currentUserId, refreshCount]);
 
   /**
    * Place du bouton dans la rangée.
@@ -387,65 +404,90 @@ function PaperTabBar({
    * code ne pouvait s'en apercevoir.
    *
    * Chaque colonne rend donc sa vraie boîte. La pastille lit ces mesures : elle
-   * ne PEUT plus être en désaccord avec ce qui est affiché. Les boîtes sont
-   * relatives à la rangée, qui est aussi le repère de la pastille — plus aucune
-   * conversion entre repères, contrairement à la version à deux groupes.
+   * ne PEUT plus être en désaccord avec ce qui est affiché.
+   *
+   * ⚠️ Indexé par la CLÉ STABLE de l'onglet (`route.key`), pas par son numéro
+   * de colonne. Une position numérique change de sens dès que la barre se
+   * reconfigure (onglet optionnel qui arrive après le chargement des
+   * préférences, « En direct » qui apparaît, un compte qui devient restreint
+   * en cours de session…) OU simplement en revenant d'un écran empilé par-
+   * dessus le navigateur d'onglets : la colonne 0 d'hier n'est pas forcément
+   * la colonne 0 d'aujourd'hui. Avec un numéro de colonne comme clé, une
+   * ancienne mesure pouvait se faire réattribuer au mauvais onglet sans que
+   * rien ne s'en aperçoive — la pastille se figeait alors sur un onglet
+   * périmé, parfois indéfiniment. Une clé stable rend ça structurellement
+   * impossible : une mesure ne peut jamais être lue pour un autre onglet que
+   * celui qui l'a produite.
    */
-  const [rects, setRects] = React.useState<Record<number, { x: number; w: number }>>({});
+  const [rects, setRects] = React.useState<Record<string, { x: number; w: number }>>({});
 
-  const onTabLayout = React.useCallback((index: number, e: LayoutChangeEvent) => {
+  const onTabLayout = React.useCallback((key: string, e: LayoutChangeEvent) => {
     const { x, width } = e.nativeEvent.layout;
     setRects((prev) => {
-      const cur = prev[index];
+      const cur = prev[key];
       // Sans cette garde, chaque `onLayout` déclenche un rendu qui redéclenche
       // un `onLayout` : la barre ne se stabilise jamais.
       if (cur && Math.abs(cur.x - x) < 0.5 && Math.abs(cur.w - width) < 0.5) return prev;
-      return { ...prev, [index]: { x, w: width } };
+      return { ...prev, [key]: { x, w: width } };
     });
   }, []);
 
-  /** Toutes les colonnes ont la même largeur : celle de la première suffit. */
-  const slotWidth = rects[0]?.w ?? 0;
+  // Une route qui disparaît (onglet « En direct » retiré, préférence changée)
+  // laissait sa mesure derrière elle. Sans impact immédiat — la lecture se fait
+  // par clé — mais l'objet ne faisait que croître, et un id de route réutilisé
+  // plus tard par React Navigation pouvait ressusciter une géométrie périmée.
+  React.useEffect(() => {
+    const live = new Set([...routes.map((r) => r.key), PUBLISH_KEY]);
+    setRects((prev) => {
+      const stale = Object.keys(prev).filter((key) => !live.has(key));
+      if (stale.length === 0) return prev;
+      const next = { ...prev };
+      stale.forEach((key) => delete next[key]);
+      return next;
+    });
+  }, [routes]);
+
+  /** Toutes les colonnes ont la même largeur : celle de la première suffit,
+      avec repli sur n'importe laquelle déjà mesurée — au premier rendu la
+      première n'a pas encore remonté son layout, et sans repli la barre
+      passait un frame au gabarit maximum (flash de largeur de pastille). */
+  const slotWidth = rects[routes[0]?.key ?? '']?.w
+    ?? Object.values(rects)[0]?.w
+    ?? 0;
   const { icon, pillWidth, pillHeight } = React.useMemo(() => metricsFor(slotWidth), [slotWidth]);
   const publishWidth = slotWidth > 0
     ? Math.min(PUBLISH_W, Math.max(slotWidth - PUBLISH_GUTTER * 2, ps(36)))
     : PUBLISH_W;
 
-  /**
-   * Centre de l'onglet actif.
-   *
-   * `state.index` compte les ONGLETS ; la rangée compte les colonnes, bouton
-   * compris. Au-delà de sa place, une colonne d'onglet est donc décalée d'un
-   * cran — c'est la seule conversion qui subsiste, et elle est exacte.
-   */
+  /** Centre de l'onglet actif — lu directement par sa clé, aucune conversion. */
   const targetCenter = React.useMemo(() => {
-    const column = !canPublish || state.index < publishAt ? state.index : state.index + 1;
-    const rect = rects[column];
+    const activeKey = routes[state.index]?.key;
+    const rect = activeKey ? rects[activeKey] : undefined;
     if (!rect) return 0;
     return rect.x + rect.w / 2;
-  }, [rects, state.index, publishAt]);
+  }, [rects, routes, state.index]);
 
   const centerX = useSharedValue(0);
   const settled = React.useRef(false);
-  const lastLayout = React.useRef(0);
+  const lastActiveKey = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (targetCenter <= 0) return;
+    const activeKey = routes[state.index]?.key ?? null;
+    // La pastille n'a une raison de GLISSER que si l'onglet actif a vraiment
+    // changé. Si sa géométrie bouge pour une autre raison (barre
+    // reconfigurée en arrière-plan) sans que l'onglet actif change, un
+    // glissé n'aurait aucun sens — instantané dans les deux cas.
+    const tabChanged = lastActiveKey.current !== activeKey;
+    lastActiveKey.current = activeKey;
 
-    // Le nombre de colonnes a changé — un onglet ajouté depuis la
-    // personnalisation, ou « En direct » qui apparaît tout seul. TOUTES les
-    // colonnes se sont alors déplacées sans que l'utilisateur ait rien touché :
-    // animer ferait traverser la barre à la pastille pour rien.
-    const layoutChanged = lastLayout.current !== routes.length;
-    lastLayout.current = routes.length;
-
-    if (!settled.current || layoutChanged) {
+    if (!settled.current || !tabChanged) {
       centerX.value = targetCenter;
       settled.current = true;
       return;
     }
     centerX.value = withTiming(targetCenter, { duration: 260, easing: Easing.out(Easing.cubic) });
-  }, [targetCenter, centerX, routes.length]);
+  }, [targetCenter, centerX, routes, state.index]);
 
   const pillStyle = useAnimatedStyle(() => ({
     opacity: centerX.value > 0 ? 1 : 0,
@@ -466,8 +508,7 @@ function PaperTabBar({
         route.name === 'Messages' ? messageCount : route.name === LIVE_ROUTE ? liveCount : 0
       }
       iconSize={icon}
-      // La COLONNE, pas l'onglet : au-delà du bouton les deux se décalent d'un.
-      onLayout={(e) => onTabLayout(!canPublish || index < publishAt ? index : index + 1, e)}
+      onLayout={(e) => onTabLayout(route.key, e)}
       onPress={() => {
         const event = navigation.emit({
           type: 'tabPress',
@@ -505,7 +546,7 @@ function PaperTabBar({
             d'onglets ne connaît que ses propres routes. Mais il occupe une
             colonne exactement comme les autres, d'où le `S.slot`. */}
         {canPublish && (
-        <View style={S.slot} onLayout={(e) => onTabLayout(publishAt, e)}>
+        <View style={S.slot} onLayout={(e) => onTabLayout(PUBLISH_KEY, e)}>
           <Pressable
             style={[S.publish, { width: publishWidth }]}
             onPress={() => {
@@ -595,13 +636,45 @@ export default function BottomTabNavigator2B() {
       {isRestricted ? (
         <>
           {/* Compte restreint : ni fil, ni publication. Nom de route distinct
-              du `Notifications` de la pile, même raison que `NfMapTab`. */}
-          <Tab.Screen name="NotificationsTab" component={NotificationsScreen} />
-          <Tab.Screen name="Profil" component={ProfileScreen} />
+              du `Notifications` de la pile, même raison que `NfMapTab`.
+              `freezeOnBlur: false` pour la même raison que plus bas : ces deux
+              écrans portent le logo d'actualisation au doigt, et ici
+              Notifications est un ONGLET (donc gelable), pas un écran poussé. */}
+          <Tab.Screen
+            name="NotificationsTab"
+            component={NotificationsScreen}
+            options={{ freezeOnBlur: false }}
+          />
+          <Tab.Screen
+            name="Profil"
+            component={ProfileScreen}
+            options={{ freezeOnBlur: false }}
+          />
         </>
       ) : (
         <>
-          <Tab.Screen name="Accueil" component={FeedGutterScreen} />
+          {/* `freezeOnBlur: false` sur les DEUX onglets qui portent le logo
+              d'actualisation au doigt (Accueil — Pour toi / Abonnements /
+              Explorer — et Profil).
+
+              Le gel casse le lien entre les valeurs animées Reanimated et
+              leurs vues natives : c'est le défaut déjà décrit dans
+              `usePullRefreshLogo`, où il avait été rattrapé par un remontage
+              du logo (`logoKey`). Ce rattrapage ne couvre QUE le logo — le
+              `useAnimatedScrollHandler` posé sur la liste, qui alimente
+              `pull`, garde lui aussi un lien natif que le gel casse, et rien
+              ne le remonte. La traction n'est alors plus lue correctement :
+              l'animation ne ressemble plus à celle d'origine et se fige.
+              `NotificationsScreen` ne connaît pas ce bug parce qu'il est
+              poussé sur la PILE (jamais gelé pendant qu'on s'en sert).
+
+              Les autres onglets gardent le gel : eux n'ont pas de valeur
+              animée pilotée par le défilement. */}
+          <Tab.Screen
+            name="Accueil"
+            component={FeedGutterScreen}
+            options={{ freezeOnBlur: false }}
+          />
           <Tab.Screen name="Recherche" component={SearchScreen} />
           <Tab.Screen name="Messages" component={MessagesScreen} />
           {liveCount > 0 && <Tab.Screen name={LIVE_ROUTE} component={LivesScreen} />}
@@ -612,7 +685,11 @@ export default function BottomTabNavigator2B() {
               component={OPTIONAL_SCREENS[key].component}
             />
           ))}
-          <Tab.Screen name="Profil" component={ProfileScreen} />
+          <Tab.Screen
+            name="Profil"
+            component={ProfileScreen}
+            options={{ freezeOnBlur: false }}
+          />
         </>
       )}
     </Tab.Navigator>

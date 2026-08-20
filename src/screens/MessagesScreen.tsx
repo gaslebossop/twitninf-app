@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { colors, fonts , statusBarStyle} from '../theme';
 import { AppStatusBar, ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import { LIST_TUNING } from '../utils/listTuning';
@@ -91,6 +92,13 @@ function formatRelativeTime(ts: number): string {
 }
 
 export default function MessagesScreen({ navigation }: any) {
+  // Vraie hauteur de la barre d'onglets sous l'écran. C'était un `110` en
+  // dur : trop court sous la barre d'origine (83 + 34 d'insets = 117, la
+  // dernière conversation restait masquée), trop long sous la barre 2B plus
+  // basse (double vide en bas de liste). `undefined` quand l'écran est monté
+  // dans la PILE (au-dessus de toute barre) : un simple garde-fou suffit alors.
+  const tabBarHeight = useBottomTabBarHeight();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
@@ -428,7 +436,7 @@ export default function MessagesScreen({ navigation }: any) {
           {...LIST_TUNING}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight ? tabBarHeight + 16 : 24 }]}
           refreshControl={
             <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
@@ -561,7 +569,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingRight: 10 },
   headerAction: { padding: 2 },
 
-  listContent: { paddingBottom: 110 },
+  listContent: {},
 
   searchWrap: { paddingHorizontal: 14, paddingBottom: 10 },
   searchBar: {

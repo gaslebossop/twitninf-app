@@ -1,8 +1,9 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { View, StyleSheet, Platform, Dimensions } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedTabIcon from '../components/AnimatedTabIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
@@ -34,10 +35,16 @@ import { FLAGS } from '../config/featureFlagKeys';
 
 const Tab = createBottomTabNavigator();
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+// Lu dans le composant via `useWindowDimensions` : une valeur prise au module
+// ne voit ni la rotation, ni le mode split-screen, ni un foldable déplié.
 
 export default function BottomTabNavigator() {
   const { isUserBanned, isUserSuspended, user } = useAuth();
+  // Insets RÉELS, pas des constantes : le `paddingBottom: 34` codé en dur
+  // supposait un iPhone à encoche. Sur un appareil sans barre de gestuelle
+  // (inset bas ≈ 0) la barre gardait un vide de 34 pt sous les icônes ; sur un
+  // appareil à inset plus grand, les icônes passaient sous la barre système.
+  const insets = useSafeAreaInsets();
   /** Sert au badge de l'onglet Live, plus à décider de son existence. */
   const [activeLiveCount, setActiveLiveCount] = React.useState(0);
   // Onglets optionnels choisis à l'onboarding (voir NavbarPrefsContext) — les
@@ -87,15 +94,23 @@ export default function BottomTabNavigator() {
 
   const currentUserId = user?.id ? String(user.id) : null;
   const refreshCounts = React.useCallback(async () => {
-    const [notifCount, msgCount] = await Promise.all([
-      unreadService.getNotificationsUnreadCount(),
-      // L'identifiant vient d'ici, plus d'un `getCurrentUser()` : voir le
-      // commentaire de `getMessagesUnreadCount`.
-      unreadService.getMessagesUnreadCount(currentUserId),
-    ]);
-    setNotificationCount(notifCount);
-    setMessageCount(msgCount);
+    setNotificationCount(await unreadService.getNotificationsUnreadCount());
+    // `currentUserId` vient d'`AuthContext`, qui démarre à `null` et se peuple
+    // de façon async (voir `checkAuthStatus`). Sans cette garde, l'appel
+    // IMMÉDIAT que déclenche `useForegroundInterval` au montage partait avec
+    // `meId=null` : dans `getMessagesUnreadCount`, ça rend `lastMessageFromMe`
+    // faux pour TOUTE conversation, donc une conversation où le DERNIER
+    // message est le vôtre (en attente de réponse) était comptée à tort comme
+    // non lue — pastille fantôme jusqu'au prochain tick (3 min).
+    if (!currentUserId) return;
+    setMessageCount(await unreadService.getMessagesUnreadCount(currentUserId));
   }, [currentUserId]);
+
+  // Dès que l'identifiant devient disponible (auth résolue après le premier
+  // rendu), on recalcule tout de suite plutôt que d'attendre le tick suivant.
+  React.useEffect(() => {
+    if (currentUserId) refreshCounts();
+  }, [currentUserId, refreshCounts]);
 
   /**
    * Trois minutes, et non trente secondes.
@@ -124,7 +139,8 @@ export default function BottomTabNavigator() {
       selectedOptionalTabs.length +
       (isEventActive ? 1 : 0);
 
-  const slotWidth = Math.floor(SCREEN_WIDTH / Math.max(visibleTabCount, 1));
+  const { width: screenWidth } = useWindowDimensions();
+  const slotWidth = Math.floor(screenWidth / Math.max(visibleTabCount, 1));
   const isDense = slotWidth < 46;
   const iconBoxWidth = Math.min(50, Math.max(34, slotWidth - 4));
   const iconGlyphSize = isDense ? 21 : 24;
@@ -220,12 +236,12 @@ export default function BottomTabNavigator() {
           bottom: 0,
           left: 0,
           right: 0,
-          height: Platform.OS === 'ios' ? 83 : 85,
+          height: 49 + Math.max(insets.bottom, 8) + (Platform.OS === 'ios' ? 0 : 3),
           backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.bg,
           borderTopWidth: 0,
           borderTopColor: Platform.OS === 'ios' ? 'transparent' : colors.border,
-          paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-          paddingTop: Platform.OS === 'ios' ? 8 : 8,
+          paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 12),
+          paddingTop: 8,
           shadowColor: Platform.OS === 'ios' ? '#000' : 'transparent',
           shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
           shadowRadius: Platform.OS === 'ios' ? 15 : 0,
@@ -252,13 +268,19 @@ export default function BottomTabNavigator() {
     >
       {isRestricted ? (
         <>
+          {/* `freezeOnBlur: false` : ces écrans portent le logo
+              d'actualisation au doigt, et le gel casse le lien entre les
+              valeurs animées Reanimated et leurs vues natives — voir le
+              commentaire complet sur l'onglet Profil plus bas. */}
           <Tab.Screen
             name="Notifications"
             component={NotificationsScreen}
+            options={{ freezeOnBlur: false }}
           />
           <Tab.Screen
             name="Profil"
             component={ProfileScreen}
+            options={{ freezeOnBlur: false }}
           />
         </>
       ) : (
@@ -295,6 +317,7 @@ export default function BottomTabNavigator() {
           <Tab.Screen
             name="Notifications"
             component={NotificationsScreen}
+            options={{ freezeOnBlur: false }}
           />
           {showMessagesTab && (
             <Tab.Screen
@@ -363,9 +386,24 @@ export default function BottomTabNavigator() {
               }}
             />
           )}
+          {/* `freezeOnBlur: false` — cet onglet porte le logo d'actualisation
+              au doigt (`usePullRefreshLogo`).
+
+              Le gel (`react-freeze`) casse le lien entre les valeurs animées
+              Reanimated et leurs vues natives. Le hook rattrapait déjà ce
+              défaut pour le LOGO, en le remontant à chaque prise de focus
+              (`logoKey`) — mais le `useAnimatedScrollHandler` posé sur la
+              liste, qui alimente `pull`, a lui aussi un lien natif que le gel
+              casse, et rien ne le remonte (remonter la liste la ramènerait en
+              haut à chaque retour d'onglet, pire que le bug). La traction
+              n'est alors plus lue correctement au retour sur l'onglet.
+
+              Les onglets sans valeur animée pilotée par le défilement gardent
+              le gel. */}
           <Tab.Screen
             name="Profil"
             component={ProfileScreen}
+            options={{ freezeOnBlur: false }}
           />
         </>
       )}

@@ -2,7 +2,6 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -13,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -863,6 +863,9 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 export default function ConversationThreadScreen({ navigation, route }: any) {
+  // Réactif (rotation, foldable, split-screen) là où `Dimensions.get` pris
+  // ponctuellement servait une valeur figée au rendu d'ouverture.
+  const { width: windowWidth } = useWindowDimensions();
   const conversationId = route?.params?.conversationId as string;
   const conversationTitle = route?.params?.title as string;
   const conversationUsername = route?.params?.username as string | undefined;
@@ -2035,7 +2038,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     {
                       top: Math.max(50, reactionBarFor.y - 76),
                       left: Math.min(
-                        Dimensions.get('window').width - REACTION_BAR_WIDTH - 12,
+                        windowWidth - REACTION_BAR_WIDTH - 12,
                         Math.max(12, reactionBarFor.x - REACTION_BAR_WIDTH / 2),
                       ),
                     },
@@ -2155,8 +2158,7 @@ const styles = StyleSheet.create({
     width: 212,
     maxWidth: '100%',
     marginBottom: 9,
-  },
-  storyReplyCardMine: {
+  },  storyReplyCardMine: {
     alignItems: 'flex-end',
   },
   storyReplyLabel: {
@@ -2208,6 +2210,10 @@ const styles = StyleSheet.create({
 
   attachmentImage: {
     width: 220,
+    // `maxWidth` : sur un écran étroit la bulle (82 % de la largeur moins la
+    // colonne d'avatar) peut descendre sous 220 pt — l'image plie au lieu
+    // de déborder de la bulle.
+    maxWidth: '100%',
     height: 220,
     backgroundColor: colors.surfaceAlt,
   },
@@ -2216,6 +2222,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
     width: 230,
+    maxWidth: '100%',
   },
   voiceBubbleOther: { backgroundColor: colors.surfaceAlt },
   voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

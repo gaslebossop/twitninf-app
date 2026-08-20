@@ -95,6 +95,14 @@ function PullRefreshLogo({ pull, active }: PullRefreshLogoProps) {
   }, [active, hold]);
 
   useEffect(() => {
+    // `cancelAnimation` dans LES DEUX branches, pas seulement à la sortie.
+    // Sans elle au démarrage, une rotation encore en cours d'arrêt (thread UI)
+    // au moment où une NOUVELLE traction démarre continue d'écrire sur `spin`
+    // pendant que la boucle fraîchement lancée écrit dessus aussi — les deux
+    // animations se disputent la valeur, et le tour qui en résulte paraît
+    // exagéré/erratique au lieu d'un seul tour propre. `cancelAnimation` est
+    // idempotente : l'appeler alors que rien ne tourne ne fait rien.
+    cancelAnimation(spin);
     if (active) {
       spin.value = 0;
       spin.value = withRepeat(
@@ -103,9 +111,6 @@ function PullRefreshLogo({ pull, active }: PullRefreshLogoProps) {
         false,
       );
     } else {
-      // Sans annulation, la boucle continue de tourner sur le thread UI une
-      // fois le logo invisible.
-      cancelAnimation(spin);
       spin.value = 0;
     }
   }, [active, spin]);
@@ -148,19 +153,26 @@ function PullRefreshLogo({ pull, active }: PullRefreshLogoProps) {
         // pendant la moitié du geste.
         { scale: 0.72 + 0.28 * p },
         /**
-         * UN TOUR COMPLET sur la course du doigt — pas trois quarts.
+         * AUCUNE rotation pendant la traction — le logo reste DROIT sous le
+         * doigt, et ne tourne que pendant la requête (`spin`).
          *
-         * C'est la différence entre « ça tourne » et « c'est de travers ». Une
-         * fraction de tour laisse le logo FIGÉ en biais dès que le doigt
-         * s'arrête, et un logo penché ne se lit pas comme une animation : il
-         * se lit comme un défaut d'alignement. À 360°, la position de repos —
-         * traction pleine, juste avant de relâcher, celle qu'on regarde le
-         * plus longtemps — est exactement la position droite.
+         * Deux mappages rotation↔traction ont été essayés avant celui-ci, et
+         * tous deux rejetés comme « saccadés », pour la même raison profonde :
+         * faire tourner le logo AU DOIGT exige que sa vitesse angulaire
+         * corresponde, image par image, à la vitesse du geste — or la traction
+         * d'une liste iOS n'est pas linéaire (résistance du rebond), et aucune
+         * courbe fixe n'y colle. En courbe adoucie, l'essentiel du tour
+         * s'exécutait sur le premier tiers du geste puis le logo ramenait ; en
+         * linéaire, il tournait à une autre vitesse que sa propre croissance.
+         * Dans les deux cas l'œil voyait un objet désynchronisé de la main :
+         * c'est la saccade.
          *
-         * La rotation libre enchaîne ensuite sans saut, en tours entiers eux
-         * aussi : le logo ne s'arrête jamais ailleurs qu'à l'endroit.
+         * Grandir et descendre, en revanche, se lit toujours bien — un objet
+         * qui suit le doigt n'a pas besoin de tourner pour paraître vivant.
+         * C'est aussi ce que font les indicateurs natifs des applications de
+         * référence : rien ne tourne tant que la requête n'est pas partie.
          */
-        { rotate: `${(p * 360 + spin.value * 360) % 360}deg` },
+        { rotate: `${(spin.value * 360) % 360}deg` },
       // `as const` : sans lui, TypeScript élargit chaque entrée en une union
       // où toutes les autres clés valent `undefined`, et le tableau ne
       // correspond plus au type des transformations.

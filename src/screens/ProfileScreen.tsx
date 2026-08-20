@@ -413,7 +413,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     finally { setRefreshing(false); }
   };
 
-  const { pull, scrollHandler, logoKey } = usePullRefreshLogo(onRefresh, refreshing);
+  const { pull, scrollHandler, logoKey, listRef } = usePullRefreshLogo(onRefresh, refreshing);
 
   const handleAddAccount = async () => {
     if (!newAccUsername.trim() || !newAccPassword) {
@@ -532,6 +532,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       <View style={S.listWrap}>
       {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
       <ReanimatedView.FlatList
+        // Voir `usePullRefreshLogo` : la traction est lue par cette ref, sur
+        // le thread UI, pas par `onScroll` (que `VirtualizedList` compose).
+        ref={listRef}
         style={S.scroll}
         contentContainerStyle={{ paddingBottom: 48 }}
         showsVerticalScrollIndicator={false}
