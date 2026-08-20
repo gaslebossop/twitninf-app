@@ -57,7 +57,7 @@ import Reanimated, {
 import { io } from 'socket.io-client';
 import { colors, statusBarStyle } from '../theme';
 import { paper, paperFonts, isPaperDark } from '../theme/paper2b';
-import { AppStatusBar, ScreenBackground, ScreenSkeleton } from '../components/ui';
+import { AppStatusBar, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
 import unreadService from '../services/unreadService';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -1760,7 +1760,10 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   // ─── Rendu ────────────────────────────────────────────────────────────────
 
   return (
-    <ScreenBackground>
+    // Pas de `ScreenBackground` ici : il peint `colors.bg` en dur (le fond
+    // « Pulse »), ce qui recouvrait le papier. 2B pose le sien à plat,
+    // exactement comme `FeedGutterScreen` et `TweetDetailGutterScreen`.
+    <View style={styles.root}>
       {/* `SafeAreaView` de `react-native-safe-area-context`, PAS celle du
           coeur de React Native : cette derniere ne pose aucun inset sur
           Android. `edges={['top']}` seulement — le bas est deja tenu par
@@ -2086,13 +2089,14 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           }}
         />
       </SafeAreaView>
-    </ScreenBackground>
+    </View>
   );
 }
 
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: paper.bg },
   container: { flex: 1, backgroundColor: 'transparent' },
 
   // Header

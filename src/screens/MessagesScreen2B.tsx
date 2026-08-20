@@ -24,7 +24,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { statusBarStyle } from '../theme';
 import { paper, paperFonts } from '../theme/paper2b';
-import { AppStatusBar, ScreenBackground, ScreenSkeleton, AppRefreshControl } from '../components/ui';
+import { AppStatusBar, ScreenSkeleton, AppRefreshControl } from '../components/ui';
 import { LIST_TUNING } from '../utils/listTuning';
 import apiService from '../services/api';
 import { API_CONFIG } from '../config/api';
@@ -366,7 +366,10 @@ export default function MessagesScreen2B({ navigation }: any) {
   }, [storyUserIds, unseenStoryUserIds, openConversation]);
 
   return (
-    <ScreenBackground>
+    // Pas de `ScreenBackground` ici : il peint `colors.bg` en dur (le fond
+    // « Pulse »), ce qui recouvrait le papier. 2B pose le sien à plat,
+    // exactement comme `FeedGutterScreen` et `TweetDetailGutterScreen`.
+    <View style={styles.root}>
       <SafeAreaView style={styles.container} edges={['top']}>
         <AppStatusBar />
 
@@ -516,13 +519,14 @@ export default function MessagesScreen2B({ navigation }: any) {
           }
         />
       </SafeAreaView>
-    </ScreenBackground>
+    </View>
   );
 }
 
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: paper.bg },
   container: { flex: 1, backgroundColor: 'transparent' },
 
   header: {
