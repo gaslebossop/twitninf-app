@@ -1903,13 +1903,12 @@ export default function FeedGutterScreen() {
          * (filtrage collaboratif, boost temps réel de 30 min, bandit
          * d'exploration) et évite à l'API de retrouver l'auteur en base à
          * chaque tweet vu. `experimentId`/`variantId` attribuent l'impression
-         * à la variante RÉELLEMENT affichée. `position` corrige le biais de
-         * rang — voir `TrackOptions`.
+         * à la variante RÉELLEMENT affichée.
+         *
+         * Le RANG, lui, ne part pas d'ici : le moteur sait à quelle place il a
+         * servi chaque tweet et l'inscrit lui-même — voir `TrackOptions`.
          */
-        trackingService.trackView(tweetId, undefined, {
-          ...signalsFor(tweetId),
-          position,
-        });
+        trackingService.trackView(tweetId, undefined, signalsFor(tweetId));
 
         // ── Question de réglage ──
         // Une impression de plus sans que l'utilisateur ait rien fait. C'est

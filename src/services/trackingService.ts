@@ -38,21 +38,18 @@ export interface TrackOptions {
   dwellMedia?: 'text' | 'image' | 'video';
   contentChars?: number;
   videoDurationMs?: number;
-  /**
-   * Rang du tweet dans la page servie, 0-indexé.
-   *
-   * Correction du biais de position : à qualité égale, un tweet en tête est
-   * cliqué bien plus souvent qu'un tweet en quarantième place. Sans le rang,
-   * le modèle de clic attribue au CONTENU ce qui n'est qu'un effet de
-   * position, et le classement se fige sur ce qui est déjà en tête.
-   *
-   * ⚠️ Le relais côté API Node n'existe pas encore : `POST /api/track`
-   * déstructure explicitement les champs qu'il transmet au moteur, et
-   * `position` n'en fait pas partie — il est donc reçu et jeté. Le champ part
-   * quand même : le jour où la route le relaie, il n'y a rien à faire ici.
-   */
-  position?: number;
 }
+
+/**
+ * ── Le rang du tweet n'est PAS envoyé d'ici, et c'est délibéré ──────────────
+ * La correction du biais de position (à qualité égale, un tweet en tête est
+ * bien plus cliqué qu'un tweet en quarantième place) est faite côté moteur,
+ * qui sait lui-même à quelle place il a servi chaque tweet et l'écrit au
+ * moment où il mémorise l'impression, offset de pagination compris. Le client
+ * n'a rien à remonter — À UNE CONDITION : qu'il n'écarte pas des tweets que
+ * le moteur a servis, sans quoi le rang serveur et le rang affiché divergent.
+ * C'est ce que garantit `hasRenderableContent` (`utils/tweetMedia`).
+ */
 
 async function trackAction(
   tweetId: string,
@@ -71,7 +68,6 @@ async function trackAction(
       dwell_media: options.dwellMedia ?? null,
       content_chars: options.contentChars ?? null,
       video_duration_ms: options.videoDurationMs ?? null,
-      position: options.position ?? null,
     });
   } catch {
     // Non-blocking
