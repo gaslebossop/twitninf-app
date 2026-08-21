@@ -17,8 +17,10 @@
 - Branche : `feat/fil-2b-audit`, partant de `main` (`ae34925`).
 - **12 commits** (10 de l'agent + 2 de la session suivante), `+910 / −102` sur 13 fichiers
   pour la part de l'agent (dont 2 fichiers de tests neufs).
-- **Rien n'a été poussé** (la branche n'existe pas sur `origin`), **rien n'a été fusionné dans
-  `main`**, **rien n'a été déployé**.
+- ✅ **Fusionné dans `main` et poussé le 2026-08-21** (merge `1760ce2`). L'app n'a **pas** été
+  republiée : les workflows `ios-build`, `android-publish` et `android-build` sont en
+  `workflow_dispatch` seul depuis le 2026-08-16, donc un push sur `main` ne publie plus de version.
+  Publier reste un geste explicite (`gh workflow run ios-build.yml`).
 
 ### Les modifications préexistantes sont intactes
 Les 7 fichiers modifiés non commités **antérieurs** au chantier (refonte Messages 2B) sont
@@ -101,9 +103,12 @@ La chaîne est désormais complète : moteur `scores` → API `data.scores` → 
 `response.data.scores` → `withRecommendationScores` (`FeedGutterScreen.tsx:869`,
 `TweetsScreen.tsx:783`). `HESITATION_CEILING = 0.45` peut enfin s'armer.
 
-⚠️ **Vérifié statiquement seulement** : syntaxe, lint, et la correspondance des trois contrats par
-relecture. Le chemin n'a **jamais été exécuté** — il demande Postgres, Redis et le moteur Rust
-vivants. À confirmer sur un environnement réel.
+✅ **Déployé et confirmé en production le 2026-08-21.** Appel réel au moteur : `scores` sort avec des
+confiances de **0,215 et 0,083**, donc sous `HESITATION_CEILING = 0.45`. La question explicite peut
+enfin s'armer pour de vrai.
+
+⚠️ Reste non vérifié **sur appareil** : que la carte s'affiche bien au bon moment dans le fil. Le
+contrat de données est prouvé, le rendu ne l'est pas.
 
 ### ✅ ~~`TweetDetailGutterScreen.tsx` non versionné~~ — **versé le 2026-08-21** (`395f48c`)
 Le fichier existait sur le disque, complet (2597 l.) et déjà câblé dans `MainNavigator`, mais n'avait
