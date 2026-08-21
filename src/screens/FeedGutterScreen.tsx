@@ -82,7 +82,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { apiService, progressiveRecommendationService } from '../services';
-import { neuralRankService, signalsFromTweet } from '../services/neuralRankService';
+import { neuralRankService, signalsFromTweet, withRecommendationScores } from '../services/neuralRankService';
 import { Tweet, RecommendationItem, RecommendationRequest, ProgressiveRecommendationRequest, ProgressiveRecommendationItem } from '../types/api';
 import Avatar from '../components/Avatar';
 import BanAlertBanner from '../components/BanAlertBanner';
@@ -106,7 +106,7 @@ import FeedItemEntrance from '../components/feed/FeedItemEntrance';
 import ExploreGrid, { type CardRect } from '../components/feed/ExploreGrid';
 import ExploreImmersive from '../components/feed/ExploreImmersive';
 import feedback from '../utils/feedback';
-import { displayContentOf, splitTweetMedia } from '../utils/tweetMedia';
+import { displayContentOf, splitTweetMedia, hasRenderableContent } from '../utils/tweetMedia';
 import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
 import { useDwellTracking } from '../hooks/useDwellTracking';
 import StoriesTray from '../components/StoriesTray';
@@ -167,6 +167,15 @@ const SWIPE_COMMIT = 0.32;
 const TAB_ORDER = ['following', 'forYou', 'explore'] as const;
 type FeedTab = typeof TAB_ORDER[number];
 const tabIndexOf = (tab: FeedTab): number => TAB_ORDER.indexOf(tab);
+
+/**
+ * Tweets vus de plus après quoi une question restée sans réponse est
+ * considérée comme ignorée, et refermée.
+ *
+ * Assez pour que le lecteur soit vraiment passé à autre chose ; assez peu
+ * pour que le plafond de deux questions par session reste atteignable.
+ */
+const ASK_ABANDON_AFTER = 8;
 
 /**
  * Fusionne une nouvelle page de tweets dans la liste existante en écartant les
@@ -274,6 +283,13 @@ export default function FeedGutterScreen() {
    * réseau annulerait le premier (create puis destroy en quelques ms) au lieu
    * de le confirmer — déjà arrivé en pratique. */
   const bookmarkInFlightRef = useRef<Set<string>>(new Set());
+  /**
+   * Miroir en ref de `bookmarkedTweets` : le menu « … » est lu depuis un
+   * `useCallback` stable, qui ne verrait jamais l'état à jour. Voir
+   * `handleOptionsMenu`.
+   */
+  const bookmarkedRef = useRef<Record<string, boolean>>({});
+  bookmarkedRef.current = bookmarkedTweets;
   /** Tweet dont on est en train de fixer le prix, `null` quand la feuille est fermée. */
   const [paywallTarget, setPaywallTarget] = useState<string | null>(null);
   // Miroir en ref : permet aux handlers d'être stables (donc mémoïsables et
@@ -705,7 +721,19 @@ export default function FeedGutterScreen() {
 
         if (response.data.pagination) {
           setHasMore(response.data.pagination.hasMore);
-          setOffset(currentOffset + normalizedTweets.length);
+          /**
+           * Le curseur avance de ce que le SERVEUR a servi, pas de ce qu'on a
+           * gardé.
+           *
+           * Il avançait du nombre de tweets retenus après filtrage et
+           * déduplication. Chaque entrée écartée décalait donc le curseur en
+           * arrière du serveur, et la page suivante redemandait ce qu'on
+           * venait de jeter — pour le jeter encore. Une page entièrement
+           * invalide ne faisait pas avancer le curseur du tout : la même
+           * requête repartait indéfiniment à chaque arrivée en bas de liste,
+           * sans qu'une seule ligne ne s'ajoute.
+           */
+          setOffset(currentOffset + response.data.recommendations.length);
           setTotalTweets(response.data.pagination.total);
           setTotalPages((response.data.pagination as any).totalPages || Math.ceil(response.data.pagination.total / 10));
           if (!refresh) setCurrentPage((response.data.pagination as any).currentPage || Math.floor(currentOffset / 10) + 1);
@@ -834,8 +862,11 @@ export default function FeedGutterScreen() {
 
       if (response?.success && Array.isArray(response.data?.recommendations)) {
         const tweets = dedupeTweets(
-          response.data.recommendations.filter(
-            (t: any) => t && t.id && t.author && t.author.id
+          withRecommendationScores(
+            response.data.recommendations.filter(
+              (t: any) => t && t.id && t.author && t.author.id
+            ),
+            response.data.scores,
           )
         );
 
@@ -854,7 +885,19 @@ export default function FeedGutterScreen() {
 
         if (response.data.pagination) {
           setHasMore(response.data.pagination.hasMore);
-          setOffset(currentOffset + tweets.length);
+          /**
+           * Le curseur avance de ce que le SERVEUR a servi, pas de ce qu'on a
+           * gardé.
+           *
+           * Il avançait du nombre de tweets retenus après filtrage et
+           * déduplication. Chaque entrée écartée décalait donc le curseur en
+           * arrière du serveur, et la page suivante redemandait ce qu'on
+           * venait de jeter — pour le jeter encore. Une page entièrement
+           * invalide ne faisait pas avancer le curseur du tout : la même
+           * requête repartait indéfiniment à chaque arrivée en bas de liste,
+           * sans qu'une seule ligne ne s'ajoute.
+           */
+          setOffset(currentOffset + response.data.recommendations.length);
           setTotalTweets(response.data.pagination.total);
         }
 
@@ -1182,9 +1225,28 @@ export default function FeedGutterScreen() {
         setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: wasSuperLiked } } : tweet));
       } else {
         trackTweetInteraction(tweetId, wasLiked ? 'unlike' : 'like', { tab: activeTab, previous_likes: currentLikes, algorithm: currentAlgorithm });
+        /**
+         * Le moteur reçoit le geste QUEL QUE SOIT L'ONGLET.
+         *
+         * Cet appel vivait dans le `if (activeTab === 'forYou')` juste en
+         * dessous : un like posé depuis « Abonnements » n'atteignait donc
+         * jamais le recommandeur — ni like, ni unlike, ni repost, sur un
+         * onglet entier. Or un like est un like : le profil de goût,
+         * l'affinité d'auteur, la co-occurrence et le modèle de clic sont
+         * tous globaux au lecteur, et `/track` ne prend d'ailleurs aucun
+         * paramètre d'onglet.
+         */
+        neuralRankService.trackInteraction({
+          tweetId,
+          interactionType: wasLiked ? 'unlike' : 'like',
+          ...signalsFor(tweetId),
+        });
+
+        // Celui-ci reste propre à « Pour toi » : il porte un `algorithm` et un
+        // `sessionId`, il rend compte d'une SESSION de recommandation, pas du
+        // geste. Il n'a rien à dire sur un fil d'abonnements.
         if (activeTab === 'forYou') {
           sendRecommendationFeedback(tweetId, wasLiked ? 'dislike' : 'like');
-          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasLiked ? 'unlike' : 'like', ...signalsFor(tweetId) });
         }
       }
     } catch {
@@ -1264,9 +1326,16 @@ export default function FeedGutterScreen() {
         setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, retweets: currentRetweets }, user_interaction: { ...tweet.user_interaction, is_retweeted: wasRetweeted } }));
       } else {
         trackTweetInteraction(tweetId, wasRetweeted ? 'unretweet' : 'retweet', { tab: activeTab, previous_retweets: currentRetweets, algorithm: currentAlgorithm });
+        // Même raison que pour le like : le repost part au moteur depuis les
+        // deux onglets du fil.
+        neuralRankService.trackInteraction({
+          tweetId,
+          interactionType: wasRetweeted ? 'unretweet' : 'retweet',
+          ...signalsFor(tweetId),
+        });
+
         if (activeTab === 'forYou') {
           sendRecommendationFeedback(tweetId, wasRetweeted ? 'skip' : 'share');
-          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasRetweeted ? 'unretweet' : 'retweet', ...signalsFor(tweetId) });
         }
       }
     } catch {
@@ -1400,8 +1469,26 @@ export default function FeedGutterScreen() {
     });
   };
 
+  /**
+   * ⚠️ `tweetsRef`/`bookmarkedRef` et PAS le state — même piège que
+   * `handleReport` juste au-dessus, en plus grave.
+   *
+   * Cette fonction est ordinaire (recréée à chaque rendu), mais elle est
+   * appelée depuis `handleRowAction`, qui est un `useCallback` stable : il
+   * capture donc la version de CE rendu-là, une fois pour toutes. Ses
+   * dépendances ne changent qu'au montage et au changement d'onglet — deux
+   * moments où la liste est vide ou périmée.
+   *
+   * Conséquence vue à l'écran : `tweet` restait `undefined`, donc `isOwnTweet`
+   * était faux sur SES PROPRES tweets, et le menu proposait « Bloquer cet
+   * utilisateur », « Signaler » et « Ignorer ce tweet » à quelqu'un sur son
+   * propre message — au lieu de « Modifier », « Rendre payant » et
+   * « Supprimer ». Même cause pour l'état de favori, qui affichait
+   * « Ajouter aux favoris » sur un tweet déjà en favori.
+   */
   const handleOptionsMenu = (tweetId: string) => {
-    const tweet = tweets.find((t) => t.id === tweetId);
+    const tweet = tweetsRef.current.find((t) => t.id === tweetId);
+    const bookmarked = bookmarkedRef.current;
     const isOwnTweet = !!(user?.id && tweet?.author?.id === user.id);
 
     // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
@@ -1444,8 +1531,8 @@ export default function FeedGutterScreen() {
         ]
       : [
           {
-            label: bookmarkedTweets[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
-            icon: bookmarkedTweets[tweetId] ? 'bookmark' : 'bookmark-outline',
+            label: bookmarked[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarked[tweetId] ? 'bookmark' : 'bookmark-outline',
             onPress: () => handleBookmark(tweetId),
           },
           {
@@ -1486,7 +1573,11 @@ export default function FeedGutterScreen() {
 
   // Mémoïsé : ce filtre était recalculé à chaque rendu, y compris pour un like.
   const visibleTweets: Tweet[] = useMemo(
-    () => withoutOrphanReplies(tweets.filter(tweet => tweet && tweet.id && tweet.content)),
+    // `hasRenderableContent` et non `tweet.content` : ce test-là jetait en
+    // silence tout retweet pur, tout tweet en image seule et tout compte
+    // promu — voir `utils/feed.ts` pour ce que ça coûtait, jusque dans
+    // l'apprentissage du moteur.
+    () => withoutOrphanReplies(tweets.filter(hasRenderableContent)),
     [tweets]
   );
 
@@ -1610,7 +1701,7 @@ export default function FeedGutterScreen() {
         // pour ce qui est en fait une reponse (voir TweetDetailScreen).
         (navigation as any).navigate('TweetDetail', {
           tweetId,
-          isThread: !!(tweets.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
+          isThread: !!(tweetsRef.current.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
         });
         break;
       }
@@ -1657,14 +1748,42 @@ export default function FeedGutterScreen() {
    */
   const algoCheckRef = useRef(initialAlgoCheckState());
   const askAtIdRef = useRef<string | null>(null);
+  /** Position de la question en cours — nécessaire pour la refermer sans réponse. */
+  const askAtIndexRef = useRef(0);
+  /** Nombre d'impressions au moment où la question a été posée. */
+  const askAtImpressionsRef = useRef(0);
   const [askAtId, setAskAtId] = useState<string | null>(null);
 
-  /** Referme la question des deux côtés (la ref pour la lecture, le state pour le rendu). */
-  const closeAlgoCheck = useCallback((index: number, tweetId: string) => {
+  /**
+   * Enregistre la question SANS la retirer de l'écran.
+   *
+   * `afterAsk` compte la question posée, remet la série de silence à zéro et
+   * marque ce tweet comme déjà soumis. Idempotent : appelé deux fois pour le
+   * même tweet (une fois à la réponse, une fois à la fermeture), il ne
+   * doublerait pas le compteur de la session.
+   */
+  const recordAlgoCheck = useCallback((index: number, tweetId: string) => {
+    if (algoCheckRef.current.answered.has(tweetId)) return;
     algoCheckRef.current = afterAsk(algoCheckRef.current, index, tweetId);
-    askAtIdRef.current = null;
-    setAskAtId(null);
   }, []);
+
+  /**
+   * Retire la question de l'écran.
+   *
+   * ── Pourquoi ce n'est plus appelé depuis `onAnswer` ──
+   * Ça l'était, et ça rendait invisible tout ce que la carte fait après la
+   * réponse : elle affiche un reçu (« Noté. Tu en verras plus. ») pendant
+   * ~900 ms, puis s'efface. En fermant depuis `onAnswer`, l'écran démontait
+   * la carte dans la même image que l'appui — le reçu n'a jamais pu
+   * s'afficher, et le fondu de sortie n'a jamais pu jouer. C'est la carte qui
+   * appelle `onDismiss`, quand elle a fini de le faire.
+   */
+  const closeAlgoCheck = useCallback((index: number, tweetId: string) => {
+    recordAlgoCheck(index, tweetId);
+    askAtIdRef.current = null;
+    askAtIndexRef.current = 0;
+    setAskAtId(null);
+  }, [recordAlgoCheck]);
 
   /**
    * Temps de lecture reellement passe sur chaque tweet du fil.
@@ -1768,7 +1887,31 @@ export default function FeedGutterScreen() {
           tab: activeTab,
           algorithm: currentAlgorithm,
         });
-        trackingService.trackView(tweetId, 500);
+        /**
+         * L'impression envoyée au moteur.
+         *
+         * ── Le `500` qui vivait ici ──
+         * C'était une constante en dur passée en `dwell_ms`, pas une mesure :
+         * chaque tweet vu déclarait une lecture d'une demi-seconde que
+         * personne n'avait chronométrée. Elle ne valait rien au barème actuel
+         * (sous le premier palier), mais elle traversait quand même le calcul
+         * de temps de lecture — et le vrai temps, lui, part séparément par
+         * `useDwellTracking`, mesuré, plafonné et accompagné de la nature du
+         * contenu. Une valeur inventée qui se fait passer pour une mesure
+         * n'attend qu'un changement de seuil pour devenir un faux signal :
+         * l'impression part donc SANS temps de lecture.
+         *
+         * ── Ce qui l'accompagne désormais ──
+         * `authorId` déclenche trois mécanismes qui restaient inertes sans lui
+         * (filtrage collaboratif, boost temps réel de 30 min, bandit
+         * d'exploration) et évite à l'API de retrouver l'auteur en base à
+         * chaque tweet vu. `experimentId`/`variantId` attribuent l'impression
+         * à la variante RÉELLEMENT affichée.
+         *
+         * Le RANG, lui, ne part pas d'ici : le moteur sait à quelle place il a
+         * servi chaque tweet et l'inscrit lui-même — voir `TrackOptions`.
+         */
+        trackingService.trackView(tweetId, undefined, signalsFor(tweetId));
 
         // ── Question de réglage ──
         // Une impression de plus sans que l'utilisateur ait rien fait. C'est
@@ -1777,18 +1920,43 @@ export default function FeedGutterScreen() {
         // sur l'index de rendu, qui compte aussi ce qui n'atteint jamais
         // l'écran.
         algoCheckRef.current = afterSilentView(algoCheckRef.current);
-        if (askAtIdRef.current) return;
+        if (askAtIdRef.current) {
+          /**
+           * Une question laissée sans réponse ne doit pas bloquer la session.
+           *
+           * Rien ne refermait la question quand le lecteur passait simplement
+           * son chemin : sa ligne finit par être démontée par la `FlatList`,
+           * `onDismiss` ne part donc jamais, et cette garde-ci bloquait
+           * ensuite TOUTE nouvelle question jusqu'à la fin de la session —
+           * alors que le plafond est de deux.
+           *
+           * Le compteur d'impressions et non la visibilité : la question est
+           * rendue SOUS son tweet, donc elle allonge l'élément de liste et
+           * peut le faire tomber sous le seuil de visibilité au moment même
+           * où elle apparaît. Une mesure fondée là-dessus la refermerait dans
+           * l'image qui la montre.
+           */
+          if (
+            feedImpressionsRef.current.size - askAtImpressionsRef.current >=
+            ASK_ABANDON_AFTER
+          ) {
+            closeAlgoCheck(askAtIndexRef.current, askAtIdRef.current);
+          }
+          return;
+        }
 
         const seen = tweetsRef.current.find((t) => t.id === tweetId);
         const confidence = Number((seen as any)?._recommendation_confidence) || 0;
 
         if (shouldAskAt({ index: position, tweetId, state: algoCheckRef.current, confidence })) {
           askAtIdRef.current = tweetId;
+          askAtIndexRef.current = position;
+          askAtImpressionsRef.current = feedImpressionsRef.current.size;
           setAskAtId(tweetId);
         }
       },
     };
-  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm]);
+  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm, signalsFor, closeAlgoCheck]);
 
   /**
    * Pastille de la cloche.
@@ -1908,7 +2076,10 @@ export default function FeedGutterScreen() {
                 position: index,
                 algorithm: currentAlgorithm,
               });
-              closeAlgoCheck(index, item.id);
+              // On ENREGISTRE, on ne ferme pas : la carte affiche son reçu
+              // puis appelle `onDismiss` elle-même. Fermer ici démontait la
+              // carte dans la même image que l'appui.
+              recordAlgoCheck(index, item.id);
             }}
             onDismiss={() => closeAlgoCheck(index, item.id)}
           />
@@ -1916,7 +2087,7 @@ export default function FeedGutterScreen() {
         </>
       );
     },
-    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen, gutterAnchor, algoAnchor]
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, recordAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen, gutterAnchor, algoAnchor]
   );
 
   // Une publicité de tweet garde le VRAI id du tweet (voir `dedupeKey`

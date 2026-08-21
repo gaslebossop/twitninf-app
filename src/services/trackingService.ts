@@ -40,6 +40,17 @@ export interface TrackOptions {
   videoDurationMs?: number;
 }
 
+/**
+ * ── Le rang du tweet n'est PAS envoyé d'ici, et c'est délibéré ──────────────
+ * La correction du biais de position (à qualité égale, un tweet en tête est
+ * bien plus cliqué qu'un tweet en quarantième place) est faite côté moteur,
+ * qui sait lui-même à quelle place il a servi chaque tweet et l'écrit au
+ * moment où il mémorise l'impression, offset de pagination compris. Le client
+ * n'a rien à remonter — À UNE CONDITION : qu'il n'écarte pas des tweets que
+ * le moteur a servis, sans quoi le rang serveur et le rang affiché divergent.
+ * C'est ce que garantit `hasRenderableContent` (`utils/tweetMedia`).
+ */
+
 async function trackAction(
   tweetId: string,
   action: TrackableAction,

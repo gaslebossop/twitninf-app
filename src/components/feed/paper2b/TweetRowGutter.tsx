@@ -104,6 +104,8 @@ import feedback from '../../../utils/feedback';
 import { useFlag } from '../../../contexts/FeatureFlagContext';
 import { FLAGS } from '../../../config/featureFlagKeys';
 import { sameAuthor } from '../../../utils/sameAuthor';
+import { hasRenderableContent } from '../../../utils/tweetMedia';
+
 import type { TweetRowProps } from '../TweetRow';
 
 export interface TweetRowGutterProps extends TweetRowProps {
@@ -447,7 +449,11 @@ function TweetRowGutter({
     if (navTimerRef.current) clearTimeout(navTimerRef.current);
   }, []);
 
-  if (!tweet?.id || !tweet.content) return null;
+  // Garde de rendu : `tweet.content` truthy jetait ici tout retweet pur (son
+  // texte vit sur `originalTweet`) et tout tweet publie en image seule — alors
+  // meme que tout le reste de ce composant sait deja les rendre
+  // (`sourceContent`, `displayMediaUrls`). Voir `utils/feed.ts`.
+  if (!hasRenderableContent(tweet)) return null;
 
   return (
     <AnimatedPressable
@@ -620,7 +626,11 @@ function TweetRowGutter({
           <Text style={S.time}>{fmtDate(displayCreatedAt || new Date().toISOString())}</Text>
         </View>
 
-        {isScrambled ? (
+        {/* Un tweet publie en image seule, ou un retweet dont l'original n'a
+            pas de legende, n'a pas de texte a rendre. Sans cette garde, la
+            ligne dessinait un bloc de texte vide : un interligne fantome entre
+            l'en-tete et l'image, la ou il ne doit rien y avoir. */}
+        {!!displayContent && (isScrambled ? (
           <LockedText
             text={displayContent}
             style={isReply ? S.bodyReply : S.body}
@@ -642,10 +652,10 @@ function TweetRowGutter({
               contextData={{ ...contextData, position: index, author_id: displayAuthor?.id }}
             />
           </TranslationReveal>
-        )}
+        ))}
 
         {/* Mesure de troncature : une seule fois par ligne, en local. */}
-        {isTruncated === undefined && (
+        {!!displayContent && isTruncated === undefined && (
           <Text
             style={[isReply ? S.bodyReply : S.body, S.hiddenMeasure]}
             onTextLayout={handleTextLayout}

@@ -3,11 +3,44 @@ import { Tweet } from '../types/api';
 
 export type NeuralRankMode = 'for_you' | 'feed' | 'discover' | 'trending';
 
+/**
+ * Ce que le moteur sait de chacun des tweets qu'il vient de servir.
+ *
+ * Aligné sur la page, un élément par tweet. Sert au déclencheur de la question
+ * explicite (`utils/algoCheck`) — voir `withRecommendationScores`.
+ */
+export interface NeuralRankScore {
+  tweet_id: string;
+  /** Score final de classement, dans [0,1]. */
+  score: number;
+  /**
+   * Dans [0,1]. BAS = le moteur devine.
+   *
+   * C'est un PRODUIT : ce qu'on sait du lecteur (profondeur de son historique)
+   * multiplié par ce qu'on sait du tweet (engagement déjà observé, annotation
+   * présente, auteur déjà connu de ce lecteur). Un produit et pas une moyenne,
+   * parce que tout savoir d'un tweet ne sert à rien si on ne sait rien de qui
+   * le regarde.
+   *
+   * Ce n'est PAS « ce tweet est mauvais » : un tweet peut avoir un score élevé
+   * et une confiance basse. Un tweet neuf, d'un auteur inconnu, montré à un
+   * compte neuf tombe sous 0,05 — c'est exactement le moment où poser la
+   * question vaut la peine.
+   */
+  confidence: number;
+}
+
 export interface NeuralRankResponse {
   success: boolean;
   engine?: string;
   data: {
     recommendations: Tweet[];
+    /**
+     * Absent tant que l'API Node ne relaie pas le champ : elle n'hydrate
+     * aujourd'hui que les tweets. `withRecommendationScores` ne fait alors
+     * rien, et la question retombe sur son heuristique de silence.
+     */
+    scores?: NeuralRankScore[];
     count: number;
     algorithm?: string;
     latency_ms?: number;
@@ -86,6 +119,44 @@ export function signalsFromTweet(tweet: any): Pick<
     experimentId: ab?.experiment_id ? String(ab.experiment_id) : undefined,
     variantId: ab?.variant_id ? String(ab.variant_id) : undefined,
   };
+}
+
+/**
+ * Recolle sur chaque tweet ce que le moteur sait de lui.
+ *
+ * ── Pourquoi ça n'existait pas ──
+ * Le service Rust ne renvoyait à l'API que des IDENTIFIANTS de tweets, que
+ * l'API Node hydratait ensuite : ni le score ni la confiance ne traversaient.
+ * Côté app, `_recommendation_confidence` valait donc TOUJOURS 0 — et le
+ * déclencheur d'hésitation de `utils/algoCheck` (`HESITATION_CEILING`), écrit
+ * pour ça, n'a jamais pu se déclencher une seule fois. Seule l'heuristique de
+ * repli (quatorze tweets parcourus sans rien toucher) a jamais servi.
+ *
+ * Fonction pure et tolérante : sans `scores`, elle rend la liste telle quelle.
+ * Le jour où le relais côté API arrive, le vrai déclencheur s'allume sans
+ * qu'une ligne d'écran ne change.
+ */
+export function withRecommendationScores(
+  tweets: Tweet[],
+  scores?: NeuralRankScore[] | null,
+): Tweet[] {
+  if (!Array.isArray(scores) || scores.length === 0) return tweets;
+
+  const byId = new Map<string, NeuralRankScore>();
+  for (const entry of scores) {
+    if (entry?.tweet_id) byId.set(String(entry.tweet_id), entry);
+  }
+  if (byId.size === 0) return tweets;
+
+  return tweets.map((tweet) => {
+    const found = byId.get(String(tweet?.id));
+    if (!found) return tweet;
+    return {
+      ...tweet,
+      _recommendation_score: Number(found.score) || 0,
+      _recommendation_confidence: Number(found.confidence) || 0,
+    } as Tweet;
+  });
 }
 
 /**
