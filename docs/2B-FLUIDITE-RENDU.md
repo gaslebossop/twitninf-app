@@ -534,3 +534,23 @@ Les trois avertissements sont préexistants (`import/no-named-as-default` sur
 5. **Un tweet à contenu payant** — le comparateur regarde désormais
    `has_access` ; vérifier qu'un déverrouillage rafraîchit bien la ligne et
    n'en re-rend pas d'autres.
+
+---
+
+## Arbitrage de la session principale — `layout={ROW_LAYOUT}` : **gardé**
+
+Seule question laissée ouverte entre les deux agents (§ 4.3). Décision : **on garde**.
+
+- Le gain restant est marginal — c'est *une* `Animated.View` déjà existante par ligne, contre les
+  ~45 supprimées par l'armement à la demande de l'éclat.
+- Le coût du retrait est visible : le glissement de « Voir plus » deviendrait un saut, et **rien ne
+  peut être vérifié sur appareil dans cette session**. La barre de qualité visuelle du projet ne
+  tolère pas un mouvement dégradé livré à l'aveugle.
+- `itemLayoutAnimation` n'était de toute façon pas l'alternative : la liste est un `FlatList` nu sur
+  Android depuis le chantier SCROLL, et un `FlatList` nu ne l'accepte pas.
+
+À rouvrir seulement avec un appareil sous les yeux, et à mesurer avant de trancher.
+
+⚠️ À vérifier à cette occasion : `layout` sur une ligne + `removeClippedSubviews` sur Android est une
+combinaison connue pour produire des scintillements. Elle **préexiste** à ce chantier (ce n'est pas
+une régression), mais elle n'a jamais été observée sur appareil.
