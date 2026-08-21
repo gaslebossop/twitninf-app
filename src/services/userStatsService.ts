@@ -39,6 +39,20 @@ export interface DailyStats {
   shares: number;
   followers_gained: number;
   profile_views: number;
+  /**
+   * Temps de lecture reellement chronometre sur les publications de ce compte
+   * ce jour-la, en millisecondes. Servi par `/daily` depuis 2026-08-21 : il
+   * n'existait avant qu'agrege A LA SEMAINE dans le pot createur, ce qui
+   * interdisait toute courbe quotidienne.
+   */
+  dwell_ms: number;
+  /**
+   * Nombre de mesures de lecture du jour. Distingue « personne n'a lu » de
+   * « personne n'etait instrumente » : sans lui, un zero est ambigu.
+   */
+  dwell_events: number;
+  /** Ce que la plateforme a verse ce jour-la, dans la monnaie de plateforme. */
+  earnings: number;
 }
 
 export interface ActivityData {
@@ -124,6 +138,8 @@ export interface UserStatsResponse {
   activityData: ActivityData[];
   engagementBreakdown: EngagementBreakdown;
   deepInsights: DeepInsights | null;
+  /** Monnaie de plateforme, resolue en base — jamais codee en dur cote app. */
+  currency: { id: string; symbol: string; name: string } | null;
   weeklyGrowth: {
     week: string;
     followers: number;
@@ -224,7 +240,10 @@ class UserStatsService {
       const deepResponse = deepResult.status === 'fulfilled' ? deepResult.value : null;
 
       const overviewData = this.getSafeData<{ analytics?: UserAnalytics }>(overviewResponse);
-      const dailyData = this.getSafeData<{ dailyStats?: DailyStats[] }>(dailyResponse);
+      const dailyData = this.getSafeData<{
+        dailyStats?: DailyStats[];
+        currency?: { id: string; symbol: string; name: string } | null;
+      }>(dailyResponse);
       const topTweetsData = this.getSafeData<{ topTweets?: TweetAnalytics[] }>(topTweetsResponse);
       const activityDataRes = this.getSafeData<{ activityData?: ActivityData[] }>(activityResponse);
       const engagementData = this.getSafeData<{ engagementBreakdown?: EngagementBreakdown }>(engagementResponse);
@@ -269,6 +288,7 @@ class UserStatsService {
         activityData,
         engagementBreakdown,
         deepInsights,
+        currency: dailyData?.currency || null,
         // Aucun endpoint ne calcule encore une vraie croissance hebdomadaire
         // (voir `analytics.reachGrowth`/`engagementGrowth` toujours à 0 côté
         // API) : renvoyer des données simulées ICI les ferait passer pour
@@ -347,220 +367,13 @@ class UserStatsService {
     }
   }
 
-  /**
-   * Données simulées pour les tests et le développement
-   */
-  private getMockUserStats(timeframe: string): UserStatsResponse {
-    const daysCount = timeframe === '7d' ? 7 : timeframe === '30d' ? 30 : timeframe === '90d' ? 90 : 365;
-    
-    return {
-      analytics: {
-        totalTweets: 1247,
-        totalViews: 567890,
-        totalLikes: 23456,
-        totalRetweets: 4567,
-        totalComments: 3456,
-        totalShares: 1234,
-        followerCount: 12567,
-        followingCount: 456,
-        profileViews: 8902,
-        engagementRate: 4.2,
-        averageViewsPerTweet: 455,
-        reachGrowth: 12.5,
-        engagementGrowth: 8.3,
-      },
-      dailyStats: this.generateMockDailyStats(daysCount),
-      topTweets: this.getMockTopTweets(),
-      activityData: this.getMockActivityData(),
-      engagementBreakdown: {
-        likes: 23456,
-        retweets: 4567,
-        comments: 3456,
-        shares: 1234,
-        total: 32713,
-      },
-      deepInsights: null,
-      weeklyGrowth: this.getMockWeeklyGrowth(),
-    };
-  }
-
-  private generateMockDailyStats(days: number): DailyStats[] {
-    const stats: DailyStats[] = [];
-    
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      
-      const baseActivity = Math.sin((days - i) / days * Math.PI) * 50 + 50;
-      
-      stats.push({
-        date: date.toISOString().split('T')[0],
-        tweets: Math.floor(Math.random() * 8) + 2,
-        views: Math.floor(baseActivity * 20) + Math.floor(Math.random() * 500) + 200,
-        likes: Math.floor(baseActivity * 2) + Math.floor(Math.random() * 50) + 10,
-        retweets: Math.floor(baseActivity * 0.4) + Math.floor(Math.random() * 15) + 2,
-        comments: Math.floor(baseActivity * 0.6) + Math.floor(Math.random() * 20) + 5,
-        shares: Math.floor(baseActivity * 0.2) + Math.floor(Math.random() * 8) + 1,
-        followers_gained: Math.floor(Math.random() * 15) + 1,
-        profile_views: Math.floor(baseActivity * 3) + Math.floor(Math.random() * 100) + 20,
-      });
-    }
-    
-    return stats;
-  }
-
-  private getMockTopTweets(): TweetAnalytics[] {
-    return [
-      {
-        id: '1',
-        content: 'Premier tweet viral avec beaucoup d\'engagement sur les nouvelles technologies et l\'IA...',
-        views: 25678,
-        likes: 1234,
-        retweets: 234,
-        comments: 123,
-        shares: 67,
-        engagement_rate: 6.8,
-        created_at: '2024-01-15T10:30:00Z',
-        performance_score: 94,
-      },
-      {
-        id: '2',
-        content: 'Deuxième tweet populaire sur les tendances tech et l\'avenir du développement...',
-        views: 18456,
-        likes: 987,
-        retweets: 156,
-        comments: 89,
-        shares: 45,
-        engagement_rate: 6.2,
-        created_at: '2024-01-12T14:20:00Z',
-        performance_score: 87,
-      },
-      {
-        id: '3',
-        content: 'Troisième tweet avec une belle discussion sur l\'innovation et les startups...',
-        views: 12345,
-        likes: 654,
-        retweets: 98,
-        comments: 145,
-        shares: 32,
-        engagement_rate: 5.4,
-        created_at: '2024-01-08T16:45:00Z',
-        performance_score: 81,
-      },
-      {
-        id: '4',
-        content: 'Quatrième tweet sur les bonnes pratiques en développement mobile...',
-        views: 9876,
-        likes: 432,
-        retweets: 67,
-        comments: 78,
-        shares: 23,
-        engagement_rate: 4.9,
-        created_at: '2024-01-05T11:15:00Z',
-        performance_score: 76,
-      },
-      {
-        id: '5',
-        content: 'Cinquième tweet partageant des insights sur l\'UX/UI design...',
-        views: 8901,
-        likes: 345,
-        retweets: 45,
-        comments: 56,
-        shares: 19,
-        engagement_rate: 4.3,
-        created_at: '2024-01-02T09:30:00Z',
-        performance_score: 72,
-      },
-    ];
-  }
-
-  private getMockActivityData(): ActivityData[] {
-    const hours: ActivityData[] = [];
-    
-    for (let hour = 0; hour < 24; hour++) {
-      let activityScore = 20;
-      
-      // Pics d'activité aux heures typiques
-      if (hour >= 8 && hour <= 10) activityScore += 40;
-      if (hour >= 12 && hour <= 14) activityScore += 50;
-      if (hour >= 17 && hour <= 20) activityScore += 60;
-      if (hour >= 21 && hour <= 23) activityScore += 30;
-      
-      // Ajouter de la variabilité
-      activityScore += Math.random() * 20;
-      
-      hours.push({
-        hour,
-        tweet_count: Math.floor(activityScore / 10),
-        engagement_count: Math.floor(activityScore / 5),
-        activity_score: Math.floor(activityScore),
-      });
-    }
-    
-    return hours;
-  }
-
-  private getMockWeeklyGrowth() {
-    const weeks = [];
-    
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - (i * 7));
-      
-      const weekNumber = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-      
-      weeks.push({
-        week: `S${weekNumber}`,
-        followers: Math.floor(Math.random() * 200) + 50,
-        engagement: Math.floor(Math.random() * 5000) + 1000,
-        reach: Math.floor(Math.random() * 10000) + 2000,
-      });
-    }
-    
-    return weeks;
-  }
-
-  private getMockGrowthData() {
-    return {
-      followers: {
-        current: 12567,
-        previous: 11234,
-        growth: 11.87,
-        trend: 'up'
-      },
-      engagement: {
-        current: 4.2,
-        previous: 3.8,
-        growth: 10.53,
-        trend: 'up'
-      },
-      reach: {
-        current: 567890,
-        previous: 498234,
-        growth: 13.98,
-        trend: 'up'
-      }
-    };
-  }
-
-  private getMockOptimalTimes() {
-    return {
-      bestHours: [9, 12, 14, 18, 20],
-      bestDays: ['monday', 'tuesday', 'wednesday', 'friday'],
-      engagement_by_hour: {
-        9: 85,
-        12: 92,
-        14: 78,
-        18: 96,
-        20: 88
-      },
-      recommendations: [
-        'Postez entre 12h et 13h pour un engagement maximal',
-        'Évitez les heures tardives (après 22h)',
-        'Les lundis et mardis sont vos jours les plus performants'
-      ]
-    };
-  }
+  // Un bloc d'environ 190 lignes de generateurs de donnees simulees vivait ici
+  // (`getMockUserStats` et ses huit auxiliaires). Il n'etait appele de nulle
+  // part : `getUserStats` leve plutot que de retomber dessus, et le meme
+  // fichier explique deja pourquoi — « renvoyer des donnees simulees ICI les
+  // ferait passer pour reelles aux yeux de l'ecran de stats ». Retire avec la
+  // refonte de l'ecran de statistiques du 2026-08-21, ou il obligeait a
+  // inventer un `dwell_ms` et un `earnings` de plus.
 }
 
 export const userStatsService = new UserStatsService();

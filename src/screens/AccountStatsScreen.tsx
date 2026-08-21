@@ -20,10 +20,13 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
       <View style={styles.container}>
         <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.bg} />
 
+        {/* Le sous-titre nomme le sujet de la page depuis la refonte : ce
+            n'est pas un tableau de bord d'activité, c'est le temps que des
+            gens ont passé à lire ce compte. */}
         <AppHeader
           navigation={navigation}
           title="Statistiques"
-          subtitle="Votre activité et vos signaux privés"
+          subtitle="Le temps qu'on passe à te lire"
         />
 
         {user?.id ? (
@@ -34,6 +37,9 @@ const AccountStatsScreen: React.FC<AccountStatsScreenProps> = ({ navigation }) =
               following: (user as any)?.stats?.following,
               tweets: (user as any)?.stats?.tweets,
             }}
+            // L'analyse prédictive a son propre écran ; elle occupait ici huit
+            // blocs qui ne disaient rien de plus.
+            onOpenPrediction={() => navigation.navigate('PredictiveAnalytics')}
           />
         ) : (
           <View style={[styles.emptyState, { marginTop: emptyTop }]} accessibilityRole="alert">

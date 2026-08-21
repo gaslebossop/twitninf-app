@@ -45,6 +45,13 @@ export interface PeriodProjection {
   quality: number;
   qualifiedViews: number;
   rawViews: number;
+  /**
+   * Vues sur lesquelles la lecture a pu être chronométrée — le dénominateur du
+   * taux d'attention, et non `qualifiedViews`. Le serveur l'envoyait déjà
+   * (`creatorPool/index.js`), le type l'ignorait : sans lui, `rates.attention`
+   * (des millisecondes PAR VUE) ne peut pas être reconverti en temps total lu.
+   */
+  measurableViews: number;
   distinctViewers: number;
   hasRealDwell: boolean;
   attentionFactor: number;
