@@ -721,7 +721,19 @@ export default function FeedGutterScreen() {
 
         if (response.data.pagination) {
           setHasMore(response.data.pagination.hasMore);
-          setOffset(currentOffset + normalizedTweets.length);
+          /**
+           * Le curseur avance de ce que le SERVEUR a servi, pas de ce qu'on a
+           * gardé.
+           *
+           * Il avançait du nombre de tweets retenus après filtrage et
+           * déduplication. Chaque entrée écartée décalait donc le curseur en
+           * arrière du serveur, et la page suivante redemandait ce qu'on
+           * venait de jeter — pour le jeter encore. Une page entièrement
+           * invalide ne faisait pas avancer le curseur du tout : la même
+           * requête repartait indéfiniment à chaque arrivée en bas de liste,
+           * sans qu'une seule ligne ne s'ajoute.
+           */
+          setOffset(currentOffset + response.data.recommendations.length);
           setTotalTweets(response.data.pagination.total);
           setTotalPages((response.data.pagination as any).totalPages || Math.ceil(response.data.pagination.total / 10));
           if (!refresh) setCurrentPage((response.data.pagination as any).currentPage || Math.floor(currentOffset / 10) + 1);
@@ -870,7 +882,19 @@ export default function FeedGutterScreen() {
 
         if (response.data.pagination) {
           setHasMore(response.data.pagination.hasMore);
-          setOffset(currentOffset + tweets.length);
+          /**
+           * Le curseur avance de ce que le SERVEUR a servi, pas de ce qu'on a
+           * gardé.
+           *
+           * Il avançait du nombre de tweets retenus après filtrage et
+           * déduplication. Chaque entrée écartée décalait donc le curseur en
+           * arrière du serveur, et la page suivante redemandait ce qu'on
+           * venait de jeter — pour le jeter encore. Une page entièrement
+           * invalide ne faisait pas avancer le curseur du tout : la même
+           * requête repartait indéfiniment à chaque arrivée en bas de liste,
+           * sans qu'une seule ligne ne s'ajoute.
+           */
+          setOffset(currentOffset + response.data.recommendations.length);
           setTotalTweets(response.data.pagination.total);
         }
 
