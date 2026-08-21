@@ -3,9 +3,7 @@ import { Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   useAnimatedScrollHandler,
-  useAnimatedReaction,
   useAnimatedRef,
-  useScrollViewOffset,
   useSharedValue,
   runOnJS,
 } from 'react-native-reanimated';
@@ -101,26 +99,35 @@ export function usePullRefreshLogo(
   }, []);
 
   /**
-   * ⚠️ `listRef` EST OBLIGATOIRE : à poser en `ref=` sur la liste animée de
-   * chaque surface. Sans lui, `pull` reste à zéro et le logo ne sort jamais.
+   * `listRef` : à poser en `ref=` sur la liste animée de chaque surface.
    *
-   * ── Pourquoi l'offset n'est plus lu depuis `onScroll` ───────────────────
-   * `pull` était alimenté par le worklet `onScroll` ci-dessous. Ça marche sur
-   * un `ScrollView` nu (Explorer) : Reanimated attache alors son gestionnaire
-   * directement à la vue native, et le worklet tourne sur le thread UI.
+   * ── ⚠️ CE QUE CETTE REF NE FAIT PAS (encore) ────────────────────────────
+   * Ce bloc a longtemps affirmé que `pull` était alimenté par
+   * `useScrollViewOffset(listRef)`, donc en dehors du chemin d'événement de
+   * la liste. C'ÉTAIT FAUX : le diagnostic avait été écrit, les deux hooks
+   * (`useScrollViewOffset`, `useAnimatedReaction`) importés — et le code
+   * jamais changé. `pull` est bel et bien écrit par le worklet `onScroll`
+   * ci-dessous, comme avant. La ref, elle, ne sert aujourd'hui à rien
+   * d'autre qu'à être disponible pour ce correctif.
    *
-   * Sur une `FlatList`, non : `VirtualizedList` a besoin de `onScroll` pour
-   * son propre travail (fenêtrage, visibilité) et COMPOSE le sien avec celui
-   * qu'on lui passe. Reanimated ne reçoit donc plus son objet-gestionnaire
-   * mais une fonction JS ordinaire, et retombe sur le THREAD JS. Le
-   * défilement, lui, reste natif donc parfaitement fluide — d'où le symptôme
-   * exact observé sur « Pour toi » : la liste suit le doigt sans un accroc
-   * pendant que le logo, lui, saccade. Les deux surfaces qui saccadaient
-   * (fil, profil) sont précisément les deux `FlatList`.
+   * ── Le diagnostic, lui, reste valable ───────────────────────────────────
+   * Sur un `ScrollView` nu (Explorer), Reanimated attache son gestionnaire
+   * directement à la vue native et le worklet tourne sur le thread UI. Sur
+   * une `FlatList`, non : `VirtualizedList` a besoin de `onScroll` pour son
+   * propre travail (fenêtrage, visibilité) et COMPOSE le sien avec celui
+   * qu'on lui passe ; Reanimated ne reçoit plus son objet-gestionnaire mais
+   * une fonction JS ordinaire et retombe sur le THREAD JS. Le défilement
+   * reste natif, donc fluide, pendant que le logo saccade — le symptôme
+   * observé sur « Pour toi » et sur le profil, les deux `FlatList`, et pas
+   * sur Explorer.
    *
-   * `useScrollViewOffset` ne passe par aucune prop d'événement : il lit
-   * l'offset de la vue native sur le thread UI. Le chemin de la `FlatList`
-   * est donc contourné, pas contourné à moitié.
+   * ── À FAIRE ─────────────────────────────────────────────────────────────
+   * Lire l'offset par `useScrollViewOffset(listRef)` et alimenter `pull`
+   * depuis un `useAnimatedReaction`, en faisant lire à `onEndDrag` la MÊME
+   * valeur (sinon les deux chemins peuvent se désaccorder d'une image).
+   * Toutes les surfaces posent déjà `ref={listRef}`, il n'y a donc rien à
+   * changer chez elles — mais le changement se voit uniquement sur appareil,
+   * et il touche cinq écrans : à valider en main avant de le poser.
    */
   const listRef = useAnimatedRef<any>();
 
