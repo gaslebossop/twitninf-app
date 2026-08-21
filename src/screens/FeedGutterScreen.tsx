@@ -283,6 +283,13 @@ export default function FeedGutterScreen() {
    * réseau annulerait le premier (create puis destroy en quelques ms) au lieu
    * de le confirmer — déjà arrivé en pratique. */
   const bookmarkInFlightRef = useRef<Set<string>>(new Set());
+  /**
+   * Miroir en ref de `bookmarkedTweets` : le menu « … » est lu depuis un
+   * `useCallback` stable, qui ne verrait jamais l'état à jour. Voir
+   * `handleOptionsMenu`.
+   */
+  const bookmarkedRef = useRef<Record<string, boolean>>({});
+  bookmarkedRef.current = bookmarkedTweets;
   /** Tweet dont on est en train de fixer le prix, `null` quand la feuille est fermée. */
   const [paywallTarget, setPaywallTarget] = useState<string | null>(null);
   // Miroir en ref : permet aux handlers d'être stables (donc mémoïsables et
@@ -1435,8 +1442,26 @@ export default function FeedGutterScreen() {
     });
   };
 
+  /**
+   * ⚠️ `tweetsRef`/`bookmarkedRef` et PAS le state — même piège que
+   * `handleReport` juste au-dessus, en plus grave.
+   *
+   * Cette fonction est ordinaire (recréée à chaque rendu), mais elle est
+   * appelée depuis `handleRowAction`, qui est un `useCallback` stable : il
+   * capture donc la version de CE rendu-là, une fois pour toutes. Ses
+   * dépendances ne changent qu'au montage et au changement d'onglet — deux
+   * moments où la liste est vide ou périmée.
+   *
+   * Conséquence vue à l'écran : `tweet` restait `undefined`, donc `isOwnTweet`
+   * était faux sur SES PROPRES tweets, et le menu proposait « Bloquer cet
+   * utilisateur », « Signaler » et « Ignorer ce tweet » à quelqu'un sur son
+   * propre message — au lieu de « Modifier », « Rendre payant » et
+   * « Supprimer ». Même cause pour l'état de favori, qui affichait
+   * « Ajouter aux favoris » sur un tweet déjà en favori.
+   */
   const handleOptionsMenu = (tweetId: string) => {
-    const tweet = tweets.find((t) => t.id === tweetId);
+    const tweet = tweetsRef.current.find((t) => t.id === tweetId);
+    const bookmarked = bookmarkedRef.current;
     const isOwnTweet = !!(user?.id && tweet?.author?.id === user.id);
 
     // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
@@ -1479,8 +1504,8 @@ export default function FeedGutterScreen() {
         ]
       : [
           {
-            label: bookmarkedTweets[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
-            icon: bookmarkedTweets[tweetId] ? 'bookmark' : 'bookmark-outline',
+            label: bookmarked[tweetId] ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: bookmarked[tweetId] ? 'bookmark' : 'bookmark-outline',
             onPress: () => handleBookmark(tweetId),
           },
           {
@@ -1649,7 +1674,7 @@ export default function FeedGutterScreen() {
         // pour ce qui est en fait une reponse (voir TweetDetailScreen).
         (navigation as any).navigate('TweetDetail', {
           tweetId,
-          isThread: !!(tweets.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
+          isThread: !!(tweetsRef.current.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
         });
         break;
       }
