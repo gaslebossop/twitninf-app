@@ -45,6 +45,8 @@ import feedback from '../../utils/feedback';
 import { useFlag } from '../../contexts/FeatureFlagContext';
 import { FLAGS } from '../../config/featureFlagKeys';
 import { sameAuthor } from '../../utils/sameAuthor';
+import { hasRenderableContent } from '../../utils/tweetMedia';
+
 
 /** Anneau « déjà vu » : gris neutre, comme dans la barre de stories. */
 const SEEN_STORY_RING = ['#3A3A3A', '#3A3A3A'] as const;
@@ -392,7 +394,11 @@ function TweetRow({
     };
   }, []);
 
-  if (!tweet?.id || !tweet.content) return null;
+  // Garde de rendu : `tweet.content` truthy jetait ici tout retweet pur (son
+  // texte vit sur `originalTweet`) et tout tweet publie en image seule — alors
+  // meme que tout le reste de ce composant sait deja les rendre
+  // (`sourceContent`, `displayMediaUrls`). Voir `utils/feed.ts`.
+  if (!hasRenderableContent(tweet)) return null;
 
   return (
     <View>
@@ -484,7 +490,11 @@ function TweetRow({
               <Text style={S.timestamp}>{fmtDate(displayCreatedAt || new Date().toISOString())}</Text>
             </View>
 
-            {isScrambled ? (
+            {/* Un tweet publie en image seule, ou un retweet dont l'original n'a
+                pas de legende, n'a pas de texte a rendre. Sans cette garde, la
+                ligne dessinait un bloc de texte vide : un interligne fantome entre
+                l'en-tete et l'image, la ou il ne doit rien y avoir. */}
+            {!!displayContent && (isScrambled ? (
               <LockedText
                 text={displayContent}
                 style={S.tweetText}
@@ -506,10 +516,10 @@ function TweetRow({
                   contextData={{ ...contextData, position: index, author_id: displayAuthor?.id }}
                 />
               </TranslationReveal>
-            )}
+            ))}
 
             {/* Mesure de troncature : une seule fois par ligne, en local. */}
-            {isTruncated === undefined && (
+            {!!displayContent && isTruncated === undefined && (
               <Text
                 style={[S.tweetText, S.hiddenMeasure]}
                 onTextLayout={handleTextLayout}

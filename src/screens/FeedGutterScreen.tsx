@@ -106,7 +106,7 @@ import FeedItemEntrance from '../components/feed/FeedItemEntrance';
 import ExploreGrid, { type CardRect } from '../components/feed/ExploreGrid';
 import ExploreImmersive from '../components/feed/ExploreImmersive';
 import feedback from '../utils/feedback';
-import { displayContentOf, splitTweetMedia } from '../utils/tweetMedia';
+import { displayContentOf, splitTweetMedia, hasRenderableContent } from '../utils/tweetMedia';
 import { useOptimizedViewTracking } from '../hooks/useOptimizedViewTracking';
 import { useDwellTracking } from '../hooks/useDwellTracking';
 import StoriesTray from '../components/StoriesTray';
@@ -1486,7 +1486,11 @@ export default function FeedGutterScreen() {
 
   // Mémoïsé : ce filtre était recalculé à chaque rendu, y compris pour un like.
   const visibleTweets: Tweet[] = useMemo(
-    () => withoutOrphanReplies(tweets.filter(tweet => tweet && tweet.id && tweet.content)),
+    // `hasRenderableContent` et non `tweet.content` : ce test-là jetait en
+    // silence tout retweet pur, tout tweet en image seule et tout compte
+    // promu — voir `utils/feed.ts` pour ce que ça coûtait, jusque dans
+    // l'apprentissage du moteur.
+    () => withoutOrphanReplies(tweets.filter(hasRenderableContent)),
     [tweets]
   );
 
