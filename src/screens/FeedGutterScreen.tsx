@@ -169,6 +169,15 @@ type FeedTab = typeof TAB_ORDER[number];
 const tabIndexOf = (tab: FeedTab): number => TAB_ORDER.indexOf(tab);
 
 /**
+ * Tweets vus de plus après quoi une question restée sans réponse est
+ * considérée comme ignorée, et refermée.
+ *
+ * Assez pour que le lecteur soit vraiment passé à autre chose ; assez peu
+ * pour que le plafond de deux questions par session reste atteignable.
+ */
+const ASK_ABANDON_AFTER = 8;
+
+/**
  * Fusionne une nouvelle page de tweets dans la liste existante en écartant les
  * id déjà présents.
  *
@@ -1687,14 +1696,42 @@ export default function FeedGutterScreen() {
    */
   const algoCheckRef = useRef(initialAlgoCheckState());
   const askAtIdRef = useRef<string | null>(null);
+  /** Position de la question en cours — nécessaire pour la refermer sans réponse. */
+  const askAtIndexRef = useRef(0);
+  /** Nombre d'impressions au moment où la question a été posée. */
+  const askAtImpressionsRef = useRef(0);
   const [askAtId, setAskAtId] = useState<string | null>(null);
 
-  /** Referme la question des deux côtés (la ref pour la lecture, le state pour le rendu). */
-  const closeAlgoCheck = useCallback((index: number, tweetId: string) => {
+  /**
+   * Enregistre la question SANS la retirer de l'écran.
+   *
+   * `afterAsk` compte la question posée, remet la série de silence à zéro et
+   * marque ce tweet comme déjà soumis. Idempotent : appelé deux fois pour le
+   * même tweet (une fois à la réponse, une fois à la fermeture), il ne
+   * doublerait pas le compteur de la session.
+   */
+  const recordAlgoCheck = useCallback((index: number, tweetId: string) => {
+    if (algoCheckRef.current.answered.has(tweetId)) return;
     algoCheckRef.current = afterAsk(algoCheckRef.current, index, tweetId);
-    askAtIdRef.current = null;
-    setAskAtId(null);
   }, []);
+
+  /**
+   * Retire la question de l'écran.
+   *
+   * ── Pourquoi ce n'est plus appelé depuis `onAnswer` ──
+   * Ça l'était, et ça rendait invisible tout ce que la carte fait après la
+   * réponse : elle affiche un reçu (« Noté. Tu en verras plus. ») pendant
+   * ~900 ms, puis s'efface. En fermant depuis `onAnswer`, l'écran démontait
+   * la carte dans la même image que l'appui — le reçu n'a jamais pu
+   * s'afficher, et le fondu de sortie n'a jamais pu jouer. C'est la carte qui
+   * appelle `onDismiss`, quand elle a fini de le faire.
+   */
+  const closeAlgoCheck = useCallback((index: number, tweetId: string) => {
+    recordAlgoCheck(index, tweetId);
+    askAtIdRef.current = null;
+    askAtIndexRef.current = 0;
+    setAskAtId(null);
+  }, [recordAlgoCheck]);
 
   /**
    * Temps de lecture reellement passe sur chaque tweet du fil.
@@ -1832,18 +1869,43 @@ export default function FeedGutterScreen() {
         // sur l'index de rendu, qui compte aussi ce qui n'atteint jamais
         // l'écran.
         algoCheckRef.current = afterSilentView(algoCheckRef.current);
-        if (askAtIdRef.current) return;
+        if (askAtIdRef.current) {
+          /**
+           * Une question laissée sans réponse ne doit pas bloquer la session.
+           *
+           * Rien ne refermait la question quand le lecteur passait simplement
+           * son chemin : sa ligne finit par être démontée par la `FlatList`,
+           * `onDismiss` ne part donc jamais, et cette garde-ci bloquait
+           * ensuite TOUTE nouvelle question jusqu'à la fin de la session —
+           * alors que le plafond est de deux.
+           *
+           * Le compteur d'impressions et non la visibilité : la question est
+           * rendue SOUS son tweet, donc elle allonge l'élément de liste et
+           * peut le faire tomber sous le seuil de visibilité au moment même
+           * où elle apparaît. Une mesure fondée là-dessus la refermerait dans
+           * l'image qui la montre.
+           */
+          if (
+            feedImpressionsRef.current.size - askAtImpressionsRef.current >=
+            ASK_ABANDON_AFTER
+          ) {
+            closeAlgoCheck(askAtIndexRef.current, askAtIdRef.current);
+          }
+          return;
+        }
 
         const seen = tweetsRef.current.find((t) => t.id === tweetId);
         const confidence = Number((seen as any)?._recommendation_confidence) || 0;
 
         if (shouldAskAt({ index: position, tweetId, state: algoCheckRef.current, confidence })) {
           askAtIdRef.current = tweetId;
+          askAtIndexRef.current = position;
+          askAtImpressionsRef.current = feedImpressionsRef.current.size;
           setAskAtId(tweetId);
         }
       },
     };
-  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm, signalsFor]);
+  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm, signalsFor, closeAlgoCheck]);
 
   /**
    * Pastille de la cloche.
@@ -1963,7 +2025,10 @@ export default function FeedGutterScreen() {
                 position: index,
                 algorithm: currentAlgorithm,
               });
-              closeAlgoCheck(index, item.id);
+              // On ENREGISTRE, on ne ferme pas : la carte affiche son reçu
+              // puis appelle `onDismiss` elle-même. Fermer ici démontait la
+              // carte dans la même image que l'appui.
+              recordAlgoCheck(index, item.id);
             }}
             onDismiss={() => closeAlgoCheck(index, item.id)}
           />
@@ -1971,7 +2036,7 @@ export default function FeedGutterScreen() {
         </>
       );
     },
-    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen, gutterAnchor, algoAnchor]
+    [visibleTweets, handleRowAction, rowContext, storyUserIds, unseenStoryUserIds, askAtId, trackCustomAction, closeAlgoCheck, recordAlgoCheck, currentAlgorithm, navigation, entranceGeneration, entranceSeen, gutterAnchor, algoAnchor]
   );
 
   // Une publicité de tweet garde le VRAI id du tweet (voir `dedupeKey`

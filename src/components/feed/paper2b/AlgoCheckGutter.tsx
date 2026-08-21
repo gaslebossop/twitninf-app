@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -76,9 +76,37 @@ function AlgoCheckGutter({ onAnswer, onDismiss }: AlgoCheckGutterProps) {
   const [answered, setAnswered] = useState<null | boolean>(null);
   const fade = useRef(new Animated.Value(1)).current;
 
+  /**
+   * Fermeture, garantie UNE FOIS et UNE SEULE.
+   *
+   * Deux chemins y mènent : la fin du fondu de sortie, et le démontage. Le
+   * second est indispensable — la carte vit dans le `renderItem` d'une
+   * `FlatList`, donc elle est démontée dès que sa ligne sort de la fenêtre de
+   * rendu. Sans lui, quelqu'un qui répond puis fait défiler tout de suite
+   * emporte la carte avant la fin de l'animation : `onDismiss` ne part jamais,
+   * l'écran garde éternellement sa question « ouverte », et plus aucune autre
+   * ne peut être posée de la session.
+   *
+   * La ref sur `onDismiss` sert au chemin de démontage : le nettoyage d'effet
+   * ne doit pas rappeler une fermeture capturée au premier rendu.
+   */
+  const dismissedRef = useRef(false);
+  const answeredRef = useRef(false);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  const dismissOnce = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    onDismissRef.current();
+  }, []);
+
+  useEffect(() => () => { if (answeredRef.current) dismissOnce(); }, [dismissOnce]);
+
   const answer = useCallback(
     (more: boolean) => {
       if (answered !== null) return;
+      answeredRef.current = true;
       setAnswered(more);
       feedback.success();
       onAnswer(more);
@@ -94,10 +122,10 @@ function AlgoCheckGutter({ onAnswer, onDismiss }: AlgoCheckGutterProps) {
           useNativeDriver: true,
         }),
       ]).start(({ finished }) => {
-        if (finished) onDismiss();
+        if (finished) dismissOnce();
       });
     },
-    [answered, fade, onAnswer, onDismiss],
+    [answered, fade, onAnswer, dismissOnce],
   );
 
   return (
