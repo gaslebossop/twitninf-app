@@ -58,7 +58,7 @@
  * gouttière que ce qui se touche.
  */
 
-import React, { memo, useCallback, useRef, useState } from 'react';
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -105,6 +105,12 @@ import { useFlag } from '../../../contexts/FeatureFlagContext';
 import { FLAGS } from '../../../config/featureFlagKeys';
 import { sameAuthor } from '../../../utils/sameAuthor';
 import { hasRenderableContent } from '../../../utils/tweetMedia';
+import {
+  canSkipTruncationMeasure,
+  formatCompactCount as fmtCount,
+  formatRelativeDate as fmtDate,
+  TRUNCATION_LINES,
+} from './tweetRowText';
 
 import type { TweetRowProps } from '../TweetRow';
 
@@ -135,6 +141,17 @@ const SEEN_STORY_RING = ['#3A3A3A', '#3A3A3A'] as const;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+/**
+ * Transition de mise en page de la ligne — construite UNE FOIS, au niveau du
+ * module.
+ *
+ * Écrite en ligne (`layout={LinearTransition.duration(180)}`), elle fabriquait
+ * un descripteur d'animation neuf à chaque rendu de chaque ligne montée. La
+ * documentation de Reanimated est explicite là-dessus : « Define animation
+ * builders outside of components or wrap with `useMemo` ».
+ */
+const ROW_LAYOUT = LinearTransition.duration(180);
+
 
 /**
  * Rembourrages de la ligne, sortis en constantes parce que le RAIL les
@@ -151,25 +168,367 @@ const ROW_PAD_TOP_REPLY = ps(2);
 /** Le rail reste un vrai filet d'un pixel : le mettre à l'échelle le rendrait flou. */
 const RAIL_W = 1;
 
-function fmtCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
-  // Zéro rend une chaîne VIDE, pas « 0 » : une colonne de zéros sous chaque
-  // cœur est du bruit. La hauteur de ligne est fixe, donc la gouttière ne
-  // bouge pas pour autant.
-  return String(n || '');
-}
-
-function fmtDate(d: string): string {
-  const diff = Date.now() - new Date(d).getTime();
-  if (diff < 60000) return `${Math.floor(diff / 1000)} s`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} min`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} h`;
-  return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-}
+// `fmtCount` et `fmtDate` vivent désormais dans `./tweetRowText` : ce sont des
+// fonctions pures, donc testées (`tests/tweet-row-text.test.js`), et `fmtDate`
+// passe par `Intl` — l'appelant la mémoïse plutôt que de la rappeler à chaque
+// rendu.
 
 const DOUBLE_TAP_MS = 280;
 const VIDEO_URL_RE = /\.(mp4|mov|m3u8|webm)(\?|$)/i;
+
+interface RowContentProps {
+  tweetId: string;
+  isAd: boolean;
+  isReply: boolean;
+  depth: number;
+  isRetweet: boolean;
+  retweeterUsername?: string;
+  replyToName?: string;
+  displayAuthor: any;
+  hasActiveStory: boolean;
+  storySeen: boolean;
+  badgeTint?: string;
+  paperCustomization?: ProfileCustomization;
+  timeLabel: string;
+  displayContent: string;
+  displayMentions?: string[];
+  mentionContext: any;
+  isScrambled: boolean;
+  isContentLocked: boolean;
+  contentLock: any;
+  translationId: string;
+  translationEnabled: boolean;
+  activeTranslation: any;
+  onSelectTranslation: (value: any) => void;
+  displayMediaUrls: string[];
+  videoUrl: string | null;
+  videoThumbnailUrl?: string;
+  displayAudioUrl: string | null;
+  displayAudioDuration: number | null;
+  displaySpotifyTrack: any;
+  isContest: boolean;
+  isQuote: boolean;
+  originalTweet: any;
+  replyCount: number;
+  onProfilePress: () => void;
+  onReplyPress: () => void;
+  onBeforeOpen: () => void;
+  onVideoDuration: (ms: number) => void;
+  onUnlocked: () => void;
+  onOpenContest: (contestId: string) => void;
+  onOpenQuote: () => void;
+}
+
+/**
+ * La colonne de CONTENU d'une ligne, isolée derrière son propre `memo`.
+ *
+ * ── Pourquoi ce découpage ────────────────────────────────────────────────
+ * Aimer un tweet change trois booléens et deux compteurs, tous dans la
+ * GOUTTIÈRE. Tant que la ligne était un seul composant, chaque appui sur le
+ * cœur reconstruisait aussi l'en-tête d'auteur (dont `PremiumDisplayName`, qui
+ * refait ses styles), le corps du tweet, la grille d'images, la citation et le
+ * pied — pour un pixel qui ne bouge pas. C'est le geste le plus fréquent du
+ * fil, et le plus cher à rendre.
+ *
+ * Le `memo` par défaut suffit : toutes les propriétés passées ici sont soit
+ * des primitives, soit des objets qui viennent tels quels du tweet, soit des
+ * fonctions stables (`useCallback` côté ligne). Rien n'est reconstruit à
+ * chaque rendu — c'est la condition pour que ce `memo` serve à quelque chose.
+ *
+ * L'état de troncature vit ICI, et pas dans la ligne : il ne concerne que
+ * cette colonne, et le laisser au-dessus ferait re-rendre la gouttière à la
+ * mesure du texte.
+ */
+const RowContent = memo(function RowContent({
+  tweetId,
+  isAd,
+  isReply,
+  depth,
+  isRetweet,
+  retweeterUsername,
+  replyToName,
+  displayAuthor,
+  hasActiveStory,
+  storySeen,
+  badgeTint,
+  paperCustomization,
+  timeLabel,
+  displayContent,
+  displayMentions,
+  mentionContext,
+  isScrambled,
+  isContentLocked,
+  contentLock,
+  translationId,
+  translationEnabled,
+  activeTranslation,
+  onSelectTranslation,
+  displayMediaUrls,
+  videoUrl,
+  videoThumbnailUrl,
+  displayAudioUrl,
+  displayAudioDuration,
+  displaySpotifyTrack,
+  isContest,
+  isQuote,
+  originalTweet,
+  replyCount,
+  onProfilePress,
+  onReplyPress,
+  onBeforeOpen,
+  onVideoDuration,
+  onUnlocked,
+  onOpenContest,
+  onOpenQuote,
+}: RowContentProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [measured, setMeasured] = useState<boolean | undefined>(undefined);
+
+  /**
+   * Un texte trop court pour tenir en plus de quatre lignes n'a rien à
+   * mesurer (voir `canSkipTruncationMeasure`) : on lui épargne la seconde
+   * mise en forme hors écran ET le rendu supplémentaire qu'elle provoque.
+   */
+  const needsMeasure = !canSkipTruncationMeasure(displayContent);
+  const isTruncated = needsMeasure ? measured : false;
+
+  const handleToggleExpand = useCallback(() => setIsExpanded((v) => !v), []);
+
+  const handleTextLayout = useCallback((e: any) => {
+    setMeasured((e?.nativeEvent?.lines?.length ?? 0) > TRUNCATION_LINES);
+  }, []);
+
+  React.useEffect(() => { setMeasured(undefined); }, [displayContent]);
+
+  // Le retrait des réponses est le SEUL style variable de cette colonne : le
+  // recalculer en objet littéral à chaque rendu invalide aussi la comparaison
+  // de style côté natif.
+  const contentStyle = useMemo(
+    () => (depth > 0 ? [S.content, { paddingLeft: ps(13) * depth }] : S.content),
+    [depth],
+  );
+
+  const bodyStyle = isReply ? S.bodyReply : S.body;
+
+  const body = !displayContent ? null : isScrambled ? (
+    <LockedText
+      text={displayContent}
+      style={bodyStyle}
+      numberOfLines={isExpanded ? undefined : TRUNCATION_LINES}
+      price={contentLock?.price_twc}
+      compact
+    />
+  ) : (
+    <ClickableMentions
+      text={displayContent}
+      mentions={displayMentions}
+      style={bodyStyle}
+      numberOfLines={isExpanded ? undefined : TRUNCATION_LINES}
+      tweetId={tweetId}
+      contextData={mentionContext}
+    />
+  );
+
+  return (
+    <View style={contentStyle}>
+      {isRetweet && !!retweeterUsername && (
+        <View style={S.repostedBy}>
+          <Ionicons name="repeat" size={ps(12)} color={paper.inkMeta} />
+          <Text style={S.repostedByText} numberOfLines={1}>@{retweeterUsername} a reposté</Text>
+        </View>
+      )}
+
+      {isAd && <Text style={S.adLabel}>SPONSORISÉ</Text>}
+
+      <View style={S.authorRow}>
+        {/* Le chevron dit « réponse » sans coûter une ligne. La version
+            précédente écrivait « EN RÉPONSE À <nom> » en toutes lettres :
+            une ligne entière, tronquée neuf fois sur dix, pour nommer un
+            tweet qui est juste au-dessus. */}
+        {isReply && (
+          <Ionicons
+            name="return-down-forward"
+            size={ps(15)}
+            color={paper.inkMeta}
+            style={S.replyChevron}
+            accessibilityLabel={replyToName ? `En réponse à ${replyToName}` : 'Réponse'}
+          />
+        )}
+        <TouchableOpacity
+          onPress={onProfilePress}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 4 }}
+        >
+          {hasActiveStory ? (
+            <LinearGradient
+              colors={(storySeen ? SEEN_STORY_RING : STORY_GRADIENT) as unknown as [string, string, ...string[]]}
+              start={{ x: 0.85, y: 0.05 }}
+              end={{ x: 0.15, y: 0.95 }}
+              style={S.avatarStoryGradient}
+            >
+              <View style={S.avatarStoryGap}>
+                <Avatar size={ps(22)} username={displayAuthor?.username || 'U'} uri={(displayAuthor as any)?.avatar} />
+              </View>
+            </LinearGradient>
+          ) : (
+            <Avatar size={ps(isReply ? 20 : 26)} username={displayAuthor?.username || 'U'} uri={(displayAuthor as any)?.avatar} />
+          )}
+        </TouchableOpacity>
+
+        {/* Enveloppe retrécissable OBLIGATOIRE : `numberOfLines` ne tronque
+            que si la boîte est contrainte. Les effets « dégradé » et
+            « reflet » rendent un `MaskedView`, dont la largeur naturelle est
+            celle du texte entier — le `flexShrink` posé sur `baseStyle` ne
+            l'atteint pas, il ne descend que sur le `Text` intérieur. Sans
+            cette vue, un nom long poussait le badge et l'heure hors écran. */}
+        <View style={S.authorNameWrap}>
+        <PremiumDisplayName
+          text={displayAuthor?.full_name || 'Utilisateur'}
+          baseStyle={isReply ? S.authorNameReply : S.authorName}
+          isPremium={!!(displayAuthor as any)?.premium}
+          subscriptionTierRaw={(displayAuthor as any)?.subscription_tier}
+          fontId="system"
+          effectId="none"
+          numberOfLines={1}
+          customization={paperCustomization}
+          verified={!!(displayAuthor as any)?.verified}
+          verificationStyle={(displayAuthor as any)?.verification_style || 'default'}
+        />
+        </View>
+        {(displayAuthor as any)?.verified && (
+          <View style={S.verifiedWrap}>
+            <VerifiedBadge
+              verificationStyle={(displayAuthor as any)?.verification_style || 'default'}
+              size={ps(13)}
+              animated={false}
+              tint={badgeTint}
+            />
+          </View>
+        )}
+        <Text style={S.time}>{timeLabel}</Text>
+      </View>
+
+      {/* Un tweet publie en image seule, ou un retweet dont l'original n'a
+          pas de legende, n'a pas de texte a rendre. Sans cette garde, la
+          ligne dessinait un bloc de texte vide : un interligne fantome entre
+          l'en-tete et l'image, la ou il ne doit rien y avoir.
+
+          `TranslationReveal` n'enveloppe le corps QUE s'il y a vraiment une
+          traduction à révéler : monté à vide sur chaque ligne, il ajoutait
+          deux vues, trois `Animated.Value` et un `onLayout` qui déclenche un
+          rendu supplémentaire — pour une animation qui ne joue jamais chez un
+          lecteur qui lit dans sa propre langue. */}
+      {!!body && (
+        // `!isScrambled` : un texte brouillé n'a jamais été enveloppé par la
+        // révélation, et il ne doit pas commencer à l'être.
+        !isScrambled && activeTranslation?.language ? (
+          <TranslationReveal tweetId={translationId} language={activeTranslation.language}>
+            {body}
+          </TranslationReveal>
+        ) : (
+          body
+        )
+      )}
+
+      {/* Mesure de troncature : une seule fois par ligne, en local. */}
+      {!!displayContent && needsMeasure && measured === undefined && (
+        <Text
+          style={[bodyStyle, S.hiddenMeasure]}
+          onTextLayout={handleTextLayout}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {displayContent}
+        </Text>
+      )}
+
+      {isTruncated && (
+        <TouchableOpacity style={S.seeMoreBtn} onPress={handleToggleExpand} activeOpacity={0.7}>
+          <Text style={S.seeMoreText}>{isExpanded ? 'Voir moins' : 'Voir plus'}</Text>
+        </TouchableOpacity>
+      )}
+
+      {!isContentLocked && displayMediaUrls.length > 0 && (
+        <TweetImagesPaper urls={displayMediaUrls} onBeforeOpen={onBeforeOpen} />
+      )}
+
+      {!isContentLocked && !!videoUrl && (
+        <TweetVideo
+          videoUrl={videoUrl}
+          thumbnailUrl={videoThumbnailUrl}
+          onBeforeOpen={onBeforeOpen}
+          onDuration={onVideoDuration}
+        />
+      )}
+
+      {!isContentLocked && !!displayAudioUrl && (
+        <TweetVoiceMessage audioUrl={displayAudioUrl} durationSeconds={displayAudioDuration} onBeforeOpen={onBeforeOpen} />
+      )}
+
+      {!isContentLocked && !!displaySpotifyTrack && (
+        <TweetMusicCard track={displaySpotifyTrack} onBeforeOpen={onBeforeOpen} />
+      )}
+
+      {translationEnabled && (
+        <TweetLanguageSwitcher
+          tweetId={translationId}
+          active={activeTranslation as any}
+          onSelect={onSelectTranslation}
+        />
+      )}
+
+      {isContentLocked && (
+        <PaidContentLock
+          lock={contentLock}
+          compact
+          onUnlocked={onUnlocked}
+        />
+      )}
+
+      {isContest && (
+        <ContestCardPaper
+          tweetId={tweetId}
+          onOpen={onOpenContest}
+        />
+      )}
+
+      {isQuote && !!originalTweet && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={S.quote}
+          onPress={onOpenQuote}
+        >
+          <View style={S.quoteAuthorRow}>
+            <Avatar size={ps(16)} username={originalTweet.author?.username || 'U'} uri={originalTweet.author?.avatar} />
+            <Text style={S.quoteAuthorName} numberOfLines={1}>
+              {originalTweet.author?.full_name || 'Utilisateur'}
+            </Text>
+            <Text style={S.quoteAuthorHandle} numberOfLines={1}>@{originalTweet.author?.username}</Text>
+          </View>
+          <Text style={S.quoteText} numberOfLines={3}>{originalTweet.content}</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Pied de ligne : ce qui appelle une réponse, et rien d'autre. */}
+      {!isAd && (
+        <View style={[S.footer, isReply && S.footerReply]}>
+          <Text style={S.replies}>
+            {replyCount > 0
+              ? `${fmtCount(replyCount)} réponse${replyCount > 1 ? 's' : ''}`
+              : 'Aucune réponse'}
+          </Text>
+          <TouchableOpacity
+            style={S.replyPill}
+            onPress={onReplyPress}
+            activeOpacity={0.7}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Text style={S.replyPillText}>Répondre</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+});
 
 function TweetRowGutter({
   tweet,
@@ -184,12 +543,35 @@ function TweetRowGutter({
   threadDepth,
   gutterRef,
 }: TweetRowGutterProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isTruncated, setIsTruncated] = useState<boolean | undefined>(undefined);
-
   // Conditionne tout le geste, comme dans la ligne d'origine : rien à
   // proposer à qui n'est pas dans le palier.
   const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
+
+  /**
+   * L'éclat de réaction n'est MONTÉ qu'une fois qu'un doigt s'est posé sur un
+   * compteur — jamais au repos.
+   *
+   * ── Ce que ça coûtait ────────────────────────────────────────────────
+   * `ReactionBurst` s'ancre sur une vue de 0 × 0 et dessine tout en absolu :
+   * disque, anneaux, et une particule par point, chacune portant son propre
+   * `useAnimatedStyle`. Une ligne en montait TROIS (cœur, Super Cœur à 16
+   * particules et halo, repost), soit une quarantaine de vues animées et
+   * autant de « mappers » Reanimated — tous à opacité 0, sur chaque ligne du
+   * fil, en permanence. Or chaque `useAnimatedStyle` s'enregistre comme
+   * auditeur sur les valeurs partagées qu'il lit, et le registre des mappers
+   * est retrié à chaque montage ou démontage : avec sept lignes en fenêtre,
+   * le simple fait de faire défiler faisait apparaître et disparaître ~300
+   * animations invisibles. Software Mansion donne d'ailleurs ~100 composants
+   * animés simultanés comme limite pratique sur un Android d'entrée de gamme.
+   *
+   * ── Pourquoi l'armement arrive à temps ───────────────────────────────
+   * Il est déclenché sur `onPressIn` (doigt posé), pas sur `onPress` : le
+   * montage a donc toute la durée de l'appui pour se faire, et l'éclat ne
+   * démarre de toute façon qu'après `withDelay(30)`. Le ressort de l'icône,
+   * lui, n'a jamais été conditionné : il reste instantané.
+   */
+  const [burstArmed, setBurstArmed] = useState(false);
+  const armBurst = useCallback(() => setBurstArmed(true), []);
 
   // ── Valeurs d'animation : thread UI, jamais dans le state React ──────────
   const like = useReactionAnimation();
@@ -213,10 +595,24 @@ function TweetRowGutter({
   const displayAuthorId = displayAuthor?.id ? String(displayAuthor.id) : '';
   const hasActiveStory = !!displayAuthorId && !!storyUserIds?.has(displayAuthorId);
   const storySeen = hasActiveStory && !unseenStoryUserIds?.has(displayAuthorId);
-  const displayBadgeTint = certifiedNameColors(
-    (displayAuthor as any)?.verification_style,
-    (displayAuthor as any)?.profile_customization as ProfileCustomization | undefined,
-  ).from;
+  /**
+   * Teinte de la pastille de certification — calculée SEULEMENT pour un
+   * compte certifié, et mémoïsée. C'est la seule consommatrice, et
+   * `certifiedNameColors` passe par le service des styles de certification :
+   * la rappeler à chaque rendu pour l'immense majorité des comptes, qui ne
+   * sont pas certifiés, était du travail jeté.
+   */
+  const isVerifiedAuthor = !!(displayAuthor as any)?.verified;
+  const displayBadgeTint = useMemo(
+    () =>
+      isVerifiedAuthor
+        ? certifiedNameColors(
+            (displayAuthor as any)?.verification_style,
+            (displayAuthor as any)?.profile_customization as ProfileCustomization | undefined,
+          ).from
+        : undefined,
+    [isVerifiedAuthor, displayAuthor],
+  );
   const sourceContent = isRetweet && originalTweet?.content ? originalTweet.content : tweet.content;
   const displayMentions = isRetweet && originalTweet?.mentions ? originalTweet.mentions : tweet.mentions;
 
@@ -225,20 +621,36 @@ function TweetRowGutter({
    * appartiennent au tweet d'origine. Un tweet vidéo range `media_urls` comme
    * `[url_vidéo, url_miniature]`, d'où la séparation.
    */
-  const { displayMediaUrls, videoUrl, videoThumbnailUrl, displaySpotifyTrack, displayAudioUrl, displayAudioDuration } = React.useMemo(() => {
-    const source = isRetweet && originalTweet ? originalTweet : tweet;
-    const urls = Array.isArray((source as any)?.media_urls) ? (source as any).media_urls : [];
+  /**
+   * ⚠️ La dépendance de ce `useMemo` est le TABLEAU `media_urls`, jamais
+   * l'objet `tweet`.
+   *
+   * L'écran met le like à jour par étalement superficiel
+   * (`{ ...tweet, stats, user_interaction }`) : `tweet` change d'identité à
+   * chaque cœur posé, `media_urls` non. Dépendre de `tweet` refabriquait donc
+   * `displayMediaUrls` à chaque like — un tableau neuf, donc une propriété
+   * neuve pour la grille d'images, donc tout le sous-arbre média re-rendu pour
+   * un geste qui ne le concerne pas. C'est exactement ce que le découpage en
+   * `RowContent` cherche à empêcher, et c'est cette ligne-ci qui décide s'il
+   * sert à quelque chose.
+   */
+  const mediaSource: any = isRetweet && originalTweet ? originalTweet : tweet;
+  const rawMediaUrls = mediaSource?.media_urls;
+  const displaySpotifyTrack = mediaSource?.spotify_track || null;
+  const displayAudioUrl = typeof mediaSource?.audio_url === 'string' ? mediaSource.audio_url : null;
+  const displayAudioDuration =
+    typeof mediaSource?.audio_duration === 'number' ? mediaSource.audio_duration : null;
+
+  const { displayMediaUrls, videoUrl, videoThumbnailUrl } = React.useMemo(() => {
+    const urls = Array.isArray(rawMediaUrls) ? rawMediaUrls : [];
     const strings = urls.filter((url: unknown): url is string => typeof url === 'string');
-    const spotifyTrack = (source as any)?.spotify_track || null;
-    const audioUrl = typeof (source as any)?.audio_url === 'string' ? (source as any).audio_url : null;
-    const audioDuration = typeof (source as any)?.audio_duration === 'number' ? (source as any).audio_duration : null;
     const video = strings.find((url: string) => VIDEO_URL_RE.test(url));
     if (!video) {
-      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined, displaySpotifyTrack: spotifyTrack, displayAudioUrl: audioUrl, displayAudioDuration: audioDuration };
+      return { displayMediaUrls: strings, videoUrl: null as string | null, videoThumbnailUrl: undefined as string | undefined };
     }
     const rest = strings.filter((url: string) => url !== video);
-    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0], displaySpotifyTrack: spotifyTrack, displayAudioUrl: audioUrl, displayAudioDuration: audioDuration };
-  }, [isRetweet, originalTweet, tweet]);
+    return { displayMediaUrls: [] as string[], videoUrl: video, videoThumbnailUrl: rest[0] };
+  }, [rawMediaUrls]);
 
   const translationSource = isRetweet && originalTweet ? originalTweet : tweet;
   const {
@@ -252,6 +664,18 @@ function TweetRowGutter({
   });
   const displayContent = displayedContent || sourceContent;
 
+  /**
+   * `setActive` est une flèche recréée à chaque rendu par le hook de
+   * traduction. Passée telle quelle à la colonne de contenu, elle suffirait à
+   * casser son `memo` — donc à annuler tout ce découpage. On la range dans une
+   * référence et on n'expose qu'une enveloppe stable.
+   */
+  const setActiveTranslationRef = useRef(setActiveTranslation);
+  setActiveTranslationRef.current = setActiveTranslation;
+  const onSelectTranslation = useCallback((value: any) => {
+    setActiveTranslationRef.current(value);
+  }, []);
+
   const contentLock = (isRetweet && originalTweet
     ? (originalTweet as any).paid_content
     : (tweet as any).paid_content) || null;
@@ -261,6 +685,21 @@ function TweetRowGutter({
     isRetweet && (originalTweet?.created_at || originalTweet?.createdAt)
       ? originalTweet.created_at || originalTweet.createdAt
       : tweet.created_at || (tweet as any).createdAt;
+
+  /**
+   * Horodatage calculé UNE fois par tweet, pas à chaque rendu.
+   *
+   * Au-delà d'un jour, `fmtDate` appelle `toLocaleDateString`, donc `Intl` :
+   * de très loin l'appel le plus cher d'un rendu de ligne, et il était refait
+   * à chaque like, à chaque mesure de troncature, à chaque arrivée de
+   * traduction. Rien n'est perdu au passage : le libellé n'était de toute
+   * façon rafraîchi que par accident, quand un rendu se produisait — aucune
+   * horloge ne le remet à l'heure ni avant ni après.
+   */
+  const timeLabel = useMemo(
+    () => fmtDate(displayCreatedAt || new Date().toISOString()),
+    [displayCreatedAt],
+  );
 
   const isLiked = !!tweet.user_interaction?.is_liked;
   const isRetweeted = !!tweet.user_interaction?.is_retweeted;
@@ -416,6 +855,11 @@ function TweetRowGutter({
 
     const now = Date.now();
     const isDoubleTap = now - lastTapRef.current < DOUBLE_TAP_MS;
+    // Armé dès le PREMIER appui : un double-tap laisse jusqu'à 280 ms entre
+    // les deux, l'éclat a donc tout le temps de se monter avant d'être joué.
+    // Un appui simple ouvre le tweet, donc démonte la ligne — armer là ne
+    // coûte rien.
+    if (!isDoubleTap) armBurst();
     lastTapRef.current = now;
 
     if (isDoubleTap) {
@@ -435,15 +879,62 @@ function TweetRowGutter({
       navTimerRef.current = null;
       onAction({ type: 'open', tweetId: tweet.id });
     }, 260);
-  }, [isAd, isContentLocked, isLiked, onAction, playBigHeart, playLike, tweet]);
+  }, [isAd, isContentLocked, isLiked, onAction, playBigHeart, playLike, tweet, armBurst]);
 
-  const handleToggleExpand = useCallback(() => setIsExpanded((v) => !v), []);
+  /**
+   * Les rappels passés à la colonne de contenu sont TOUS stables : c'est ce
+   * qui rend son `memo` utile. Écrits en flèches dans le JSX, ils changeaient
+   * d'identité à chaque rendu de la ligne et la colonne se serait re-rendue
+   * malgré tout — c'est exactement le piège que la mémoïsation est censée
+   * éviter.
+   */
+  const handleProfilePress = useCallback(() => {
+    onAction({ type: 'profile', tweetId: tweet.id, payload: { author: displayAuthor, index } });
+  }, [onAction, tweet.id, displayAuthor, index]);
 
-  const handleTextLayout = useCallback((e: any) => {
-    setIsTruncated((e?.nativeEvent?.lines?.length ?? 0) > 4);
-  }, []);
+  const handleVideoDuration = useCallback((ms: number) => {
+    onAction({ type: 'videoDuration', tweetId: String(tweet.id), payload: ms });
+  }, [onAction, tweet.id]);
 
-  React.useEffect(() => { setIsTruncated(undefined); }, [displayContent]);
+  const handleUnlocked = useCallback(() => {
+    onAction({ type: 'open', tweetId: tweet.id });
+  }, [onAction, tweet.id]);
+
+  const handleOpenContest = useCallback((contestId: string) => {
+    onAction({ type: 'openContest', tweetId: tweet.id, payload: { contestId } });
+  }, [onAction, tweet.id]);
+
+  const handleOpenQuote = useCallback(() => {
+    onAction({ type: 'openQuote', tweetId: originalTweet?.id });
+  }, [onAction, originalTweet]);
+
+  /**
+   * Contexte de suivi des mentions : un objet littéral dans le JSX en aurait
+   * fabriqué un neuf à chaque rendu, ce qui suffit à casser la comparaison de
+   * la colonne de contenu.
+   */
+  const mentionContext = useMemo(
+    () => ({ ...contextData, position: index, author_id: displayAuthor?.id }),
+    [contextData, index, displayAuthor?.id],
+  );
+
+  // Hôtes de l'éclat : mêmes valeurs qu'avant, mais l'objet de style ne change
+  // plus d'identité d'un rendu à l'autre.
+  const burstHostStyle = useMemo(
+    () => [S.burstHost, { width: iconSize, height: iconSize }],
+    [iconSize],
+  );
+  const burstHostSmallStyle = useMemo(
+    () => [S.burstHostSmall, { width: iconSize, height: iconSize }],
+    [iconSize],
+  );
+
+  const handleRowPressIn = useCallback(() => {
+    pressed.value = withTiming(1, { duration: 90 });
+  }, [pressed]);
+  const handleRowPressOut = useCallback(() => {
+    pressed.value = withTiming(0, { duration: 140 });
+  }, [pressed]);
 
   React.useEffect(() => () => {
     if (navTimerRef.current) clearTimeout(navTimerRef.current);
@@ -457,19 +948,28 @@ function TweetRowGutter({
 
   return (
     <AnimatedPressable
-      layout={LinearTransition.duration(180)}
+      layout={ROW_LAYOUT}
       style={[S.row, isReply && S.rowReply, rowStyle]}
-      onPressIn={() => { pressed.value = withTiming(1, { duration: 90 }); }}
-      onPressOut={() => { pressed.value = withTiming(0, { duration: 140 }); }}
+      onPressIn={handleRowPressIn}
+      onPressOut={handleRowPressOut}
       onPress={handleRowPress}
       onLongPress={handleRowLongPress}
       delayLongPress={420}
     >
       {/* Cœur plein écran du double-tap. En accent, pas en blanc : sur du
-          papier, un cœur blanc n'existe pas. */}
-      <Animated.View pointerEvents="none" style={[S.bigHeartOverlay, bigHeartStyle]}>
-        <Ionicons name="heart" size={ps(90)} color={paper.accent} />
-      </Animated.View>
+          papier, un cœur blanc n'existe pas.
+
+          Monté avec l'éclat (`burstArmed`), donc au premier appui et pas au
+          repos : c'est une vue en recouvrement total portant un glyphe de
+          90 px, à opacité nulle tant que personne n'a double-tapé. Le premier
+          appui d'un double-tap l'arme (voir `handleRowPress`), et l'animation
+          part de l'opacité 0 pendant sa première centaine de millisecondes —
+          le montage a donc largement le temps. */}
+      {burstArmed && (
+        <Animated.View pointerEvents="none" style={[S.bigHeartOverlay, bigHeartStyle]}>
+          <Ionicons name="heart" size={ps(90)} color={paper.accent} />
+        </Animated.View>
+      )}
 
       {/* ── Gouttière ── */}
       <View style={S.gutter} ref={gutterRef} collapsable={false}>
@@ -487,20 +987,32 @@ function TweetRowGutter({
           // gouttière, voir plus haut) posait donc un like qui ne partait
           // jamais, sans rien à l'écran pour le dire.
           onLongPress={superHeartEnabled ? handleSuperLikeLongPress : undefined}
+          // Monte l'éclat au POSÉ du doigt, pas au relâchement : voir
+          // `burstArmed`. Ne déclenche rien d'autre, et surtout pas de like.
+          onPressIn={armBurst}
           delayLongPress={420}
           activeOpacity={0.6}
           hitSlop={{ top: 8, bottom: 8, left: 12, right: 8 }}
           accessibilityLabel={isLiked ? 'Retirer le j’aime' : 'Aimer ce tweet'}
         >
-          <View style={[S.burstHost, { width: iconSize, height: iconSize }]}>
-            <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={iconSize} />
-            <ReactionBurst
-              progress={superLike.progress}
-              palette={SUPER_HEART_PALETTE}
-              iconSize={iconSize * 2.1}
-              particleCount={16}
-              halo
-            />
+          <View style={burstHostStyle}>
+            {burstArmed && (
+              <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={iconSize} />
+            )}
+            {/* L'éclat du Super Cœur est le plus lourd de tous (halo, deux
+                anneaux supplémentaires, seize particules) et il ne peut PAS
+                se produire hors du palier : le monter pour un compte qui n'a
+                pas le drapeau était du décor invisible et impossible à
+                déclencher. */}
+            {burstArmed && superHeartEnabled && (
+              <ReactionBurst
+                progress={superLike.progress}
+                palette={SUPER_HEART_PALETTE}
+                iconSize={iconSize * 2.1}
+                particleCount={16}
+                halo
+              />
+            )}
             <Animated.View style={like.iconStyle}>
               <Ionicons
                 name={isLiked ? 'heart' : 'heart-outline'}
@@ -520,12 +1032,15 @@ function TweetRowGutter({
           <TouchableOpacity
             style={S.counterSmall}
             onPress={handleRetweetPress}
+            onPressIn={armBurst}
             activeOpacity={0.6}
             hitSlop={{ top: 8, bottom: 8, left: 12, right: 8 }}
             accessibilityLabel={isRetweeted ? 'Annuler le repost' : 'Reposter ce tweet'}
           >
-            <View style={[S.burstHostSmall, { width: iconSize, height: iconSize }]}>
-              <ReactionBurst progress={retweet.progress} palette={RETWEET_PALETTE} iconSize={iconSize} />
+            <View style={burstHostSmallStyle}>
+              {burstArmed && (
+                <ReactionBurst progress={retweet.progress} palette={RETWEET_PALETTE} iconSize={iconSize} />
+              )}
               <Animated.View style={retweet.iconStyle}>
                 <Ionicons
                   name={isRetweeted ? 'repeat' : 'repeat-outline'}
@@ -546,212 +1061,52 @@ function TweetRowGutter({
         {isThreadParent && <View style={S.spine} />}
       </View>
 
-      {/* ── Contenu ── */}
-      <View style={[S.content, isReply && { paddingLeft: ps(13) * depth }]}>
-        {isRetweet && !!retweeter?.username && (
-          <View style={S.repostedBy}>
-            <Ionicons name="repeat" size={ps(12)} color={paper.inkMeta} />
-            <Text style={S.repostedByText} numberOfLines={1}>@{retweeter.username} a reposté</Text>
-          </View>
-        )}
-
-        {isAd && <Text style={S.adLabel}>SPONSORISÉ</Text>}
-
-        <View style={S.authorRow}>
-          {/* Le chevron dit « réponse » sans coûter une ligne. La version
-              précédente écrivait « EN RÉPONSE À <nom> » en toutes lettres :
-              une ligne entière, tronquée neuf fois sur dix, pour nommer un
-              tweet qui est juste au-dessus. */}
-          {isReply && (
-            <Ionicons
-              name="return-down-forward"
-              size={ps(15)}
-              color={paper.inkMeta}
-              style={S.replyChevron}
-              accessibilityLabel={replyToName ? `En réponse à ${replyToName}` : 'Réponse'}
-            />
-          )}
-          <TouchableOpacity
-            onPress={() =>
-              onAction({ type: 'profile', tweetId: tweet.id, payload: { author: displayAuthor, index } })
-            }
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 4 }}
-          >
-            {hasActiveStory ? (
-              <LinearGradient
-                colors={(storySeen ? SEEN_STORY_RING : STORY_GRADIENT) as unknown as [string, string, ...string[]]}
-                start={{ x: 0.85, y: 0.05 }}
-                end={{ x: 0.15, y: 0.95 }}
-                style={S.avatarStoryGradient}
-              >
-                <View style={S.avatarStoryGap}>
-                  <Avatar size={ps(22)} username={displayAuthor?.username || 'U'} uri={(displayAuthor as any)?.avatar} />
-                </View>
-              </LinearGradient>
-            ) : (
-              <Avatar size={ps(isReply ? 20 : 26)} username={displayAuthor?.username || 'U'} uri={(displayAuthor as any)?.avatar} />
-            )}
-          </TouchableOpacity>
-
-          {/* Enveloppe retrécissable OBLIGATOIRE : `numberOfLines` ne tronque
-              que si la boîte est contrainte. Les effets « dégradé » et
-              « reflet » rendent un `MaskedView`, dont la largeur naturelle est
-              celle du texte entier — le `flexShrink` posé sur `baseStyle` ne
-              l'atteint pas, il ne descend que sur le `Text` intérieur. Sans
-              cette vue, un nom long poussait le badge et l'heure hors écran. */}
-          <View style={S.authorNameWrap}>
-          <PremiumDisplayName
-            text={displayAuthor?.full_name || 'Utilisateur'}
-            baseStyle={isReply ? S.authorNameReply : S.authorName}
-            isPremium={!!(displayAuthor as any)?.premium}
-            subscriptionTierRaw={(displayAuthor as any)?.subscription_tier}
-            fontId="system"
-            effectId="none"
-            numberOfLines={1}
-            customization={paperCustomization}
-            verified={!!(displayAuthor as any)?.verified}
-            verificationStyle={(displayAuthor as any)?.verification_style || 'default'}
-          />
-          </View>
-          {(displayAuthor as any)?.verified && (
-            <View style={S.verifiedWrap}>
-              <VerifiedBadge
-                verificationStyle={(displayAuthor as any)?.verification_style || 'default'}
-                size={ps(13)}
-                animated={false}
-                tint={displayBadgeTint}
-              />
-            </View>
-          )}
-          <Text style={S.time}>{fmtDate(displayCreatedAt || new Date().toISOString())}</Text>
-        </View>
-
-        {/* Un tweet publie en image seule, ou un retweet dont l'original n'a
-            pas de legende, n'a pas de texte a rendre. Sans cette garde, la
-            ligne dessinait un bloc de texte vide : un interligne fantome entre
-            l'en-tete et l'image, la ou il ne doit rien y avoir. */}
-        {!!displayContent && (isScrambled ? (
-          <LockedText
-            text={displayContent}
-            style={isReply ? S.bodyReply : S.body}
-            numberOfLines={isExpanded ? undefined : 4}
-            price={contentLock?.price_twc}
-            compact
-          />
-        ) : (
-          <TranslationReveal
-            tweetId={String(translationSource?.id || tweet.id)}
-            language={activeTranslation?.language ?? null}
-          >
-            <ClickableMentions
-              text={displayContent}
-              mentions={displayMentions}
-              style={isReply ? S.bodyReply : S.body}
-              numberOfLines={isExpanded ? undefined : 4}
-              tweetId={String(tweet.id)}
-              contextData={{ ...contextData, position: index, author_id: displayAuthor?.id }}
-            />
-          </TranslationReveal>
-        ))}
-
-        {/* Mesure de troncature : une seule fois par ligne, en local. */}
-        {!!displayContent && isTruncated === undefined && (
-          <Text
-            style={[isReply ? S.bodyReply : S.body, S.hiddenMeasure]}
-            onTextLayout={handleTextLayout}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
-            {displayContent}
-          </Text>
-        )}
-
-        {isTruncated && (
-          <TouchableOpacity style={S.seeMoreBtn} onPress={handleToggleExpand} activeOpacity={0.7}>
-            <Text style={S.seeMoreText}>{isExpanded ? 'Voir moins' : 'Voir plus'}</Text>
-          </TouchableOpacity>
-        )}
-
-        {!isContentLocked && displayMediaUrls.length > 0 && (
-          <TweetImagesPaper urls={displayMediaUrls} onBeforeOpen={blockRowPress} />
-        )}
-
-        {!isContentLocked && !!videoUrl && (
-          <TweetVideo
-            videoUrl={videoUrl}
-            thumbnailUrl={videoThumbnailUrl}
-            onBeforeOpen={blockRowPress}
-            onDuration={(ms) => onAction({ type: 'videoDuration', tweetId: String(tweet.id), payload: ms })}
-          />
-        )}
-
-        {!isContentLocked && !!displayAudioUrl && (
-          <TweetVoiceMessage audioUrl={displayAudioUrl} durationSeconds={displayAudioDuration} onBeforeOpen={blockRowPress} />
-        )}
-
-        {!isContentLocked && !!displaySpotifyTrack && (
-          <TweetMusicCard track={displaySpotifyTrack} onBeforeOpen={blockRowPress} />
-        )}
-
-        {!!(translationSource as any)?.translation_enabled && (
-          <TweetLanguageSwitcher
-            tweetId={String(translationSource?.id || tweet.id)}
-            active={activeTranslation as any}
-            onSelect={setActiveTranslation}
-          />
-        )}
-
-        {isContentLocked && (
-          <PaidContentLock
-            lock={contentLock}
-            compact
-            onUnlocked={() => onAction({ type: 'open', tweetId: tweet.id })}
-          />
-        )}
-
-        {isContest && (
-          <ContestCardPaper
-            tweetId={String(tweet.id)}
-            onOpen={(contestId) => onAction({ type: 'openContest', tweetId: tweet.id, payload: { contestId } })}
-          />
-        )}
-
-        {isQuote && !!originalTweet && (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={S.quote}
-            onPress={() => onAction({ type: 'openQuote', tweetId: originalTweet.id })}
-          >
-            <View style={S.quoteAuthorRow}>
-              <Avatar size={ps(16)} username={originalTweet.author?.username || 'U'} uri={originalTweet.author?.avatar} />
-              <Text style={S.quoteAuthorName} numberOfLines={1}>
-                {originalTweet.author?.full_name || 'Utilisateur'}
-              </Text>
-              <Text style={S.quoteAuthorHandle} numberOfLines={1}>@{originalTweet.author?.username}</Text>
-            </View>
-            <Text style={S.quoteText} numberOfLines={3}>{originalTweet.content}</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Pied de ligne : ce qui appelle une réponse, et rien d'autre. */}
-        {!isAd && (
-          <View style={[S.footer, isReply && S.footerReply]}>
-            <Text style={S.replies}>
-              {replyCount > 0
-                ? `${fmtCount(replyCount)} réponse${replyCount > 1 ? 's' : ''}`
-                : 'Aucune réponse'}
-            </Text>
-            <TouchableOpacity
-              style={S.replyPill}
-              onPress={handleReplyPress}
-              activeOpacity={0.7}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={S.replyPillText}>Répondre</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+      {/* ── Contenu ──
+          Isolé derrière son propre `memo` (voir `RowContent`) : un like ne
+          touche que la gouttière, il ne doit pas reconstruire l'en-tête
+          d'auteur, le corps du tweet ni la grille d'images. */}
+      <RowContent
+        tweetId={String(tweet.id)}
+        isAd={isAd}
+        isReply={isReply}
+        depth={depth}
+        isRetweet={isRetweet}
+        retweeterUsername={retweeter?.username}
+        replyToName={replyToName}
+        displayAuthor={displayAuthor}
+        hasActiveStory={hasActiveStory}
+        storySeen={storySeen}
+        badgeTint={displayBadgeTint}
+        paperCustomization={paperCustomization}
+        timeLabel={timeLabel}
+        displayContent={displayContent}
+        displayMentions={displayMentions}
+        mentionContext={mentionContext}
+        isScrambled={isScrambled}
+        isContentLocked={isContentLocked}
+        contentLock={contentLock}
+        translationId={String(translationSource?.id || tweet.id)}
+        translationEnabled={!!(translationSource as any)?.translation_enabled}
+        activeTranslation={activeTranslation}
+        onSelectTranslation={onSelectTranslation}
+        displayMediaUrls={displayMediaUrls}
+        videoUrl={videoUrl}
+        videoThumbnailUrl={videoThumbnailUrl}
+        displayAudioUrl={displayAudioUrl}
+        displayAudioDuration={displayAudioDuration}
+        displaySpotifyTrack={displaySpotifyTrack}
+        isContest={isContest}
+        isQuote={isQuote}
+        originalTweet={originalTweet}
+        replyCount={replyCount}
+        onProfilePress={handleProfilePress}
+        onReplyPress={handleReplyPress}
+        onBeforeOpen={blockRowPress}
+        onVideoDuration={handleVideoDuration}
+        onUnlocked={handleUnlocked}
+        onOpenContest={handleOpenContest}
+        onOpenQuote={handleOpenQuote}
+      />
     </AnimatedPressable>
   );
 }
@@ -774,6 +1129,16 @@ function areEqual(prev: TweetRowGutterProps, next: TweetRowGutterProps) {
     a.user_interaction?.is_retweeted === b.user_interaction?.is_retweeted &&
     a.user_interaction?.is_super_liked === b.user_interaction?.is_super_liked &&
     a.content === b.content &&
+    // Un retweet pur n'a pas de texte propre : le sien vit sur l'original.
+    // Sans cette ligne, une correction du tweet d'origine ne remontait
+    // jamais dans le fil de ceux qui l'ont reposté.
+    (a as any).originalTweet?.content === (b as any).originalTweet?.content &&
+    // Le verrou payant décide de TOUT le rendu de la colonne de contenu
+    // (texte brouillé, médias masqués, pavé d'achat). Un déverrouillage qui
+    // n'était pas comparé laissait la ligne montrer son cadenas alors que
+    // l'accès venait d'être acheté.
+    ((a as any).paid_content?.has_access ?? null) ===
+      ((b as any).paid_content?.has_access ?? null) &&
     // L'auteur peut changer d'habillage (avatar, pseudo, premium, pastille)
     // sans que le tweet change d'identité. Sur un retweet pur, l'auteur
     // affiché est celui du tweet d'origine (voir `displayAuthor`) : les deux
@@ -788,7 +1153,12 @@ function areEqual(prev: TweetRowGutterProps, next: TweetRowGutterProps) {
     prev.storyUserIds === next.storyUserIds &&
     prev.unseenStoryUserIds === next.unseenStoryUserIds &&
     prev.replyToName === next.replyToName &&
-    prev.threadDepth === next.threadDepth
+    prev.threadDepth === next.threadDepth &&
+    // L'ancre de la visite guidée : elle n'est posée que sur la première
+    // ligne. Elle suit l'index, donc elle ne change en pratique jamais sans
+    // lui — mais l'omettre laissait le comparateur incomplet, et un
+    // comparateur incomplet est un bug qui attend son cas limite.
+    prev.gutterRef === next.gutterRef
   );
 }
 

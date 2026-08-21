@@ -36,10 +36,15 @@ import Animated, {
   withTiming,
   interpolate,
   cancelAnimation,
-  runOnJS,
   Extrapolation,
   FadeIn,
 } from 'react-native-reanimated';
+// `scheduleOnRN` et non `runOnJS` : `runOnJS` n'est plus qu'un ré-export
+// DÉPRÉCIÉ de `react-native-worklets` depuis Reanimated 4
+// (`react-native-reanimated/src/workletFunctions.ts`). Comportement
+// identique — `scheduleOnRN(fn, ...args)` appelle `runOnJS(fn)(...args)` —,
+// forme non curryfiée.
+import { scheduleOnRN } from 'react-native-worklets';
 import { clamp, projectDecay, rubberBand, springFrom } from '../utils/gesture';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -436,8 +441,8 @@ export default function TweetsScreen() {
    * `switchTab` est indispensable : un worklet reçoit une COPIE des objets
    * qu'il capture, donc lire `ref.current` depuis le thread UI renverrait
    * éternellement la valeur du premier rendu — ici la fonction vide, et la
-   * bascule ne partirait jamais. En passant par `runOnJS(switchTab)`, la
-   * lecture de la ref a lieu côté JS, où elle est à jour.
+   * bascule ne partirait jamais. En passant par `scheduleOnRN(switchTab, …)`,
+   * la lecture de la ref a lieu côté JS, où elle est à jour.
    */
   const handleTabChangeRef = useRef<(tab: FeedTab) => void>(() => {});
   const switchTab = useCallback((tab: FeedTab) => {
@@ -491,7 +496,7 @@ export default function TweetsScreen() {
           const target = clamp(tabIndex.value + step, 0, TAB_ORDER.length - 1);
 
           if (commit && target !== tabIndex.value) {
-            runOnJS(switchTab)(TAB_ORDER[target]);
+            scheduleOnRN(switchTab, TAB_ORDER[target]);
           }
           // Le fil revient toujours à sa place : le contenu du nouvel onglet
           // est servi depuis son cache et remplace l'ancien sous le doigt. Le

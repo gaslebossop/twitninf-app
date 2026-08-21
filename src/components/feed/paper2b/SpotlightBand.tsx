@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Image,
   StyleProp,
   StyleSheet,
   Text,
@@ -8,6 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { Image } from 'expo-image';
 import Avatar from '../../Avatar';
 import {
   paper,
@@ -138,7 +138,18 @@ export default function SpotlightBand({
           </View>
 
           {previewImage ? (
-            <Image source={{ uri: previewImage }} style={S.thumb} />
+            /* `expo-image` : même cache mémoire + disque que la grille du
+               fil, donc la vignette du post du jour ne retélécharge pas une
+               photo déjà vue. `contentFit="cover"` reproduit le
+               `resizeMode` par défaut du `Image` du cœur RN. */
+            <Image
+              source={{ uri: previewImage }}
+              style={S.thumb}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={previewImage}
+              transition={0}
+            />
           ) : null}
         </View>
       </View>

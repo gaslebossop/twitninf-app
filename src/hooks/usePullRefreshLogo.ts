@@ -5,8 +5,15 @@ import {
   useAnimatedScrollHandler,
   useAnimatedRef,
   useSharedValue,
-  runOnJS,
 } from 'react-native-reanimated';
+// `scheduleOnRN` et non `runOnJS` : depuis Reanimated 4, `runOnJS` n'est plus
+// qu'un ré-export DÉPRÉCIÉ de `react-native-worklets`
+// (`react-native-reanimated/src/workletFunctions.ts` : « Please import
+// `runOnJS` directly from `react-native-worklets` »). Les deux font
+// exactement la même chose — `scheduleOnRN(fn, ...args)` appelle
+// `runOnJS(fn)(...args)` (`react-native-worklets/src/threads.ts`) — mais la
+// forme non curryfiée est la seule qui reste documentée.
+import { scheduleOnRN } from 'react-native-worklets';
 import { PULL_REFRESH_THRESHOLD } from '../components/ui/PullRefreshLogo';
 import feedback from '../utils/feedback';
 
@@ -66,9 +73,9 @@ export function usePullRefreshLogo(
    * been already passed to a worklet » vise une ref CAPTURÉE PAR UN WORKLET
    * (donc convertie en « shareable » au premier passage). Ici `latest` n'est
    * jamais capturée par un worklet : elle n'est lue que DANS ces fonctions
-   * JS ordinaires, que le worklet appelle par `runOnJS`. Une fonction passée
-   * à `runOnJS` reste côté JS avec sa fermeture intacte — seule une poignée
-   * vers elle traverse. La ref peut donc être réécrite librement.
+   * JS ordinaires, que le worklet appelle par `scheduleOnRN`. Une fonction
+   * passée à `scheduleOnRN` reste côté JS avec sa fermeture intacte — seule
+   * une poignée vers elle traverse. La ref peut donc être réécrite librement.
    */
   const latest = useRef({ onRefresh, refreshing, onScrollFrame });
   latest.current = { onRefresh, refreshing, onScrollFrame };
@@ -101,33 +108,39 @@ export function usePullRefreshLogo(
   /**
    * `listRef` : à poser en `ref=` sur la liste animée de chaque surface.
    *
-   * ── ⚠️ CE QUE CETTE REF NE FAIT PAS (encore) ────────────────────────────
-   * Ce bloc a longtemps affirmé que `pull` était alimenté par
-   * `useScrollViewOffset(listRef)`, donc en dehors du chemin d'événement de
-   * la liste. C'ÉTAIT FAUX : le diagnostic avait été écrit, les deux hooks
-   * (`useScrollViewOffset`, `useAnimatedReaction`) importés — et le code
-   * jamais changé. `pull` est bel et bien écrit par le worklet `onScroll`
-   * ci-dessous, comme avant. La ref, elle, ne sert aujourd'hui à rien
-   * d'autre qu'à être disponible pour ce correctif.
+   * ── ⚠️ LE DIAGNOSTIC QUI VIVAIT ICI ÉTAIT FAUX — ne pas le refaire ──────
+   * Ce bloc affirmait que sur une `FlatList`, « Reanimated ne reçoit plus son
+   * objet-gestionnaire mais une fonction JS ordinaire et retombe sur le
+   * THREAD JS », et proposait de réécrire `pull` via
+   * `useScrollViewOffset(listRef)` — un chantier annoncé comme touchant cinq
+   * écrans. La lecture des sources de Reanimated 4.1 tranche : c'est faux, et
+   * le remède proposé n'aurait rien changé.
    *
-   * ── Le diagnostic, lui, reste valable ───────────────────────────────────
-   * Sur un `ScrollView` nu (Explorer), Reanimated attache son gestionnaire
-   * directement à la vue native et le worklet tourne sur le thread UI. Sur
-   * une `FlatList`, non : `VirtualizedList` a besoin de `onScroll` pour son
-   * propre travail (fenêtrage, visibilité) et COMPOSE le sien avec celui
-   * qu'on lui passe ; Reanimated ne reçoit plus son objet-gestionnaire mais
-   * une fonction JS ordinaire et retombe sur le THREAD JS. Le défilement
-   * reste natif, donc fluide, pendant que le logo saccade — le symptôme
-   * observé sur « Pour toi » et sur le profil, les deux `FlatList`, et pas
-   * sur Explorer.
+   * 1. `useAnimatedScrollHandler` ne rend PAS une fonction : il rend
+   *    `{ workletEventHandler }` (`hook/useEvent.ts`).
+   * 2. `createAnimatedComponent` reconnaît cet objet et enregistre le worklet
+   *    en NATIF, sur la vue défilante :
+   *    `NativeEventsManager.getEventViewTag()` appelle `getScrollableNode()`,
+   *    que `FlatList` expose (`Libraries/Lists/FlatList.js`), puis
+   *    `WorkletEventHandler.registerForEvents()` appelle `registerEventHandler`.
+   * 3. `PropsFilter` remplace la prop transmise à la `FlatList` par un
+   *    `dummyListener` : le worklet ne traverse jamais la composition
+   *    d'`onScroll` de `VirtualizedList`.
    *
-   * ── À FAIRE ─────────────────────────────────────────────────────────────
-   * Lire l'offset par `useScrollViewOffset(listRef)` et alimenter `pull`
-   * depuis un `useAnimatedReaction`, en faisant lire à `onEndDrag` la MÊME
-   * valeur (sinon les deux chemins peuvent se désaccorder d'une image).
-   * Toutes les surfaces posent déjà `ref={listRef}`, il n'y a donc rien à
-   * changer chez elles — mais le changement se voit uniquement sur appareil,
-   * et il touche cinq écrans : à valider en main avant de le poser.
+   * Le worklet tourne donc bien sur le thread UI, `FlatList` ou pas — la
+   * documentation le dit d'ailleurs sans réserve (« These callbacks are
+   * automatically workletized and ran on the UI thread »).
+   *
+   * Et `useScrollOffset` n'y aurait rien changé : sa version native est bâtie
+   * sur le MÊME `useEvent`, sur les mêmes noms d'événements natifs
+   * (`hook/useScrollOffset.ts`). Même chemin, même cadence.
+   *
+   * ── Ce qui coûte réellement, et qui n'est pas de Reanimated ─────────────
+   * `VirtualizedList._onScroll` tourne, lui, sur le thread JS à chaque
+   * événement reçu (fenêtrage, visibilité, `onEndReached`). C'est le prix de
+   * la `FlatList`, et il se paie que Reanimated soit là ou non.
+   *
+   * `listRef` reste exposée : elle sert de `ref` normale aux appelants.
    */
   const listRef = useAnimatedRef<any>();
 
@@ -142,20 +155,20 @@ export function usePullRefreshLogo(
       // limite, le tremblement naturel du doigt ferait crépiter la secousse.
       if (!armed.value && over >= PULL_REFRESH_THRESHOLD) {
         armed.value = true;
-        runOnJS(notifyThreshold)();
+        scheduleOnRN(notifyThreshold);
       } else if (armed.value && over < PULL_REFRESH_THRESHOLD - 12) {
         armed.value = false;
       }
 
       if (hasScrollFrame) {
-        runOnJS(forwardScrollFrame)(e.contentOffset.y, e.contentSize.height, e.layoutMeasurement.height);
+        scheduleOnRN(forwardScrollFrame, e.contentOffset.y, e.contentSize.height, e.layoutMeasurement.height);
       }
     },
     onEndDrag: (e) => {
       const over = -e.contentOffset.y;
       armed.value = false;
       if (over < PULL_REFRESH_THRESHOLD) return;
-      runOnJS(trigger)();
+      scheduleOnRN(trigger);
     },
   }, [hasScrollFrame]);
 

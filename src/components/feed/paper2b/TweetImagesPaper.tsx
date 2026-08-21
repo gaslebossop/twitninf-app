@@ -25,7 +25,8 @@
  */
 
 import React, { useCallback, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -95,11 +96,34 @@ function Cell({
       accessibilityLabel={label}
     >
       <Animated.View style={[S.fill, animatedStyle]}>
+        {/* `expo-image` et non le `Image` du cœur RN — trois raisons, toutes
+            propres à une image montée dans une liste recyclée :
+
+            1. `cachePolicy="memory-disk"` : la même photo réapparaît sans
+               retéléchargement NI redécodage quand on remonte le fil ;
+            2. `recyclingKey` : la vue est vidée avant de charger une nouvelle
+               source, donc une cellule réutilisée ne montre jamais, même une
+               image, la photo de la ligne précédente ;
+            3. `allowDownscaling` (actif par défaut) redimensionne au format
+               réel de la cellule au lieu de garder un bitmap pleine résolution
+               en mémoire.
+
+            Le rendu ne bouge pas : `contentFit="cover"` est exactement
+            l'équivalent de `resizeMode="cover"`, et `transition={0}` laisse le
+            fondu maison (`alreadySeen`) seul maître — celui d'expo-image se
+            rejouerait à chaque recyclage, ce que ce composant existe pour
+            éviter. */}
         <Image
           source={{ uri: url }}
           style={S.fill}
-          resizeMode="cover"
-          onLoad={handleLoad}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={url}
+          transition={0}
+          // `onLoadEnd` et pas `onLoad` : il part aussi sur un échec de
+          // chargement. Avec `onLoad` seul, une image qui ne charge pas
+          // laissait sa cellule bloquée à l'opacité 0.
+          onLoadEnd={handleLoad}
           accessibilityIgnoresInvertColors
         />
       </Animated.View>
@@ -108,9 +132,15 @@ function Cell({
 }
 
 function TweetImagesPaper({ urls, onBeforeOpen }: TweetImagesPaperProps) {
-  const images = (urls || [])
-    .filter((url) => typeof url === 'string' && url.length > 0)
-    .slice(0, MAX_VISIBLE);
+  // Filtre + coupe mémoïsés : refaits à chaque rendu, ils fabriquaient un
+  // tableau neuf, donc une propriété neuve pour la visionneuse.
+  const images = React.useMemo(
+    () =>
+      (urls || [])
+        .filter((url) => typeof url === 'string' && url.length > 0)
+        .slice(0, MAX_VISIBLE),
+    [urls],
+  );
 
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
@@ -121,6 +151,8 @@ function TweetImagesPaper({ urls, onBeforeOpen }: TweetImagesPaperProps) {
     },
     [onBeforeOpen],
   );
+
+  const closeViewer = useCallback(() => setViewerIndex(null), []);
 
   if (images.length === 0) return null;
 
@@ -143,12 +175,22 @@ function TweetImagesPaper({ urls, onBeforeOpen }: TweetImagesPaperProps) {
         ))}
       </View>
 
-      <ImageViewerPaper
-        urls={images}
-        initialIndex={viewerIndex ?? 0}
-        visible={viewerIndex !== null}
-        onClose={() => setViewerIndex(null)}
-      />
+      {/* Montée SEULEMENT quand elle s'ouvre.
+          Rendue en permanence, elle sortait bien `null` tant que
+          `visible` était faux — mais ses HOOKS tournaient quand même sur
+          chaque tweet illustré du fil : `useWindowDimensions` (un abonné de
+          plus aux changements de dimensions par ligne), six valeurs
+          partagées et deux `useAnimatedStyle`. Le comportement visible est
+          identique : avant comme après, la `<Modal>` apparaît au moment où
+          `viewerIndex` cesse d'être nul. */}
+      {viewerIndex !== null && (
+        <ImageViewerPaper
+          urls={images}
+          initialIndex={viewerIndex}
+          visible
+          onClose={closeViewer}
+        />
+      )}
     </>
   );
 }

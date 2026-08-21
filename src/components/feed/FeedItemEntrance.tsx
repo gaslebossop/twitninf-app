@@ -76,8 +76,18 @@ import Animated, {
  * flou recalculé à chaque image (Skia, écarté sur ce projet), pour un coût
  * sans rapport avec le gain. La décélération longue en tient lieu.
  */
-/** Nombre de lignes animées en tête de fournée — au-delà, rien ne bouge. */
-const MAX_ANIMATED_INDEX = 6;
+/**
+ * Nombre de lignes animées en tête de fournée — au-delà, rien ne bouge.
+ *
+ * Exporté parce que l'APPELANT a intérêt à le connaître : au-delà de ce
+ * plafond ce composant ne fait plus rien d'autre qu'ajouter une `Animated.View`
+ * (donc un nœud de plus, un mapper de style de plus sur le thread UI, et un
+ * aplatissement de vue en moins) autour de chaque ligne montée — c'est-à-dire
+ * autour de TOUTES les lignes que l'on traverse en défilant. Un fil qui sait
+ * qu'une ligne ne peut pas s'animer a tout intérêt à ne pas monter ce niveau
+ * du tout. Voir `FeedGutterScreen.renderTweet`.
+ */
+export const MAX_ANIMATED_INDEX = 6;
 /** Décalage entre deux lignes voisines — ce qui fait arriver la fournée en vague. */
 const STAGGER_MS = 44;
 /** Course de la trajectoire, en points. Assez pour se voir, trop peu pour sauter. */

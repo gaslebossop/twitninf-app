@@ -1,5 +1,6 @@
 import { apiService } from './api';
 import { Tweet } from '../types/api';
+import { DeferredDispatcher } from '../utils/trackQueue';
 
 export type NeuralRankMode = 'for_you' | 'feed' | 'discover' | 'trending';
 
@@ -213,6 +214,16 @@ export interface AccountStatus {
 class NeuralRankService {
   private baseUrl = '/api/neural-rank';
 
+  /**
+   * File des temps de lecture — voir la note dans `trackInteraction`. Trois
+   * envois simultanés au plus, et jamais depuis l'image de défilement qui les
+   * a produits.
+   */
+  private readonly dwellQueue = new DeferredDispatcher<NeuralRankTrackRequest>(
+    (req) => this.sendInteraction(req),
+    { maxInFlight: 3 },
+  );
+
   async getRecommendations(options: {
     mode?: NeuralRankMode;
     limit?: number;
@@ -260,6 +271,27 @@ class NeuralRankService {
   }
 
   async trackInteraction(req: NeuralRankTrackRequest): Promise<void> {
+    /**
+     * Le temps de lecture (`interactionType: 'view'`) est le second signal de
+     * masse du fil : `useDwellTracking` en émet un par tweet qui SORT de
+     * l'écran, donc en rafale dès qu'on défile vite — et depuis
+     * `onViewableItemsChanged`, que `VirtualizedList._onScroll` appelle sur le
+     * thread JS pendant le défilement.
+     *
+     * Il part donc par la même file différée que les impressions (voir
+     * `utils/trackQueue.ts`) : même route, même corps, même ordre, mais hors
+     * de l'image de défilement et sans rafale de requêtes concurrentes. Tous
+     * les autres types — like, repost, « intéressé », « pas intéressé » — sont
+     * des gestes délibérés : ils partent immédiatement.
+     */
+    if (req.interactionType === 'view') {
+      this.dwellQueue.enqueue(req);
+      return;
+    }
+    await this.sendInteraction(req);
+  }
+
+  private async sendInteraction(req: NeuralRankTrackRequest): Promise<void> {
     try {
       await apiService.request(`${this.baseUrl}/track`, {
         method: 'POST',

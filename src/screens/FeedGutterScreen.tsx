@@ -72,11 +72,16 @@ import Animated, {
   withTiming,
   interpolate,
   cancelAnimation,
-  runOnJS,
   Extrapolation,
   FadeIn,
   LinearTransition,
 } from 'react-native-reanimated';
+// `scheduleOnRN` et non `runOnJS` : `runOnJS` n'est plus qu'un ré-export
+// DÉPRÉCIÉ de `react-native-worklets` depuis Reanimated 4
+// (`react-native-reanimated/src/workletFunctions.ts`). Comportement
+// identique — `scheduleOnRN(fn, ...args)` appelle `runOnJS(fn)(...args)` —,
+// forme non curryfiée.
+import { scheduleOnRN } from 'react-native-worklets';
 import { clamp, projectDecay, rubberBand, springFrom } from '../utils/gesture';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -102,7 +107,7 @@ import TweetRowGutter from '../components/feed/paper2b/TweetRowGutter';
 import type { TweetRowAction } from '../components/feed/TweetRow';
 import PromotedAccountCard from '../components/feed/PromotedAccountCard';
 import TweetSkeleton from '../components/feed/TweetSkeleton';
-import FeedItemEntrance from '../components/feed/FeedItemEntrance';
+import FeedItemEntrance, { MAX_ANIMATED_INDEX } from '../components/feed/FeedItemEntrance';
 import ExploreGrid, { type CardRect } from '../components/feed/ExploreGrid';
 import ExploreImmersive from '../components/feed/ExploreImmersive';
 import feedback from '../utils/feedback';
@@ -166,6 +171,37 @@ const SWIPE_COMMIT = 0.32;
  */
 const TAB_ORDER = ['following', 'forYou', 'explore'] as const;
 type FeedTab = typeof TAB_ORDER[number];
+
+/**
+ * La liste du fil — animée sur iOS SEULEMENT, et c'est délibéré.
+ *
+ * ── Ce que coûte `Animated.FlatList` ─────────────────────────────────────
+ * Ce n'est pas un simple `FlatList` avec une prop en plus : il impose son
+ * PROPRE `CellRendererComponent`, qui est une `Animated.View`
+ * (`react-native-reanimated/src/component/FlatList.tsx`,
+ * `createCellRendererComponent`). Autrement dit, chaque cellule montée — donc
+ * une quarantaine avec `windowSize={7}` sur des lignes de cette taille —
+ * devient un composant animé complet (filtrage de props, gestionnaire
+ * d'événements natifs, mise à jour de props JS), là où un `FlatList` nu
+ * n'enveloppe la cellule dans rien du tout.
+ *
+ * ── Pourquoi iOS le paie et pas Android ──────────────────────────────────
+ * Le seul consommateur du gestionnaire animé est le logo d'actualisation
+ * (`usePullRefreshLogo` → `pull`), et il n'existe QUE sur iOS : `pull` se
+ * nourrit d'un `contentOffset.y` NÉGATIF, que seul le rebond iOS produit, et
+ * `PullRefreshLogo` n'est monté que sur iOS (Android garde son
+ * `RefreshControl` natif). Sur Android le gestionnaire tournait donc à chaque
+ * image, sur le thread UI, pour alimenter une valeur que personne ne lit — et
+ * faisait payer à chaque cellule un composant animé pour rien.
+ *
+ * `Platform.OS` est constant sur la durée de vie du processus : ce choix ne
+ * peut pas changer entre deux rendus, donc la liste ne se remonte jamais.
+ *
+ * Note : c'est aussi ce que fait déjà `TweetsScreen` (le fil 2A), qui monte un
+ * `FlatList` nu. La divergence est purement de présentation — 2B a un logo
+ * d'actualisation que 2A n'a pas.
+ */
+const FeedList = (Platform.OS === 'ios' ? Animated.FlatList : FlatList) as typeof Animated.FlatList;
 const tabIndexOf = (tab: FeedTab): number => TAB_ORDER.indexOf(tab);
 
 /**
@@ -517,8 +553,8 @@ export default function FeedGutterScreen() {
    * `switchTab` est indispensable : un worklet reçoit une COPIE des objets
    * qu'il capture, donc lire `ref.current` depuis le thread UI renverrait
    * éternellement la valeur du premier rendu — ici la fonction vide, et la
-   * bascule ne partirait jamais. En passant par `runOnJS(switchTab)`, la
-   * lecture de la ref a lieu côté JS, où elle est à jour.
+   * bascule ne partirait jamais. En passant par `scheduleOnRN(switchTab, …)`,
+   * la lecture de la ref a lieu côté JS, où elle est à jour.
    */
   const handleTabChangeRef = useRef<(tab: FeedTab) => void>(() => {});
   const switchTab = useCallback((tab: FeedTab) => {
@@ -577,7 +613,7 @@ export default function FeedGutterScreen() {
           const target = clamp(tabIndex.value + step, 0, TAB_ORDER.length - 1);
 
           if (commit && target !== tabIndex.value) {
-            runOnJS(switchTab)(TAB_ORDER[target]);
+            scheduleOnRN(switchTab, TAB_ORDER[target]);
           }
           // Le fil revient toujours à sa place : le contenu du nouvel onglet
           // est servi depuis son cache et remplace l'ancien sous le doigt. Le
@@ -1981,26 +2017,58 @@ export default function FeedGutterScreen() {
       // Un compte promu n'a rien d'un tweet : pas de like, pas de réponse,
       // rien à ouvrir en détail. Le passer à `TweetRow` afficherait une carte
       // de tweet vide avec une bio à la place du texte.
-      const promoted = (item as any).promoted_account;
-      if (promoted) {
-        return (
+      /**
+       * L'enveloppe d'arrivée n'est montée QUE sur les lignes qui peuvent
+       * réellement s'animer.
+       *
+       * ── Ce qu'elle coûtait partout ailleurs ─────────────────────────────
+       * `FeedItemEntrance` plafonne déjà le mouvement aux `MAX_ANIMATED_INDEX`
+       * premières lignes : au-delà, `progress` vaut 1 pour toujours et son
+       * style animé se réduit à un `translateY: 0` constant. Mais le
+       * composant restait monté sur CHAQUE ligne — soit une `Animated.View` de
+       * plus, un mapper de style de plus sur le thread UI, et un
+       * aplatissement de vue en moins, sur les ~40 cellules que
+       * `windowSize={7}` tient montées. C'est-à-dire précisément sur toutes
+       * les lignes qu'on traverse en défilant, et jamais sur celles qui
+       * s'animent.
+       *
+       * Reanimated documente la limite : « ~100 composants animés » sur un
+       * Android d'entrée de gamme avant que les performances se dégradent.
+       * Quarante lignes de fil en consommaient donc la moitié pour un
+       * mouvement que trente-quatre d'entre elles ne joueront jamais.
+       *
+       * ── Ce que ça ne change PAS ─────────────────────────────────────────
+       * Les six premières lignes gardent exactement le même comportement,
+       * montage comme changement de fournée : c'est la seule chose que ce
+       * composant sait faire.
+       */
+      const entering = (content: React.ReactNode) =>
+        index < MAX_ANIMATED_INDEX ? (
           <FeedItemEntrance
             id={String(item.id)}
             index={index}
             generation={entranceGeneration}
             seen={entranceSeen}
           >
-            <PromotedAccountCard
-              account={promoted}
-              adId={(item as any).ad_data?.id}
-              onOpen={() => {
-                if ((item as any).ad_data?.id) {
-                  apiService.post(`/api/ads/advertisements/${(item as any).ad_data.id}/click`).catch(() => {});
-                }
-                (navigation as any).navigate('UserProfile', { userId: promoted.id, username: promoted.username });
-              }}
-            />
+            {content}
           </FeedItemEntrance>
+        ) : (
+          <>{content}</>
+        );
+
+      const promoted = (item as any).promoted_account;
+      if (promoted) {
+        return entering(
+          <PromotedAccountCard
+            account={promoted}
+            adId={(item as any).ad_data?.id}
+            onOpen={() => {
+              if ((item as any).ad_data?.id) {
+                apiService.post(`/api/ads/advertisements/${(item as any).ad_data.id}/click`).catch(() => {});
+              }
+              (navigation as any).navigate('UserProfile', { userId: promoted.id, username: promoted.username });
+            }}
+          />,
         );
       }
       // Rang dans le fil de discussion — logique pure, donc testée hors de
@@ -2037,17 +2105,6 @@ export default function FeedGutterScreen() {
       // rendue sous la ligne concernée. Toucher `data` obligerait
       // `keyExtractor`, la déduplication, la pagination et le suivi des
       // impressions à composer avec des entrées qui ne sont pas des tweets.
-      const entering = (content: React.ReactNode) => (
-        <FeedItemEntrance
-          id={String(item.id)}
-          index={index}
-          generation={entranceGeneration}
-          seen={entranceSeen}
-        >
-          {content}
-        </FeedItemEntrance>
-      );
-
       if (askAtId !== item.id) return entering(row);
 
       // Le tweet d'abord, la question juste en dessous : « des tweets comme
@@ -2650,7 +2707,7 @@ export default function FeedGutterScreen() {
           onInterest={handleExploreInterest}
         />
       ) : (
-      <Animated.FlatList
+      <FeedList
         // Indispensable : c'est par cette ref que la traction est lue sur le
         // thread UI (voir `usePullRefreshLogo`). Sans elle, pas de logo.
         ref={feedListRef}
@@ -2660,13 +2717,49 @@ export default function FeedGutterScreen() {
         style={S.scrollView}
         contentContainerStyle={S.scrollContent}
         showsVerticalScrollIndicator={false}
-        // Sur le thread UI : un `onScroll` en JS à chaque image du défilement
-        // est exactement ce que 2B passe son temps à éviter.
-        onScroll={onFeedScroll}
-        // `1` et pas `16` : `16` plafonne les événements à ~60 par seconde,
-        // ce qui fait avancer l'animation par paliers sur un écran à 120 Hz.
-        // Le coût est nul ici — le gestionnaire est un worklet, il ne réveille
-        // pas le thread JS à chaque événement.
+        /**
+         * ── Ce gestionnaire tourne BIEN sur le thread UI ─────────────────
+         * Un commentaire de ce fichier l'affirmait, un autre (dans
+         * `usePullRefreshLogo`) affirmait le contraire — « Reanimated ne
+         * reçoit plus son objet-gestionnaire mais une fonction JS ordinaire
+         * et retombe sur le thread JS ». C'est la SECONDE version qui est
+         * fausse, et la lecture des sources le tranche :
+         *
+         *  - `useAnimatedScrollHandler` ne rend pas une fonction mais un objet
+         *    `{ workletEventHandler }` (`hook/useEvent.ts`) ;
+         *  - `createAnimatedComponent` reconnaît cet objet et l'enregistre en
+         *    NATIF sur la vue défilante, via
+         *    `NativeEventsManager.getEventViewTag()`, qui appelle
+         *    `getScrollableNode()` — que `FlatList` expose
+         *    (`Libraries/Lists/FlatList.js`) ;
+         *  - et `PropsFilter` remplace la prop transmise à la `FlatList` par
+         *    un `dummyListener`. Le worklet ne traverse donc JAMAIS la
+         *    composition d'`onScroll` de `VirtualizedList`.
+         *
+         * Ce qui reste vrai, en revanche : `VirtualizedList._onScroll` tourne,
+         * lui, sur le thread JS à chaque événement reçu (fenêtrage,
+         * visibilité, `onEndReached`). C'est un coût de la `FlatList`, pas de
+         * Reanimated — et c'est lui que le reste de cet écran s'emploie à ne
+         * pas alourdir.
+         *
+         * Sur Android il n'y a pas de gestionnaire du tout : rien n'y lit
+         * `pull` (voir `FeedList`).
+         */
+        onScroll={Platform.OS === 'ios' ? onFeedScroll : undefined}
+        /**
+         * ⚠️ `1` et `16` sont RIGOUREUSEMENT ÉQUIVALENTS sur RN 0.81 :
+         * « Values <= 16 will disable throttling, regardless of the refresh
+         * rate of the device » (`Libraries/Components/ScrollView/ScrollView.js`).
+         * Le commentaire précédent affirmait ici que `16` plafonnait à 60
+         * événements par seconde — c'est faux, et ça reste faux à 120 Hz.
+         *
+         * La valeur est donc conservée pour ce qu'elle vaut vraiment : elle
+         * dit « ne throttle pas », comme le fait déjà `VirtualizedList` par
+         * défaut (`scrollEventThrottle: this.props.scrollEventThrottle ?? 0.0001`).
+         * Réduire réellement la cadence demanderait une valeur > 16, ce qui
+         * ralentirait d'autant le fenêtrage de la liste et `onEndReached` :
+         * à ne pas tenter sans mesure sur appareil.
+         */
         scrollEventThrottle={1}
         // iOS : le rebond de la liste doit exister même quand le fil tient en
         // moins d'un écran, sinon il n'y a rien à tirer et l'actualisation

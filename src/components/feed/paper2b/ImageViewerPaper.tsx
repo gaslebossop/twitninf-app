@@ -36,7 +36,6 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Modal,
   Pressable,
   Share,
@@ -46,6 +45,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -219,10 +219,20 @@ const ZoomablePage = memo(function ZoomablePage({ url, width, height, dismiss, o
     <GestureDetector gesture={gestures}>
       <Animated.View style={{ width, height }}>
         <Animated.View style={[S.pageInner, imageStyle]}>
+          {/* `expo-image` : la photo vient du MÊME cache disque + mémoire que
+              la vignette de la ligne du fil (voir `TweetImagesPaper`). Ouvrir
+              une image qu'on vient de voir ne la retélécharge donc plus, et
+              la roue d'attente ne s'affiche que pour une image réellement
+              inédite. `contentFit="contain"` est l'exact équivalent de
+              `resizeMode="contain"`, et `transition={0}` garde l'apparition
+              franche d'avant. */}
           <Image
             source={{ uri: url }}
             style={S.image}
-            resizeMode="contain"
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            recyclingKey={url}
+            transition={0}
             onLoadEnd={() => setLoaded(true)}
             accessibilityIgnoresInvertColors
           />

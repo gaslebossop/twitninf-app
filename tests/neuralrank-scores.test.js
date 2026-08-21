@@ -17,7 +17,19 @@ const ts = require('typescript');
  * test reste sur le vrai source, sans monter la moitié de l'app.
  */
 function loadPureExport(path, exportName) {
-  const source = readFileSync(path, 'utf8');
+  /**
+   * ⚠️ Fins de ligne NORMALISÉES avant tout découpage.
+   *
+   * Le repère de fin de fonction est la suite « saut de ligne, `}`, saut de
+   * ligne ». Sur une copie de travail Windows (`core.autocrlf=true`, le cas
+   * de ce dépôt), le fichier est lu en CRLF : le repère ne se trouve jamais,
+   * `indexOf` rend -1, la tranche est vide, et les six essais de ce fichier
+   * échouaient tous sur « withRecommendationScores is not a function » —
+   * alors que le source est parfaitement valide et que le même essai passe
+   * sur une copie en LF. Un découpage de texte brut doit lire un texte dont
+   * il connaît les fins de ligne.
+   */
+  const source = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
   const start = source.indexOf(`export function ${exportName}`);
   if (start === -1) throw new Error(`${exportName} introuvable dans ${path}`);
   const end = source.indexOf('\n}\n', start) + 3;

@@ -17,6 +17,7 @@
  */
 
 import { apiService } from './api';
+import { DeferredDispatcher } from '../utils/trackQueue';
 
 type TrackableAction =
   | 'like' | 'unlike'
@@ -51,6 +52,59 @@ export interface TrackOptions {
  * C'est ce que garantit `hasRenderableContent` (`utils/tweetMedia`).
  */
 
+type TrackBody = {
+  tweet_id: string;
+  action: TrackableAction;
+  dwell_ms: number | null;
+  author_id: string | null;
+  experiment_id: string | null;
+  variant_id: string | null;
+  dwell_media: string | null;
+  content_chars: number | null;
+  video_duration_ms: number | null;
+};
+
+function bodyFor(
+  tweetId: string,
+  action: TrackableAction,
+  dwellMs?: number,
+  options: TrackOptions = {},
+): TrackBody {
+  return {
+    tweet_id: tweetId,
+    action,
+    dwell_ms: dwellMs ?? null,
+    author_id: options.authorId ?? null,
+    experiment_id: options.experimentId ?? null,
+    variant_id: options.variantId ?? null,
+    dwell_media: options.dwellMedia ?? null,
+    content_chars: options.contentChars ?? null,
+    video_duration_ms: options.videoDurationMs ?? null,
+  };
+}
+
+const postTrack = (body: TrackBody) => apiService.post('/api/track', body);
+
+/**
+ * ── Pourquoi les impressions ne partent PAS comme les gestes ─────────────
+ * Une impression est émise par `onViewableItemsChanged`, que
+ * `VirtualizedList._onScroll` appelle sur le thread JS À CHAQUE ÉVÉNEMENT DE
+ * DÉFILEMENT. Traverser vingt tweets d'un coup lançait donc vingt
+ * `apiService.post` simultanés depuis l'intérieur d'une image de défilement —
+ * vingt `buildClientHeaders()` (chacun un `Intl.DateTimeFormat()`), vingt
+ * `JSON.stringify`, vingt `fetch`, vingt analyses de réponse, en concurrence
+ * avec le fenêtrage de la liste et le rendu des lignes.
+ *
+ * La file ne perd rien et ne change ni la route ni le corps ni l'ordre : elle
+ * fait seulement partir l'envoi au tour de boucle SUIVANT, et plafonne le
+ * nombre de requêtes simultanées. Voir `utils/trackQueue.ts`.
+ *
+ * Réservée aux impressions : un geste délibéré (like, repost, signalement,
+ * skip) est rare, n'arrive jamais en rafale, et peut bloquer un écran qui
+ * l'attend — il continue de partir immédiatement.
+ */
+const impressionQueue = new DeferredDispatcher<TrackBody>(postTrack, { maxInFlight: 3 });
+
 async function trackAction(
   tweetId: string,
   action: TrackableAction,
@@ -58,17 +112,7 @@ async function trackAction(
   options: TrackOptions = {},
 ) {
   try {
-    await apiService.post('/api/track', {
-      tweet_id: tweetId,
-      action,
-      dwell_ms: dwellMs ?? null,
-      author_id: options.authorId ?? null,
-      experiment_id: options.experimentId ?? null,
-      variant_id: options.variantId ?? null,
-      dwell_media: options.dwellMedia ?? null,
-      content_chars: options.contentChars ?? null,
-      video_duration_ms: options.videoDurationMs ?? null,
-    });
+    await postTrack(bodyFor(tweetId, action, dwellMs, options));
   } catch {
     // Non-blocking
   }
@@ -98,8 +142,20 @@ export const trackingService = {
   trackProfileView: (tweetId: string, o?: TrackOptions) =>
     trackAction(tweetId, 'profile_view', undefined, o),
 
-  trackView: (tweetId: string, dwellMs?: number, o?: TrackOptions) =>
-    trackAction(tweetId, 'view', dwellMs, o),
+  /**
+   * L'impression. Le SEUL signal qui parte en rafale pendant le défilement,
+   * donc le seul à passer par la file différée (voir `impressionQueue`).
+   *
+   * Ne rend volontairement pas de promesse d'envoi : personne n'attend une
+   * impression, et en rendre une inviterait un appelant à s'y accrocher depuis
+   * le chemin chaud du défilement.
+   */
+  trackView: (tweetId: string, dwellMs?: number, o?: TrackOptions) => {
+    impressionQueue.enqueue(bodyFor(tweetId, 'view', dwellMs, o));
+  },
+
+  /** Ce qui reste en file d'impressions — diagnostic uniquement. */
+  pendingImpressions: () => impressionQueue.pending,
 };
 
 export default trackingService;
