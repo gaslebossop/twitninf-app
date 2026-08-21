@@ -45,7 +45,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { apiService, progressiveRecommendationService } from '../services';
-import { neuralRankService, signalsFromTweet } from '../services/neuralRankService';
+import { neuralRankService, signalsFromTweet, withRecommendationScores } from '../services/neuralRankService';
 import { Tweet, RecommendationItem, RecommendationRequest, ProgressiveRecommendationRequest, ProgressiveRecommendationItem } from '../types/api';
 import Avatar from '../components/Avatar';
 import BanAlertBanner from '../components/BanAlertBanner';
@@ -776,8 +776,11 @@ export default function TweetsScreen() {
 
       if (response?.success && Array.isArray(response.data?.recommendations)) {
         const tweets = dedupeTweets(
-          response.data.recommendations.filter(
-            (t: any) => t && t.id && t.author && t.author.id
+          withRecommendationScores(
+            response.data.recommendations.filter(
+              (t: any) => t && t.id && t.author && t.author.id
+            ),
+            response.data.scores,
           )
         );
 
