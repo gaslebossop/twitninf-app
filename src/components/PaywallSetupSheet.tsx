@@ -12,8 +12,6 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, radius } from '../theme';
-import { toast } from './ui/Toast';
-import { confirmAsync } from './ui/ConfirmSheet';
 import {
   creatorNetFor,
   fetchConfig,
@@ -72,6 +70,10 @@ export default function PaywallSetupSheet({
   const [preview, setPreview] = useState('');
   const [saving, setSaving] = useState(false);
   const [remaining, setRemaining] = useState(0);
+  /** La confirmation de retrait de la vente, posée DANS la feuille — voir `makeFree`. */
+  const [confirmingFree, setConfirmingFree] = useState(false);
+  /** Le dernier échec, écrit dans la feuille : un toast n'y serait pas visible. */
+  const [error, setError] = useState<string | null>(null);
 
   /**
    * À l'ouverture, on demande l'état du verrou : la feuille sert autant à
@@ -80,6 +82,10 @@ export default function PaywallSetupSheet({
    */
   useEffect(() => {
     if (!visible) return;
+    // Rouvrir la feuille repart d'une page propre : ni l'échec précédent, ni
+    // une confirmation restée en suspens.
+    setError(null);
+    setConfirmingFree(false);
     fetchConfig().then(setConfig).catch(() => setConfig(null));
 
     if (draftMode) {
@@ -121,27 +127,36 @@ export default function PaywallSetupSheet({
     && priceValue <= config.max_price_twc
     && !priceLocked;
 
-  const makeFree = () => {
-    if (!existing) return;
-    confirmAsync({
-      title: 'Rendre ce contenu gratuit ?',
-      message: "Il ne sera plus vendu. Ceux qui l'ont déjà acheté gardent leur accès et ne sont pas remboursés.",
-      confirmLabel: 'Rendre gratuit',
-      cancelLabel: 'Garder en vente',
-      destructive: true,
-    }).then((ok) => {
-      if (ok) (async () => {
-            try {
-              await unlockContent(existing.id);
-              onDone?.();
-              onClose();
-            } catch (e: any) {
-              toast.error('Impossible', {
-                description: e?.message || 'Réessaie dans un instant.',
-              });
-            }
-          })();
-    });
+  /**
+   * Retrait de la vente, confirmé DANS la feuille.
+   *
+   * ── Le bug que ça remplace ──
+   * Cette action passait par `confirmAsync`, et l'échec par `toast.error`.
+   * Or cette feuille est une `<Modal>` React Native, c'est-à-dire une FENÊTRE
+   * NATIVE distincte : les hôtes de `components/ui` (toast, confirmation,
+   * feuille d'actions) vivent dans l'arbre React de l'app, donc ils se
+   * dessinent DERRIÈRE elle. Concrètement, « Rendre gratuit » était un bouton
+   * mort — la demande de confirmation s'ouvrait hors de vue, personne ne
+   * pouvait y répondre — et un échec de mise en vente ne disait rien du tout.
+   *
+   * La question est donc posée à la place même des boutons, et la réponse
+   * s'écrit là où elle se lit. Aucune surface nouvelle : c'est la rangée
+   * d'actions qui change de contenu.
+   */
+  const makeFree = async () => {
+    if (!existing || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await unlockContent(existing.id);
+      onDone?.();
+      onClose();
+    } catch (e: any) {
+      setConfirmingFree(false);
+      setError(e?.message || 'Retrait impossible. Réessaie dans un instant.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const submit = async () => {
@@ -154,6 +169,7 @@ export default function PaywallSetupSheet({
     }
 
     setSaving(true);
+    setError(null);
     try {
       await lockContent({
         contentType,
@@ -164,9 +180,7 @@ export default function PaywallSetupSheet({
       onDone?.();
       onClose();
     } catch (e: any) {
-      toast.error('Mise en vente impossible', {
-        description: e?.message || 'Réessaie dans un instant.',
-      });
+      setError(e?.message || 'Mise en vente impossible. Réessaie dans un instant.');
     } finally {
       setSaving(false);
     }
@@ -239,6 +253,37 @@ export default function PaywallSetupSheet({
               maxLength={280}
             />
 
+            {/* L'échec se dit ICI et pas en toast : sous une `<Modal>`, un
+                toast se dessine derrière la fenêtre native et n'est jamais vu. */}
+            {!!error && <Text style={styles.error}>{error}</Text>}
+
+            {confirmingFree ? (
+              <>
+                <Text style={styles.confirm}>
+                  Rendre ce contenu gratuit ? Il ne sera plus vendu. Ceux qui
+                  l’ont déjà acheté gardent leur accès et ne sont pas remboursés.
+                </Text>
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={styles.ghost}
+                    onPress={() => setConfirmingFree(false)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.ghostText}>Garder en vente</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primary, saving && styles.disabled]}
+                    onPress={makeFree}
+                    disabled={saving}
+                    activeOpacity={0.85}
+                  >
+                    {saving
+                      ? <ActivityIndicator size="small" color={colors.onAccent} />
+                      : <Text style={styles.primaryText}>Rendre gratuit</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
             <View style={styles.actions}>
               {/* Rendre gratuit reste possible à tout moment, même une fois le
                   prix figé : les acheteurs gardent leur accès, les autres y
@@ -252,7 +297,7 @@ export default function PaywallSetupSheet({
                   <Text style={styles.ghostDanger}>Ne pas vendre</Text>
                 </TouchableOpacity>
               ) : !!existing && existing.is_active ? (
-                <TouchableOpacity style={styles.ghost} onPress={makeFree} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.ghost} onPress={() => setConfirmingFree(true)} activeOpacity={0.85}>
                   <Text style={styles.ghostDanger}>Rendre gratuit</Text>
                 </TouchableOpacity>
               ) : (
@@ -273,6 +318,7 @@ export default function PaywallSetupSheet({
                   </Text>}
               </TouchableOpacity>
             </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -328,6 +374,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     marginTop: 14,
   },
+
+  // 13 px : le plancher de lisibilité d'un texte de contenu. Un message
+  // d'échec écrit plus petit que le reste ne se lit pas, et c'est le seul
+  // retour que cette feuille peut donner.
+  error: { color: colors.red, fontSize: 13, lineHeight: 19, marginTop: 14 },
+  confirm: { color: colors.textPrimary, fontSize: 13, lineHeight: 19, marginTop: 18 },
 
   actions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20 },
   ghost: { paddingHorizontal: 16, paddingVertical: 12, marginRight: 8 },
