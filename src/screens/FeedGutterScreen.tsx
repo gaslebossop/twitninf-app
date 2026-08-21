@@ -1182,9 +1182,28 @@ export default function FeedGutterScreen() {
         setTweets(prevTweets => prevTweets.map(tweet => tweet.id === tweetId ? { ...tweet, stats: { ...tweet.stats, likes: currentLikes }, user_interaction: { ...tweet.user_interaction, is_liked: wasLiked, is_super_liked: wasSuperLiked } } : tweet));
       } else {
         trackTweetInteraction(tweetId, wasLiked ? 'unlike' : 'like', { tab: activeTab, previous_likes: currentLikes, algorithm: currentAlgorithm });
+        /**
+         * Le moteur reçoit le geste QUEL QUE SOIT L'ONGLET.
+         *
+         * Cet appel vivait dans le `if (activeTab === 'forYou')` juste en
+         * dessous : un like posé depuis « Abonnements » n'atteignait donc
+         * jamais le recommandeur — ni like, ni unlike, ni repost, sur un
+         * onglet entier. Or un like est un like : le profil de goût,
+         * l'affinité d'auteur, la co-occurrence et le modèle de clic sont
+         * tous globaux au lecteur, et `/track` ne prend d'ailleurs aucun
+         * paramètre d'onglet.
+         */
+        neuralRankService.trackInteraction({
+          tweetId,
+          interactionType: wasLiked ? 'unlike' : 'like',
+          ...signalsFor(tweetId),
+        });
+
+        // Celui-ci reste propre à « Pour toi » : il porte un `algorithm` et un
+        // `sessionId`, il rend compte d'une SESSION de recommandation, pas du
+        // geste. Il n'a rien à dire sur un fil d'abonnements.
         if (activeTab === 'forYou') {
           sendRecommendationFeedback(tweetId, wasLiked ? 'dislike' : 'like');
-          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasLiked ? 'unlike' : 'like', ...signalsFor(tweetId) });
         }
       }
     } catch {
@@ -1264,9 +1283,16 @@ export default function FeedGutterScreen() {
         setTweets(prevTweets => prevTweets.map(tweet => tweet.id !== tweetId ? tweet : { ...tweet, stats: { ...tweet.stats, retweets: currentRetweets }, user_interaction: { ...tweet.user_interaction, is_retweeted: wasRetweeted } }));
       } else {
         trackTweetInteraction(tweetId, wasRetweeted ? 'unretweet' : 'retweet', { tab: activeTab, previous_retweets: currentRetweets, algorithm: currentAlgorithm });
+        // Même raison que pour le like : le repost part au moteur depuis les
+        // deux onglets du fil.
+        neuralRankService.trackInteraction({
+          tweetId,
+          interactionType: wasRetweeted ? 'unretweet' : 'retweet',
+          ...signalsFor(tweetId),
+        });
+
         if (activeTab === 'forYou') {
           sendRecommendationFeedback(tweetId, wasRetweeted ? 'skip' : 'share');
-          if (currentAlgorithm === 'neural_rank') neuralRankService.trackInteraction({ tweetId, interactionType: wasRetweeted ? 'unretweet' : 'retweet', ...signalsFor(tweetId) });
         }
       }
     } catch {
