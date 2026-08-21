@@ -5,13 +5,18 @@
 > à partir de `git log`, `git diff` et d'une relecture du code, par la session suivante (2026-08-21).
 >
 > Les **preuves ci-dessous ont été relancées et vérifiées** par le rédacteur.
+>
+> ⚠️ **Trois points listés comme « non traités » dans la première version de ce document se sont
+> révélés déjà en place** à la vérification (adjacence, perf de liste, cohérence visuelle). Corrigé
+> au §4.
 
 ---
 
 ## 1. État de la branche
 
 - Branche : `feat/fil-2b-audit`, partant de `main` (`ae34925`).
-- **10 commits**, `+910 / −102` sur 13 fichiers (dont 2 fichiers de tests neufs).
+- **12 commits** (10 de l'agent + 2 de la session suivante), `+910 / −102` sur 13 fichiers
+  pour la part de l'agent (dont 2 fichiers de tests neufs).
 - **Rien n'a été poussé** (la branche n'existe pas sur `origin`), **rien n'a été fusionné dans
   `main`**, **rien n'a été déployé**.
 
@@ -81,10 +86,10 @@ d'auteur, co-occurrence et modèle de clic sont tous **globaux au lecteur**.
 | 2 | Le fil s'affiche-t-il vraiment ? | ✅ **corrigé** (`dd0bf3b`) — c'était le gros trou |
 | 3 | Communication avec l'algo | ✅ **largement corrigé** (`7c018a9`, `6b059e4`, `f93c648`) |
 | 4 | Pagination & déduplication | ✅ **corrigé** (`741f6ce`) |
-| 5 | Adjacence parent/réponse | ❓ **non traité visiblement** — `withoutOrphanReplies` / `threadDepthAt` non touchés |
-| 6 | Performance de liste | ❌ **non traité** — `TweetRowGutter` fait 43 ko et son coût de re-rendu n'a pas été mesuré |
+| 5 | Adjacence parent/réponse | ✅ **déjà en place** — `withoutOrphanReplies` appliqué dans **les deux** fils au même endroit (`FeedGutterScreen.tsx:1580`, `TweetsScreen.tsx:1490`), avec deux suites de tests (`feed-orphan-replies`, `feed-thread-depth`). `threadDepthAt` n'est que dans le 2B : c'est le rail de gouttière, de la présentation, donc la parité tient |
+| 6 | Performance de liste | ✅ **déjà en place** — `TweetRowGutter` est `memo(..., areEqual)` avec un comparateur sur mesure, `keyExtractor` est un `useCallback` stable, et la `FlatList` est réglée (`initialNumToRender=6`, `maxToRenderPerBatch=5`, `windowSize=7`, `removeClippedSubviews` sur Android). Pas de `getItemLayout` — normal, les lignes sont de hauteur variable |
 | 7 | Pièges connus du projet | ✅ **un piège trouvé et corrigé** : le toast invisible sous `<Modal>` (`8c05a79`) |
-| 8 | Cohérence visuelle 2B | ❌ **non traité** — aucun fichier de `theme/` ni de palette dans le diff |
+| 8 | Cohérence visuelle 2B | ✅ **vérifié** — aucune fuite de « Pulse » : les six composants de `feed/paper2b/` importent tous la palette `paper2b`, et aucun n'importe `theme/colors` |
 
 ## 5. Ce qui reste à faire — par impact décroissant
 
@@ -100,23 +105,23 @@ La chaîne est désormais complète : moteur `scores` → API `data.scores` → 
 relecture. Le chemin n'a **jamais été exécuté** — il demande Postgres, Redis et le moteur Rust
 vivants. À confirmer sur un environnement réel.
 
-### 🟠 `src/screens/TweetDetailGutterScreen.tsx` est toujours non versionné
-Il l'était déjà avant le chantier. **Le `.gitignore` du dépôt exclut `*.js` et `*.md`** — mais pas
-`*.tsx`, donc ici un `git add` simple suffit. (Pour les documents, dont **ce fichier**, il faut
-`git add -f`.) À relire puis commiter.
+### ✅ ~~`TweetDetailGutterScreen.tsx` non versionné~~ — **versé le 2026-08-21** (`395f48c`)
+Le fichier existait sur le disque, complet (2597 l.) et déjà câblé dans `MainNavigator`, mais n'avait
+jamais été ajouté à l'index : un `git clean` ou un changement de branche l'effaçait sans trace.
 
-### 🟠 Performance de liste (checklist #6)
-Non mesurée. `TweetRowGutter` fait 43 ko : s'il re-rend à chaque scroll, le fil est mort sur
-appareil modeste. À vérifier avec le recyclage, `keyExtractor`, `getItemLayout`, mémoïsation.
+Le câblage dans `MainNavigator` n'est **pas** de ce commit : il fait partie des modifications non
+commitées antérieures au chantier, laissées intactes.
 
-### 🟡 Adjacence parent/réponse (checklist #5)
-Non traité. Le recommandeur émet le parent juste avant sa réponse ; chaque couche doit garantir
-l'adjacence. Piège connu de double affichage. Voir `withoutOrphanReplies` et `threadDepthAt` dans
-`src/utils/feed.ts`.
+⚠️ Le `.gitignore` exclut `*.js` et `*.md` — mais pas `*.tsx`. Pour les documents, dont **ce
+fichier**, il faut `git add -f`.
 
-### 🟡 Cohérence visuelle 2B (checklist #8)
-Non traité. Palette papier en clair **et** en sombre, sans fuite de « Pulse » là où ce n'est pas
-assumé. Rappel : **l'onglet Explorer garde volontairement la palette Pulse** — ne pas le « corriger ».
+### ❌ Trois points de la checklist étaient en fait **déjà traités**
+Vérifié le 2026-08-21, contrairement à ce que laissait croire l'absence de ces fichiers dans le diff
+du chantier : **adjacence** (#5), **performance de liste** (#6) et **cohérence visuelle 2B** (#8)
+sont en place. Voir le tableau du §4 pour le détail et les preuves.
+
+La leçon vaut pour la suite : *ne pas apparaître dans le diff d'un chantier* ne veut pas dire
+*ne pas exister* — ces trois-là étaient simplement déjà bons avant.
 
 ### 🟢 Le diagnostic laissé en « à faire » par `701eb31`
 `pull` est écrit par le worklet `onScroll`, qui retombe sur le thread JS dès qu'il passe par une
