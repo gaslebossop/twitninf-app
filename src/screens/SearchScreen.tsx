@@ -1,167 +1,172 @@
-import React, { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { fonts, radius } from '../theme';
-import { ScreenBackground, ScreenSkeleton, EmptyState } from '../components/ui';
-import SceneCanvas, { SceneReveal, useSceneReveal } from '../components/SceneCanvas';
-import Skeleton from '../components/ui/Skeleton';
-import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
+/**
+ * Recherche — DA « papier », la même que le fil (voir `theme/paper2b.ts`).
+ *
+ * ── L'objet ──────────────────────────────────────────────────────────────
+ * Ce n'est pas un tableau de bord de la recherche, c'est un DÉPOUILLEMENT :
+ * on écrit une cote en haut de la page, on choisit une rubrique, et on lit ce
+ * qui remonte. La page n'a donc ni carte, ni pastille de couleur, ni grille de
+ * tuiles — une colonne, des rubriques en capitales espacées, et la MÊME
+ * gouttière de 52 px que le fil, d'un bout à l'autre :
+ *
+ *   ┌────┬──────────────────────────────┐
+ *   │ 🔎 │  le champ, écrit en gros     │  ← la seule signature de l'écran
+ *   ├────┴──────────────────────────────┤
+ *   │ Tout  Comptes  Publications  …    │  ← rubriques soulignées, comme le fil
+ *   ├───────────────────────────────────┤
+ *   │ RÉSUMÉ                            │  ← une bande, pas une carte
+ *   ├────┬──────────────────────────────┤
+ *   │ 👤 │  nom / @pseudo / méta        │  ← l'avatar tient la gouttière
+ *   │ 12k│  #tendance                   │  ← le chiffre tient la gouttière
+ *   │ ♥ 8│  une publication             │  ← `TweetRowGutter`, sans retouche
+ *   └────┴──────────────────────────────┘
+ *
+ * Une seule colonne de gauche pour trois natures de ligne : c'est elle qui
+ * fait tenir la page ensemble, et c'est aussi ce qui raccorde la recherche au
+ * fil sans qu'un seul pixel soit redessiné à l'identique de part et d'autre.
+ *
+ * ── Ce qui a été retiré, et pourquoi ─────────────────────────────────────
+ *   - les CARTES (résultat, tendance, résumé) : quatre fonds gris arrondis
+ *     empilés font quatre boîtes de même poids, donc aucune hiérarchie. Ce qui
+ *     sépare deux lignes ici, c'est le rythme vertical et la gouttière — le
+ *     fil 2B ne trace pas une seule règle horizontale, cette page non plus ;
+ *   - les PASTILLES de filtre : elles disent la même chose que des onglets
+ *     soulignés en occupant plus de place, et elles ne ressemblent à rien
+ *     d'autre dans l'app depuis la refonte du fil ;
+ *   - les TWEETS CITÉS recopiés dans le résumé : ils sont, par construction,
+ *     déjà dans les résultats juste en dessous. Les comptes cités, eux,
+ *     restent — ce sont des raccourcis vers des profils qui, souvent, ne sont
+ *     PAS dans la liste (filtre « Publications ») ;
+ *   - les RUBRIQUES quand le champ est vide : sans requête, aucun filtre ne
+ *     change quoi que ce soit à l'écran (les tendances s'affichent quel que
+ *     soit le filtre). Un contrôle mort vaut moins qu'un contrôle absent.
+ *     Corollaire assumé : vider le champ remet la rubrique sur « Tout »,
+ *     sinon un filtre choisi puis caché s'appliquerait en douce à la
+ *     recherche suivante ;
+ *   - `UserSuggestions` : les suggestions restent (même appel, même donnée),
+ *     mais rendues comme les autres comptes de la page au lieu d'un carrousel
+ *     de cartes de 72 % de large. Le composant n'avait pas d'autre appelant.
+ *
+ * ── Ce qui n'a pas bougé ─────────────────────────────────────────────────
+ * Le réseau : mêmes appels, mêmes paramètres, même flux WebSocket pour le
+ * résumé, même relance unique en cas d'échec. La recherche part toujours de
+ * la VALIDATION du champ, jamais de la frappe.
+ *
+ * ── Les interactions vivent maintenant dans les tweets ───────────────────
+ * L'écran tenait deux dictionnaires parallèles (`likedTweets`,
+ * `retweetedTweets`) et refabriquait un tweet par ligne à chaque rendu pour
+ * les recoller. `TweetRowGutter` lit `user_interaction` directement et se
+ * mémoïse dessus : l'état est donc porté par le tweet lui-même, comme dans le
+ * fil. Un like ne re-rend plus que sa ligne.
+ */
+import React, {
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  View,
+  ActivityIndicator,
+  FlatList,
+  LayoutChangeEvent,
+  Share,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Platform,
-  ActivityIndicator,
+  View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { colors } from '../theme';
-import { useNavigation, useRoute, RouteProp, ParamListBase } from '@react-navigation/native';
-import { useAuth } from '../contexts/AuthContext';
-import { apiService } from '../services';
-import { User, Tweet } from '../types/api';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+
+import {
+  paper,
+  paperFonts,
+  isPaperDark,
+  ps,
+  GUTTER_W,
+  ROW_PAD_X,
+  ROW_GAP,
+} from '../theme/paper2b';
+import { AppStatusBar } from '../components/ui';
+import { toast } from '../components/ui/Toast';
+import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
+import Skeleton from '../components/ui/Skeleton';
+import SceneCanvas, { SceneReveal, useSceneReveal } from '../components/SceneCanvas';
 import Avatar from '../components/Avatar';
-import TweetCard from '../components/TweetCard';
-import BanAlertBanner from '../components/BanAlertBanner';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEventStyles } from '../hooks/useEventStyles';
-import { EventBanner } from '../components/EventBanner';
 import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
-import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
-import UserSuggestions from '../components/UserSuggestions';
+import ReportSheet from '../components/ReportSheet';
+import BanAlertBanner from '../components/BanAlertBanner';
+import EventStrip from '../components/events/EventStrip';
+import TweetRowGutter from '../components/feed/paper2b/TweetRowGutter';
+import type { TweetRowAction } from '../components/feed/TweetRow';
+import {
+  certifiedNameColors,
+  type ProfileCustomization,
+} from '../services/profileCustomizationService';
+import { apiService } from '../services';
 import tokenStore from '../services/tokenStore';
-import { toast } from '../components/ui/Toast';
+import { useAuth } from '../contexts/AuthContext';
+import { formatCompactCount } from '../utils/format';
+import type { Tweet, User, UserSuggestion } from '../types/api';
 
 type SearchRouteProp = RouteProp<{ Search: { query?: string; searchType?: string } }, 'Search'>;
 
-/** Ne capture rien : au niveau module, elle sert aussi aux lignes mémoïsées. */
-function formatNumber(num: number) {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
-  return num.toString();
-}
+type Rubric = 'all' | 'users' | 'tweets' | 'trends';
 
 /**
- * Ligne de résultat « compte », mémoïsée.
- *
- * C'était une fonction nue appelée par `.map()` : pas un élément React que
- * React puisse comparer, donc son JSX — `Avatar`, `PremiumDisplayName`,
- * `VerifiedBadge` — était reconstruit et réconcilié à chaque rendu de l'écran,
- * pour les vingt lignes à la fois. Et l'écran se re-rend aussi pendant que le
- * résumé IA arrive caractère par caractère, pas seulement à la frappe.
- *
- * Les résultats vivent dans un `ScrollView` : rien n'est jamais démonté. La
- * mémoïsation est donc ce qui borne réellement le coût ici, tant que la
- * virtualisation n'est pas faite.
+ * Les rubriques, dans l'ordre d'affichage. C'est aussi l'ordre qui sert au
+ * soulignement animé : son index vient d'ici, jamais d'une constante écrite
+ * une seconde fois.
  */
-const UserResultRow = memo(function UserResultRow({
-  user,
-  isFollowing,
-  isFollowLoading,
-  onPress,
-  onFollowToggle,
-}: {
-  user: User;
-  isFollowing: boolean;
-  isFollowLoading: boolean;
-  onPress: (user: User) => void;
-  onFollowToggle: (user: User) => void;
-}) {
-  return (
-    <View style={styles.userItem}>
-      <TouchableOpacity
-        style={styles.userContent}
-        onPress={() => onPress(user)}
-        activeOpacity={0.7}
-      >
-        <Avatar
-          size={56}
-          username={user.username || 'U'}
-          uri={(user as any)?.avatar}
-          style={styles.userAvatar}
-        />
-
-        <View style={styles.userInfo}>
-          <View style={styles.userNameRow}>
-            <PremiumDisplayName
-              text={user.full_name || 'Utilisateur'}
-              baseStyle={styles.userFullName}
-              isPremium={!!(user as any)?.premium}
-              subscriptionTierRaw={(user as any)?.subscription_tier}
-              fontId="system"
-              effectId="none"
-              numberOfLines={1}
-              customization={(user as any)?.profile_customization as ProfileCustomization | undefined}
-              verified={!!user.verified}
-              verificationStyle={(user.verification_style as any) || 'default'}
-            />
-            {user.verified && (
-              <View style={{ marginLeft: 6 }}>
-                <VerifiedBadge
-                  verificationStyle={(user.verification_style as any) || 'default'}
-                  size={16}
-                  tint={
-                    certifiedNameColors(
-                      (user.verification_style as any) || 'default',
-                      (user as any)?.profile_customization as ProfileCustomization | undefined,
-                    ).from
-                  }
-                />
-              </View>
-            )}
-          </View>
-
-          <Text style={styles.userUsername} numberOfLines={1}>
-            @{user.username || 'username'}
-          </Text>
-
-          <View style={styles.userStats}>
-            <Text style={styles.userStat}>
-              {formatNumber(user.stats?.followers || 0)} abonnés
-            </Text>
-            <Text style={styles.statSeparator}>·</Text>
-            <Text style={styles.userStat}>
-              {formatNumber(user.stats?.following || 0)} abonnements
-            </Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.followButton, isFollowing && styles.followingButton]}
-          onPress={() => onFollowToggle(user)}
-          disabled={isFollowLoading}
-        >
-          {isFollowLoading ? (
-            <ActivityIndicator size="small" color={isFollowing ? colors.textSecondary : colors.onAccent} />
-          ) : (
-            <Text style={[styles.followButtonText, isFollowing && styles.followingButtonText]}>
-              {isFollowing ? 'Suivi' : 'Suivre'}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </View>
-  );
-});
+const RUBRICS: { key: Rubric; label: string }[] = [
+  { key: 'all', label: 'Tout' },
+  { key: 'users', label: 'Comptes' },
+  { key: 'tweets', label: 'Publications' },
+  { key: 'trends', label: 'Tendances' },
+];
 
 /**
- * Barre de recherche isolée : la requête en cours de frappe vit ici, et nulle
- * part ailleurs.
- *
- * Elle vivait dans `SearchScreen`, si bien que chaque caractère tapé
- * reconstruisait les lignes de résultats déjà à l'écran — et elles ne sont pas
- * virtualisées, donc toutes montées, jusqu'à 40 à la fois. Corriger une faute
- * de frappe coûtait autant de reconstructions complètes que de caractères.
- *
- * Le parent n'apprend que la requête VALIDÉE. Le réseau ne change pas d'un
- * iota : la recherche partait déjà de `onSubmitEditing`, jamais de la frappe.
- * Conséquence assumée en revanche, et c'est la seule : changer de filtre
- * pendant qu'on tape relance la recherche sur la dernière requête validée, et
- * non sur le texte en cours de saisie — ce qui accorde enfin le libellé
- * « Rien pour « … » » avec les résultats réellement affichés.
+ * `BottomTabBarHeightContext` rend `undefined` hors d'un navigateur d'onglets
+ * (contrairement à `useBottomTabBarHeight`, qui lève) : c'est la forme sûre,
+ * et cette valeur est le repli quand l'écran est poussé sur la pile.
  */
-const SearchBar = memo(function SearchBar({
+const FALLBACK_TAB_BAR_HEIGHT = 85;
+
+/** Une ligne de la liste. Le type porte la nature, le rendu ne devine rien. */
+type Row =
+  | { key: string; kind: 'head'; label: string }
+  | { key: string; kind: 'person'; user: User; meta: string }
+  | { key: string; kind: 'tweet'; tweet: Tweet; index: number }
+  | { key: string; kind: 'trend'; tag: string; count: number };
+
+/**
+ * Le champ — la signature de la page.
+ *
+ * Ce qu'on tape s'écrit en Archivo à `ps(23)` : à ce corps, la requête EST le
+ * titre de l'écran, et il n'y a plus besoin d'un « Recherche » écrit au-dessus
+ * ni d'un rappel « Résultats pour … » en dessous. Pas de fond gris arrondi non
+ * plus : le filet sous la ligne suffit à dire qu'on écrit ici — c'est la
+ * réglure d'un formulaire, pas une boîte.
+ *
+ * La requête en cours de frappe vit ICI et nulle part ailleurs. Elle vivait
+ * dans l'écran, si bien que chaque caractère reconstruisait tous les résultats
+ * déjà montés. Le parent n'apprend que la requête VALIDÉE — le réseau ne
+ * change pas d'un iota, la recherche partait déjà de `onSubmitEditing`.
+ */
+const SearchField = memo(function SearchField({
   seed,
   onSubmit,
 }: {
@@ -187,26 +192,326 @@ const SearchBar = memo(function SearchBar({
   }, [onSubmit]);
 
   return (
-    <View style={styles.searchBarContainer}>
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
+    <View style={S.field}>
+      <Ionicons name="search" size={ps(20)} color={paper.inkSoft} />
+      <TextInput
+        style={S.fieldInput}
+        placeholder="Rechercher"
+        placeholderTextColor={paper.inkIdle}
+        value={draft}
+        onChangeText={(text) => setDraft(text.replace(/^#+/, '#'))}
+        onSubmitEditing={() => onSubmit(draft)}
+        returnKeyType="search"
+        autoCorrect={false}
+        autoCapitalize="none"
+        selectionColor={paper.accent}
+      />
+      {draft.length > 0 && (
+        <TouchableOpacity
+          onPress={clear}
+          style={S.fieldClear}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityLabel="Effacer la recherche"
+        >
+          <Ionicons name="close" size={ps(20)} color={paper.inkSoft} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
 
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Rechercher"
-          placeholderTextColor={colors.textMuted}
-          value={draft}
-          onChangeText={(text) => setDraft(text.replace(/^#+/, '#'))}
-          onSubmitEditing={() => onSubmit(draft)}
-          returnKeyType="search"
-        />
+/**
+ * Les rubriques, soulignées — même machinerie que les onglets du fil.
+ *
+ * La position et la largeur du trait viennent de la MESURE de chaque onglet
+ * (`onLayout`), pas d'un calcul à partir du padding et des gaps : les insets
+ * d'un enfant absolu ne se mesurent pas dans le même repère que le `x` d'un
+ * enfant en flux. `ready` évite le pop du premier rendu, où toutes les
+ * largeurs valent encore 0.
+ *
+ * Le ressort est celui du fil (damping 20 / stiffness 220) : c'est le même
+ * objet d'un écran à l'autre, il doit bouger pareil.
+ */
+const RubricBar = memo(function RubricBar({
+  active,
+  onChange,
+}: {
+  active: Rubric;
+  onChange: (rubric: Rubric) => void;
+}) {
+  const index = Math.max(
+    RUBRICS.findIndex((r) => r.key === active),
+    0,
+  );
 
-        {draft.length > 0 && (
-          <TouchableOpacity onPress={clear} style={styles.clearButton}>
-            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
+  const pos = useSharedValue(index);
+  const layouts = useSharedValue(RUBRICS.map(() => ({ x: 0, y: 0, width: 0, height: 0 })));
+  const ready = useSharedValue(0);
+
+  useEffect(() => {
+    pos.value = withSpring(index, { damping: 20, stiffness: 220 });
+  }, [index, pos]);
+
+  const handleLayout = useCallback(
+    (i: number) => (e: LayoutChangeEvent) => {
+      const { x, y, width, height } = e.nativeEvent.layout;
+      const next = layouts.value.slice();
+      next[i] = { x, y, width, height };
+      layouts.value = next;
+      if (next.every((l) => l.width > 0) && ready.value === 0) {
+        ready.value = withTiming(1, { duration: 140 });
+      }
+    },
+    [layouts, ready],
+  );
+
+  const indicator = useAnimatedStyle(() => {
+    const l = layouts.value;
+    if (!l.every((m) => m.width > 0)) {
+      return {
+        opacity: 0,
+        width: 0,
+        height: 0,
+        transform: [{ translateX: 0 }, { translateY: 0 }] as const,
+      };
+    }
+    const input = l.map((_, i) => i);
+    return {
+      opacity: ready.value,
+      width: interpolate(pos.value, input, l.map((m) => m.width)),
+      height: interpolate(pos.value, input, l.map((m) => m.height)),
+      transform: [
+        { translateX: interpolate(pos.value, input, l.map((m) => m.x)) },
+        { translateY: interpolate(pos.value, input, l.map((m) => m.y)) },
+      ] as const,
+    };
+  });
+
+  return (
+    <View style={S.rubricBar}>
+      {/* Piste : couvre toute la barre, padding compris, ce qui met le trait
+          et les `x` mesurés dans le même repère. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Animated.View style={[S.rubricIndicator, indicator]} />
+      </View>
+      {RUBRICS.map((rubric, i) => (
+        <TouchableOpacity
+          key={rubric.key}
+          style={S.rubricItem}
+          onPress={() => onChange(rubric.key)}
+          onLayout={handleLayout(i)}
+          // La rangée fait 40 pt de haut : le `hitSlop` porte la cible à 56
+          // sans toucher à la mise en page, donc sans décoller le trait du
+          // bord bas de l'onglet. 6 px de côté restent sous le gap de 18,
+          // deux rubriques voisines ne peuvent pas se chevaucher.
+          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+          activeOpacity={0.85}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: rubric.key === active }}
+        >
+          <Text style={[S.rubricLabel, rubric.key === active && S.rubricLabelActive]}>
+            {rubric.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+});
+
+/** Tête de rubrique — la voix des méta de 2B : capitale espacée, chasse fixe. */
+const SectionHead = memo(function SectionHead({ label }: { label: string }) {
+  return (
+    <View style={S.head}>
+      <Text style={S.eyebrow}>{label}</Text>
+    </View>
+  );
+});
+
+/**
+ * Une ligne « compte ».
+ *
+ * L'avatar tient la gouttière, à la place qu'occupe le cœur sur une ligne de
+ * tweet : la colonne de gauche reste la même colonne d'un bout à l'autre de la
+ * page. Le bouton reprend la pilule contour de « Répondre » — un accent plein
+ * ici ferait de chaque ligne une invitation criarde, alors que la ligne
+ * entière mène déjà au profil.
+ */
+const PersonRow = memo(function PersonRow({
+  user,
+  meta,
+  following,
+  busy,
+  onOpen,
+  onFollow,
+}: {
+  user: User;
+  meta: string;
+  following: boolean;
+  busy: boolean;
+  onOpen: (user: User) => void;
+  onFollow: (user: User) => void;
+}) {
+  return (
+    <TouchableOpacity style={S.personRow} activeOpacity={0.75} onPress={() => onOpen(user)}>
+      <View style={S.gutter}>
+        <Avatar size={ps(44)} username={user.username || 'U'} uri={(user as any)?.avatar} />
+      </View>
+
+      <View style={S.personContent}>
+        <View style={S.personNameRow}>
+          <PremiumDisplayName
+            text={user.full_name || 'Utilisateur'}
+            baseStyle={S.personName}
+            isPremium={!!(user as any)?.premium}
+            subscriptionTierRaw={(user as any)?.subscription_tier}
+            fontId="system"
+            effectId="none"
+            numberOfLines={1}
+            customization={(user as any)?.profile_customization as ProfileCustomization | undefined}
+            verified={!!user.verified}
+            verificationStyle={(user.verification_style as any) || 'default'}
+          />
+          {user.verified && (
+            <View style={S.verifiedWrap}>
+              <VerifiedBadge
+                verificationStyle={(user.verification_style as any) || 'default'}
+                size={ps(15)}
+                tint={
+                  certifiedNameColors(
+                    (user.verification_style as any) || 'default',
+                    (user as any)?.profile_customization as ProfileCustomization | undefined,
+                  ).from
+                }
+              />
+            </View>
+          )}
+        </View>
+
+        <Text style={S.personHandle} numberOfLines={1}>
+          @{user.username || 'username'}
+        </Text>
+        {!!meta && (
+          <Text style={S.personMeta} numberOfLines={1}>
+            {meta}
+          </Text>
         )}
       </View>
+
+      <TouchableOpacity
+        style={[S.pill, following && S.pillMuted]}
+        onPress={() => onFollow(user)}
+        disabled={busy}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={paper.inkSoft} />
+        ) : (
+          <Text style={[S.pillText, following && S.pillTextMuted]}>
+            {following ? 'Suivi' : 'Suivre'}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+});
+
+/**
+ * Une ligne « tendance ».
+ *
+ * Le compte tient la gouttière et le mot-dièse la colonne de contenu : c'est
+ * exactement la grille d'une ligne de fil, où le chiffre est à gauche et le
+ * texte à droite. La liste est déjà triée, elle ne porte donc aucun rang
+ * écrit — la position DIT le rang.
+ */
+const TrendRow = memo(function TrendRow({
+  tag,
+  count,
+  onPress,
+}: {
+  tag: string;
+  count: number;
+  onPress: (tag: string) => void;
+}) {
+  return (
+    <TouchableOpacity style={S.trendRow} activeOpacity={0.75} onPress={() => onPress(tag)}>
+      <View style={S.gutter}>
+        <Text style={S.trendCount}>{formatCompactCount(count)}</Text>
+      </View>
+      <Text style={S.trendTag} numberOfLines={1}>
+        #{tag.replace(/^#+/, '')}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+/**
+ * Le résumé — une BANDE, pas une carte.
+ *
+ * Un cran de fond sur toute la largeur, sans coin arrondi et sans filet : le
+ * changement de ton EST la limite, comme pour le post du jour du fil. Le seul
+ * accent de la page est ici, sur le curseur qui bat pendant l'écriture — c'est
+ * la seule chose de l'écran qui soit en train de se produire.
+ */
+const SummaryBand = memo(function SummaryBand({
+  text,
+  streaming,
+  status,
+  mentioned,
+  onOpenUser,
+}: {
+  text: string;
+  streaming: boolean;
+  status: string;
+  mentioned: User[];
+  onOpenUser: (user: User) => void;
+}) {
+  return (
+    <View style={S.summary}>
+      <Text style={S.eyebrow}>RÉSUMÉ</Text>
+      <Text style={S.summaryText}>
+        {text}
+        {streaming && <Text style={S.summaryCaret}>▌</Text>}
+      </Text>
+      {/* L'étape n'est dite que TANT QUE rien n'est écrit. Dès le premier
+          morceau de texte, le curseur qui bat dit déjà « ça arrive » : garder
+          les deux, c'est signaler deux fois la même chose. */}
+      {streaming && !text && !!status && <Text style={S.summaryStatus}>{status}</Text>}
+      {mentioned.length > 0 && (
+        <View style={S.summaryRefs}>
+          {mentioned.map((u) => (
+            <TouchableOpacity
+              key={u.id}
+              onPress={() => onOpenUser(u)}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <Text style={S.summaryRef}>@{u.username}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
+
+/**
+ * L'attente, dans la grille de la page : un bloc dans la gouttière, deux
+ * lignes à côté. Le squelette générique de l'app dessine des cartes arrondies,
+ * c'est-à-dire la seule forme que cet écran n'a plus.
+ */
+const RowsSkeleton = memo(function RowsSkeleton() {
+  return (
+    <View>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <View key={i} style={S.skeletonRow}>
+          <View style={S.gutter}>
+            <Skeleton width={ps(30)} height={ps(30)} rounded={ps(15)} />
+          </View>
+          <View style={S.skeletonContent}>
+            <Skeleton width="46%" height={ps(15)} rounded={ps(4)} />
+            <Skeleton width="88%" height={ps(13)} rounded={ps(4)} style={S.skeletonLine} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 });
@@ -214,135 +519,98 @@ const SearchBar = memo(function SearchBar({
 export default function SearchScreen() {
   const navigation = useNavigation();
   const route = useRoute<SearchRouteProp>();
-  const { user, accounts } = useAuth();
-  const { styles: eventStyles, theme: currentTheme } = useEventStyles();
-  const { top: headerTopInset } = useHeaderMetrics();
+  const { user } = useAuth();
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
 
-  /** La requête VALIDÉE, pas celle en cours de frappe : celle-ci vit dans `SearchBar`. */
+  /** La requête VALIDÉE, pas celle en cours de frappe : celle-ci vit dans `SearchField`. */
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ users: User[]; tweets: Tweet[] }>({ users: [], tweets: [] });
+  const [searchResults, setSearchResults] = useState<{ users: User[]; tweets: Tweet[] }>({
+    users: [],
+    tweets: [],
+  });
   const [loading, setLoading] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<Rubric>('all');
+
   const [displayedAiSummary, setDisplayedAiSummary] = useState('');
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [aiSummaryStatus, setAiSummaryStatus] = useState('');
-  const [aiSummaryRefs, setAiSummaryRefs] = useState<{ users: User[]; tweets: Tweet[] }>({ users: [], tweets: [] });
-  const [activeFilter, setActiveFilter] = useState<'all' | 'users' | 'tweets' | 'trends'>('all');
-  const [trendingHashtags, setTrendingHashtags] = useState<Array<{ tag: string; count: number }>>([]);
-  const summaryAnimationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Seuls les COMPTES cités sont gardés : les tweets cités sont déjà dans la liste. */
+  const [aiMentionedUsers, setAiMentionedUsers] = useState<User[]>([]);
   const summaryRequestIdRef = useRef(0);
-  const SUMMARY_ANIM_BASE_MS = 10;
-  const SUMMARY_ANIM_CACHED_MULTIPLIER = 5;
 
-  // États pour les interactions avec les tweets
-  const [likedTweets, setLikedTweets] = useState<{ [key: string]: boolean }>({});
-  const [retweetedTweets, setRetweetedTweets] = useState<{ [key: string]: boolean }>({});
+  const [trendingHashtags, setTrendingHashtags] = useState<{ tag: string; count: number }[]>([]);
+  const [suggestions, setSuggestions] = useState<UserSuggestion[]>([]);
+
   const [followingUsers, setFollowingUsers] = useState<{ [key: string]: boolean }>({});
   const [followLoading, setFollowLoading] = useState<{ [key: string]: boolean }>({});
+
+  /** Signalement d'une publication trouvée — la feuille se charge du parcours. */
+  const [reportTarget, setReportTarget] = useState<{ id: string; label?: string } | null>(null);
 
   // Récupérer le token depuis AsyncStorage (système standard)
   const [currentToken, setCurrentToken] = useState<string | null>(null);
 
-  const performSearchRef = useRef<(query: string, filterOverride?: 'all' | 'users' | 'tweets' | 'trends') => Promise<void>>(async () => {});
+  const performSearchRef = useRef<(query: string, filterOverride?: Rubric) => Promise<void>>(
+    async () => {},
+  );
 
-  // Charger le token au démarrage
+  /**
+   * Miroir des publications trouvées, pour les handlers d'identité STABLE :
+   * un handler recréé à chaque rendu re-rendrait toutes les lignes, et c'est
+   * exactement ce que la mémoïsation de `TweetRowGutter` existe pour éviter.
+   */
+  const tweetsRef = useRef<Tweet[]>([]);
   useEffect(() => {
-    const loadToken = async () => {
+    tweetsRef.current = searchResults.tweets;
+  }, [searchResults.tweets]);
+
+  /** Un geste par tweet à la fois : deux appels concurrents s'annulent mal. */
+  const actionLockRef = useRef<{ [key: string]: boolean }>({});
+
+  // Charger le token au démarrage, et le rafraîchir quand l'utilisateur change.
+  useEffect(() => {
+    (async () => {
       try {
-        const token = await tokenStore.getAccessToken();
-        setCurrentToken(token);
-        console.log('🔑 Token chargé pour la recherche:', token ? 'Présent' : 'Absent');
+        setCurrentToken(await tokenStore.getAccessToken());
       } catch (error) {
         console.error('❌ Erreur lors du chargement du token:', error);
       }
-    };
-    
-    loadToken();
+    })();
+  }, [user?.id]);
+
+  /**
+   * Le sommaire (tendances + suggestions) est arrivé — ou a échoué.
+   *
+   * Sans ce drapeau, deux réponses vides laisseraient le squelette tourner
+   * indéfiniment : « pas encore chargé » et « il n'y a rien » se ressemblent
+   * quand on ne regarde que la longueur de la liste.
+   */
+  const [openingLoaded, setOpeningLoaded] = useState(false);
+
+  useEffect(() => {
+    // Les deux fonctions rattrapent leurs erreurs : `Promise.all` ne rejette
+    // donc jamais ici, et le drapeau se lève dans tous les cas.
+    Promise.all([fetchTrendingHashtags(), fetchSuggestions()]).finally(() =>
+      setOpeningLoaded(true),
+    );
   }, []);
 
-  // Rafraîchir le token quand l'utilisateur change
-  useEffect(() => {
-    const refreshToken = async () => {
-      try {
-        const token = await tokenStore.getAccessToken();
-        setCurrentToken(token);
-        console.log('🔄 Token rafraîchi pour la recherche:', token ? 'Présent' : 'Absent');
-      } catch (error) {
-        console.error('❌ Erreur lors du rafraîchissement du token:', error);
-      }
-    };
-    
-    refreshToken();
-  }, [user?.id]); // Se déclenche quand l'utilisateur change
-
-  useEffect(() => {
-    // Animation d'entrée douce
-
-    fetchTrendingHashtags();
-  }, []);
-
-  // Initialiser les états d'interaction avec les tweets reçus
-  useEffect(() => {
-    if (searchResults.tweets.length > 0) {
-      console.log('🔄 useEffect - Initialisation des états d\'interaction avec', searchResults.tweets.length, 'tweets');
-      
-      const initialLikes: { [key: string]: boolean } = {};
-      const initialRetweets: { [key: string]: boolean } = {};
-      
-      searchResults.tweets.forEach(tweet => {
-        console.log(`📝 Tweet ${tweet.id}:`, {
-          content: tweet.content?.substring(0, 50) + '...',
-          user_interaction: tweet.user_interaction,
-          stats: tweet.stats
-        });
-        
-        if (tweet.user_interaction) {
-          initialLikes[tweet.id] = tweet.user_interaction.is_liked || false;
-          initialRetweets[tweet.id] = tweet.user_interaction.is_retweeted || false;
-          console.log(`✅ Tweet ${tweet.id} - Like: ${initialLikes[tweet.id]}, Retweet: ${initialRetweets[tweet.id]}`);
-        } else {
-          console.log(`⚠️ Tweet ${tweet.id} - Pas d'interaction utilisateur`);
-          initialLikes[tweet.id] = false;
-          initialRetweets[tweet.id] = false;
-        }
-      });
-      
-      console.log('📊 États initiaux (useEffect):', { likes: initialLikes, retweets: initialRetweets });
-      setLikedTweets(prev => ({ ...prev, ...initialLikes }));
-      setRetweetedTweets(prev => ({ ...prev, ...initialRetweets }));
-    }
-  }, [searchResults.tweets]);
-
-  useEffect(() => {
-    return () => {
-      if (summaryAnimationIntervalRef.current) {
-        clearInterval(summaryAnimationIntervalRef.current);
-      }
-    };
-  }, []);
-
-  const stopSummaryAnimation = () => {
-    if (summaryAnimationIntervalRef.current) {
-      clearInterval(summaryAnimationIntervalRef.current);
-      summaryAnimationIntervalRef.current = null;
-    }
-  };
-
-  const parseSummaryContent = (
-    rawSummary: string,
-    results: { users: User[]; tweets: Tweet[] }
-  ) => {
-    const userIds = Array.from(new Set((rawSummary.match(/\[USER:([^\]]+)\]/g) || []).map((m) => m.replace('[USER:', '').replace(']', '').trim())));
-    const tweetIds = Array.from(new Set((rawSummary.match(/\[TWEET:([^\]]+)\]/g) || []).map((m) => m.replace('[TWEET:', '').replace(']', '').trim())));
+  const parseSummaryContent = (rawSummary: string, results: { users: User[]; tweets: Tweet[] }) => {
+    const userIds = Array.from(
+      new Set(
+        (rawSummary.match(/\[USER:([^\]]+)\]/g) || []).map((m) =>
+          m.replace('[USER:', '').replace(']', '').trim(),
+        ),
+      ),
+    );
 
     const users = (results.users || []).filter((u) => userIds.includes(String(u.id)));
-    const tweets = (results.tweets || []).filter((t) => tweetIds.includes(String(t.id)));
-
     const usersMap = new Map(users.map((u) => [String(u.id), u]));
 
     const textWithUsers = rawSummary.replace(/\[USER:([^\]]+)\]/g, (_full, id) => {
-      const user = usersMap.get(String(id).trim());
-      if (!user?.username) return '';
-      return `@${user.username}`;
+      const cited = usersMap.get(String(id).trim());
+      if (!cited?.username) return '';
+      return `@${cited.username}`;
     });
 
     const text = textWithUsers
@@ -351,49 +619,20 @@ export default function SearchScreen() {
       .replace(/\s+([,.;!?])/g, '$1')
       .trim();
 
-    return { text, users, tweets };
-  };
-
-  const getStableSummaryCacheKey = (query: string, filter: 'all' | 'users' | 'tweets' | 'trends') => {
-    const stableQuery = query
-      .trim()
-      .replace(/\s+/g, ' ')
-      .replace(/^#+/, '#')
-      .toLowerCase();
-    return `${filter}:${stableQuery}`;
-  };
-
-  const animateCachedSummary = (
-    summaryText: string,
-    speedMs = Math.max(1, Math.floor(SUMMARY_ANIM_BASE_MS / SUMMARY_ANIM_CACHED_MULTIPLIER))
-  ) => {
-    stopSummaryAnimation();
-    setDisplayedAiSummary('');
-    let currentIndex = 0;
-
-    summaryAnimationIntervalRef.current = setInterval(() => {
-      currentIndex += 3;
-      const partialRaw = summaryText.slice(0, currentIndex);
-      const parsed = parseSummaryContent(partialRaw, searchResults);
-      setDisplayedAiSummary(parsed.text);
-      if (currentIndex >= summaryText.length) {
-        stopSummaryAnimation();
-      }
-    }, speedMs);
+    return { text, users };
   };
 
   const generateSearchSummary = async (
     query: string,
-    results: { users: User[]; tweets: Tweet[]; hashtags?: Array<{ tag: string; count: number }> },
-    filter: 'all' | 'users' | 'tweets' | 'trends'
+    results: { users: User[]; tweets: Tweet[]; hashtags?: { tag: string; count: number }[] },
+    filter: Rubric,
   ) => {
     const requestId = ++summaryRequestIdRef.current;
-    stopSummaryAnimation();
 
     setAiSummaryLoading(true);
     setAiSummaryStatus('');
     setDisplayedAiSummary('');
-    setAiSummaryRefs({ users: [], tweets: [] });
+    setAiMentionedUsers([]);
 
     let streamText = '';
     const payload = {
@@ -401,41 +640,27 @@ export default function SearchScreen() {
       type: filter,
       users: results.users || [],
       tweets: results.tweets || [],
-      hashtags: results.hashtags || []
+      hashtags: results.hashtags || [],
     };
 
-    let streamResponse = await apiService.streamSearchSummaryWs(
-      payload,
-      (chunk: string) => {
-        if (requestId !== summaryRequestIdRef.current) return;
-        streamText += chunk;
-        const parsed = parseSummaryContent(streamText, results);
-        setDisplayedAiSummary(parsed.text);
-        setAiSummaryRefs({ users: parsed.users, tweets: parsed.tweets });
-      },
-      (status: string) => {
-        if (requestId !== summaryRequestIdRef.current) return;
-        setAiSummaryStatus(status);
-      }
-    );
+    const onChunk = (chunk: string) => {
+      if (requestId !== summaryRequestIdRef.current) return;
+      streamText += chunk;
+      const parsed = parseSummaryContent(streamText, results);
+      setDisplayedAiSummary(parsed.text);
+      setAiMentionedUsers(parsed.users);
+    };
+    const onStatus = (status: string) => {
+      if (requestId !== summaryRequestIdRef.current) return;
+      setAiSummaryStatus(status);
+    };
+
+    let streamResponse = await apiService.streamSearchSummaryWs(payload, onChunk, onStatus);
 
     if (!streamResponse.success) {
       // Retry WS unique pour eviter les 502 frequents sur le fallback HTTP/SSE
       await new Promise((resolve) => setTimeout(resolve, 250));
-      streamResponse = await apiService.streamSearchSummaryWs(
-        payload,
-        (chunk: string) => {
-          if (requestId !== summaryRequestIdRef.current) return;
-          streamText += chunk;
-          const parsed = parseSummaryContent(streamText, results);
-          setDisplayedAiSummary(parsed.text);
-          setAiSummaryRefs({ users: parsed.users, tweets: parsed.tweets });
-        },
-        (status: string) => {
-          if (requestId !== summaryRequestIdRef.current) return;
-          setAiSummaryStatus(status);
-        }
-      );
+      streamResponse = await apiService.streamSearchSummaryWs(payload, onChunk, onStatus);
     }
 
     if (requestId !== summaryRequestIdRef.current) return;
@@ -444,14 +669,12 @@ export default function SearchScreen() {
     if (finalText) {
       const parsed = parseSummaryContent(finalText, results);
       setDisplayedAiSummary(parsed.text);
-      setAiSummaryRefs({ users: parsed.users, tweets: parsed.tweets });
-      setAiSummaryStatus('');
+      setAiMentionedUsers(parsed.users);
     } else {
       setDisplayedAiSummary('');
-      setAiSummaryRefs({ users: [], tweets: [] });
-      setAiSummaryStatus('');
+      setAiMentionedUsers([]);
     }
-
+    setAiSummaryStatus('');
     setAiSummaryLoading(false);
   };
 
@@ -466,14 +689,28 @@ export default function SearchScreen() {
     }
   };
 
-  const performSearch = async (query: string, filterOverride?: 'all' | 'users' | 'tweets' | 'trends') => {
+  /**
+   * Suggestions — même appel que l'ancien carrousel `UserSuggestions`, rendu
+   * ici comme les autres comptes de la page.
+   */
+  const fetchSuggestions = async () => {
+    try {
+      const response = await apiService.getUserSuggestions(10);
+      if (response.success && Array.isArray(response.data)) {
+        setSuggestions(response.data);
+      }
+    } catch (error) {
+      console.error('[Recherche] Erreur suggestions:', error);
+    }
+  };
+
+  const performSearch = async (query: string, filterOverride?: Rubric) => {
     if (!query.trim()) {
       setSearchResults({ users: [], tweets: [] });
       setDisplayedAiSummary('');
-      setAiSummaryRefs({ users: [], tweets: [] });
+      setAiMentionedUsers([]);
       setAiSummaryLoading(false);
       setAiSummaryStatus('');
-      stopSummaryAnimation();
       return;
     }
 
@@ -483,22 +720,14 @@ export default function SearchScreen() {
       // Normaliser les hashtags: éviter les doublons de '#'
       const normalizedQuery = query.replace(/^#+/, '#');
 
-      // Nouvelle recherche: on invalide les streams precedents et on evite d'afficher l'ancien resume.
+      // Nouvelle recherche : on invalide les flux précédents et on évite
+      // d'afficher l'ancien résumé sous les nouveaux résultats.
       summaryRequestIdRef.current += 1;
-      stopSummaryAnimation();
       setAiSummaryStatus('');
       setAiSummaryLoading(false);
       setDisplayedAiSummary('');
-      setAiSummaryRefs({ users: [], tweets: [] });
-      
-      // Vérifier si on a un token valide
-      if (!currentToken) {
-        console.log('⚠️ Pas de token d\'authentification, recherche publique');
-        // Continuer avec la recherche publique (sans token)
-      } else {
-        console.log('🔑 Token d\'authentification disponible pour la recherche');
-      }
-      
+      setAiMentionedUsers([]);
+
       let response;
       switch (filterForSearch) {
         case 'users':
@@ -506,9 +735,9 @@ export default function SearchScreen() {
           if (response.success && response.data) {
             const users = response.data.users || [];
             setSearchResults({ users, tweets: [] });
-            generateSearchSummary(normalizedQuery, { users, tweets: [] }, filterForSearch).catch((err) => {
-              console.error('❌ Erreur génération résumé IA (users):', err);
-            });
+            generateSearchSummary(normalizedQuery, { users, tweets: [] }, filterForSearch).catch(
+              (err) => console.error('❌ Erreur génération résumé IA (users):', err),
+            );
           }
           break;
         case 'tweets':
@@ -516,57 +745,41 @@ export default function SearchScreen() {
           if (response.success && response.data) {
             const tweets = response.data.tweets || [];
             setSearchResults({ users: [], tweets });
-            generateSearchSummary(normalizedQuery, { users: [], tweets }, filterForSearch).catch((err) => {
-              console.error('❌ Erreur génération résumé IA (tweets):', err);
-            });
+            generateSearchSummary(normalizedQuery, { users: [], tweets }, filterForSearch).catch(
+              (err) => console.error('❌ Erreur génération résumé IA (tweets):', err),
+            );
           }
           break;
         default:
           response = await apiService.search({ q: normalizedQuery, limit: 20 }, currentToken);
           if (response.success && response.data) {
             const anyData: any = response.data as any;
-            console.log('🔍 Recherche globale - Réponse complète:', JSON.stringify(anyData, null, 2));
-            
             const users = anyData.results?.users || anyData.users || [];
             const tweets = anyData.results?.tweets || anyData.tweets || [];
-            
-            console.log('🔍 Recherche globale - Users extraits:', users.length);
-            console.log('🔍 Recherche globale - Tweets extraits:', tweets.length);
-            
-            // Log du premier tweet pour vérifier la structure
-            if (tweets.length > 0) {
-              console.log('🔍 Premier tweet de la recherche globale:', {
-                id: tweets[0].id,
-                content: tweets[0].content?.substring(0, 50),
-                user_interaction: tweets[0].user_interaction,
-                stats: tweets[0].stats
-              });
-            }
-            
-            // Mettre à jour les résultats de recherche (le useEffect s'occupera des états d'interaction)
             setSearchResults({ users, tweets });
-            console.log('🔍 Recherche globale - Résultats mis à jour, useEffect va initialiser les interactions');
-            generateSearchSummary(normalizedQuery, { users, tweets, hashtags: anyData.results?.hashtags || [] }, filterForSearch).catch((err) => {
-              console.error('❌ Erreur génération résumé IA (all):', err);
-            });
+            generateSearchSummary(
+              normalizedQuery,
+              { users, tweets, hashtags: anyData.results?.hashtags || [] },
+              filterForSearch,
+            ).catch((err) => console.error('❌ Erreur génération résumé IA (all):', err));
           }
           break;
       }
     } catch (error) {
       console.error('Erreur lors de la recherche:', error);
-      
+
       // Gestion spécifique des erreurs d'authentification
       if (error && typeof error === 'object' && 'message' in error) {
         const errorMessage = (error as any).message;
-        if (errorMessage.includes('401') || errorMessage.includes('Token') || errorMessage.includes('authentification')) {
-          console.log('🔐 Erreur d\'authentification, tentative de rafraîchissement du token');
-          // Rafraîchir le token et réessayer
+        if (
+          errorMessage.includes('401') ||
+          errorMessage.includes('Token') ||
+          errorMessage.includes('authentification')
+        ) {
           try {
             const newToken = await tokenStore.getAccessToken();
             setCurrentToken(newToken);
             if (newToken) {
-              console.log('🔄 Token rafraîchi, nouvelle tentative de recherche');
-              // Réessayer la recherche avec le nouveau token
               performSearch(query);
               return;
             }
@@ -575,11 +788,11 @@ export default function SearchScreen() {
           }
         }
       }
-      
-      toast.error('Impossible d\'effectuer la recherche');
+
+      toast.error("Impossible d'effectuer la recherche");
       setSearchResults({ users: [], tweets: [] });
       setDisplayedAiSummary('');
-      setAiSummaryRefs({ users: [], tweets: [] });
+      setAiMentionedUsers([]);
       setAiSummaryStatus('');
     } finally {
       setLoading(false);
@@ -588,16 +801,16 @@ export default function SearchScreen() {
 
   performSearchRef.current = performSearch;
 
-  // Ouvre / exécute la recherche quand on arrive depuis un # ou un lien (params de route)
-  // Ne pas dépendre de currentToken : au chargement du token, un re-run annulait le rAF/setTimeout
-  // avant performSearch (cleanup), alors que les params étaient déjà effacés → champ rempli mais 0 résultat.
+  // Ouvre / exécute la recherche quand on arrive depuis un # ou un lien (params de route).
+  // Ne pas dépendre de currentToken : au chargement du token, un re-run annulait le
+  // setTimeout (cleanup) alors que les params étaient déjà effacés → champ rempli, 0 résultat.
   useEffect(() => {
     const q = route.params?.query;
     if (typeof q !== 'string' || !q.trim()) return;
 
     const queryStr = q.trim();
     const st = route.params?.searchType;
-    let filter: 'all' | 'users' | 'tweets' | 'trends' = 'all';
+    let filter: Rubric = 'all';
     if (st === 'hashtags' || queryStr.startsWith('#')) filter = 'tweets';
     else if (st === 'users' || queryStr.startsWith('@')) filter = 'users';
 
@@ -613,45 +826,56 @@ export default function SearchScreen() {
 
   /**
    * Stable (`useCallback` sans dépendance) : une identité neuve à chaque rendu
-   * ferait re-rendre `SearchBar`, et l'isoler n'aurait servi à rien.
+   * ferait re-rendre `SearchField`, et l'isoler n'aurait servi à rien.
    * `performSearchRef` est réaffecté à chaque rendu, il porte donc toujours la
-   * version courante — c'est déjà le motif retenu ailleurs dans ce fichier.
+   * version courante.
    */
   const handleSubmitQuery = useCallback((query: string) => {
     setSearchQuery(query);
     if (query.trim()) {
       performSearchRef.current(query);
+    } else {
+      // Le champ vidé cache les rubriques : la rubrique choisie doit repartir
+      // de zéro avec lui, sinon elle s'appliquerait en douce à la recherche
+      // suivante depuis un contrôle que personne ne voit plus.
+      setActiveFilter('all');
+      performSearchRef.current('');
     }
   }, []);
 
-  const handleFilterChange = (filter: 'all' | 'users' | 'tweets' | 'trends') => {
-    setActiveFilter(filter);
-    if (searchQuery.trim()) {
-      performSearch(searchQuery, filter);
-    }
-  };
+  const handleFilterChange = useCallback(
+    (filter: Rubric) => {
+      setActiveFilter(filter);
+      if (searchQuery.trim()) {
+        performSearchRef.current(searchQuery, filter);
+      }
+    },
+    [searchQuery],
+  );
 
-  const handleHashtagPress = (hashtag: string) => {
+  const handleHashtagPress = useCallback((hashtag: string) => {
     const cleanTag = hashtag.replace(/^#+/, '');
     setSearchQuery(`#${cleanTag}`);
     setActiveFilter('tweets');
-    performSearch(`#${cleanTag}`, 'tweets');
-  };
+    performSearchRef.current(`#${cleanTag}`, 'tweets');
+  }, []);
 
-  const handleUserPress = useCallback((user: User) => {
-    if (user.id) {
-      (navigation as any).navigate('UserProfile', {
-        userId: user.id,
-        username: user.username
-      });
-    }
-  }, [navigation]);
+  const handleUserPress = useCallback(
+    (target: User) => {
+      if (target.id) {
+        (navigation as any).navigate('UserProfile', {
+          userId: target.id,
+          username: target.username,
+        });
+      }
+    },
+    [navigation],
+  );
 
   /**
-   * Même motif de ref-latch que pour les interactions de tweet plus bas : la
-   * ligne de résultat est mémoïsée, et un handler recréé à chaque rendu la
-   * ferait re-rendre malgré tout — notamment pendant que le résumé IA arrive
-   * caractère par caractère.
+   * Même motif de ref-latch que pour les publications : la ligne est
+   * mémoïsée, et un handler recréé à chaque rendu la ferait re-rendre malgré
+   * tout — notamment pendant que le résumé arrive caractère par caractère.
    */
   const followingUsersRef = useRef(followingUsers);
   const followLoadingRef = useRef(followLoading);
@@ -682,806 +906,784 @@ export default function SearchScreen() {
     }
   }, []);
 
-  /**
-   * Handlers d'identité stable : le comparateur de `TweetCard` compare les
-   * callbacks par référence. L'état des interactions est donc lu par
-   * référence plutôt que capturé dans la closure.
-   */
-  const likedTweetsRef = useRef(likedTweets);
-  const retweetedTweetsRef = useRef(retweetedTweets);
-  useEffect(() => {
-    likedTweetsRef.current = likedTweets;
-  }, [likedTweets]);
-  useEffect(() => {
-    retweetedTweetsRef.current = retweetedTweets;
-  }, [retweetedTweets]);
+  // ─── Publications trouvées : mêmes gestes que dans le fil ──────────────────
 
-  // Gestion des likes
-  const handleLike = useCallback(async (tweetId: string) => {
-    console.log(`❤️ Gestion du like pour le tweet ${tweetId}`);
-    console.log(`📊 État actuel - Liked: ${likedTweetsRef.current[tweetId]}, Retweeted: ${retweetedTweetsRef.current[tweetId]}`);
+  /** Applique une retouche à UNE publication, sans toucher aux autres. */
+  const patchTweet = useCallback((tweetId: string, patch: (t: Tweet) => Tweet) => {
+    setSearchResults((prev) => ({
+      ...prev,
+      tweets: prev.tweets.map((t) => (t.id === tweetId ? patch(t) : t)),
+    }));
+  }, []);
 
-    try {
-      const wasLiked = likedTweetsRef.current[tweetId] || false;
-      console.log(`❤️ Changement de like: ${wasLiked} -> ${!wasLiked}`);
-      
-      // Optimistic update - mettre à jour l'état local immédiatement
-      setLikedTweets(prev => {
-        const newState = { ...prev, [tweetId]: !wasLiked };
-        console.log(`📝 Nouvel état des likes:`, newState);
-        return newState;
-      });
-      
-      // Mettre à jour les statistiques ET les interactions utilisateur du tweet dans les résultats
-      setSearchResults(prev => {
-        const newResults = {
-          ...prev,
-          tweets: prev.tweets.map(tweet => {
-            if (tweet.id === tweetId) {
-              const currentLikes = tweet.stats?.likes || 0;
-              const newLikes = wasLiked ? currentLikes - 1 : currentLikes + 1;
-              console.log(`📊 Mise à jour stats - Tweet ${tweetId}: ${currentLikes} -> ${newLikes}`);
-              
-              return {
-                ...tweet,
-                stats: {
-                  ...tweet.stats,
-                  likes: newLikes
-                },
-                user_interaction: {
-                  ...tweet.user_interaction,
-                  is_liked: !wasLiked
-                }
-              };
-            }
-            return tweet;
-          })
-        };
-        console.log(`📝 Résultats mis à jour pour le tweet ${tweetId}`);
-        return newResults;
-      });
-      
-      console.log(`🌐 Envoi de la requête API pour ${wasLiked ? 'unlike' : 'like'} le tweet ${tweetId}`);
-      const response = await apiService.likeTweet(tweetId);
-      
-      if (!response.success) {
-        console.log(`❌ API échouée, revert de l'état pour le tweet ${tweetId}`);
-        // Revert si l'API échoue
-        setLikedTweets(prev => ({ ...prev, [tweetId]: wasLiked }));
-        setSearchResults(prev => ({
-          ...prev,
-          tweets: prev.tweets.map(tweet => {
-            if (tweet.id === tweetId) {
-              const currentLikes = tweet.stats?.likes || 0;
-              return {
-                ...tweet,
-                stats: {
-                  ...tweet.stats,
-                  likes: wasLiked ? currentLikes : currentLikes - 1
-                },
-                user_interaction: {
-                  ...tweet.user_interaction,
-                  is_liked: wasLiked
-                }
-              };
-            }
-            return tweet;
-          })
+  const handleLike = useCallback(
+    async (tweetId: string) => {
+      if (actionLockRef.current[`like:${tweetId}`]) return;
+      actionLockRef.current[`like:${tweetId}`] = true;
+
+      const current = tweetsRef.current.find((t) => t.id === tweetId);
+      if (!current) {
+        actionLockRef.current[`like:${tweetId}`] = false;
+        return;
+      }
+
+      const wasLiked = !!current.user_interaction?.is_liked;
+      const likes = current.stats?.likes || 0;
+      const apply = (liked: boolean, count: number) =>
+        patchTweet(tweetId, (t) => ({
+          ...t,
+          stats: { ...t.stats, likes: count },
+          user_interaction: { ...t.user_interaction, is_liked: liked },
         }));
+
+      apply(!wasLiked, wasLiked ? Math.max(0, likes - 1) : likes + 1);
+
+      try {
+        const response = await apiService.likeTweet(tweetId);
+        if (!response.success) {
+          apply(wasLiked, likes);
+          toast.error('Impossible de liker le tweet');
+        }
+      } catch {
+        apply(wasLiked, likes);
         toast.error('Impossible de liker le tweet');
-      } else {
-        console.log(`✅ Like ${wasLiked ? 'supprimé' : 'ajouté'} avec succès pour le tweet ${tweetId}`);
+      } finally {
+        actionLockRef.current[`like:${tweetId}`] = false;
       }
-    } catch (error) {
-      console.error(`❌ Erreur lors du like du tweet ${tweetId}:`, error);
-      // Revert en cas d'erreur
-      const wasLiked = likedTweetsRef.current[tweetId] || false;
-      setLikedTweets(prev => ({ ...prev, [tweetId]: wasLiked }));
-      setSearchResults(prev => ({
-        ...prev,
-        tweets: prev.tweets.map(tweet => {
-          if (tweet.id === tweetId) {
-            const currentLikes = tweet.stats?.likes || 0;
-            return {
-              ...tweet,
-              stats: {
-                ...tweet.stats,
-                likes: wasLiked ? currentLikes : currentLikes - 1
-              },
-              user_interaction: {
-                ...tweet.user_interaction,
-                is_liked: wasLiked
-              }
-            };
-          }
-          return tweet;
-        })
-      }));
-      toast.error('Impossible de liker le tweet');
-    }
-  }, []);
+    },
+    [patchTweet],
+  );
 
-  // Gestion des retweets
-  const handleRetweet = useCallback(async (tweetId: string) => {
-    console.log(`🔄 Gestion du retweet pour le tweet ${tweetId}`);
-    console.log(`📊 État actuel - Liked: ${likedTweetsRef.current[tweetId]}, Retweeted: ${retweetedTweetsRef.current[tweetId]}`);
+  const handleSuperLike = useCallback(
+    async (tweetId: string) => {
+      if (actionLockRef.current[`super:${tweetId}`]) return;
+      actionLockRef.current[`super:${tweetId}`] = true;
 
-    try {
-      const wasRetweeted = retweetedTweetsRef.current[tweetId] || false;
-      console.log(`🔄 Changement de retweet: ${wasRetweeted} -> ${!wasRetweeted}`);
-      
-      // Optimistic update - mettre à jour l'état local immédiatement
-      setRetweetedTweets(prev => {
-        const newState = { ...prev, [tweetId]: !wasRetweeted };
-        console.log(`📝 Nouvel état des retweets:`, newState);
-        return newState;
-      });
-      
-      // Mettre à jour les statistiques ET les interactions utilisateur du tweet dans les résultats
-      setSearchResults(prev => {
-        const newResults = {
-          ...prev,
-          tweets: prev.tweets.map(tweet => {
-            if (tweet.id === tweetId) {
-              const currentRetweets = tweet.stats?.retweets || 0;
-              const newRetweets = wasRetweeted ? currentRetweets - 1 : currentRetweets + 1;
-              console.log(`📊 Mise à jour stats - Tweet ${tweetId}: ${currentRetweets} -> ${newRetweets}`);
-              
-              return {
-                ...tweet,
-                stats: {
-                  ...tweet.stats,
-                  retweets: newRetweets
-                },
-                user_interaction: {
-                  ...tweet.user_interaction,
-                  is_retweeted: !wasRetweeted
-                }
-              };
-            }
-            return tweet;
-          })
-        };
-        console.log(`📝 Résultats mis à jour pour le tweet ${tweetId}`);
-        return newResults;
-      });
-      
-      console.log(`🌐 Envoi de la requête API pour ${wasRetweeted ? 'unretweet' : 'retweet'} le tweet ${tweetId}`);
-      const response = await apiService.retweet(tweetId);
-      
-      if (!response.success) {
-        console.log(`❌ API échouée, revert de l'état pour le tweet ${tweetId}`);
-        // Revert si l'API échoue
-        setRetweetedTweets(prev => ({ ...prev, [tweetId]: wasRetweeted }));
-        setSearchResults(prev => ({
-          ...prev,
-          tweets: prev.tweets.map(tweet => {
-            if (tweet.id === tweetId) {
-              const currentRetweets = tweet.stats?.retweets || 0;
-              return {
-                ...tweet,
-                stats: {
-                  ...tweet.stats,
-                  retweets: wasRetweeted ? currentRetweets : currentRetweets - 1
-                },
-                user_interaction: {
-                  ...tweet.user_interaction,
-                  is_retweeted: wasRetweeted
-                }
-              };
-            }
-            return tweet;
-          })
+      const current = tweetsRef.current.find((t) => t.id === tweetId);
+      if (!current || current.user_interaction?.is_super_liked) {
+        actionLockRef.current[`super:${tweetId}`] = false;
+        return;
+      }
+
+      const wasLiked = !!current.user_interaction?.is_liked;
+      const likes = current.stats?.likes || 0;
+      const revert = () =>
+        patchTweet(tweetId, (t) => ({
+          ...t,
+          stats: { ...t.stats, likes },
+          user_interaction: { ...t.user_interaction, is_liked: wasLiked, is_super_liked: false },
         }));
-        toast.error('Impossible de retweeter');
-      } else {
-        console.log(`✅ Retweet ${wasRetweeted ? 'supprimé' : 'ajouté'} avec succès pour le tweet ${tweetId}`);
-      }
-    } catch (error) {
-      console.error(`❌ Erreur lors du retweet du tweet ${tweetId}:`, error);
-      // Revert en cas d'erreur
-      const wasRetweeted = retweetedTweetsRef.current[tweetId] || false;
-      setRetweetedTweets(prev => ({ ...prev, [tweetId]: wasRetweeted }));
-      setSearchResults(prev => ({
-        ...prev,
-        tweets: prev.tweets.map(tweet => {
-          if (tweet.id === tweetId) {
-            const currentRetweets = tweet.stats?.retweets || 0;
-            return {
-              ...tweet,
-              stats: {
-                ...tweet.stats,
-                retweets: wasRetweeted ? currentRetweets : currentRetweets - 1
-              },
-              user_interaction: {
-                ...tweet.user_interaction,
-                is_retweeted: wasRetweeted
-              }
-            };
-          }
-          return tweet;
-        })
+
+      patchTweet(tweetId, (t) => ({
+        ...t,
+        stats: { ...t.stats, likes: wasLiked ? likes : likes + 1 },
+        user_interaction: { ...t.user_interaction, is_liked: true, is_super_liked: true },
       }));
-      toast.error('Impossible de retweeter');
+
+      try {
+        const response = await apiService.superLikeTweet(tweetId);
+        if (!response.success) {
+          revert();
+          toast.info('Super Cœur', {
+            description: response.message || 'Impossible de poser le Super Cœur.',
+          });
+        }
+      } catch {
+        revert();
+      } finally {
+        actionLockRef.current[`super:${tweetId}`] = false;
+      }
+    },
+    [patchTweet],
+  );
+
+  const handleRetweet = useCallback(
+    async (tweetId: string) => {
+      if (actionLockRef.current[`rt:${tweetId}`]) return;
+      actionLockRef.current[`rt:${tweetId}`] = true;
+
+      const current = tweetsRef.current.find((t) => t.id === tweetId);
+      if (!current) {
+        actionLockRef.current[`rt:${tweetId}`] = false;
+        return;
+      }
+
+      const wasRetweeted = !!current.user_interaction?.is_retweeted;
+      const retweets = current.stats?.retweets || 0;
+      const apply = (retweeted: boolean, count: number) =>
+        patchTweet(tweetId, (t) => ({
+          ...t,
+          stats: { ...t.stats, retweets: count },
+          user_interaction: { ...t.user_interaction, is_retweeted: retweeted },
+        }));
+
+      apply(!wasRetweeted, wasRetweeted ? Math.max(0, retweets - 1) : retweets + 1);
+
+      try {
+        const response = await apiService.retweet(tweetId);
+        if (!response.success) {
+          apply(wasRetweeted, retweets);
+          toast.error('Impossible de retweeter');
+        }
+      } catch {
+        apply(wasRetweeted, retweets);
+        toast.error('Impossible de retweeter');
+      } finally {
+        actionLockRef.current[`rt:${tweetId}`] = false;
+      }
+    },
+    [patchTweet],
+  );
+
+  const handleShare = useCallback(async (tweetId: string) => {
+    const response = await apiService.shareTweet(tweetId);
+    if (!response.success || !response.data?.share_link) {
+      toast.error(response.message || 'Impossible de partager ce tweet');
+      return;
+    }
+    try {
+      await Share.share({ message: response.data.share_link, url: response.data.share_link });
+    } catch (error) {
+      console.warn('Erreur ouverture feuille de partage:', error);
     }
   }, []);
 
-  // Gestion des réponses
-  const handleReply = useCallback((tweetId: string) => {
-    (navigation as any).navigate('CreateTweet', {
-      replyTo: tweetId,
-      isReply: true
+  const handleReport = useCallback((tweetId: string) => {
+    const tweet = tweetsRef.current.find((t) => t.id === tweetId);
+    setReportTarget({
+      id: tweetId,
+      label: tweet?.author?.username ? `@${tweet.author.username}` : undefined,
     });
-  }, [navigation]);
+  }, []);
+
+  /**
+   * Menu de la pression longue.
+   *
+   * Volontairement plus court que celui du fil : mettre en favori, ignorer un
+   * tweet ou bloquer son auteur agissent sur un fil qu'on n'est pas en train
+   * de lire. Ne reste ici que ce qui a un sens sur un RÉSULTAT.
+   */
+  const handleOptions = useCallback(
+    (tweetId: string) => {
+      const tweet = tweetsRef.current.find((t) => t.id === tweetId);
+      const isOwn = !!(user?.id && tweet?.author?.id === user.id);
+      const items: ActionSheetItem[] = [
+        { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
+        ...(isOwn
+          ? []
+          : [
+              {
+                label: 'Signaler',
+                icon: 'flag-outline' as const,
+                onPress: () => handleReport(tweetId),
+              },
+            ]),
+      ];
+      showActionSheet({ items });
+    },
+    [user?.id, handleShare, handleReport],
+  );
+
+  /** Contexte transmis aux lignes — stable, sinon toutes se re-rendent. */
+  const rowContext = useMemo(() => ({ tab: 'search', algorithm: 'search' }), []);
+
+  const handleRowAction = useCallback(
+    (action: TweetRowAction) => {
+      const { type, tweetId, payload } = action;
+      switch (type) {
+        case 'like':
+          handleLike(tweetId);
+          break;
+        case 'superlike':
+          handleSuperLike(tweetId);
+          break;
+        case 'retweet':
+          handleRetweet(tweetId);
+          break;
+        case 'share':
+          handleShare(tweetId);
+          break;
+        case 'options':
+          handleOptions(tweetId);
+          break;
+        case 'report':
+          handleReport(tweetId);
+          break;
+        case 'reply':
+          (navigation as any).navigate('TweetDetail', { tweetId, focusReply: true });
+          break;
+        case 'openQuote':
+        case 'open':
+          (navigation as any).navigate('TweetDetail', { tweetId });
+          break;
+        case 'openContest':
+          if (payload?.contestId) {
+            (navigation as any).navigate('Contest', { contestId: payload.contestId });
+          }
+          break;
+        case 'profile': {
+          const author = payload?.author;
+          if (!author?.id) return;
+          (navigation as any).navigate('UserProfile', {
+            userId: author.id,
+            username: author.username,
+          });
+          break;
+        }
+        // `videoDuration` : pure télémétrie du lecteur. Le fil s'en sert pour
+        // mesurer le temps de lecture ; ici rien ne l'exploite.
+        default:
+          break;
+      }
+    },
+    [
+      handleLike,
+      handleSuperLike,
+      handleRetweet,
+      handleShare,
+      handleOptions,
+      handleReport,
+      navigation,
+    ],
+  );
+
+  // ─── La liste ─────────────────────────────────────────────────────────────
+
+  const hasQuery = !!searchQuery.trim();
+
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+
+    if (hasQuery) {
+      const users = searchResults.users || [];
+      const tweets = searchResults.tweets || [];
+
+      if (users.length > 0) {
+        out.push({ key: 'head:users', kind: 'head', label: `COMPTES · ${users.length}` });
+        users.forEach((u, i) =>
+          out.push({
+            key: `user:${u.id || i}`,
+            kind: 'person',
+            user: u,
+            meta: `${formatCompactCount(u.stats?.followers || 0)} ABONNÉS · ${formatCompactCount(
+              u.stats?.following || 0,
+            )} ABONNEMENTS`,
+          }),
+        );
+      }
+
+      if (tweets.length > 0) {
+        out.push({ key: 'head:tweets', kind: 'head', label: `PUBLICATIONS · ${tweets.length}` });
+        tweets.forEach((t, i) =>
+          out.push({ key: `tweet:${t.id || i}`, kind: 'tweet', tweet: t, index: i }),
+        );
+      }
+
+      return out;
+    }
+
+    if (trendingHashtags.length > 0) {
+      out.push({ key: 'head:trends', kind: 'head', label: 'TENDANCES · TWEETS SUR 24 H' });
+      trendingHashtags.forEach((h, i) =>
+        out.push({ key: `trend:${h.tag}:${i}`, kind: 'trend', tag: h.tag, count: h.count }),
+      );
+    }
+
+    if (suggestions.length > 0) {
+      out.push({ key: 'head:suggestions', kind: 'head', label: 'À SUIVRE' });
+      suggestions.forEach((s, i) =>
+        out.push({
+          key: `suggestion:${s.id || i}`,
+          kind: 'person',
+          user: s,
+          // La RAISON plutôt que le nombre d'abonnés : sur une suggestion, ce
+          // qu'on veut savoir c'est pourquoi elle est là.
+          meta: (
+            s.suggestion_reasons?.[0] || `${formatCompactCount(s.followers_count || 0)} abonnés`
+          ).toUpperCase(),
+        }),
+      );
+    }
+
+    return out;
+  }, [hasQuery, searchResults, trendingHashtags, suggestions]);
+
+  const renderRow = useCallback(
+    ({ item }: { item: Row }) => {
+      switch (item.kind) {
+        case 'head':
+          return <SectionHead label={item.label} />;
+        case 'person':
+          return (
+            <PersonRow
+              user={item.user}
+              meta={item.meta}
+              following={!!followingUsers[item.user.id]}
+              busy={!!followLoading[item.user.id]}
+              onOpen={handleUserPress}
+              onFollow={handleFollowToggle}
+            />
+          );
+        case 'trend':
+          return <TrendRow tag={item.tag} count={item.count} onPress={handleHashtagPress} />;
+        case 'tweet':
+          return (
+            <TweetRowGutter
+              tweet={item.tweet}
+              index={item.index}
+              // Des résultats ne sont pas un fil de discussion : deux
+              // publications qui se suivent n'ont aucun lien, aucun rail ne
+              // doit donc les rattacher.
+              isThreadParent={false}
+              isThreadChild={false}
+              onAction={handleRowAction}
+              contextData={rowContext}
+            />
+          );
+        default:
+          return null;
+      }
+    },
+    [
+      followingUsers,
+      followLoading,
+      handleUserPress,
+      handleFollowToggle,
+      handleHashtagPress,
+      handleRowAction,
+      rowContext,
+    ],
+  );
 
   /* Le decor de l'etat vide : le bloc n'apparait qu'une fois la pluie prete. */
   const { pret: pluiePrete, onSettled: onDecorPluie } = useSceneReveal();
 
-  const renderUserItem = (user: User, index: number) => (
-    <UserResultRow
-      key={user.id || index}
-      user={user}
-      isFollowing={!!followingUsers[user.id]}
-      isFollowLoading={!!followLoading[user.id]}
-      onPress={handleUserPress}
-      onFollowToggle={handleFollowToggle}
-    />
-  );
-
-  /**
-   * Les interactions sont fusionnées au niveau des DONNÉES, plus au rendu :
-   * l'ancienne version fabriquait deux objets neufs par tweet et par rendu de
-   * l'écran — donc aussi à chaque caractère du résumé IA qui arrive en
-   * flux — et traçait une ligne de console par tweet au passage.
-   */
-  const tweetsWithInteractions = useMemo(
-    () =>
-      (searchResults.tweets || []).map((tweet) => ({
-        ...tweet,
-        user_interaction: {
-          is_liked: likedTweets[tweet.id] || false,
-          is_retweeted: retweetedTweets[tweet.id] || false,
-        },
-      })),
-    [searchResults.tweets, likedTweets, retweetedTweets],
-  );
-
-  const renderTweetItem = (tweet: Tweet, index: number) => (
-    <View key={tweet.id || index} style={styles.tweetItem}>
-      <TweetCard
-        tweet={tweet}
-        onLike={handleLike}
-        onRetweet={handleRetweet}
-        onReply={handleReply}
-        compact={false}
+  const listHeader = useMemo(() => {
+    if (!hasQuery) return null;
+    if (!displayedAiSummary && !aiSummaryLoading) return null;
+    return (
+      <SummaryBand
+        text={displayedAiSummary}
+        streaming={aiSummaryLoading}
+        status={aiSummaryStatus}
+        mentioned={aiMentionedUsers}
+        onOpenUser={handleUserPress}
       />
-    </View>
-  );
+    );
+  }, [
+    hasQuery,
+    displayedAiSummary,
+    aiSummaryLoading,
+    aiSummaryStatus,
+    aiMentionedUsers,
+    handleUserPress,
+  ]);
 
-  return (
-    <ScreenBackground>
-    <View style={[styles.container, eventStyles.container]}>
-      <View style={styles.gradient}>
-        {/* ── Event banners ── */}
-        <EventBanner />
-        
-        {/* ── Bannière de ban/suspension ── */}
-        <BanAlertBanner />
-        
-        <View style={[styles.topBar, eventStyles.header, { paddingTop: headerTopInset }]}>
-          <TouchableOpacity
-            onPress={() => (navigation as any).navigate('Profil')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={styles.topBarSide}
-          >
-            <Avatar size={34} username={user?.username || 'U'} uri={(user as any)?.avatar} />
-          </TouchableOpacity>
-          <Text style={[styles.topBarTitle, eventStyles.headerText]}>Recherche</Text>
-          <View style={styles.topBarSide} />
+  const listEmpty = useMemo(() => {
+    // Sans requête, une liste vide veut dire « le sommaire n'est pas encore
+    // arrivé » — surtout pas « aucun résultat », qui répondrait à une question
+    // que personne n'a posée. Et une fois qu'il est arrivé vide, on le dit en
+    // une ligne plutôt que de faire tourner un squelette pour toujours.
+    if (!hasQuery) {
+      if (!openingLoaded) return <RowsSkeleton />;
+      return (
+        <View style={S.quietWrap}>
+          <Text style={S.quietText}>
+            Rien ne ressort en ce moment. Écris un mot au-dessus.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={S.emptyWrap}>
+        {/* La scene ne porte NI cadre NI voile : transparente, elle se fond
+            dans l'ecran au lieu d'y poser une vignette. Le bloc entier attend
+            le decor, sans quoi le texte s'affiche d'abord et la pluie arrive
+            par-dessus une demi-seconde plus tard. */}
+        <View style={S.emptyScene}>
+          <SceneCanvas scene="02-pluie" onSettled={onDecorPluie} />
         </View>
 
-      {/* Barre de recherche */}
-      <SearchBar seed={searchQuery} onSubmit={handleSubmitQuery} />
-
-      {/* Filtres */}
-      <View style={styles.filtersContainer}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtersScroll}
-        >
-          {[
-            { key: 'all', label: 'Tout' },
-            { key: 'users', label: 'Personnes' },
-            { key: 'tweets', label: 'Publications' },
-            { key: 'trends', label: 'Tendances' },
-          ].map((filter) => (
-            <TouchableOpacity
-              key={filter.key}
-              onPress={() => handleFilterChange(filter.key as any)}
-              style={[
-                styles.filterButton,
-                activeFilter === filter.key && styles.filterButtonActive
-              ]}
-            >
-              <Text style={[
-                styles.filterButtonText,
-                activeFilter === filter.key && styles.filterButtonTextActive
-              ]}>
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Contenu principal */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: Platform.OS === 'ios' ? 100 : 20 }
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {loading && <ScreenSkeleton variant="feed" count={5} />}
-
-        {!loading && searchQuery.trim() && (
-          <>
-            {(displayedAiSummary || aiSummaryLoading) && (
-              <View style={styles.aiSummaryCard}>
-                <View style={styles.aiSummaryHeader}>
-                  <Text style={styles.aiSummaryTitle}>Résumé</Text>
-                </View>
-                <Text style={styles.aiSummaryText}>
-                  {(displayedAiSummary || '') + (aiSummaryLoading ? ' ▌' : '')}
-                </Text>
-                {aiSummaryLoading && !!aiSummaryStatus && (
-                  <Text style={styles.aiSummaryStatusText}>{aiSummaryStatus}</Text>
-                )}
-                {aiSummaryRefs.users.length > 0 && (
-                  <View style={styles.aiRefSection}>
-                    <Text style={styles.aiRefLabel}>Comptes cites</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {aiSummaryRefs.users.map((u) => (
-                        <TouchableOpacity key={u.id} style={styles.aiRefChip} onPress={() => handleUserPress(u)}>
-                          <Text style={styles.aiRefChipText}>@{u.username}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-                {aiSummaryRefs.tweets.length > 0 && (
-                  <View style={styles.aiRefSection}>
-                    <Text style={styles.aiRefLabel}>Tweets cites</Text>
-                    {aiSummaryRefs.tweets.slice(0, 2).map((tweet, index) => (
-                      <View key={tweet.id || index} style={styles.aiRefTweetCard}>
-                        {renderTweetItem(tweet, index)}
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* Résultats des utilisateurs */}
-            {(searchResults?.users?.length || 0) > 0 && (
-              <View style={styles.resultsSection}>
-                <Text style={styles.sectionTitle}>
-                  Personnes ({searchResults.users.length})
-                </Text>
-                {searchResults.users.map(renderUserItem)}
-              </View>
-            )}
-
-            {/* Résultats des tweets */}
-            {(searchResults?.tweets?.length || 0) > 0 && (
-              <View style={styles.resultsSection}>
-                <Text style={styles.sectionTitle}>
-                  Publications ({searchResults.tweets.length})
-                </Text>
-                {tweetsWithInteractions.map(renderTweetItem)}
-              </View>
-            )}
-
-            {/* Aucun résultat : il pleut sur le rebord. */}
-            {(searchResults?.users?.length || 0) === 0 && (searchResults?.tweets?.length || 0) === 0 && (
-              <View style={styles.videSousLaPluie}>
-                {/* La scene ne porte NI cadre NI voile : transparente, elle se
-                    fond dans l'ecran au lieu d'y poser une vignette. Le texte
-                    passe donc dessous, dans les couleurs du theme — il reste
-                    lisible en clair comme en sombre sans rien teinter.
-
-                    Le bloc entier attend le decor : sans ca le texte s'affiche
-                    d'abord, et la pluie arrive par-dessus une demi-seconde
-                    plus tard. */}
-                <View style={styles.scenePluie}>
-                  <SceneCanvas scene="02-pluie" onSettled={onDecorPluie} />
-                </View>
-
-                {!pluiePrete && (
-                  <View style={styles.videAttente} pointerEvents="none">
-                    <Skeleton width="52%" height={20} />
-                    <Skeleton width="72%" height={14} style={styles.videAttenteLigne} />
-                  </View>
-                )}
-
-                <SceneReveal visible={pluiePrete} style={styles.videTextes}>
-                  <Text style={styles.videTitre}>Aucun résultat</Text>
-                  <Text style={styles.videTexte} numberOfLines={2}>
-                    Rien pour « {searchQuery.trim()} ». Essaie autre chose.
-                  </Text>
-                </SceneReveal>
-              </View>
-            )}
-          </>
-        )}
-
-        {/* Hashtags tendance */}
-        {!loading && !searchQuery.trim() && (
-          <View style={styles.trendingSection}>
-            <Text style={styles.sectionTitle}>Tendances pour vous</Text>
-            
-            {(trendingHashtags?.length || 0) > 0 ? (
-              trendingHashtags.map((hashtag, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => handleHashtagPress(hashtag.tag)}
-                  style={styles.trendingItem}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.trendingContent}>
-                    <Text style={styles.trendingHashtag}>#{hashtag.tag.replace(/^#+/, '')}</Text>
-                    <Text style={styles.trendingCount}>{formatNumber(hashtag.count)} Tweets</Text>
-                  </View>
-                  <View style={styles.trendingOptions} pointerEvents="none">
-                    <Ionicons name="ellipsis-horizontal" size={16} color={colors.textSecondary} />
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <EmptyState icon="trending-up-outline" title="Aucune tendance" message="Reviens plus tard pour voir ce qui buzz." />
-            )}
+        {!pluiePrete && (
+          <View style={S.emptyWaiting} pointerEvents="none">
+            <Skeleton width="52%" height={ps(20)} rounded={ps(4)} />
+            <Skeleton width="72%" height={ps(14)} rounded={ps(4)} style={S.emptyWaitingLine} />
           </View>
         )}
 
-        {/* Suggestions d'utilisateurs IA */}
-        {!loading && !searchQuery.trim() && (
-          <UserSuggestions />
-        )}
-      </ScrollView>
+        <SceneReveal visible={pluiePrete} style={S.emptyTexts}>
+          <Text style={S.emptyTitle}>Rien sous ce mot</Text>
+          <Text style={S.emptyText} numberOfLines={2}>
+            « {searchQuery.trim()} » ne donne aucun compte ni aucune publication. Essaie plus court.
+          </Text>
+        </SceneReveal>
       </View>
+    );
+  }, [hasQuery, openingLoaded, pluiePrete, onDecorPluie, searchQuery]);
 
+  return (
+    <View style={S.root}>
+      {/* `SafeAreaView` vient de `react-native-safe-area-context`, PAS du cœur
+          de React Native : celle du cœur ne pose aucun inset sur Android. Le
+          bas est déjà géré par la barre d'onglets, en position absolue. */}
+      <SafeAreaView style={S.safe} edges={['top']}>
+        <AppStatusBar
+          barStyle={isPaperDark ? 'light-content' : 'dark-content'}
+          backgroundColor={paper.bg}
+        />
+
+        <EventStrip />
+        <BanAlertBanner />
+
+        <ReportSheet
+          visible={!!reportTarget}
+          onClose={() => setReportTarget(null)}
+          targetId={reportTarget?.id || ''}
+          targetType="tweet"
+          targetLabel={reportTarget?.label}
+        />
+
+        {/* ── La manchette : le champ, puis les rubriques ──
+            Deux filets, comme la manchette d'un journal : le premier ferme la
+            ligne d'écriture, le second ferme le sommaire. Ils délimitent deux
+            bandes de nature différente — ce n'est pas la même règle répétée. */}
+        <View style={S.masthead}>
+          <SearchField seed={searchQuery} onSubmit={handleSubmitQuery} />
+          {/* Les rubriques n'existent que s'il y a quelque chose à filtrer. */}
+          {hasQuery && <RubricBar active={activeFilter} onChange={handleFilterChange} />}
+        </View>
+
+        {loading ? (
+          <RowsSkeleton />
+        ) : (
+          <FlatList
+            data={rows}
+            keyExtractor={(item) => item.key}
+            renderItem={renderRow}
+            ListHeaderComponent={listHeader}
+            ListEmptyComponent={listEmpty}
+            contentContainerStyle={[S.listContent, { paddingBottom: tabBarHeight + ps(24) }]}
+            showsVerticalScrollIndicator={false}
+            // Le clavier est ouvert quand les résultats arrivent : sans ça, le
+            // premier appui sur un résultat ne servirait qu'à le refermer.
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          />
+        )}
+      </SafeAreaView>
     </View>
-    </ScreenBackground>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
+const S = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: paper.bg,
+  },
+  safe: {
     flex: 1,
     backgroundColor: 'transparent',
   },
-  gradient: {
-    flex: 1,
+
+  // ── Manchette ──
+  masthead: {
+    backgroundColor: paper.bg,
   },
-  topBar: {
+  field: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    gap: ps(12),
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(10),
+    paddingBottom: ps(12),
+    borderBottomWidth: 1,
+    borderBottomColor: paper.hairline,
   },
-  topBarSide: { width: 34 },
-  topBarTitle: {
-    fontSize: 16,
-    fontFamily: fonts.heading,
-    color: colors.textPrimary,
+  // Le corps du champ EST le titre de la page : Archivo, comme le mot-marque
+  // du fil. `minHeight` garantit la cible de 44 pt même quand il est vide.
+  fieldInput: {
+    flex: 1,
+    minHeight: ps(38),
+    paddingVertical: 0,
+    fontFamily: paperFonts.strong,
+    // Le plus gros corps de la page, sans discussion possible : rien d'autre
+    // ne doit s'en approcher, sinon la manchette cesse d'être une manchette.
+    fontSize: ps(25),
+    letterSpacing: ps(-0.5),
+    color: paper.ink,
   },
-  searchBarContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  fieldClear: {
+    width: ps(24),
+    height: ps(24),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  searchBar: {
+
+  // ── Rubriques ──
+  // Alignées à gauche et soufflées, pas réparties sur toute la largeur :
+  // quatre onglets étirés font une barre de segments, pas un sommaire.
+  rubricBar: {
+    flexDirection: 'row',
+    gap: ps(18),
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(12),
+    borderBottomWidth: 1,
+    borderBottomColor: paper.hairline,
+  },
+  rubricItem: {
+    alignItems: 'center',
+    paddingBottom: ps(10),
+  },
+  // Fond transparent : seule la bordure basse se voit, exactement sur le bord
+  // inférieur de l'onglet — un soulignement, pas une pastille pleine.
+  rubricIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: 'transparent',
+    borderBottomWidth: 2,
+    borderBottomColor: paper.ink,
+  },
+  rubricLabel: {
+    fontFamily: paperFonts.display,
+    fontSize: ps(15),
+    letterSpacing: ps(-0.3),
+    color: paper.inkIdle,
+  },
+  // Repli si la mesure `onLayout` ne se déclenche pas : l'onglet actif reste
+  // reconnaissable à l'encre de son libellé, sans dépendre d'aucune animation.
+  rubricLabelActive: {
+    color: paper.ink,
+  },
+
+  // ── Liste ──
+  listContent: {
+    paddingTop: ps(4),
+  },
+
+  /** LA colonne de gauche, partagée par les trois natures de ligne. */
+  gutter: {
+    width: GUTTER_W,
+    alignItems: 'center',
+  },
+
+  // La capitale espacée en chasse fixe est la voix des méta de 2B — la même
+  // que « SPONSORISÉ » sur une ligne du fil.
+  eyebrow: {
+    fontFamily: paperFonts.mono,
+    fontSize: ps(10),
+    letterSpacing: ps(1.5),
+    color: paper.inkMeta,
+  },
+  head: {
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(26),
+    paddingBottom: ps(12),
+  },
+
+  // ── Résumé ──
+  summary: {
+    backgroundColor: paper.bgBand,
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(14),
+    paddingBottom: ps(16),
+  },
+  // Medium et non Book : sur le fond papier, le Book paraît délavé — même
+  // constat que sur le corps d'un tweet.
+  summaryText: {
+    fontFamily: paperFonts.bodyStrong,
+    fontSize: ps(17),
+    lineHeight: ps(25),
+    color: paper.ink,
+    marginTop: ps(9),
+  },
+  summaryCaret: {
+    color: paper.accent,
+  },
+  summaryStatus: {
+    fontFamily: paperFonts.mono,
+    fontSize: ps(13),
+    lineHeight: ps(18),
+    color: paper.inkMeta,
+    marginTop: ps(6),
+  },
+  summaryRefs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: ps(14),
+    marginTop: ps(12),
+  },
+  summaryRef: {
+    fontFamily: paperFonts.mono,
+    fontSize: ps(13),
+    color: paper.ink,
+  },
+
+  // ── Ligne « compte » ──
+  personRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: ROW_GAP,
+    paddingHorizontal: ROW_PAD_X,
+    paddingVertical: ps(11),
   },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
+  personContent: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontFamily: fonts.medium,
+    minWidth: 0,
   },
-  clearButton: {
-    padding: 4,
+  personNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(6),
   },
-  filtersContainer: {
-    paddingVertical: 10,
+  // Semi-bold, comme les noms d'auteur du fil : le Bold les rendrait aussi
+  // lourds qu'un titre, alors qu'ils ne font qu'annoncer un profil.
+  personName: {
+    fontFamily: paperFonts.strong,
+    fontSize: ps(17),
+    letterSpacing: ps(-0.34),
+    color: paper.ink,
+    flexShrink: 1,
   },
-  filtersScroll: {
-    paddingHorizontal: 20,
+  verifiedWrap: {
+    marginLeft: ps(-2),
   },
-  filterButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: radius.round,
-    backgroundColor: colors.surface,
+  personHandle: {
+    fontFamily: paperFonts.mono,
+    fontSize: ps(13),
+    color: paper.inkSoft,
+    marginTop: ps(3),
+  },
+  // Capitale espacée : c'est ce qui autorise ce corps-là. La même phrase en
+  // bas de casse à `ps(11)` serait simplement trop petite pour être lue.
+  personMeta: {
+    fontFamily: paperFonts.mono,
+    fontSize: ps(11),
+    letterSpacing: ps(0.7),
+    color: paper.inkMeta,
+    marginTop: ps(5),
+  },
+  // La pilule contour de « Répondre », reprise telle quelle.
+  pill: {
+    minWidth: ps(76),
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: paper.outline,
+    borderRadius: ps(9),
+    paddingVertical: ps(6),
+    paddingHorizontal: ps(12),
   },
-  filterButtonActive: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accentMuted,
+  pillMuted: {
+    borderColor: paper.hairline,
   },
-  filterButtonText: {
-    color: colors.textSecondary,
-    fontSize: 13.5,
-    fontFamily: fonts.medium,
+  pillText: {
+    fontFamily: paperFonts.bodyStrong,
+    fontSize: ps(15),
+    color: paper.ink,
   },
-  filterButtonTextActive: {
-    color: colors.accent,
-    fontFamily: fonts.semibold,
+  pillTextMuted: {
+    color: paper.inkSoft,
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  aiSummaryCard: {
-    marginTop: 18,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.accentMuted,
-  },
-  aiSummaryHeader: {
+
+  // ── Ligne « tendance » ──
+  trendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: ROW_GAP,
+    paddingHorizontal: ROW_PAD_X,
+    paddingVertical: ps(12),
   },
-  aiSummaryTitle: {
-    marginLeft: 6,
-    color: colors.accent,
-    fontSize: 14,
-    fontFamily: fonts.bold,
+  // `tabular-nums` : dix compteurs empilés dans une colonne de 52 px forment
+  // une COLONNE — en chiffres à chasse proportionnelle, un « 1 » plus étroit
+  // qu'un « 8 » les fait tanguer d'une ligne à l'autre.
+  trendCount: {
+    fontFamily: paperFonts.display,
+    fontSize: ps(17),
+    lineHeight: ps(21),
+    letterSpacing: ps(-0.51),
+    color: paper.ink,
+    fontVariant: ['tabular-nums'],
   },
-  aiSummaryText: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: fonts.medium,
+  trendTag: {
+    flex: 1,
+    fontFamily: paperFonts.strong,
+    fontSize: ps(19),
+    letterSpacing: ps(-0.38),
+    color: paper.ink,
   },
-  aiSummaryStatusText: {
-    marginTop: 8,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontStyle: 'italic',
+
+  // ── Attente ──
+  skeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ROW_GAP,
+    paddingHorizontal: ROW_PAD_X,
+    paddingVertical: ps(14),
   },
-  aiRefSection: {
-    marginTop: 12,
+  skeletonContent: {
+    flex: 1,
   },
-  aiRefLabel: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontFamily: fonts.bold,
-    marginBottom: 8,
+  skeletonLine: {
+    marginTop: ps(9),
   },
-  aiRefChip: {
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    marginRight: 8,
+
+  // ── Sommaire vide : une phrase, pas un décor ──
+  // La pluie est réservée à l'échec d'une RECHERCHE, où l'on a demandé
+  // quelque chose et où il n'y a rien. Un fil de tendances vide, lui, ne dit
+  // rien sur ce qu'on cherchait — il ne mérite pas une scène.
+  quietWrap: {
+    paddingHorizontal: ROW_PAD_X,
+    paddingTop: ps(40),
   },
-  aiRefChipText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontFamily: fonts.semibold,
+  quietText: {
+    fontFamily: paperFonts.body,
+    fontSize: ps(15),
+    lineHeight: ps(22),
+    color: paper.inkSoft,
   },
-  aiRefTweetCard: {
-    marginBottom: 8,
-  },
-  videSousLaPluie: {
-    marginTop: 20,
-    paddingBottom: 28,
+
+  // ── Rien trouvé ──
+  emptyWrap: {
+    paddingTop: ps(8),
+    paddingBottom: ps(28),
     alignItems: 'center',
   },
   /**
    * `SceneCanvas` se pose en absolu : sans hauteur explicite ici, il n'aurait
    * rien à remplir et la scène serait invisible.
    */
-  scenePluie: {
+  emptyScene: {
     width: '100%',
-    height: 300,
+    height: ps(300),
   },
-  videTextes: {
+  emptyTexts: {
     alignItems: 'center',
     alignSelf: 'stretch',
+    paddingHorizontal: ps(32),
   },
-  videAttente: {
+  emptyWaiting: {
     alignItems: 'center',
-    paddingTop: 16,
-    gap: 0,
+    paddingTop: ps(16),
   },
-  videAttenteLigne: { marginTop: 10 },
-  videTitre: {
-    marginTop: 14,
-    color: colors.textPrimary,
-    fontFamily: fonts.display,
-    fontSize: 19,
-    lineHeight: 25,
+  emptyWaitingLine: {
+    marginTop: ps(10),
+  },
+  emptyTitle: {
+    fontFamily: paperFonts.display,
+    fontSize: ps(22),
+    letterSpacing: ps(-0.7),
+    color: paper.ink,
+    marginTop: ps(14),
     textAlign: 'center',
   },
-  videTexte: {
-    marginTop: 8,
-    maxWidth: 320,
-    color: colors.textSecondary,
-    fontFamily: fonts.regular,
-    fontSize: 14,
-    lineHeight: 20,
+  emptyText: {
+    fontFamily: paperFonts.body,
+    fontSize: ps(15),
+    lineHeight: ps(22),
+    color: paper.inkSoft,
     textAlign: 'center',
-  },
-  resultsSection: {
-    marginVertical: 20,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontFamily: fonts.bold,
-    color: colors.textPrimary,
-    marginBottom: 16,
-    letterSpacing: -0.3,
-  },
-  userItem: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    marginBottom: 8,
-  },
-  userContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-  },
-  userAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    marginRight: 16,
-    backgroundColor: colors.surfaceAlt,
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  userFullName: {
-    fontSize: 16,
-    fontFamily: fonts.bold,
-    color: colors.textPrimary,
-    marginRight: 6,
-  },
-  verifiedIcon: {
-    marginLeft: 4,
-  },
-  userUsername: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  userStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  userStat: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  statSeparator: {
-    color: colors.textMuted,
-    marginHorizontal: 8,
-  },
-  followButton: {
-    backgroundColor: colors.accent,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: radius.md,
-    minWidth: 78,
-    alignItems: 'center',
-  },
-  followingButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  followButtonText: {
-    color: colors.onAccent,
-    fontSize: 13,
-    fontFamily: fonts.bold,
-  },
-  followingButtonText: {
-    color: colors.textPrimary,
-  },
-  tweetItem: {
-    marginBottom: 12,
-  },
-  noResultsContainer: {
-    alignItems: 'center',
-    paddingVertical: 80,
-  },
-  noResultsTitle: {
-    fontSize: 20,
-    fontFamily: fonts.bold,
-    color: colors.textPrimary,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  noResultsSubtitle: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  trendingSection: {
-    marginTop: 20,
-  },
-  trendingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    marginBottom: 8,
-  },
-  trendingContent: {
-    flex: 1,
-  },
-  trendingCategory: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: 4,
-  },
-  trendingHashtag: {
-    fontSize: 17,
-    fontFamily: fonts.bold,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  trendingCount: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  trendingOptions: {
-    padding: 8,
-    marginLeft: 16,
-  },
-  noTrendingContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-  },
-  noTrendingText: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
+    marginTop: ps(8),
+    maxWidth: ps(320),
   },
 });

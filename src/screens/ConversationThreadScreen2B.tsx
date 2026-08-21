@@ -53,9 +53,11 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -65,7 +67,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // `expo-image` plutôt que `Image` de React Native : cache disque et décodage
 // hors du thread JS, sur des avatars et pièces jointes montés en liste.
 // `transition={0}` : aucune apparition en fondu, le rendu ne change pas.
@@ -284,11 +286,13 @@ function ReactionPill({
   count,
   mine,
   onPress,
+  onLongPress,
 }: {
   emoji: string;
   count: number;
   mine: boolean;
   onPress: () => void;
+  onLongPress: () => void;
 }) {
   const scale = useSharedValue(1);
   const isFirstRenderRef = useRef(true);
@@ -310,8 +314,13 @@ function ReactionPill({
     <Reanimated.View style={animatedStyle}>
       <TouchableOpacity
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={320}
         style={[styles.reactionPill, mine && styles.reactionPillMine]}
         hitSlop={hitSlop}
+        accessibilityRole="button"
+        accessibilityLabel={`${emoji}, ${count} réaction${count > 1 ? 's' : ''}`}
+        accessibilityHint="Appui long pour voir qui a réagi"
       >
         <Text style={styles.reactionPillEmoji}>{emoji}</Text>
         {count > 1 && <Text style={styles.reactionPillCount}>{count}</Text>}
@@ -410,14 +419,10 @@ function VoiceLine({
   uri,
   durationMs,
   waveform,
-  fromMe,
-  bubbleRadius,
 }: {
   uri: string;
   durationMs?: number;
   waveform?: number[];
-  fromMe: boolean;
-  bubbleRadius: any;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -525,19 +530,27 @@ function VoiceLine({
   const activeBarIndex = Math.round(progress * (WAVEFORM_BAR_COUNT - 1));
 
   return (
-    <View style={[styles.voiceBubble, fromMe ? styles.bubbleMine : styles.bubbleOther, bubbleRadius]}>
-      <TouchableOpacity onPress={toggle} hitSlop={hitSlop} style={styles.voicePlayBtn}>
-        {isLoading ? (
-          <ActivityIndicator size="small" color={fromMe ? paper.onAccent : paper.ink} />
-        ) : (
-          <Ionicons
-            name={isPlaying ? 'pause' : 'play'}
-            size={16}
-            color={fromMe ? paper.onAccent : paper.ink}
-            style={!isPlaying ? { marginLeft: 1 } : undefined}
-          />
-        )}
-      </TouchableOpacity>
+    <View style={[styles.voiceBubble, { borderRadius: MSG_R }]}>
+      <View style={styles.voicePlayRing}>
+        <TouchableOpacity
+          onPress={toggle}
+          hitSlop={hitSlop}
+          style={styles.voicePlayBtn}
+          accessibilityRole="button"
+          accessibilityLabel={isPlaying ? 'Mettre en pause le message vocal' : 'Écouter le message vocal'}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color={paper.accent} />
+          ) : (
+            <Ionicons
+              name={isPlaying ? 'pause' : 'play'}
+              size={14}
+              color={paper.accent}
+              style={!isPlaying ? { marginLeft: 1 } : undefined}
+            />
+          )}
+        </TouchableOpacity>
+      </View>
       <View style={styles.voiceWaveform}>
         {bars.map((amplitude, i) => (
           <View
@@ -547,14 +560,12 @@ function VoiceLine({
               // Amplitude plancher : des barres toutes plates ne se lisent plus
               // comme un son, elles se lisent comme une ligne pointillee.
               { height: ps(6) + amplitude * ps(16) },
-              i <= activeBarIndex
-                ? (fromMe ? styles.voiceBarPlayedMine : styles.voiceBarPlayedOther)
-                : (fromMe ? styles.voiceBarIdleMine : styles.voiceBarIdleOther),
+              i <= activeBarIndex ? styles.voiceBarPlayed : styles.voiceBarIdle,
             ]}
           />
         ))}
       </View>
-      <Text style={[styles.voiceDuration, fromMe && styles.voiceDurationMine]}>
+      <Text style={styles.voiceDuration}>
         {formatDuration(positionMs > 0 ? positionMs : totalMs)}
       </Text>
     </View>
@@ -606,6 +617,100 @@ function StoryReplyReference({
         )}
       </View>
     </View>
+  );
+}
+
+interface Reactor {
+  userId: string;
+  name: string;
+  username?: string;
+  avatar: string | null;
+  verified: boolean;
+}
+
+/**
+ * Qui a réagi, façon Instagram/Snapchat — ouverte par un appui long sur une
+ * pastille de réaction.
+ *
+ * Même mécanique de feuille que `EmojiPickerSheet` (fondu du fond porté par
+ * le Modal, glissé de la feuille porté à part par Reanimated) : le glissé
+ * natif du Modal anime tout son contenu comme un bloc, fond compris, et se
+ * voyait remonter depuis le bas comme une ombre.
+ */
+function ReactorsSheet({
+  visible,
+  emoji,
+  reactors,
+  onClose,
+  onOpenProfile,
+}: {
+  visible: boolean;
+  emoji: string;
+  reactors: Reactor[];
+  onClose: () => void;
+  onOpenProfile: (userId: string) => void;
+}) {
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetTranslateY = useSharedValue(windowHeight);
+
+  useEffect(() => {
+    if (!visible) return;
+    sheetTranslateY.value = windowHeight;
+    sheetTranslateY.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
+  }, [visible, windowHeight, sheetTranslateY]);
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.reactorsBackdrop}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <Reanimated.View style={[styles.reactorsSheet, sheetStyle]}>
+              <View style={styles.reactorsGrabber} />
+              <Text style={styles.reactorsTitle}>
+                {emoji} {reactors.length} {reactors.length > 1 ? 'réactions' : 'réaction'}
+              </Text>
+              <ScrollView contentContainerStyle={styles.reactorsList} keyboardShouldPersistTaps="handled">
+                {reactors.map((r) => (
+                  <TouchableOpacity
+                    key={r.userId}
+                    style={styles.reactorRow}
+                    onPress={() => onOpenProfile(r.userId)}
+                    activeOpacity={0.7}
+                  >
+                    {r.avatar ? (
+                      <Image
+                        source={{ uri: r.avatar }}
+                        style={styles.reactorAvatar}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        transition={0}
+                        recyclingKey={r.avatar}
+                      />
+                    ) : (
+                      <View style={[styles.reactorAvatar, styles.rowAvatarFallback]}>
+                        <Text style={styles.reactorAvatarText}>{r.name.slice(0, 1).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.reactorName} numberOfLines={1}>
+                      {r.name}
+                    </Text>
+                    {!!r.username && (
+                      <Text style={styles.reactorHandle} numberOfLines={1}>
+                        @{r.username}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Reanimated.View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 }
 
@@ -696,13 +801,25 @@ interface MessageEntryProps {
   onToggleExpanded: (messageId: string) => void;
   onLongPress: (messageId: string, x: number, y: number) => void;
   onReact: (messageId: string, emoji: string) => void;
+  onShowReactors: (messageId: string, emoji: string) => void;
 }
 
-/** Rayon d'une bulle, et sa version resserrée à l'intérieur d'une salve. */
-const BUBBLE_R = ps(18);
-const BUBBLE_R_TIGHT = ps(6);
+/**
+ * Rayon unique, pas de coin resserré par regroupement.
+ *
+ * La version précédente resserrait le coin intérieur d'une salve (6 px contre
+ * 18) pour dire « ces messages vont ensemble ». C'est exactement le tell d'app
+ * de chat générique, et désormais redondant : le rail d'accent (voir
+ * `S.accentRail`) et le rythme vertical (`ps(2)` dans une salve, `ps(12)`
+ * entre deux) disent déjà la même chose. Empiler les deux aurait été le
+ * défaut « plusieurs indices pour une seule idée ».
+ */
+const MSG_R = ps(14);
 /** Une bulle ne dépasse jamais cette part de la largeur : la ligne reste lisible. */
 const BUBBLE_MAX = '78%';
+/** Largeur du rail d'accent, et son décalage hors de la bulle. */
+const RAIL_W = ps(2.5);
+const RAIL_OFFSET = ps(7);
 
 const MessageEntry = memo(function MessageEntry({
   entry,
@@ -717,6 +834,7 @@ const MessageEntry = memo(function MessageEntry({
   onToggleExpanded,
   onLongPress,
   onReact,
+  onShowReactors,
 }: MessageEntryProps) {
   const { msg: item, sender, fromMe, isFirstOfGroup, isLastOfGroup, showSeparator } = entry;
   const messageId = String(item.id);
@@ -726,38 +844,137 @@ const MessageEntry = memo(function MessageEntry({
   const attachmentUrl = item.metadata?.attachment_url;
   const groupedReactions = groupReactions(item.reactions);
 
-  /**
-   * Le coin côté auteur se resserre à l'intérieur d'une salve : les messages
-   * envoyés coup sur coup forment un bloc continu au lieu de trois pastilles
-   * détachées. C'est le groupage recommandé partout, et il évite d'empiler
-   * trois fois le même horodatage.
-   */
-  const bubbleRadius = fromMe
-    ? {
-        borderTopLeftRadius: BUBBLE_R,
-        borderBottomLeftRadius: BUBBLE_R,
-        borderTopRightRadius: isFirstOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
-        borderBottomRightRadius: isLastOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
-      }
-    : {
-        borderTopRightRadius: BUBBLE_R,
-        borderBottomRightRadius: BUBBLE_R,
-        borderTopLeftRadius: isFirstOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
-        borderBottomLeftRadius: isLastOfGroup ? BUBBLE_R : BUBBLE_R_TIGHT,
-      };
-
   // Lecture pure (aucune mutation ici) : `freshIdsRef` est alimenté à
   // l'arrivée du message, pas au rendu. Fondu-glissé court et SANS ressort :
   // le message se pose, il ne rebondit pas.
   const isFreshMessage = freshIdsRef.current.has(messageId);
 
   /**
-   * L'avatar n'apparaît QUE dans un groupe, et seulement au pied de la salve.
+   * L'avatar n'apparaît QUE dans un groupe, et seulement en tête de la salve —
+   * avec le nom, pas séparé de lui. La version précédente le posait au PIED
+   * (convention de messagerie générique), pendant que le nom ouvrait la salve
+   * plus haut : les deux repères d'identité d'un même bloc de messages
+   * pointaient donc à ses deux extrémités opposées. Fil B2 annonce toujours
+   * l'auteur au début d'une rangée (`TweetRowGutter.authorRow`) ; ici la salve
+   * en tient lieu.
+   *
    * En tête-à-tête, l'en-tête de l'écran dit déjà à qui on parle : le répéter
    * à chaque message vole 44 px de largeur à toutes les lignes pour une
    * information qu'on a sous les yeux.
    */
   const showAvatar = isGroup && !fromMe;
+
+  // ── Gestes de la bulle ────────────────────────────────────────────────
+  // Remplace le `TouchableOpacity` d'origine : mélanger les touchables du
+  // cœur RN avec Gesture Handler sur le même arbre casse le double-tap (voir
+  // `references/gestures/SKILL.md`). Tout passe donc par une seule
+  // composition Gesture Handler.
+  const pressed = useSharedValue(0);
+  const dragPeek = useSharedValue(0);
+  const heartPop = useSharedValue(0);
+
+  const alreadyHearted = !!item.reactions?.some(
+    (r) => r.emoji === '❤️' && String(r.user_id) === String(myId),
+  );
+
+  const handleSingleTap = useCallback(() => {
+    if (attachmentType === 'image' && attachmentUrl) onOpenImage(attachmentUrl);
+    else onToggleExpanded(messageId);
+  }, [attachmentType, attachmentUrl, messageId, onOpenImage, onToggleExpanded]);
+
+  /**
+   * Double-tap façon Instagram : pose un cœur, ne l'enlève jamais. Un second
+   * double-tap sur un message déjà aimé ne rejoue donc rien — même règle que
+   * le double-tap du fil (`TweetRowGutter`), pour la même raison : un geste
+   * qui peut retirer ce qu'il vient de poser n'est plus sûr à répéter vite.
+   */
+  const handleDoubleTap = useCallback(() => {
+    if (alreadyHearted) return;
+    heartPop.value = 0;
+    heartPop.value = withTiming(1, { duration: 650, easing: Easing.out(Easing.cubic) });
+    onReact(messageId, '❤️');
+  }, [alreadyHearted, heartPop, messageId, onReact]);
+
+  const singleTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDistance(10)
+        .onBegin(() => {
+          pressed.value = withTiming(1, { duration: 80 });
+        })
+        .onFinalize(() => {
+          pressed.value = withTiming(0, { duration: 120 });
+        })
+        .onEnd((_e, success) => {
+          if (success) runOnJS(handleSingleTap)();
+        }),
+    [pressed, handleSingleTap],
+  );
+
+  const doubleTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .maxDistance(10)
+        .onEnd((_e, success) => {
+          if (success) runOnJS(handleDoubleTap)();
+        }),
+    [handleDoubleTap],
+  );
+
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(280)
+        .maxDistance(10)
+        .onStart((e) => {
+          runOnJS(onLongPress)(messageId, e.absoluteX, e.absoluteY);
+        }),
+    [messageId, onLongPress],
+  );
+
+  /**
+   * Glisser la bulle fait apparaître son heure exacte, façon Instagram — mais
+   * un repère fixe au coin plutôt qu'une colonne qui suit le doigt : une
+   * bulle courte et une bulle qui remplit presque les 78% n'ouvrent pas le
+   * même espace à droite, un ancrage au coin marche pour les deux sans calcul
+   * de largeur. Purement transitoire : relâcher fait toujours disparaître
+   * l'heure, rien n'est mémorisé (contrairement à `expanded`, qui reste posé
+   * par un appui simple).
+   */
+  const revealGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-14, 14])
+        .failOffsetY([-8, 8])
+        .onUpdate((e) => {
+          dragPeek.value = e.translationX;
+        })
+        .onEnd(() => {
+          dragPeek.value = withTiming(0, { duration: 160 });
+        }),
+    [dragPeek],
+  );
+
+  const bubbleGesture = useMemo(
+    () => Gesture.Race(revealGesture, Gesture.Exclusive(longPressGesture, Gesture.Exclusive(doubleTapGesture, singleTapGesture))),
+    [revealGesture, longPressGesture, doubleTapGesture, singleTapGesture],
+  );
+
+  const pressedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pressed.value, [0, 1], [1, 0.92]),
+  }));
+
+  const revealTimeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(Math.abs(dragPeek.value), [10, 45], [0, 1], Extrapolation.CLAMP),
+  }));
+
+  const heartPopStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(heartPop.value, [0, 0.12, 0.7, 1], [0, 1, 0.9, 0], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(heartPop.value, [0, 0.35, 1], [0.4, 1.18, 0.95], Extrapolation.CLAMP) },
+    ],
+  }));
 
   return (
     <Reanimated.View
@@ -807,7 +1024,7 @@ const MessageEntry = memo(function MessageEntry({
       <View style={[styles.msgRow, fromMe ? styles.msgRowRight : styles.msgRowLeft]}>
         {showAvatar && (
           <View style={styles.avatarSlot}>
-            {isLastOfGroup &&
+            {isFirstOfGroup &&
               (senderAvatar ? (
                 <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
               ) : (
@@ -822,40 +1039,69 @@ const MessageEntry = memo(function MessageEntry({
 
         <View style={[styles.messageColumn, fromMe && styles.messageColumnMine]}>
           <StoryReplyReference message={item} fromMe={fromMe} />
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() =>
-              attachmentType === 'image' && attachmentUrl
-                ? onOpenImage(attachmentUrl)
-                : onToggleExpanded(messageId)
-            }
-            onLongPress={(evt) => {
-              const { pageX, pageY } = evt.nativeEvent;
-              onLongPress(messageId, pageX, pageY);
-            }}
-            delayLongPress={280}
-            style={styles.bubbleTouch}
-          >
-            {attachmentType === 'image' && attachmentUrl ? (
-              <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, bubbleRadius]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
-            ) : attachmentType === 'audio' && attachmentUrl ? (
-              <VoiceLine
-                uri={attachmentUrl}
-                durationMs={item.metadata?.duration_ms}
-                waveform={item.metadata?.waveform}
-                fromMe={fromMe}
-                bubbleRadius={bubbleRadius}
-              />
-            ) : (
-              <View
-                style={[styles.bubble, fromMe ? styles.bubbleMine : styles.bubbleOther, bubbleRadius]}
+          <View style={styles.bubbleWrap}>
+            <GestureDetector gesture={bubbleGesture}>
+              <Reanimated.View
+                style={[styles.bubbleTouch, pressedStyle]}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={
+                  attachmentType === 'image'
+                    ? 'Image'
+                    : attachmentType === 'audio'
+                      ? 'Message vocal'
+                      : item.content
+                }
+                accessibilityHint="Appui double pour aimer, appui long pour réagir"
               >
-                <Text style={fromMe ? styles.bubbleTextMine : styles.bubbleTextOther}>
-                  {item.content}
-                </Text>
-              </View>
+                {attachmentType === 'image' && attachmentUrl ? (
+                  <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, { borderRadius: MSG_R }]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
+                ) : attachmentType === 'audio' && attachmentUrl ? (
+                  <VoiceLine
+                    uri={attachmentUrl}
+                    durationMs={item.metadata?.duration_ms}
+                    waveform={item.metadata?.waveform}
+                  />
+                ) : (
+                  <View style={styles.bubble}>
+                    <Text style={styles.bubbleText}>{item.content}</Text>
+                  </View>
+                )}
+              </Reanimated.View>
+            </GestureDetector>
+
+            {/* Rail d'accent : le seul repère qui distingue encore « moi » de
+                « l'autre » côté matière — la position gauche/droite fait le
+                reste (voir la note sur `msgRow` plus bas). Il ne se dessine
+                que pour mes messages, jamais un aplat, jamais dupliqué en
+                face : un signal rare reste un signal. `bottom` s'étend d'un
+                cran quand la salve continue, pour rejoindre le message
+                suivant sans lui laisser un pixel de trait interrompu. */}
+            {fromMe && (
+              <View
+                pointerEvents="none"
+                style={[styles.accentRail, { bottom: isLastOfGroup ? 0 : -ps(2) }]}
+              />
             )}
-          </TouchableOpacity>
+
+            {/* Heure révélée en glissant la bulle — geste transitoire, voir
+                `revealGesture`. Ancrée au coin extérieur, pas dans la marge
+                variable qu'ouvrirait une bulle plus courte que la largeur
+                max. */}
+            <Reanimated.View
+              pointerEvents="none"
+              style={[styles.revealTimePill, fromMe ? styles.revealTimePillMine : styles.revealTimePillOther, revealTimeStyle]}
+            >
+              <Text style={styles.revealTimeText}>{formatTime(item.created_at || item.createdAt)}</Text>
+            </Reanimated.View>
+
+            {/* Cœur du double-tap. En accent, comme celui du fil — mais posé
+                sur la bulle, pas plein écran : ici l'échelle est celle d'un
+                message, pas celle d'une ligne entière. */}
+            <Reanimated.View pointerEvents="none" style={[styles.heartPopOverlay, heartPopStyle]}>
+              <Ionicons name="heart" size={ps(34)} color={paper.accent} />
+            </Reanimated.View>
+          </View>
 
           {groupedReactions.length > 0 && (
             <View
@@ -870,6 +1116,7 @@ const MessageEntry = memo(function MessageEntry({
                     (r) => r.emoji === g.emoji && String(r.user_id) === String(myId),
                   )}
                   onPress={() => onReact(messageId, g.emoji)}
+                  onLongPress={() => onShowReactors(messageId, g.emoji)}
                 />
               ))}
             </View>
@@ -926,6 +1173,11 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   // Réactif (rotation, foldable, split-screen) là où `Dimensions.get` pris
   // ponctuellement servait une valeur figée au rendu d'ouverture.
   const { width: windowWidth } = useWindowDimensions();
+  // Le bas de l'écran, pas seulement le haut : `SafeAreaView` ne couvre que
+  // `edges={['top']}` (le bas est géré ici, au repos seulement — voir
+  // `inputBar`), sinon le compositeur se collait à la barre d'accueil sur les
+  // appareils sans bouton. Même geste que `CommentSheet` (`insets.bottom`).
+  const insets = useSafeAreaInsets();
   const conversationId = route?.params?.conversationId as string;
   const conversationTitle = route?.params?.title as string;
   const conversationUsername = route?.params?.username as string | undefined;
@@ -969,8 +1221,22 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   const [reactionBarFor, setReactionBarFor] = useState<{ messageId: string; x: number; y: number } | null>(null);
   /** Message pour lequel le sélecteur complet d'emoji est ouvert (bouton « + »). */
   const [emojiPickerFor, setEmojiPickerFor] = useState<string | null>(null);
+  /** Message + emoji dont on veut voir qui a réagi (appui long sur une pastille). */
+  const [reactorsFor, setReactorsFor] = useState<{ messageId: string; emoji: string } | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
+  /**
+   * `scrollToEnd()` vise `contentSize`, qui peut être en retard d'une frame
+   * sur la vraie hauteur (mesure d'un message tout juste monté, padding du
+   * `contentContainerStyle`) — le défilement s'arrête alors juste avant le
+   * bas, un manque documenté de la méthode plutôt qu'un bug de cet écran.
+   * `scrollToOffset` vers une valeur volontairement hors d'atteinte est
+   * borné par la liste elle-même à sa vraie fin, quelle que soit la fraîcheur
+   * de la mesure.
+   */
+  const scrollToBottom = useCallback((animated = true) => {
+    flatListRef.current?.scrollToOffset({ offset: 100000, animated });
+  }, []);
   const socketRef = useRef<any>(null);
   const typingTimeoutRef = useRef<any>(null);
   const isTypingRef = useRef(false);
@@ -1148,11 +1414,21 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     };
   }, [directOtherUserId, isGroup]);
 
+  /**
+   * Remonter au clavier, comme Instagram — sans lui, le clavier recouvre la
+   * fin de la conversation sans que rien ne compense : la vue garde le même
+   * décalage de défilement pendant que la zone visible rétrécit, et les
+   * derniers messages passent derrière le clavier.
+   *
+   * Inconditionnel (pas de garde `isAtBottomRef`) : ouvrir le clavier, c'est
+   * l'intention de répondre à ce qui se dit MAINTENANT, qu'on ait ou non
+   * remonté lire l'historique juste avant.
+   */
   useEffect(() => {
-    if (messages.length === 0) return;
-    const timer = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
-    return () => clearTimeout(timer);
-  }, [messages]);
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(showEvent, () => scrollToBottom());
+    return () => sub.remove();
+  }, [scrollToBottom]);
 
   useEffect(() => {
     if (!myId || !conversationId) return;
@@ -1254,7 +1530,12 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     const optimisticId = `tmp_${Date.now()}`;
     try {
       const content = text.trim();
-      markMessageAsFresh(optimisticId);
+      // Pas de `markMessageAsFresh` ici : ce message est le mien, j'ai déjà
+      // les yeux dessus. Le marquer « frais » jouait `FadeInDown` (200 ms) EN
+      // MÊME TEMPS que le défilement automatique vers le bas (voir
+      // `scrollToBottom`) — deux animations non coordonnées sur la même
+      // rangée, l'une déplaçant la bulle dans son repère, l'autre déplaçant
+      // la liste sous elle. Le défilement suffit déjà à dire « c'est parti ».
       setMessages((prev) => [
         ...prev,
         { id: optimisticId, content, created_at: new Date().toISOString(), sender_id: myId || undefined },
@@ -1326,7 +1607,8 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       setAttachmentSending(true);
       const optimisticId = `tmp_${Date.now()}`;
       try {
-        markMessageAsFresh(optimisticId);
+        // Même raison que dans `send()` : pas d'entrée animée sur mon propre
+        // envoi, elle se battait avec le défilement automatique.
         setMessages((prev) => [
           ...prev,
           {
@@ -1674,8 +1956,8 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   const handleContentSizeChange = useCallback(() => {
     if (!isAtBottomRef.current) return;
-    flatListRef.current?.scrollToEnd({ animated: true });
-  }, []);
+    scrollToBottom();
+  }, [scrollToBottom]);
 
   /**
    * Groupage Instagram (coins resserrés au sein d'une salve, séparateur
@@ -1760,6 +2042,56 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     setReactionBarFor({ messageId, x, y });
   }, []);
 
+  const handleShowReactors = useCallback((messageId: string, emoji: string) => {
+    setReactorsFor({ messageId, emoji });
+  }, []);
+
+  /**
+   * Qui a posé CET emoji sur CE message, résolu en identité affichable.
+   * `item.reactions` ne porte que `user_id` (+ un `username` pas toujours
+   * fourni par le serveur) : on complète par `participantMap`, déjà chargé
+   * pour l'en-tête et l'indicateur de frappe, et par mon propre profil pour
+   * mes réactions.
+   */
+  const reactors = useMemo(() => {
+    if (!reactorsFor) return [];
+    const msg = messages.find((m) => String(m.id) === reactorsFor.messageId);
+    const list = (msg?.reactions || []).filter((r) => r.emoji === reactorsFor.emoji);
+    return list.map((r) => {
+      const uid = String(r.user_id);
+      if (uid === myId) {
+        return {
+          userId: uid,
+          name: 'Vous',
+          username: authUser?.username,
+          avatar: getAvatarUri((authUser as any)?.avatar || null),
+          verified: false,
+        };
+      }
+      const known = participantMap[uid];
+      return {
+        userId: uid,
+        name: known?.full_name || known?.username || r.username || conversationTitle || 'Utilisateur',
+        username: known?.username || r.username,
+        avatar: getAvatarUri(known?.avatar || (!isGroup ? conversationAvatar : null) || null),
+        verified: !!known?.verified,
+      };
+    });
+  }, [reactorsFor, messages, myId, authUser, participantMap, conversationTitle, conversationAvatar, isGroup]);
+
+  const openReactorProfile = useCallback(
+    (userId: string) => {
+      setReactorsFor(null);
+      if (userId === myId) return;
+      const known = participantMap[userId];
+      (navigation as any).navigate('UserProfile', {
+        userId,
+        username: known?.username || (!isGroup ? conversationUsername : undefined),
+      });
+    },
+    [myId, participantMap, navigation, isGroup, conversationUsername],
+  );
+
   /**
    * Mémoïsé : une closure recréée à chaque rendu invalide la mémoïsation
    * interne de la FlatList, si bien que toutes les bulles montées se
@@ -1788,6 +2120,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           onToggleExpanded={handleBubbleToggleExpanded}
           onLongPress={handleBubbleLongPress}
           onReact={handleBubbleReact}
+          onShowReactors={handleShowReactors}
         />
       );
     },
@@ -1803,6 +2136,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       handleBubbleToggleExpanded,
       handleBubbleLongPress,
       handleBubbleReact,
+      handleShowReactors,
     ],
   );
 
@@ -1883,19 +2217,15 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
             </View>
           </TouchableOpacity>
 
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={loadMessages} hitSlop={hitSlop}>
-              <Ionicons name="refresh-outline" size={21} color={paper.ink} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={openPeer} hitSlop={hitSlop}>
-              <Ionicons name="information-circle-outline" size={23} color={paper.ink} />
-            </TouchableOpacity>
-          </View>
+          {/* Actualiser et « voir le profil » ont disparu : le second
+              redisait exactement ce que fait déjà un appui sur l'avatar ou le
+              nom juste à côté (`openPeer`), et les messages arrivent déjà en
+              direct par socket sans bouton pour le demander. */}
         </View>
 
         {/* ── Corps ── */}
         {loading ? (
-          <ScreenSkeleton variant="thread" />
+          <ScreenSkeleton variant="messages" />
         ) : (
           <KeyboardAvoidingView
             style={{ flex: 1 }}
@@ -1978,7 +2308,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
             {/* ── Compositeur : une ligne réglée, pas une boîte grise ──
                 Deux cibles au repos seulement — joindre, et le micro. */}
-            <View style={styles.inputBar}>
+            <View style={[styles.inputBar, { paddingBottom: ps(10) + insets.bottom }]}>
               <View style={styles.inputWrap}>
                 {isRecording ? (
                   <View style={styles.recordingRow}>
@@ -2005,6 +2335,11 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     style={styles.input}
                     value={text}
                     onChangeText={setText}
+                    // Le clavier peut déjà être ouvert (on revient d'un autre
+                    // champ, ou on avait remonté lire l'historique pendant
+                    // qu'il l'était déjà) : dans ce cas `keyboardWillShow` ne
+                    // se redéclenche pas, seul le focus le dit.
+                    onFocus={() => scrollToBottom()}
                     placeholder="Écrire…"
                     placeholderTextColor={sheet.inkMeta}
                     multiline
@@ -2018,21 +2353,30 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                 ) : (
                   <View style={styles.inputIcons}>
                     {!isRecording && (
-                      <TouchableOpacity onPress={pickAndSendImage} disabled={attachmentSending} hitSlop={hitSlop}>
+                      <TouchableOpacity
+                        onPress={pickAndSendImage}
+                        disabled={attachmentSending}
+                        hitSlop={hitSlop}
+                        accessibilityRole="button"
+                        accessibilityLabel="Joindre une image"
+                        accessibilityState={{ disabled: attachmentSending, busy: attachmentSending }}
+                      >
                         {attachmentSending ? (
                           <ActivityIndicator size="small" color={sheet.inkSoft} />
                         ) : (
-                          <Ionicons name="add" size={24} color={sheet.inkSoft} />
+                          <Ionicons name="add" size={32} color={sheet.inkSoft} />
                         )}
                       </TouchableOpacity>
                     )}
                     <GestureDetector gesture={micGesture}>
                       <Reanimated.View
                         style={[styles.micButton, isRecording && styles.micButtonActive, micStyle]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Maintenir pour enregistrer un message vocal"
                       >
                         <Ionicons
                           name={isRecording ? 'mic' : 'mic-outline'}
-                          size={20}
+                          size={30}
                           color={isRecording ? '#fff' : sheet.inkSoft}
                         />
                       </Reanimated.View>
@@ -2140,6 +2484,14 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
             setEmojiPickerFor(null);
           }}
         />
+
+        <ReactorsSheet
+          visible={!!reactorsFor}
+          emoji={reactorsFor?.emoji || ''}
+          reactors={reactors}
+          onClose={() => setReactorsFor(null)}
+          onOpenProfile={openReactorProfile}
+        />
       </SafeAreaView>
     </View>
   );
@@ -2169,20 +2521,17 @@ const styles = StyleSheet.create({
   headerNameRow: { flexDirection: 'row', alignItems: 'center', minWidth: 0 },
   headerName: {
     color: paper.ink,
-    fontSize: ps(16),
+    fontSize: ps(22),
     fontFamily: paperFonts.strong,
     letterSpacing: ps(-0.3),
     flexShrink: 1,
   },
   headerSub: {
     color: sheet.inkMeta,
-    fontSize: ps(12),
-    marginTop: ps(1),
+    fontSize: ps(14),
+    marginTop: ps(2),
     fontFamily: paperFonts.body,
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center' },
-  headerIconBtn: { padding: ps(7) },
-
   listContent: { paddingBottom: ps(10) },
 
   // ── Ouverture de la transcription ──
@@ -2230,11 +2579,12 @@ const styles = StyleSheet.create({
   // L'alignement gauche/droite est le repere principal de l'emetteur : c'est
   // lui qui permet de savoir qui parle SANS lire. Le supprimer au profit d'une
   // colonne unique rendait l'ecran illisible, c'est la lecon de la version
-  // precedente.
-  msgRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: ROW_PAD_X },
+  // precedente. `flex-start` (et non plus `flex-end`) parce que l'avatar
+  // ouvre desormais la salve au lieu de la clore — voir `showAvatar`.
+  msgRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: ROW_PAD_X },
   msgRowLeft: { justifyContent: 'flex-start' },
   msgRowRight: { justifyContent: 'flex-end' },
-  avatarSlot: { width: ps(30), alignItems: 'center', justifyContent: 'flex-end', marginRight: ps(7) },
+  avatarSlot: { width: ps(30), alignItems: 'center', justifyContent: 'flex-start', marginRight: ps(7) },
   rowAvatar: { width: ps(26), height: ps(26), borderRadius: ps(13) },
   rowAvatarFallback: {
     backgroundColor: sheet.band,
@@ -2256,20 +2606,56 @@ const styles = StyleSheet.create({
   messageColumn: { maxWidth: BUBBLE_MAX, alignItems: 'flex-start' },
   messageColumnMine: { alignItems: 'flex-end' },
   bubbleTouch: { maxWidth: '100%' },
-  bubble: { paddingHorizontal: ps(14), paddingVertical: ps(9) },
-  bubbleMine: { backgroundColor: paper.accent },
-  bubbleOther: { backgroundColor: sheet.band },
-  bubbleTextMine: {
-    color: paper.onAccent,
-    fontSize: ps(16),
-    lineHeight: ps(22),
+  // `position: relative` : ancre `accentRail` et les deux pastilles de geste,
+  // qui se positionnent en absolu pour epouser exactement la hauteur de CE
+  // conteneur (texte, image ou lecteur vocal), quel que soit son nombre de
+  // lignes. `overflow: visible` : sur Android une vue rogne ses enfants par
+  // defaut, et le coeur du double-tap comme la pastille d'heure debordent
+  // volontairement du cadre de la bulle (meme piege que documente dans
+  // `TweetRowGutter`).
+  bubbleWrap: { position: 'relative', overflow: 'visible' },
+  // Meme fond des deux cotes : ce qui distinguait « moi » tenait tout entier
+  // dans un aplat d'accent, contraire a la regle de `paper2b.ts` (« aucun
+  // aplat de couleur hors du concours »). La position et le rail suffisent.
+  bubble: { paddingHorizontal: ps(18), paddingVertical: ps(13), backgroundColor: sheet.band },
+  bubbleText: {
+    color: paper.ink,
+    fontSize: ps(26),
+    lineHeight: ps(35),
     fontFamily: paperFonts.body,
   },
-  bubbleTextOther: {
-    color: paper.ink,
-    fontSize: ps(16),
-    lineHeight: ps(22),
-    fontFamily: paperFonts.body,
+  // Le seul signal qui reste de « moi » cote matiere. Jamais dessine en face :
+  // un signal repete des deux cotes cesse d'en etre un.
+  accentRail: {
+    position: 'absolute',
+    top: 0,
+    right: -RAIL_OFFSET,
+    width: RAIL_W,
+    borderRadius: RAIL_W / 2,
+    backgroundColor: paper.accent,
+  },
+  // Ancrée au coin EXTÉRIEUR de la bulle, pas dans sa marge de largeur : un
+  // message d'un mot et un message qui frôle `BUBBLE_MAX` n'ouvrent pas le
+  // même espace à côté d'eux, un coin fixe fonctionne pour les deux.
+  revealTimePill: {
+    position: 'absolute',
+    bottom: -ps(9),
+    backgroundColor: sheet.bg,
+    borderRadius: ps(8),
+    paddingHorizontal: ps(6),
+    paddingVertical: ps(2),
+  },
+  revealTimePillMine: { right: -ps(4) },
+  revealTimePillOther: { left: -ps(4) },
+  revealTimeText: { color: sheet.inkMeta, fontSize: ps(10), fontFamily: paperFonts.mono },
+  heartPopOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   attachmentImage: {
@@ -2287,6 +2673,8 @@ const styles = StyleSheet.create({
   messageTimeLeft: { marginLeft: ps(4) },
 
   // ── Message vocal, posé sur le papier ──
+  // Meme lecture des deux cotes (voir l'en-tete de `VoiceLine`) : plus de fond
+  // colore pour « moi », le bouton de lecture porte seul l'accent.
   voiceBubble: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2295,16 +2683,23 @@ const styles = StyleSheet.create({
     paddingVertical: ps(10),
     width: ps(228),
     maxWidth: '100%',
+    backgroundColor: sheet.band,
   },
-  voicePlayBtn: { width: ps(26), alignItems: 'center', justifyContent: 'center' },
+  voicePlayRing: {
+    width: ps(28),
+    height: ps(28),
+    borderRadius: ps(14),
+    borderWidth: 1,
+    borderColor: paper.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voicePlayBtn: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   voiceWaveform: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2.5, height: ps(24) },
   voiceBar: { flex: 1, maxWidth: 3, borderRadius: 1.5 },
-  voiceBarIdleMine: { backgroundColor: paper.onAccent, opacity: 0.4 },
-  voiceBarPlayedMine: { backgroundColor: paper.onAccent },
-  voiceBarIdleOther: { backgroundColor: paper.outline },
-  voiceBarPlayedOther: { backgroundColor: paper.accent },
+  voiceBarIdle: { backgroundColor: paper.ink, opacity: 0.25 },
+  voiceBarPlayed: { backgroundColor: paper.accent },
   voiceDuration: { color: sheet.inkMeta, fontSize: ps(10.5), fontFamily: paperFonts.mono },
-  voiceDurationMine: { color: paper.onAccent, opacity: 0.75 },
 
   // ── Renvoi vers une story ──
   storyReply: { marginBottom: ps(6) },
@@ -2389,6 +2784,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  // ── Qui a réagi ──
+  reactorsBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  reactorsSheet: {
+    maxHeight: '62%',
+    paddingTop: ps(8),
+    paddingBottom: ps(28),
+    borderTopLeftRadius: ps(20),
+    borderTopRightRadius: ps(20),
+    backgroundColor: sheet.band,
+  },
+  reactorsGrabber: {
+    alignSelf: 'center',
+    width: ps(36),
+    height: ps(4),
+    borderRadius: ps(2),
+    marginBottom: ps(14),
+    backgroundColor: paper.outline,
+  },
+  reactorsTitle: {
+    color: paper.ink,
+    fontSize: ps(16),
+    fontFamily: paperFonts.strong,
+    paddingHorizontal: ROW_PAD_X,
+    marginBottom: ps(6),
+  },
+  reactorsList: { paddingHorizontal: ROW_PAD_X, paddingTop: ps(6) },
+  reactorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(11),
+    paddingVertical: ps(9),
+  },
+  reactorAvatar: { width: ps(38), height: ps(38), borderRadius: ps(19) },
+  reactorAvatarText: { color: paper.ink, fontSize: ps(15), fontFamily: paperFonts.strong },
+  reactorName: { color: paper.ink, fontSize: ps(15), fontFamily: paperFonts.body, flexShrink: 1 },
+  reactorHandle: { color: sheet.inkMeta, fontSize: ps(13), fontFamily: paperFonts.mono, marginLeft: 'auto' },
+
   // ── Accusés de lecture ──
   seenRow: {
     flexDirection: 'row',
@@ -2427,10 +2859,12 @@ const styles = StyleSheet.create({
   typingDot: { width: ps(6), height: ps(6), borderRadius: ps(3), backgroundColor: sheet.inkMeta },
 
   // ── Compositeur : une ligne réglée ──
+  // `paddingBottom` fixe volontairement absent d'ici : il dépend de l'appareil
+  // (encoche ou bouton d'accueil) et est calculé au rendu — voir l'appel du
+  // composant.
   inputBar: {
     paddingHorizontal: ROW_PAD_X,
     paddingTop: ps(10),
-    paddingBottom: ps(10),
     borderTopWidth: 1,
     borderTopColor: paper.hairline,
   },
@@ -2445,19 +2879,19 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     color: paper.ink,
-    fontSize: ps(16),
-    lineHeight: ps(22),
+    fontSize: ps(26),
+    lineHeight: ps(35),
     fontFamily: paperFonts.body,
-    maxHeight: ps(120),
+    maxHeight: ps(144),
     paddingVertical: ps(6),
     paddingTop: ps(6),
   },
   inputIcons: { flexDirection: 'row', alignItems: 'center', gap: ps(14), paddingBottom: ps(6) },
   micButton: { alignItems: 'center', justifyContent: 'center' },
   micButtonActive: {
-    width: ps(32),
-    height: ps(32),
-    borderRadius: ps(16),
+    width: ps(44),
+    height: ps(44),
+    borderRadius: ps(22),
     backgroundColor: '#FF3B30',
   },
   sendBtn: { paddingLeft: ps(10), paddingBottom: ps(8) },

@@ -38,7 +38,8 @@ export type ScreenSkeletonVariant =
   | 'detail'
   | 'grid'
   | 'tweet'
-  | 'thread';
+  | 'thread'
+  | 'messages';
 
 const SHIMMER_MS = 1300;
 const bone = withAlpha(colors.textMuted, 0.22);
@@ -198,6 +199,44 @@ function ThreadBlocks({ pulse }: { pulse: any }) {
   );
 }
 
+/**
+ * Messages : bulles alternées gauche/droite, pas la forme du fil.
+ *
+ * Distinct de `thread` (page de tweet + réponses) : une transcription n'a ni
+ * gouttière ni avatar répété, et un squelette qui ne reprend pas cette forme
+ * fait sauter la mise en page à l'arrivée des vrais messages. Les rangées
+ * resserrées (`marginTop: 3`) miment une salve ; l'écart plus large
+ * (`marginTop: 16`) mime le passage à la suivante — même rythme que
+ * `ConversationThreadScreen2B`.
+ */
+const MESSAGE_ROWS: Array<{ w: number; mine: boolean; start: boolean }> = [
+  { w: 150, mine: false, start: true },
+  { w: 96, mine: false, start: false },
+  { w: 128, mine: true, start: true },
+  { w: 170, mine: false, start: true },
+  { w: 110, mine: true, start: true },
+  { w: 140, mine: true, start: false },
+];
+
+function MessageBlocks({ pulse }: { pulse: any }) {
+  return (
+    <View style={S.msgList}>
+      {MESSAGE_ROWS.map((row, i) => (
+        <View
+          key={i}
+          style={[
+            S.msgRow,
+            row.mine ? S.msgRowMine : S.msgRowOther,
+            { marginTop: row.start ? 16 : 3 },
+          ]}
+        >
+          <Bone w={row.w} h={36} r={14} pulse={pulse} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** Détail : une carte haute puis des cartes secondaires. */
 function DetailBlocks({ pulse }: { pulse: any }) {
   return (
@@ -252,6 +291,7 @@ function ScreenSkeleton({
       {variant === 'grid' && <GridTiles pulse={pulse} />}
       {variant === 'tweet' && <TweetDetailBlocks pulse={pulse} />}
       {variant === 'thread' && <ThreadBlocks pulse={pulse} />}
+      {variant === 'messages' && <MessageBlocks pulse={pulse} />}
     </View>
   );
 }
@@ -363,6 +403,11 @@ const S = StyleSheet.create({
     gap: 7,
     paddingBottom: 12,
   },
+
+  msgList: { paddingHorizontal: 16, paddingTop: 4 },
+  msgRow: { flexDirection: 'row' },
+  msgRowOther: { justifyContent: 'flex-start' },
+  msgRowMine: { justifyContent: 'flex-end' },
 
   grid: {
     flexDirection: 'row',

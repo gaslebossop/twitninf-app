@@ -635,15 +635,21 @@ const S = StyleSheet.create({
 
   listContent: {},
 
-  // ── Recherche : une ligne réglée ──
-  searchWrap: { paddingHorizontal: ROW_PAD_X, paddingTop: ps(14), paddingBottom: ps(2) },
+  // ── Recherche ──
+  // Un filet seul (l'essai d'origine) se lisait collé à celui de l'en-tête,
+  // deux traits à ps(14) l'un de l'autre sans rien pour les séparer. Une
+  // recherche a besoin d'être reconnue comme une zone qu'on touche, pas comme
+  // une ligne de plus du registre : `sheet.band`, le même cran de fond que le
+  // champ du compositeur des messages, lui donne ce contour.
+  searchWrap: { paddingHorizontal: ROW_PAD_X, paddingTop: ps(18), paddingBottom: ps(8) },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: ps(9),
-    borderBottomWidth: 1,
-    borderBottomColor: paper.hairline,
-    paddingBottom: ps(9),
+    backgroundColor: sheet.band,
+    borderRadius: ps(12),
+    paddingHorizontal: ps(13),
+    paddingVertical: ps(10),
   },
   searchInput: {
     flex: 1,

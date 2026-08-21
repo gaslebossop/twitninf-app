@@ -29,6 +29,8 @@ import UserProfileScreen from '../screens/UserProfileScreen';
 import CreateTweetScreen from '../screens/CreateTweetScreen';
 import CreateTweetABTestScreen from '../screens/CreateTweetABTestScreen';
 import TweetDetailScreen from '../screens/TweetDetailScreen';
+/** 🧪 Clone « 2B — Gouttière » du précédent, monté sur `FLAGS.FEED_2B`. */
+import TweetDetailGutterScreen from '../screens/TweetDetailGutterScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import AccountManagerScreen from '../screens/AccountManagerScreen';
 import ThemeScreen from '../screens/ThemeScreen';
@@ -512,9 +514,14 @@ function MainNavigatorInner() {
           headerShown: false,
         }}
       />
-      <MainStack.Screen 
-        name="TweetDetail" 
-        component={TweetDetailScreen}
+      {/* 🧪 Une publication ouverte suit le fil dont elle vient : sous le
+          drapeau 2B, c'est la version « gouttière » qui est poussée. Même
+          nom de route des deux côtés — tous les `navigate('TweetDetail')`
+          de l'app (fil, recherche, notifications, liens profonds) marchent
+          sans en connaître un mot. */}
+      <MainStack.Screen
+        name="TweetDetail"
+        component={feed2B ? TweetDetailGutterScreen : TweetDetailScreen}
         options={{ headerShown: false }}
       />
       <MainStack.Screen 

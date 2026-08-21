@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -7,8 +7,10 @@ import {
   Text,
   TextInput,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts } from '../theme';
 
@@ -138,6 +140,29 @@ export default function EmojiPickerSheet({ visible, onClose, onSelect }: EmojiPi
   const [categoryKey, setCategoryKey] = useState(CATEGORIES[0].key);
   const [query, setQuery] = useState('');
 
+  /**
+   * Glissé de la feuille séparé du fondu du fond, plutôt que le
+   * `animationType="slide"` du Modal.
+   *
+   * Ce dernier anime TOUT le contenu du Modal comme un seul bloc rigide — or
+   * `backdrop` (l'aplat sombre, `flex: 1`) vit DANS ce contenu. Le glissé
+   * déplaçait donc le fond sombre lui-même depuis le bas de l'écran, visible
+   * comme une grande ombre qui remonte à l'ouverture. Le fond doit rester
+   * plein écran et seulement s'éclaircir ; seule la feuille doit glisser.
+   */
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetTranslateY = useSharedValue(windowHeight);
+
+  useEffect(() => {
+    if (!visible) return;
+    sheetTranslateY.value = windowHeight;
+    sheetTranslateY.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
+  }, [visible, windowHeight, sheetTranslateY]);
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
+
   const emojis = useMemo(() => {
     // La recherche porte sur le nom de catégorie : les emojis n'ont pas de
     // libellé embarqué ici, et inventer des mots-clés donnerait une recherche
@@ -151,11 +176,11 @@ export default function EmojiPickerSheet({ visible, onClose, onSelect }: EmojiPi
   }, [categoryKey, query]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop}>
           <TouchableWithoutFeedback onPress={() => {}}>
-            <View style={styles.sheet}>
+            <Reanimated.View style={[styles.sheet, sheetStyle]}>
               <View style={styles.grabber} />
 
               <View style={styles.searchRow}>
@@ -220,7 +245,7 @@ export default function EmojiPickerSheet({ visible, onClose, onSelect }: EmojiPi
                   ))
                 )}
               </ScrollView>
-            </View>
+            </Reanimated.View>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>

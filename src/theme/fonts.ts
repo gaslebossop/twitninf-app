@@ -119,7 +119,17 @@ export const coreFontAssets = {
   'TwitninfSans-Medium': require('../../assets/fonts/TwitninfSans-Medium.otf'),
   'TwitninfSans-Bold': require('../../assets/fonts/TwitninfSans-Bold.otf'),
   'Archivo-SemiBold': Archivo_600SemiBold,
+  // `paperFonts.display` (logo, titres, gros compteurs) et `.monoStrong`
+  // (compteurs du fil) attendent CES DEUX graisses précises — oubliées ici à
+  // l'origine, alors que les deux poids réguliers l'étaient. Le nom de
+  // famille manquant ne plante pas : RN retombe silencieusement sur la
+  // police système, ce qui se lit comme « ce n'est pas la police du test »
+  // partout où `display`/`monoStrong` sont utilisés (en-têtes, montants).
+  // Les deux fichiers sont déjà dans le bundle (voir `displayNameFontAssets`
+  // plus bas) : les enregistrer ici ne coûte rien de plus, juste plus tôt.
+  'Archivo-Bold': Archivo_700Bold,
   'SpaceMono-Regular': SpaceMono_400Regular,
+  'SpaceMono-Bold': SpaceMono_700Bold,
 };
 
 /**
