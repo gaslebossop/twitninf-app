@@ -38,6 +38,20 @@ export interface TrackOptions {
   dwellMedia?: 'text' | 'image' | 'video';
   contentChars?: number;
   videoDurationMs?: number;
+  /**
+   * Rang du tweet dans la page servie, 0-indexé.
+   *
+   * Correction du biais de position : à qualité égale, un tweet en tête est
+   * cliqué bien plus souvent qu'un tweet en quarantième place. Sans le rang,
+   * le modèle de clic attribue au CONTENU ce qui n'est qu'un effet de
+   * position, et le classement se fige sur ce qui est déjà en tête.
+   *
+   * ⚠️ Le relais côté API Node n'existe pas encore : `POST /api/track`
+   * déstructure explicitement les champs qu'il transmet au moteur, et
+   * `position` n'en fait pas partie — il est donc reçu et jeté. Le champ part
+   * quand même : le jour où la route le relaie, il n'y a rien à faire ici.
+   */
+  position?: number;
 }
 
 async function trackAction(
@@ -57,6 +71,7 @@ async function trackAction(
       dwell_media: options.dwellMedia ?? null,
       content_chars: options.contentChars ?? null,
       video_duration_ms: options.videoDurationMs ?? null,
+      position: options.position ?? null,
     });
   } catch {
     // Non-blocking

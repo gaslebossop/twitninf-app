@@ -1772,7 +1772,32 @@ export default function FeedGutterScreen() {
           tab: activeTab,
           algorithm: currentAlgorithm,
         });
-        trackingService.trackView(tweetId, 500);
+        /**
+         * L'impression envoyée au moteur.
+         *
+         * ── Le `500` qui vivait ici ──
+         * C'était une constante en dur passée en `dwell_ms`, pas une mesure :
+         * chaque tweet vu déclarait une lecture d'une demi-seconde que
+         * personne n'avait chronométrée. Elle ne valait rien au barème actuel
+         * (sous le premier palier), mais elle traversait quand même le calcul
+         * de temps de lecture — et le vrai temps, lui, part séparément par
+         * `useDwellTracking`, mesuré, plafonné et accompagné de la nature du
+         * contenu. Une valeur inventée qui se fait passer pour une mesure
+         * n'attend qu'un changement de seuil pour devenir un faux signal :
+         * l'impression part donc SANS temps de lecture.
+         *
+         * ── Ce qui l'accompagne désormais ──
+         * `authorId` déclenche trois mécanismes qui restaient inertes sans lui
+         * (filtrage collaboratif, boost temps réel de 30 min, bandit
+         * d'exploration) et évite à l'API de retrouver l'auteur en base à
+         * chaque tweet vu. `experimentId`/`variantId` attribuent l'impression
+         * à la variante RÉELLEMENT affichée. `position` corrige le biais de
+         * rang — voir `TrackOptions`.
+         */
+        trackingService.trackView(tweetId, undefined, {
+          ...signalsFor(tweetId),
+          position,
+        });
 
         // ── Question de réglage ──
         // Une impression de plus sans que l'utilisateur ait rien fait. C'est
@@ -1792,7 +1817,7 @@ export default function FeedGutterScreen() {
         }
       },
     };
-  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm]);
+  }, [notifyDwell, trackView, trackTweetInteraction, activeTab, currentAlgorithm, signalsFor]);
 
   /**
    * Pastille de la cloche.
