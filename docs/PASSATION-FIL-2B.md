@@ -88,23 +88,17 @@ d'auteur, co-occurrence et modèle de clic sont tous **globaux au lecteur**.
 
 ## 5. Ce qui reste à faire — par impact décroissant
 
-### 🔴 Bloquant : l'API Node ne relaie pas `scores`
-C'est **le même point** que côté moteur — le maillon manquant est au milieu, dans le dépôt `api`.
+### ✅ ~~Bloquant : l'API Node ne relaie pas `scores`~~ — **posé le 2026-08-21**
+Le maillon manquait au milieu, dans le dépôt `api`, hors du périmètre des deux agents. Il est écrit
+sur `api` branche **`feat/relais-scores-reco`**, commit `26b4ae7` (non poussé, non déployé).
 
-Le moteur expose désormais `scores: [{tweet_id, score, confidence}]` (commit Rust `de1f0ac`), et
-l'app sait le consommer (`withRecommendationScores`, `f93c648`). Mais :
+La chaîne est désormais complète : moteur `scores` → API `data.scores` → app
+`response.data.scores` → `withRecommendationScores` (`FeedGutterScreen.tsx:869`,
+`TweetsScreen.tsx:783`). `HESITATION_CEILING = 0.45` peut enfin s'armer.
 
-- `api/src/services/rustRecommenderClient.js` → `getRecommendations()` (~l. 219) construit son objet
-  de retour **sans** `result.scores` ;
-- `api/src/routes/neuralRankRoutes.js` → le `producer` (~l. 552‑600) hydrate les tweets et renvoie
-  `data: { recommendations, count, ... }` **sans** `scores`.
-
-Tant que ce relais n'existe pas, `_recommendation_confidence` vaut **0 en permanence**, et
-`HESITATION_CEILING = 0.45` dans `utils/algoCheck` **ne peut jamais s'armer** — l'écran retombe sur
-son heuristique de silence (quatorze tweets parcourus sans rien toucher). C'est inoffensif mais
-c'est du travail livré des deux côtés pour rien.
-
-⚠️ Côté API : attacher les scores **avant** `withFeedCache`, sinon une charge cachée sortira sans eux.
+⚠️ **Vérifié statiquement seulement** : syntaxe, lint, et la correspondance des trois contrats par
+relecture. Le chemin n'a **jamais été exécuté** — il demande Postgres, Redis et le moteur Rust
+vivants. À confirmer sur un environnement réel.
 
 ### 🟠 `src/screens/TweetDetailGutterScreen.tsx` est toujours non versionné
 Il l'était déjà avant le chantier. **Le `.gitignore` du dépôt exclut `*.js` et `*.md`** — mais pas
