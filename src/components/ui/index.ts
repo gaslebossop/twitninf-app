@@ -31,6 +31,11 @@ export type { ActionSheetItem, ActionSheetOptions } from './ActionSheet';
 // Zone tapable avec retour visuel et tactile — remplace `TouchableOpacity`.
 export { default as Tappable } from './Tappable';
 
+// Pastille « BETA » du programme beta — rendue UNIQUEMENT aux membres, dans
+// l'en-tete des deux fils. `tone` suit la palette de l'ecran qui l'accueille.
+export { default as BetaBadge } from './BetaBadge';
+export type { BetaBadgeTone } from './BetaBadge';
+
 // Écrans « rien à montrer » et « ça a échoué ».
 export { default as EmptyState } from './EmptyState';
 export { default as ErrorState } from './ErrorState';

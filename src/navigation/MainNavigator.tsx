@@ -47,7 +47,9 @@ import AccountStatsScreen from '../screens/AccountStatsScreen';
 import PredictiveAnalyticsScreen from '../screens/PredictiveAnalyticsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import SupportTicketScreen from '../screens/SupportTicketScreen';
+import UltraSupportAgentScreen from '../screens/UltraSupportAgentScreen';
 import ReportBugScreen from '../screens/ReportBugScreen';
+import BetaScreen from '../screens/BetaScreen';
 import ForgeScreen from '../screens/ForgeScreen';
 import ForgeReviewScreen from '../screens/ForgeReviewScreen';
 import CreatorStudioScreen from '../screens/CreatorStudioScreen';
@@ -100,9 +102,11 @@ import GoLiveScreen from '../screens/GoLiveScreen';
 import KosporBirthdayPopup from '../components/KosporBirthdayPopup';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import NavbarOnboardingModal from '../components/NavbarOnboardingModal';
+import NavbarFixModal from '../components/NavbarFixModal';
 import { Feed2BTourProvider, useFeed2BTour } from '../components/tour/Feed2BTour';
 import { StartupFlowBackdrop } from '../components/StartupStepPage';
 import { NavbarPrefsProvider, useNavbarPrefs } from '../contexts/NavbarPrefsContext';
+import { isValidFor2B } from '../services/navbarPreferences';
 import { useStartupPopupSlot } from '../contexts/StartupPopupContext';
 import DeveloperPortalScreen from '../screens/DeveloperPortalScreen';
 import NewConversationScreen from '../screens/NewConversationScreen';
@@ -257,7 +261,10 @@ export type MainStackParamList = {
   PredictiveAnalytics: { draft?: string } | undefined;
   Support: undefined;
   SupportTicket: { ticketId: string };
+  UltraSupportAgent: undefined;
   ReportBug: undefined;
+  /** Programme beta — candidater, suivre sa place, quitter. */
+  Beta: undefined;
   Forge: undefined;
   ForgeReview: undefined;
 
@@ -308,15 +315,22 @@ function MainNavigatorInner() {
   const [showBirthdayPopup, setShowBirthdayPopup] = useState(false);
   const [hasShownPopup, setHasShownPopup] = useState(false);
 
-  const { loading: navbarPrefsLoading, configured: navbarConfigured, save: saveNavbarPrefs } = useNavbarPrefs();
+  const {
+    loading: navbarPrefsLoading,
+    configured: navbarConfigured,
+    selected: navbarSelected,
+    save: saveNavbarPrefs,
+  } = useNavbarPrefs();
   const [showNavbarOnboarding, setShowNavbarOnboarding] = useState(false);
   const [hasShownNavbarOnboarding, setHasShownNavbarOnboarding] = useState(false);
+  const [showNavbarFix, setShowNavbarFix] = useState(false);
 
   // Ces deux popups sont des <Modal> React Native, comme celles de la langue et
   // des patch notes : elles passent par la file d'attente pour qu'une seule
   // soit ouverte à la fois (voir StartupPopupContext).
   const birthdayVisible = useStartupPopupSlot('birthday', showBirthdayPopup);
   const navbarOnboardingVisible = useStartupPopupSlot('navbar', showNavbarOnboarding);
+  const navbarFixVisible = useStartupPopupSlot('navbar2b', showNavbarFix);
 
   // Présentation du fil 2B : une seule fois par compte, et seulement pour qui
   // a le drapeau. Le « déjà vu » est persisté par compte plutôt que par
@@ -359,10 +373,36 @@ function MainNavigatorInner() {
     }
   }, [navbarPrefsLoading, navbarConfigured, hasShownNavbarOnboarding]);
 
+
   // Le drapeau est lu plus bas (`feed2B`), mais l'effet en a besoin ici — la
   // constante est déclarée après pour rester à côté de son commentaire
   // d'origine, donc on relit le drapeau plutôt que de déplacer l'un des deux.
   const feed2BFlag = useFlag(FLAGS.FEED_2B);
+  /**
+   * Correction de la barre pour les comptes du test « 2B ».
+   *
+   * La barre d'origine acceptait cinq raccourcis, celle du fil 2B en accepte
+   * deux ou aucun. Un compte qui avait personnalisé la sienne AVANT d'entrer
+   * dans le test garde sa préférence : sa barre est surchargée, ou
+   * déséquilibrée avec un seul raccourci.
+   *
+   * `BottomTabNavigator2B` sait déjà se rattraper au rendu, mais en silence.
+   * Cette popup dit ce qui se passe et rend le choix.
+   *
+   * Ne concerne QUE les comptes déjà configurés : ceux qui ne le sont pas
+   * tombent sur l'onboarding, qui applique déjà la bonne limite.
+   */
+  useEffect(() => {
+    if (navbarPrefsLoading || !navbarConfigured) return;
+    if (!feed2BFlag) return;
+    if (isValidFor2B(navbarSelected)) {
+      // Corrigée entre-temps (depuis Réglages, ou par cette popup) : on la
+      // referme au lieu de la laisser ouverte sur un problème résolu.
+      setShowNavbarFix(false);
+      return;
+    }
+    setShowNavbarFix(true);
+  }, [navbarPrefsLoading, navbarConfigured, navbarSelected, feed2BFlag]);
 
   useEffect(() => {
     if (!feed2BFlag || !user?.id) return;
@@ -1146,10 +1186,24 @@ function MainNavigatorInner() {
         component={SupportTicketScreen}
         options={{ headerShown: false }}
       />
+      <MainStack.Screen
+        name="UltraSupportAgent"
+        component={UltraSupportAgentScreen}
+        options={{ headerShown: false }}
+      />
       {/* Signalement de bug — ouvre un ticket de catégorie « bug ». */}
       <MainStack.Screen
         name="ReportBug"
         component={ReportBugScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Programme beta. Volontairement NON decline en 2B : les sous-ecrans de
+          Reglages ne le sont pas, et une seconde version serait a maintenir
+          pour un ecran qu'on ouvre trois fois. */}
+      <MainStack.Screen
+        name="Beta"
+        component={BetaScreen}
         options={{ headerShown: false }}
       />
 
@@ -1253,6 +1307,27 @@ function MainNavigatorInner() {
       visible={birthdayVisible}
       onClose={handleClosePopup}
       onNavigateToKosporBirthday={handleNavigateToKosporBirthday}
+    />
+
+    {/* Correction de la barre pour les comptes du test « 2B » : leur ancienne
+        préférence peut contenir jusqu'à cinq raccourcis, pour deux
+        emplacements. Déclarée AVANT l'onboarding : la file les sérialise, et
+        les deux ne peuvent de toute façon pas être pertinentes ensemble. */}
+    <NavbarFixModal
+      visible={navbarFixVisible}
+      selected={navbarSelected}
+      onChoose={() => {
+        setShowNavbarFix(false);
+        // Même garde que la popup d'anniversaire : `navigate` sur une
+        // référence pas encore prête est un no-op silencieux, et la popup
+        // serait refermée sans que rien ne s'ouvre.
+        if (navigationRef.isReady()) navigationRef.navigate('NavbarCustomization' as never);
+      }}
+      onClearAll={() => {
+        saveNavbarPrefs([]);
+        setShowNavbarFix(false);
+      }}
+      onDismiss={() => setShowNavbarFix(false)}
     />
 
     {/* Onboarding : choix des onglets optionnels de la navbar */}

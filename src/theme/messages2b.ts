@@ -22,6 +22,11 @@
  * d'un cran, ils tiennent 5,80:1 et 4,96:1 sur le papier, 5,35:1 et 4,58:1
  * sur la bande. En sombre les gris d'origine passent déjà, ils ne bougent pas.
  *
+ * ⚠️ La CONVERSATION (`ConversationThreadScreen2B`) ne lit plus que `band` et
+ * les deux gris : sa refonte suit le dessin « 6a / 6b » à la valeur près, et
+ * porte donc sa propre palette, écrite dans l'écran. Ce fichier reste la
+ * feuille du REGISTRE (`MessagesScreen2B`).
+ *
  * Tout le reste — encre, accent, filets, gouttière, polices — vient de
  * `paper2b.ts` sans modification : Messages et le fil parlent la même langue,
  * seule la feuille change.

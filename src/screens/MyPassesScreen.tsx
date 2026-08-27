@@ -27,6 +27,7 @@ import {
   toast,
 } from '../components/ui';
 import PassQrCode from '../components/PassQrCode';
+import { LIST_TUNING } from '../utils/listTuning';
 import eventPassService, {
   type EventPass,
   type PassTier,
@@ -360,6 +361,7 @@ export default function MyPassesScreen() {
     return (
       <FlatList
         data={ordered}
+        {...LIST_TUNING}
         keyExtractor={passKeyExtractor}
         renderItem={renderPass}
         contentContainerStyle={[styles.listInner, { paddingBottom: insets.bottom + 32 }]}

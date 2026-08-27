@@ -15,7 +15,8 @@
  */
 
 import React, { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import { ResizeMode, Video } from 'expo-av';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../../theme';
@@ -72,8 +73,18 @@ export default function TweetVideo({ videoUrl, thumbnailUrl, onBeforeOpen, onDur
         setPlaying(true);
       }}
     >
+      {/* `expo-image` : même raison que la grille d'images du fil — cache
+          mémoire+disque et `recyclingKey`, sur une vignette montée dans une
+          liste recyclée. */}
       {thumbnailUrl ? (
-        <Image source={{ uri: thumbnailUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image
+          source={{ uri: thumbnailUrl }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={thumbnailUrl}
+          transition={0}
+        />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.noThumbnail]} />
       )}

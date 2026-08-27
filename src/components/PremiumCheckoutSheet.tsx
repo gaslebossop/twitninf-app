@@ -23,9 +23,11 @@ import {
   PRO_ONLY_FEATURES,
   SUBSCRIPTION_FEATURES,
   TRUST_POINTS,
+  ULTRA_ONLY_FEATURES,
 } from '../utils/subscriptionFeatures';
 import subscriptionPricingService, {
   SubscriptionPricing,
+  TierPrice,
   formatEur,
   formatNf,
 } from '../services/subscriptionPricingService';
@@ -101,20 +103,31 @@ export default function PremiumCheckoutSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  currentTier: 'free' | 'plus' | 'pro';
+  currentTier: 'free' | 'plus' | 'pro' | 'ultra';
   walletBalance: number;
   walletLoading: boolean;
   walletError: boolean;
   onRetryWallet: () => void | Promise<void>;
   loading: boolean;
   /** Reçoit le palier choisi : la feuille ne vend plus uniquement Pro. */
-  onPurchase: (tier: 'plus' | 'pro') => void;
+  onPurchase: (tier: 'plus' | 'pro' | 'ultra') => void;
 }) {
   const insets = useSafeAreaInsets();
   const [pricing, setPricing] = useState<SubscriptionPricing | null>(null);
   const [priceError, setPriceError] = useState(false);
 
-  const isUpgrade = currentTier === 'plus';
+  // Déjà au sommet : rien à vendre. Les écrans appelants évitent déjà
+  // d'ouvrir la feuille dans ce cas, mais elle reste sûre si c'est fait quand
+  // même — pas de palier à choisir, CTA désactivé plus bas.
+  const isMaxed = currentTier === 'ultra';
+  // Un seul palier proposé quand on ne part pas de zéro : Plus→Pro comme
+  // avant, et maintenant Pro→Ultra de la même façon (montée simple, pas de
+  // sélecteur). Ultra n'est PAS proposé depuis Gratuit/Plus : c'est le palier
+  // des gros créateurs, positionné comme une suite à Pro, pas une option
+  // parmi d'autres dès l'inscription.
+  const isUpgrade = currentTier === 'plus' || currentTier === 'pro';
+  const upgradeTarget: 'pro' | 'ultra' = currentTier === 'plus' ? 'pro' : 'ultra';
+  const isUltraUpgrade = isUpgrade && upgradeTarget === 'ultra';
 
   // Palette reprise du profil de l'utilisateur (voir `makePalette`).
   const { user: authUser } = useAuth() as any;
@@ -135,21 +148,24 @@ export default function PremiumCheckoutSheet({
   useEffect(() => {
     if (visible) setSelectedTier('pro');
   }, [visible]);
-  const buyingTier: 'plus' | 'pro' = isUpgrade ? 'pro' : selectedTier;
+  const buyingTier: 'plus' | 'pro' | 'ultra' = isUpgrade ? upgradeTarget : selectedTier;
 
   const loadPrice = async () => {
     setPricing(null);
     setPriceError(false);
     const next = await subscriptionPricingService.get();
     setPricing(next);
-    setPriceError(!(isUpgrade ? next.upgrade.live : next[selectedTier].live));
+    setPriceError(!(isUltraUpgrade ? next.ultra.live : isUpgrade ? next.upgrade.live : next[selectedTier].live));
   };
 
   useEffect(() => {
     if (visible) void loadPrice();
   }, [visible, selectedTier]);
 
-  const price = pricing ? (isUpgrade ? pricing.upgrade : pricing[selectedTier]) : null;
+  // `pricing.ultra` n'a pas de champ `eur` (prix fixe en NF, pas de
+  // conversion) : le hero de la carte prix bascule sur un affichage NF direct
+  // pour ce cas — voir plus bas, `isUltraUpgrade`.
+  const price = pricing ? (isUltraUpgrade ? pricing.ultra : isUpgrade ? pricing.upgrade : pricing[selectedTier]) : null;
   const priceIsLive = Boolean(price?.live);
   const requiredNf = priceIsLive ? Number(price?.nf || 0) : 0;
   const walletReady = !walletLoading && !walletError;
@@ -157,7 +173,10 @@ export default function PremiumCheckoutSheet({
   const missing = Math.max(0, requiredNf - walletBalance);
   // Repli sur la période standard de l'offre, jamais sur un mois.
   const days = pricing?.duration_days || 5;
-  const perDay = priceIsLive && days > 0 ? Number(price?.eur || 0) / days : null;
+  // Ultra n'a pas de prix euro (voir `UltraPrice`) : le « par jour » ne
+  // s'applique pas à un palier au prix fixe, la carte le masque plus bas.
+  const priceEur = isUltraUpgrade ? null : Number((price as TierPrice | null)?.eur ?? 0);
+  const perDay = !isUltraUpgrade && priceIsLive && days > 0 ? (priceEur || 0) / days : null;
   const symbol = pricing?.currency_symbol || 'NF';
   const coverage = requiredNf > 0 ? Math.min(1, Math.max(0, walletBalance / requiredNf)) : 0;
 
@@ -250,7 +269,7 @@ export default function PremiumCheckoutSheet({
     []
   );
 
-  const ctaDisabled = !enough || loading || priceError;
+  const ctaDisabled = isMaxed || !enough || loading || priceError;
 
   return (
     <Modal
@@ -277,7 +296,7 @@ export default function PremiumCheckoutSheet({
           <View style={styles.header}>
             <View style={styles.brand}>
               <Image source={LOGO_SM} style={styles.brandLogo} resizeMode="contain" />
-              <Text style={styles.brandText}>TWITNINF PRO</Text>
+              <Text style={styles.brandText}>{isUltraUpgrade ? 'TWITNINF ULTRA' : 'TWITNINF PRO'}</Text>
             </View>
             <TouchableOpacity style={styles.close} onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color={colors.textSecondary} />
@@ -332,14 +351,25 @@ export default function PremiumCheckoutSheet({
               </View>
 
               <Text style={styles.title}>
-                Plus qu’un badge.{'\n'}
-                <Text style={styles.titleAccent}>Une vraie présence.</Text>
+                {isUltraUpgrade ? (
+                  <>
+                    Le palier des{'\n'}
+                    <Text style={styles.titleAccent}>gros créateurs.</Text>
+                  </>
+                ) : (
+                  <>
+                    Plus qu’un badge.{'\n'}
+                    <Text style={styles.titleAccent}>Une vraie présence.</Text>
+                  </>
+                )}
               </Text>
 
               <Text style={styles.subtitle}>
-                {isUpgrade
-                  ? 'Passe au palier complet : tout le pack visuel et créateur de TwitNinf.'
-                  : 'Tout ce qu’il faut pour te démarquer et faire grandir ton compte.'}
+                {isUltraUpgrade
+                  ? 'Recherche prioritaire, crédit publicitaire, strikes de diffusion et API 15× plus permissive.'
+                  : isUpgrade
+                    ? 'Passe au palier complet : tout le pack visuel et créateur de TwitNinf.'
+                    : 'Tout ce qu’il faut pour te démarquer et faire grandir ton compte.'}
               </Text>
             </View>
 
@@ -351,7 +381,9 @@ export default function PremiumCheckoutSheet({
                 <>
                   <View style={styles.priceMain}>
                     <View style={styles.priceLeft}>
-                      <Text style={styles.eurPrice}>{formatEur(price.eur)}</Text>
+                      <Text style={styles.eurPrice}>
+                        {isUltraUpgrade ? `${formatNf(requiredNf)} ${symbol}` : formatEur(priceEur || 0)}
+                      </Text>
                       <Text style={styles.priceUnit}>pour {days} jours</Text>
                     </View>
                     {perDay !== null && (
@@ -362,23 +394,32 @@ export default function PremiumCheckoutSheet({
                     )}
                   </View>
 
-                  <View style={styles.nfLine}>
-                    <Text style={styles.nfLabel}>Débité aujourd’hui</Text>
-                    <Text style={styles.nfPrice}>
-                      {formatNf(requiredNf)} {symbol}
-                    </Text>
-                  </View>
+                  {/* Prix fixe : la ligne « débité aujourd'hui » redirait la
+                      même valeur que le hero au-dessus, elle est retirée pour
+                      Ultra plutôt que dupliquée. */}
+                  {!isUltraUpgrade && (
+                    <View style={styles.nfLine}>
+                      <Text style={styles.nfLabel}>Débité aujourd’hui</Text>
+                      <Text style={styles.nfPrice}>
+                        {formatNf(requiredNf)} {symbol}
+                      </Text>
+                    </View>
+                  )}
 
                   {!!pricing?.nf_price_eur && (
                     <Text style={styles.rate}>
-                      Conversion automatique · 1 {symbol} = {formatEur(pricing.nf_price_eur)}
+                      {isUltraUpgrade
+                        ? `≈ ${formatEur(requiredNf * pricing.nf_price_eur)} au cours actuel`
+                        : `Conversion automatique · 1 ${symbol} = ${formatEur(pricing.nf_price_eur)}`}
                     </Text>
                   )}
                   {isUpgrade && (
                     <View style={styles.upgradeChip}>
-                      <Ionicons name="trending-up" size={12} color={GOLD.base} />
+                      <Ionicons name={isUltraUpgrade ? 'diamond' : 'trending-up'} size={12} color={GOLD.base} />
                       <Text style={styles.upgradeChipText}>
-                        Mise à niveau : tu ne paies que la différence
+                        {isUltraUpgrade
+                          ? 'Prix fixe · réservé aux gros créateurs'
+                          : 'Mise à niveau : tu ne paies que la différence'}
                       </Text>
                     </View>
                   )}
@@ -498,63 +539,68 @@ export default function PremiumCheckoutSheet({
             {/* ── Comparatif sur les TROIS paliers ──
                 Deux colonnes (Gratuit / Pro) ne montraient pas ce que Plus
                 apporte déjà, alors que c'est le palier d'entrée : l'écart
-                Gratuit → Plus est le seul que voit un non-abonné. */}
-            <View style={styles.compare}>
-              <View style={styles.compareHead}>
-                <Text style={styles.compareHeadLabel}>Ce qui change</Text>
-                <Text style={styles.compareHeadFree}>Gratuit</Text>
-                <Text style={styles.compareHeadPlus}>PLUS</Text>
-                <View style={styles.compareHeadPro}>
-                  <Text style={styles.compareHeadProText}>PRO</Text>
-                </View>
-              </View>
-              {COMPARE_FEATURES.map((feature, index) => (
-                <View
-                  key={feature.title}
-                  style={[
-                    styles.compareRow,
-                    index === COMPARE_FEATURES.length - 1 && styles.compareRowLast,
-                  ]}
-                >
-                  <Text style={styles.compareLabel} numberOfLines={2}>{feature.title}</Text>
-                  <View style={styles.compareCell}>
-                    <View style={styles.compareCross}>
-                      <Ionicons name="close" size={13} color={colors.textMuted} />
-                    </View>
+                Gratuit → Plus est le seul que voit un non-abonné.
+                Masqué pour Ultra : ce tableau n'a pas de colonne Ultra, et
+                comparer à Gratuit/Plus n'a aucun sens pour quelqu'un qui a
+                déjà Pro. */}
+            {!isUltraUpgrade && (
+              <View style={styles.compare}>
+                <View style={styles.compareHead}>
+                  <Text style={styles.compareHeadLabel}>Ce qui change</Text>
+                  <Text style={styles.compareHeadFree}>Gratuit</Text>
+                  <Text style={styles.compareHeadPlus}>PLUS</Text>
+                  <View style={styles.compareHeadPro}>
+                    <Text style={styles.compareHeadProText}>PRO</Text>
                   </View>
-                  <View style={styles.compareCell}>
-                    {feature.minTier === 'plus' ? (
-                      <View style={styles.comparePlusCheck}>
-                        <Ionicons name="checkmark" size={13} color={colors.accent} />
-                      </View>
-                    ) : (
+                </View>
+                {COMPARE_FEATURES.map((feature, index) => (
+                  <View
+                    key={feature.title}
+                    style={[
+                      styles.compareRow,
+                      index === COMPARE_FEATURES.length - 1 && styles.compareRowLast,
+                    ]}
+                  >
+                    <Text style={styles.compareLabel} numberOfLines={2}>{feature.title}</Text>
+                    <View style={styles.compareCell}>
                       <View style={styles.compareCross}>
                         <Ionicons name="close" size={13} color={colors.textMuted} />
                       </View>
-                    )}
+                    </View>
+                    <View style={styles.compareCell}>
+                      {feature.minTier === 'plus' ? (
+                        <View style={styles.comparePlusCheck}>
+                          <Ionicons name="checkmark" size={13} color={colors.accent} />
+                        </View>
+                      ) : (
+                        <View style={styles.compareCross}>
+                          <Ionicons name="close" size={13} color={colors.textMuted} />
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.compareCell}>
+                      <LinearGradient
+                        colors={[GOLD.light, GOLD.base]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.compareCheck}
+                      >
+                        <Ionicons name="checkmark" size={13} color={GOLD.ink} />
+                      </LinearGradient>
+                    </View>
                   </View>
-                  <View style={styles.compareCell}>
-                    <LinearGradient
-                      colors={[GOLD.light, GOLD.base]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.compareCheck}
-                    >
-                      <Ionicons name="checkmark" size={13} color={GOLD.ink} />
-                    </LinearGradient>
-                  </View>
-                </View>
-              ))}
-            </View>
+                ))}
+              </View>
+            )}
 
             {/* ── Détail des avantages ──
                 Tirés du catalogue partagé : les listes recopiées à la main
                 avaient déjà décroché de ce que l'abonnement débloque vraiment. */}
             <Text style={styles.sectionTitle}>
-              {isUpgrade ? 'Ce que Pro ajoute' : 'Ce que tu débloques'}
+              {isUltraUpgrade ? 'Ce qu\'Ultra ajoute' : isUpgrade ? 'Ce que Pro ajoute' : 'Ce que tu débloques'}
             </Text>
             <View style={styles.benefits}>
-              {(isUpgrade ? PRO_ONLY_FEATURES : SUBSCRIPTION_FEATURES).map(item => (
+              {(isUltraUpgrade ? ULTRA_ONLY_FEATURES : isUpgrade ? PRO_ONLY_FEATURES : SUBSCRIPTION_FEATURES).map(item => (
                 <View style={styles.benefit} key={item.title}>
                   <View style={[styles.benefitIcon, item.minTier === 'pro' && styles.benefitIconPro]}>
                     <Ionicons
@@ -654,7 +700,7 @@ export default function PremiumCheckoutSheet({
                           ? 'Vérification du solde…'
                           : !enough
                             ? `Il te manque ${formatNf(missing)} ${symbol}`
-                            : `${isUpgrade ? 'Passer Pro' : buyingTier === 'pro' ? 'Devenir Pro' : 'Devenir Plus'} · ${formatNf(requiredNf)} ${symbol}`}
+                            : `${isUltraUpgrade ? 'Passer Ultra' : isUpgrade ? 'Passer Pro' : buyingTier === 'pro' ? 'Devenir Pro' : 'Devenir Plus'} · ${formatNf(requiredNf)} ${symbol}`}
                     </Text>
                     {enough && !priceError && (
                       <Ionicons name="arrow-forward" size={17} color={GOLD.ink} />

@@ -33,8 +33,8 @@ export const BIRTHDAY_START = '2026-08-24T00:00:00+02:00';
 export const BIRTHDAY_END = '2026-08-31T23:59:59+02:00';
 
 /** La fenêtre du coup de minuit — vingt minutes, et pas une de plus. */
-const MIDNIGHT_FROM = '2026-08-24T00:00:00+02:00';
-const MIDNIGHT_TO = '2026-08-24T00:20:00+02:00';
+const MIDNIGHT_FROM = '2026-08-27T00:00:00+02:00';
+const MIDNIGHT_TO = '2026-08-27T00:20:00+02:00';
 
 export const BIRTHDAY_HASHTAG = '#JoyeuxTwitninf';
 
@@ -117,7 +117,7 @@ const QUESTS: EventQuest[] = [
       label: 'Paquet surprise',
       // On annonce la table, jamais le tirage. Savoir ce qu'on PEUT gagner
       // donne envie ; savoir ce qu'on VA gagner supprime le paquet.
-      teaser: ['300 NF', '3 jours de Pro', 'Un effet de profil', 'Une police de nom'],
+      teaser: ['5 NF', '3 jours de Pro', 'Un effet de profil', 'Une police de nom'],
     },
   },
   {
@@ -156,7 +156,7 @@ const QUESTS: EventQuest[] = [
     tier: 'gold',
     title: 'À minuit pile',
     description:
-      'Publie quelque chose dans les vingt minutes qui suivent minuit, la nuit du 24. Vingt minutes, une fois. Après, c\'est fini.',
+      'Publie quelque chose dans les vingt minutes qui suivent minuit, la nuit du 27. Vingt minutes, une fois. Après, c\'est fini.',
     icon: 'moon-outline',
     goal: 1,
     window: { from: MIDNIGHT_FROM, to: MIDNIGHT_TO },
@@ -185,9 +185,9 @@ const QUESTS: EventQuest[] = [
     tier: 'silver',
     title: 'Le gâteau géant',
     description:
-      'Un objectif commun à TOUTE l\'app : 10 000 tweets publiés pendant la semaine. Si le compte y est, tout le monde touche la récompense, y compris ceux qui n\'ont rien posté.',
+      'Un objectif commun à TOUTE l\'app : 200 tweets publiés pendant la semaine. Si le compte y est, tout le monde touche la récompense, y compris ceux qui n\'ont rien posté.',
     icon: 'people-outline',
-    goal: 10000,
+    goal: 200,
     reward: { kind: 'coins', label: '300 NF pour tout le monde', payload: { amount: 300 } },
   },
 

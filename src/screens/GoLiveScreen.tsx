@@ -16,6 +16,7 @@ import Avatar from '../components/Avatar';
 import type { RtmpPublisherViewMethods } from 'react-native-nitro-rtmp-publisher';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { LIST_TUNING } from '../utils/listTuning';
 import {
   liveService,
   socket,
@@ -522,6 +523,7 @@ export default function GoLiveScreen() {
               showsVerticalScrollIndicator={false}
               onContentSizeChange={scrollChatToEnd}
               renderItem={renderChatRow}
+              {...LIST_TUNING}
             />
 
             <LiveComposer onSend={sendMessage} />

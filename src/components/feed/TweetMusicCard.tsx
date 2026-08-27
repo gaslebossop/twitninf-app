@@ -8,7 +8,8 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Audio } from 'expo-av';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, fonts } from '../../theme';
@@ -77,8 +78,20 @@ function TweetMusicCard({ track, onBeforeOpen }: TweetMusicCardProps) {
   return (
     <TouchableOpacity style={styles.card} onPress={openInSpotify} activeOpacity={0.85}>
       <View style={styles.artWrap}>
+        {/* `expo-image` : la pochette est montée dans une ligne de fil
+            recyclée. `memory-disk` évite le redécodage quand on remonte le fil,
+            et `recyclingKey` vide la vue avant de charger la pochette suivante
+            — sans lui, une cellule réutilisée montre un instant l'album du
+            tweet précédent. */}
         {track.albumArt ? (
-          <Image source={{ uri: track.albumArt }} style={styles.art} />
+          <Image
+            source={{ uri: track.albumArt }}
+            style={styles.art}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={track.albumArt}
+            transition={0}
+          />
         ) : (
           <View style={[styles.art, styles.artPlaceholder]}>
             <Ionicons name="musical-note" size={18} color={colors.textMuted} />

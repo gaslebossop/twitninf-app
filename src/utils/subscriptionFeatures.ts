@@ -205,12 +205,63 @@ export const PRO_ONLY_FEATURES = SUBSCRIPTION_FEATURES.filter((f) => f.minTier =
 /** Sélection courte pour le tableau comparatif (colonnes Gratuit / Plus / Pro). */
 export const COMPARE_FEATURES = SUBSCRIPTION_FEATURES.filter((f) => f.highlight);
 
-/** Un palier donne-t-il accès à cet avantage ? */
+/** Un palier donne-t-il accès à cet avantage ? Ultra inclut tout ce que Pro donne. */
 export function tierUnlocks(tier: SubscriptionTier, feature: SubscriptionFeature): boolean {
-  if (tier === 'pro') return true;
+  if (tier === 'pro' || tier === 'ultra') return true;
   if (tier === 'plus') return feature.minTier === 'plus';
   return false;
 }
+
+/**
+ * Avantages Ultra — palier séparé du catalogue Plus/Pro ci-dessus plutôt
+ * qu'un troisième `minTier` : Ultra ne s'achète qu'en montée depuis Pro (pas
+ * proposé dès l'inscription), donc rien ici ne doit apparaître dans le
+ * tableau comparatif Gratuit/Plus/Pro ni dans la liste complète montrée à un
+ * compte gratuit — ça n'aurait aucun sens pour quelqu'un qui ne peut pas
+ * encore l'acheter.
+ */
+// `minTier: 'pro'` ici n'a rien à voir avec le palier réel (Ultra n'est
+// jamais confondu avec Pro ailleurs) : c'est un pur drapeau de style, réutilisé
+// tel quel par les mêmes lignes de rendu que Pro (icône couleur or, etc.) pour
+// que la feuille n'ait pas besoin d'un troisième traitement visuel dupliqué.
+export const ULTRA_ONLY_FEATURES: SubscriptionFeature[] = [
+  {
+    icon: 'search',
+    title: 'Recherche prioritaire',
+    text: 'Tes tweets remontent en premier dans les résultats, à pertinence égale.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'megaphone',
+    title: '100 € de crédit publicitaire',
+    text: 'Reversés en NF sur ton portefeuille à chaque activation, pour booster tes publications.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'flag',
+    title: 'Strikes de diffusion',
+    text: 'Bloque la diffusion d\'un tweet qui te vise, instantanément — contestable par son auteur.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'shield-checkmark',
+    title: 'Antifraude assoupli',
+    text: 'Les transferts inhabituels mais légitimes passent plus facilement, sans blocage automatique.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'eye-off',
+    title: 'Immunité aux restrictions automatiques',
+    text: 'Le système de réduction de portée automatique ne s\'applique pas à ton compte.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'flash',
+    title: 'API 15× plus permissive',
+    text: '300 requêtes d\'écriture par minute au lieu de 20, pour les apps que tu connectes.',
+    minTier: 'pro',
+  },
+];
 
 export const TRUST_POINTS: { icon: string; text: string }[] = [
   { icon: 'shield-checkmark', text: 'Prix verrouillé au moment de l\'achat' },

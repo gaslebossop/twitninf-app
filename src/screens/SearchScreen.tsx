@@ -101,6 +101,9 @@ import {
 } from '../theme/paper2b';
 import { AppStatusBar } from '../components/ui';
 import { toast } from '../components/ui/Toast';
+import { promptAsync } from '../components/ui/PromptSheet';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
+import strikeService from '../services/strikeService';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import Skeleton from '../components/ui/Skeleton';
 import SceneCanvas, { SceneReveal, useSceneReveal } from '../components/SceneCanvas';
@@ -121,6 +124,7 @@ import tokenStore from '../services/tokenStore';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCompactCount } from '../utils/format';
 import type { Tweet, User, UserSuggestion } from '../types/api';
+import { LIST_TUNING } from '../utils/listTuning';
 
 type SearchRouteProp = RouteProp<{ Search: { query?: string; searchType?: string } }, 'Search'>;
 
@@ -1063,10 +1067,39 @@ export default function SearchScreen() {
    * tweet ou bloquer son auteur agissent sur un fil qu'on n'est pas en train
    * de lire. Ne reste ici que ce qui a un sens sur un RÉSULTAT.
    */
+  /** Strike Ultra : voir `TweetsScreen.handleStrikeTweet`, même comportement. */
+  const handleStrikeTweet = useCallback(async (tweetId: string) => {
+    const reason = await promptAsync({
+      title: 'Striker ce tweet',
+      message: 'Bloque la diffusion instantanément, sans revue. L\'auteur pourra contester.',
+      placeholder: 'Motif du strike (10 caractères minimum)…',
+      multiline: true,
+      maxLength: 500,
+      confirmLabel: 'Striker',
+      destructive: true,
+      icon: 'flag',
+    });
+    if (!reason) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      toast.error('Motif trop court', { description: 'Décris en au moins 10 caractères.' });
+      return;
+    }
+    const result = await strikeService.createStrike(tweetId, trimmed);
+    if (!result.success) {
+      toast.error('Strike impossible', { description: result.message });
+      return;
+    }
+    toast.success('Diffusion bloquée', {
+      description: 'Ce tweet n\'apparaît plus dans les recommandations. L\'auteur peut contester.',
+    });
+  }, []);
+
   const handleOptions = useCallback(
     (tweetId: string) => {
       const tweet = tweetsRef.current.find((t) => t.id === tweetId);
       const isOwn = !!(user?.id && tweet?.author?.id === user.id);
+      const isUltra = effectiveSubscriptionTier(!!user?.premium, (user as any)?.subscription_tier) === 'ultra';
       const items: ActionSheetItem[] = [
         { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
         ...(isOwn
@@ -1077,11 +1110,20 @@ export default function SearchScreen() {
                 icon: 'flag-outline' as const,
                 onPress: () => handleReport(tweetId),
               },
+              ...(isUltra
+                ? [{
+                  label: 'Striker (bloquer la diffusion)',
+                  icon: 'flag' as const,
+                  hint: 'Ultra — immédiat, sans revue, contestable par l\'auteur',
+                  onPress: () => handleStrikeTweet(tweetId),
+                  destructive: true,
+                }]
+                : []),
             ]),
       ];
       showActionSheet({ items });
     },
-    [user?.id, handleShare, handleReport],
+    [user?.id, user?.premium, handleShare, handleReport, handleStrikeTweet],
   );
 
   /** Contexte transmis aux lignes — stable, sinon toutes se re-rendent. */
@@ -1359,6 +1401,7 @@ export default function SearchScreen() {
         ) : (
           <FlatList
             data={rows}
+            {...LIST_TUNING}
             keyExtractor={(item) => item.key}
             renderItem={renderRow}
             ListHeaderComponent={listHeader}

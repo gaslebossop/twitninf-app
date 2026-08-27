@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, memo } from 'react';
+import React, { useState, useRef, useMemo, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -155,6 +155,16 @@ function TweetCard({
   })();
 
   // Animations — cœur et retweet passent par le même éclat que dans le fil.
+  /**
+   * L'éclat de réaction n'est MONTÉ qu'une fois qu'un doigt s'est posé —
+   * jamais au repos. Même correctif que `feed/TweetRow` et
+   * `paper2b/TweetRowGutter`, pour la même raison : cette carte sert aussi de
+   * ligne de liste (profil), et ses deux `ReactionBurst` valent ~22 vues
+   * animées à opacité 0 par carte montée. Voir `docs/2B-FLUIDITE-RENDU.md`.
+   */
+  const [burstArmed, setBurstArmed] = useState(false);
+  const armBurst = useCallback(() => setBurstArmed(true), []);
+
   const like = useReactionAnimation();
   const retweet = useReactionAnimation(true);
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -622,11 +632,16 @@ function TweetCard({
                 }
               ]}
               onPress={handleRetweet}
+              // Monte l'éclat au POSÉ du doigt : le montage a toute la durée
+              // de l'appui pour se faire, et l'éclat part après son délai.
+              onPressIn={armBurst}
               activeOpacity={0.7}
             >
               <View style={styles.actionBlur}>
                 <View style={styles.burstHost}>
-                  <ReactionBurst progress={retweet.progress} palette={RETWEET_PALETTE} iconSize={20} />
+                  {burstArmed && (
+                    <ReactionBurst progress={retweet.progress} palette={RETWEET_PALETTE} iconSize={20} />
+                  )}
                   <Reanimated.View style={retweet.iconStyle}>
                     <Ionicons
                       name={tweet.user_interaction?.is_retweeted ? "repeat" : "repeat-outline"}
@@ -668,11 +683,14 @@ function TweetCard({
                 }
               ]}
               onPress={handleLike}
+              onPressIn={armBurst}
               activeOpacity={0.7}
             >
               <View style={styles.actionBlur}>
                 <View style={styles.burstHost}>
-                  <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={20} />
+                  {burstArmed && (
+                    <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={20} />
+                  )}
                   <Reanimated.View style={like.iconStyle}>
                     <Ionicons
                       name={tweet.user_interaction?.is_liked ? "heart" : "heart-outline"}

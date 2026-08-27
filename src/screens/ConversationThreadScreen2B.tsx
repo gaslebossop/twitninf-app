@@ -1,52 +1,57 @@
 /**
- * 🧪 Fil de messages « 2B — Gouttière », sous drapeau `fil.refonte2b`.
+ * 🧪 Conversation « 2B », sous drapeau `fil.refonte2b`.
  *
  * Écrit pour ce test, pas cloné : `ConversationThreadScreen.tsx` reste l'écran
  * de tout compte hors du drapeau et n'est jamais touché.
  *
- * ── L'objet : une TRANSCRIPTION, pas une messagerie ──────────────────────
- * Une messagerie dessine des bulles : deux colonnes de cartes arrondies qui
- * se répondent. Une transcription dessine QUI a parlé, QUAND, et ce qui a été
- * dit — dans une seule colonne, comme un relevé d'échange. C'est ce second
- * objet que 2B demande, parce que le fil dont on arrive n'a ni carte ni
- * couleur de fond : il a une gouttière, des filets et une colonne d'encre.
+ * ── Cet écran EST le dessin « 6a », et son maintien du micro EST « 6b » ───
  *
- * Conséquences, et ce sont elles qui font la refonte :
+ * Toutes les valeurs viennent du dessin, à la valeur près, passées par `ps()`
+ * — dont le repère est justement les 402 pt pour lesquels il a été fait. Ce
+ * fichier n'a donc pas d'échelle typographique à lui : la grille est
+ * `46 pt | 12 | reste`, le corps est à 15/1,45, la durée d'un vocal à 19, la
+ * minuterie de l'enregistrement à 26, et toutes les métas sont en chasse fixe
+ * à 9–9,5 avec leurs capitales espacées. Ne pas « arrondir » ces nombres : ce
+ * sont les écarts entre eux qui font la hiérarchie, et un corps remonté à 26
+ * (ce qu'était l'écran d'avant) fait s'effondrer la colonne d'heures.
  *
- *   1. **La bulle disparaît.** Elle est une carte, et la règle du test est
- *      « des filets, jamais des cartes ». Le texte se pose sur le papier, à
- *      la même encre des deux côtés.
- *   2. **La gouttière de 52 px dit qui parle** — celle de `TweetRowGutter`,
- *      au pixel. L'avatar de l'interlocuteur en tête de salve, un repère
- *      d'accent pour les messages sortants. Ce n'est plus la couleur du fond
- *      ni le bord de l'écran qui portent cette information, c'est la colonne.
- *   3. **Le rail relie les messages d'une même salve**, exactement comme il
- *      relie un tweet à sa réponse dans le fil. Il ne descend qu'entre deux
- *      messages liés, jamais sous le dernier — un trait qui pend dans le vide
- *      est le défaut que `TweetRowGutter` documente déjà.
- *   4. **Chaque salve s'ouvre par une ligne d'auteur** : le nom, puis l'heure
- *      en chasse fixe. C'est la forme d'un relevé, et elle rend l'échange
- *      lisible sans que la position gauche/droite ait à le faire.
+ * ── L'objet : un RELEVÉ D'ÉCHANGE, pas une messagerie ────────────────────
+ *   1. **L'heure est dans la gouttière**, colonne de 46 pt en chasse fixe
+ *      alignée à droite, à gauche de CHAQUE message, la même pour les deux
+ *      interlocuteurs. C'est elle qui range l'écran.
+ *   2. **Plus d'alignement gauche/droite.** Une seule colonne de contenu.
+ *   3. **C'est la MATIÈRE qui dit qui parle** : le message reçu se pose sur le
+ *      papier nu, le message envoyé sur un bloc d'encre. Un aplat plein se lit
+ *      sans qu'on ait à lire — ce qu'un rail de 2,5 pt ne faisait pas.
+ *   4. **Le vocal est l'objet principal** : onde pleine largeur sur 44 pt,
+ *      durée en gros chiffres, vitesse de lecture, état. UN seul gabarit
+ *      d'onde dans tout l'écran, l'enregistrement en cours compris.
+ *   5. **Les photos ont deux formats** : seule sur la largeur de la colonne,
+ *      ou deux carreaux côte à côte.
  *
  * ── Ce qui n'existe plus ─────────────────────────────────────────────────
- * Le bouton appareil photo du compositeur : il ouvrait la story de
- * l'interlocuteur, ce que l'avatar de l'en-tête fait déjà. L'icône « émoji »
- * à côté : elle n'avait aucun gestionnaire d'appui, c'était un pixel mort.
- * Le compositeur garde donc deux cibles au repos — joindre, et le micro.
+ * Le rail d'accent des messages sortants · l'horodatage au pied de salve · la
+ * pastille d'heure révélée au glissé (et son geste) · l'avatar dans la
+ * gouttière · la rangée « Vu » et ses avatars · l'ouverture de transcription
+ * (gros avatar + bouton « Voir le profil ») · le sous-titre de l'en-tête.
+ * Le dessin ne montre aucun d'eux, et chacun redisait ce qui est déjà écrit
+ * ailleurs.
  *
- * ── Ce qui est REPRIS tel quel, et pourquoi ──────────────────────────────
- * Toute la plomberie : socket temps réel, pagination, enregistrement et
- * lecture vocale, pièces jointes, réactions, accusés de lecture, indicateur
- * de frappe. Ce code porte des correctifs consignés — reset de la session
- * audio iOS, accord entre `MESSAGE_PAGE_SIZE` et `initialNumToRender`,
+ * ── Deux écarts assumés, et pourquoi ─────────────────────────────────────
+ *   - Le dessin écrit « Non écouté » sous un vocal envoyé. Le serveur ne
+ *     fournit pas d'accusé d'ÉCOUTE, seulement de lecture de la conversation :
+ *     le libellé dit donc « Vu » / « Envoyé », qui est vrai.
+ *   - Le bloc ambre « 50 NF — brouillon de concours » n'existe pas dans l'app :
+ *     rien ne permet de préparer un concours depuis une conversation. Le
+ *     dessiner aurait été un bouton qui ne mène nulle part.
+ *
+ * ── Ce qui est REPRIS tel quel ───────────────────────────────────────────
+ * Toute la plomberie : socket temps réel, chargement, lecture et
+ * enregistrement audio, pièces jointes, réactions, accusés de lecture,
+ * indicateur de frappe. Ce code porte des correctifs consignés — reset de la
+ * session audio iOS, accord entre `MESSAGE_PAGE_SIZE` et `initialNumToRender`,
  * largeur de la barre de réactions dérivée de son contenu, doubles seuils du
- * glissé d'annulation, dédoublonnage. Le test porte sur la présentation ;
- * réécrire cette couche n'aurait rien redessiné et aurait rouvert des bugs
- * déjà fermés.
- *
- * ── La feuille ───────────────────────────────────────────────────────────
- * `theme/messages2b` et non `paper.bg` : le papier est propre aux écrans de
- * messages, le fil garde le fond de l'app. Voir l'en-tête de ce fichier-là.
+ * glissé d'annulation, dédoublonnage.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -58,7 +63,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -67,6 +71,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // `expo-image` plutôt que `Image` de React Native : cache disque et décodage
 // hors du thread JS, sur des avatars et pièces jointes montés en liste.
@@ -75,12 +80,18 @@ import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+  ComposedGesture,
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
 import Reanimated, {
   Easing,
   Extrapolation,
   FadeInDown,
   ZoomIn,
+  type SharedValue,
   interpolate,
   runOnJS,
   useAnimatedStyle,
@@ -90,10 +101,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { io } from 'socket.io-client';
-import { colors, statusBarStyle } from '../theme';
-import { paper, paperFonts, ps, GUTTER_W, ROW_PAD_X, ROW_GAP } from '../theme/paper2b';
-// La feuille est propre a Messages : le fil garde la sienne (voir le fichier).
-import { sheet } from '../theme/messages2b';
+import { paperFonts, ps, isPaperDark } from '../theme/paper2b';
 import { AppStatusBar, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
 import unreadService from '../services/unreadService';
@@ -106,6 +114,139 @@ import { certifiedNameColors, nameIsLit, type ProfileCustomization } from '../se
 import { API_CONFIG } from '../config/api';
 import { toast } from '../components/ui/Toast';
 import { useAuth } from '../contexts/AuthContext';
+
+// ─── La palette du dessin ───────────────────────────────────────────────────
+
+/**
+ * Les couleurs de « 6a / 6b », à la valeur près.
+ *
+ * Écrites ici plutôt que dans `theme/messages2b` : ce sont les couleurs d'UN
+ * dessin, pas une feuille partagée. Le registre (`MessagesScreen2B`) garde la
+ * sienne, et personne ne peut repeindre cet écran-là en touchant celui-ci.
+ *
+ * Le clair est le dessin littéral. Le sombre n'en est pas l'inversion
+ * mécanique : c'est la même idée, l'encre passant du texte au fond. Deux
+ * valeurs ne se retournent pas et sont recalculées, pour la raison déjà
+ * consignée dans `paper2b.ts` — l'accent `#E8384F` tombe à 4,3:1 sur l'encre
+ * et remonte à `#FF5468` ; et le bloc « moi », encre sur encre, disparaîtrait :
+ * il passe à une surface relevée plutôt qu'à un pavé quasi blanc par message.
+ */
+interface DrawingPalette {
+  bg: string;
+  ink: string;
+  /** Texte posé sur l'encre. */
+  onInk: string;
+  /** L'heure, dans la gouttière. */
+  time: string;
+  /** Méta en capitales espacées, sur le papier. */
+  meta: string;
+  hairline: string;
+  /** Contour de la pastille de vitesse. */
+  pillLine: string;
+  /** Contour du cadenas. */
+  lockLine: string;
+  /** Le chevron qui pointe vers le cadenas. */
+  chevron: string;
+  /** Fond d'une photo qui n'est pas encore arrivée. */
+  media: string;
+  accent: string;
+  onAccent: string;
+  /** Barres non lues d'une onde. */
+  bar: string;
+  /** Le panneau d'enregistrement. */
+  panel: string;
+  onPanel: string;
+  panelLabel: string;
+  panelMeta: string;
+  panelScale: string;
+  panelLine: string;
+  /** Contour de la corbeille. */
+  panelOutline: string;
+  /** Le halo du bouton rond, au repos puis pendant l'enregistrement. */
+  halo: string;
+  haloStrong: string;
+  /**
+   * Les surfaces qui se posent DEVANT la page — barre de réactions, feuille
+   * « qui a réagi », pastille de réaction. Elles ont besoin d'un palier
+   * d'élévation propre : en sombre, une ombre ne se voit pas, c'est la surface
+   * qui doit monter d'un cran.
+   */
+  surface: string;
+  surfaceLine: string;
+}
+
+const LIGHT: DrawingPalette = {
+  bg: '#F8F6F1',
+  ink: '#17161A',
+  /** Texte posé sur l'encre. */
+  onInk: '#F8F6F1',
+  /** L'heure, dans la gouttière. */
+  time: '#8A8892',
+  /** Méta en capitales espacées, sur le papier. */
+  meta: '#6E6C75',
+  hairline: 'rgba(23,22,26,0.10)',
+  /** Contour de la pastille de vitesse. */
+  pillLine: 'rgba(23,22,26,0.18)',
+  /** Contour du cadenas. */
+  lockLine: 'rgba(23,22,26,0.20)',
+  /** Le chevron qui pointe vers le cadenas. */
+  chevron: '#B0ADB6',
+  /** Fond d'une photo qui n'est pas encore arrivée. */
+  media: '#EFEBE3',
+  accent: '#E8384F',
+  onAccent: '#FFFFFF',
+  /** Barres non lues d'une onde posée sur le papier. */
+  bar: 'rgba(23,22,26,0.22)',
+  /** Le panneau d'enregistrement. */
+  panel: '#17161A',
+  onPanel: '#F8F6F1',
+  panelLabel: 'rgba(248,246,241,0.70)',
+  panelMeta: 'rgba(248,246,241,0.60)',
+  panelScale: 'rgba(248,246,241,0.45)',
+  panelLine: 'rgba(248,246,241,0.14)',
+  panelOutline: 'rgba(248,246,241,0.28)',
+  /** Le halo du bouton rond, au repos puis pendant l'enregistrement. */
+  halo: 'rgba(232,56,79,0.13)',
+  haloStrong: 'rgba(232,56,79,0.22)',
+  surface: '#FFFFFF',
+  surfaceLine: 'rgba(23,22,26,0.12)',
+};
+
+const DARK: DrawingPalette = {
+  bg: '#131210',
+  ink: '#F4F2ED',
+  onInk: '#131210',
+  time: '#918E99',
+  meta: '#A3A0AA',
+  hairline: 'rgba(244,242,237,0.13)',
+  pillLine: 'rgba(244,242,237,0.22)',
+  lockLine: 'rgba(244,242,237,0.22)',
+  chevron: '#5E5B66',
+  media: '#1C1A17',
+  accent: '#FF5468',
+  // Encre foncée sur le corail, pas du blanc : blanc sur `#FF5468` ne tient
+  // que 3,1:1, illisible sur une capitale de 9,5.
+  onAccent: '#1A0207',
+  bar: 'rgba(244,242,237,0.24)',
+  panel: '#221F1A',
+  onPanel: '#F4F2ED',
+  panelLabel: 'rgba(244,242,237,0.70)',
+  panelMeta: 'rgba(244,242,237,0.62)',
+  panelScale: 'rgba(244,242,237,0.45)',
+  panelLine: 'rgba(244,242,237,0.14)',
+  panelOutline: 'rgba(244,242,237,0.28)',
+  halo: 'rgba(255,84,104,0.16)',
+  haloStrong: 'rgba(255,84,104,0.26)',
+  // Deux crans au-dessus du papier de nuit : c'est ce qui remplace l'ombre.
+  surface: '#26221D',
+  surfaceLine: 'rgba(244,242,237,0.16)',
+};
+
+/** Palette du dessin, figée pour la session comme `paper`. */
+const M = isPaperDark ? DARK : LIGHT;
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
 interface MessageItem {
   id: string;
   content: string;
@@ -137,28 +278,6 @@ interface MessageReactionItem {
   username?: string;
 }
 
-/**
- * Raccourcis de la barre d'appui long, façon Instagram DM. Le serveur
- * n'impose plus de liste : il valide la FORME de l'emoji, donc le sélecteur
- * complet (bouton « + ») accepte n'importe lequel.
- */
-const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍'];
-
-/**
- * Géométrie de la barre de réactions.
- *
- * La largeur était figée à 232 px alors que le contenu en demandait ~254 :
- * six emojis de 26 px (un glyphe emoji est plus large que sa taille de police)
- * plus leurs marges. Résultat, les emojis débordaient du fond arrondi. Elle se
- * calcule donc à partir des mêmes constantes que le rendu — impossible de
- * désynchroniser l'un de l'autre.
- */
-const REACTION_EMOJI_SIZE = 26;
-const REACTION_ITEM_WIDTH = 40;
-const REACTION_BAR_PADDING = 8;
-const REACTION_BAR_ITEMS = QUICK_REACTIONS.length + 1; // + le bouton « ␣ »
-const REACTION_BAR_WIDTH = REACTION_BAR_ITEMS * REACTION_ITEM_WIDTH + REACTION_BAR_PADDING * 2;
-
 interface SenderLike {
   id?: string;
   username?: string;
@@ -169,38 +288,135 @@ interface SenderLike {
   profile_customization?: ProfileCustomization;
 }
 
+// ─── Constantes du dessin ───────────────────────────────────────────────────
 
 /**
- * Glissé « annuler » du message vocal.
+ * La grille : `46 pt | 12 | reste`. Retrait latéral de 20 pt, retrait vertical
+ * de 16 pt d'une ligne à la suivante — le dessin met `padding:16px 20px 0` sur
+ * CHAQUE ligne, sans exception ni resserrement par salve.
+ */
+/**
+ * Assez large pour « 00:44 » d'un seul tenant.
  *
- * Deux seuils, et pas un seul : le libellé passe au rouge AVANT le point de
- * non-retour, si bien qu'on voit qu'on va annuler avant de l'avoir fait. Un
- * seuil unique ne laisse le choix qu'entre deviner et rater.
+ * Les 46 pt du dessin étaient calculés pour une heure en 9,5 ; à 13, la colonne
+ * se retrouvait trop étroite d'un cheveu et l'heure se coupait en deux lignes
+ * (« 00:4 » / « 3 »), ce qui décalait tout le message en face. La largeur suit
+ * donc le corps de l'heure, et le libellé est verrouillé sur une ligne.
+ */
+const TIME_COL = ps(56);
+const GRID_GAP = ps(12);
+const PAD_X = ps(20);
+const ROW_TOP = ps(16);
+
+const PHOTO_R = ps(14);
+const TILE_R = ps(12);
+
+/**
+ * Alignement optique de l'heure sur la première ligne du message.
+ *
+ * Un `paddingTop` unique ne peut pas marcher : le texte du papier commence à sa
+ * hauteur de capitale, le texte d'un bloc commence après le rembourrage du
+ * bloc, une photo commence à son bord. Ces quatre valeurs suivent le corps du
+ * texte — si celui-ci bouge, elles bougent avec.
+ */
+const TIME_TOP_TEXT = ps(8);
+const TIME_TOP_MEDIA = ps(2);
+
+/**
+ * L'onde, un seul gabarit — capturée, stockée ET dessinée avec ce nombre de
+ * barres. Le vocal reçu, le vocal envoyé et l'enregistrement en cours ont donc
+ * tous la même : ce qu'on voit en parlant est exactement ce qui part. Les
+ * vocaux d'avant (27 barres) sont ré-échantillonnés au rendu, pas migrés.
+ */
+const WAVEFORM_BAR_COUNT = 44;
+const WAVE_H = ps(44);
+const REC_WAVE_H = ps(56);
+const BAR_MIN = ps(4);
+const BAR_SPAN = WAVE_H - BAR_MIN;
+const REC_BAR_SPAN = REC_WAVE_H - BAR_MIN;
+
+/**
+ * Glissé « annuler » du message vocal. Deux seuils, et pas un seul : le libellé
+ * passe à l'accent AVANT le point de non-retour, si bien qu'on voit qu'on va
+ * annuler avant de l'avoir fait.
  */
 const CANCEL_ARM_DISTANCE = -70;
 const CANCEL_SEND_DISTANCE = -90;
+/**
+ * Remonter pour verrouiller : le pouce quitte l'écran, l'enregistrement
+ * continue. Plus loin que le seuil d'annulation — on remonte peu par accident
+ * en glissant vers la gauche, et l'écran a de la place vers le haut.
+ */
+const LOCK_ARM_DISTANCE = -84;
 /** Amorti sans dépassement : le micro grossit et se pose, il ne rebondit pas. */
 const MIC_SPRING = { damping: 24, stiffness: 260, mass: 1 } as const;
-/** Au-delà de 15 min entre deux messages, Instagram insère un séparateur. */
+/** Le plafond que le panneau annonce sous l'onde. Au-delà : on arrête, on envoie. */
+const MAX_RECORDING_MS = 120000;
+/** Au-delà de 15 min entre deux messages, un séparateur de jour s'insère. */
 const TIME_SEPARATOR_GAP_MS = 15 * 60 * 1000;
+/**
+ * Deux photos plus éloignées que ça ne forment pas la paire du dessin : ce sont
+ * deux envois, pas un envoi de deux images.
+ */
+const PHOTO_PAIR_GAP_MS = 60 * 1000;
+const PHOTO_SELECTION_LIMIT = 4;
+
+/**
+ * Raccourcis de la barre d'appui long. Le serveur n'impose plus de liste : il
+ * valide la FORME de l'emoji, donc le sélecteur complet accepte n'importe lequel.
+ */
+const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍'];
+
+/**
+ * Géométrie de la barre de réactions.
+ *
+ * La largeur était figée à 232 px alors que le contenu en demandait ~254 : six
+ * emojis de 26 px (un glyphe emoji est plus large que sa taille de police) plus
+ * leurs marges. Elle se calcule donc à partir des mêmes constantes que le rendu.
+ */
+const REACTION_EMOJI_SIZE = 26;
+const REACTION_ITEM_WIDTH = 40;
+const REACTION_BAR_PADDING = 8;
+const REACTION_BAR_ITEMS = QUICK_REACTIONS.length + 1;
+const REACTION_BAR_WIDTH = REACTION_BAR_ITEMS * REACTION_ITEM_WIDTH + REACTION_BAR_PADDING * 2;
 
 /**
  * Nombre de messages chargés à l'ouverture.
  *
- * La route serveur plafonne DÉJÀ à 30 par défaut (100 au maximum) : contrairement
- * à ce qu'on pourrait croire en lisant l'appel nu, l'historique entier n'est
- * jamais téléchargé. Le dire explicitement ici sert à deux choses : le `limit`
- * de la requête et l'`initialNumToRender` de la liste ne peuvent plus se
- * désaccorder, et si le défaut serveur bouge un jour, les deux suivent ensemble.
- *
- * Pourquoi l'accord compte : la liste tournait sur `initialNumToRender: 10`,
- * donc la hauteur de contenu mesurée au premier rendu ne valait qu'un tiers de
- * la vraie. `scrollToEnd` visait cette fausse fin, le défilement montait le lot
- * suivant, la hauteur augmentait, `scrollToEnd` repartait — l'écran PARCOURAIT
- * l'historique par à-coups au lieu de s'ouvrir dessus. En montant les 30 d'un
- * coup, la première mesure est la bonne et un seul défilement suffit.
+ * La route serveur plafonne DÉJÀ à 30 par défaut : l'historique entier n'est
+ * jamais téléchargé. Le dire ici accorde le `limit` de la requête et
+ * l'`initialNumToRender` de la liste — désaccordés, la hauteur mesurée au
+ * premier rendu ne valait qu'un tiers de la vraie, et l'écran PARCOURAIT
+ * l'historique par à-coups au lieu de s'ouvrir dessus.
  */
 const MESSAGE_PAGE_SIZE = 30;
+
+/**
+ * Vitesses de lecture d'un vocal, dans l'ordre où la pastille les fait défiler.
+ * Trois et pas plus : au-delà de 2× une voix n'est plus une voix, et une
+ * pastille qu'il faut appuyer cinq fois n'est plus un raccourci.
+ */
+const PLAYBACK_RATES = [1, 1.5, 2] as const;
+const RATE_LABELS = ['1×', '1,5×', '2×'] as const;
+
+/** Contenus posés par l'envoi optimiste : ce ne sont pas des légendes. */
+const PLACEHOLDER_CONTENTS = new Set(['📷 Photo', '🎤 Message vocal']);
+
+/**
+ * Ce que l'enregistreur pousse vers le panneau, SANS passer par un rendu de
+ * l'écran. Voir `recorderChannelRef`.
+ */
+interface RecorderTick {
+  durationMs: number;
+  bars: number[];
+}
+
+interface RecorderChannel {
+  onTick: ((tick: RecorderTick) => void) | null;
+  onCancelArmed: ((armed: boolean) => void) | null;
+}
+
+// ─── Normalisation des données du serveur ───────────────────────────────────
 
 function normalizeMessageMetadata(value: unknown): MessageItem['metadata'] | undefined {
   let raw: any = value;
@@ -276,10 +492,148 @@ function getAvatarUri(avatar?: string | null): string | null {
   return `${API_CONFIG.BASE_URL}/static/avatars/${avatar}`;
 }
 
+/** L'émetteur, quel que soit le champ que le serveur a rempli. */
+function messageSenderId(msg?: MessageItem | null): string {
+  return String(msg?.sender_id || msg?.sender?.id || '');
+}
+
+function messageTs(msg?: MessageItem | null): number {
+  return new Date(msg?.created_at || msg?.createdAt || 0).getTime();
+}
+
+function isPhotoMessage(msg?: MessageItem | null): boolean {
+  return msg?.metadata?.attachment_type === 'image' && !!msg?.metadata?.attachment_url;
+}
+
+/** La légende sous une photo, quand il y en a une vraie. */
+function photoCaption(msg: MessageItem): string {
+  const content = (msg.content || '').trim();
+  if (!content || PLACEHOLDER_CONTENTS.has(content)) return '';
+  return content;
+}
+
+function formatTime(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(ms?: number) {
+  const total = Math.max(0, Math.round((ms || 0) / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Séparateur de jour : « Aujourd'hui 14:32 », « Hier », « 12 mars ». */
+function formatSeparator(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfMessageDay = new Date(date);
+  startOfMessageDay.setHours(0, 0, 0, 0);
+  const dayDiff = Math.round(
+    (startOfToday.getTime() - startOfMessageDay.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  if (dayDiff <= 0) return "Aujourd'hui";
+  if (dayDiff === 1) return 'Hier';
+  if (dayDiff < 7) return date.toLocaleDateString('fr-FR', { weekday: 'long' });
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+}
+
+// ─── Audio ──────────────────────────────────────────────────────────────────
+
 /**
- * Pastille de réaction. L'impulsion est déclenchée par un CHANGEMENT d'emoji
- * ou de compteur, jamais par le montage : une pastille recyclée pendant le
- * scroll reste donc parfaitement immobile.
+ * L'enregistrement (`allowsRecordingIOS: true`) laisse la session audio iOS
+ * routée vers l'écouteur interne (quasi inaudible) tant qu'elle n'est pas
+ * explicitement repassée en mode lecture — même config que `LiveViewerScreen`.
+ * Sans ce reset, la lecture d'un vocal juste après un enregistrement (ou le
+ * tout premier vocal reçu) sort au volume de l'écouteur, pas du haut-parleur.
+ */
+async function ensurePlaybackAudioMode() {
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+  } catch {
+    // Non bloquant : au pire la lecture démarre avec le mode audio courant.
+  }
+}
+
+/** dBFS (typiquement -160..0) → amplitude normalisée 0..1, silence à -50 dB. */
+function normalizeMetering(db?: number) {
+  if (typeof db !== 'number' || !Number.isFinite(db)) return 0.05;
+  const floor = -50;
+  const clamped = Math.max(floor, Math.min(0, db));
+  return (clamped - floor) / -floor;
+}
+
+/** Onde déterministe (pas de vraie amplitude) pour les vieux messages vocaux. */
+function pseudoWaveform(seed: string, count: number): number[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const out: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    out.push(0.25 + ((h >>> 8) % 1000) / 1000 * 0.65);
+  }
+  return out;
+}
+
+/** Ramène un flux d'échantillons de métrage à `barCount` valeurs, par moyenne. */
+function downsampleWaveform(samples: number[], barCount: number): number[] {
+  if (samples.length === 0) return new Array(barCount).fill(0.12);
+  const bucketSize = samples.length / barCount;
+  const out: number[] = [];
+  for (let i = 0; i < barCount; i += 1) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
+    let sum = 0;
+    let count = 0;
+    for (let j = start; j < end && j < samples.length; j += 1) {
+      sum += samples[j];
+      count += 1;
+    }
+    out.push(count > 0 ? sum / count : 0.12);
+  }
+  return out;
+}
+
+/**
+ * Ramène une onde à `count` barres, qu'elle en ait plus OU moins.
+ *
+ * `downsampleWaveform` ne sait que réduire, et par moyenne de seaux : lui
+ * demander d'étirer 27 échantillons sur 44 barres reviendrait à en recopier
+ * certains, ce qui se voit — l'onde monte en escalier au lieu de monter.
+ */
+function resampleWaveform(values: number[], count: number): number[] {
+  if (!values || values.length === 0) return new Array(count).fill(0.12);
+  if (values.length === count) return values;
+  if (values.length > count) return downsampleWaveform(values, count);
+  const span = values.length - 1;
+  const out: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const t = span <= 0 || count <= 1 ? 0 : (i / (count - 1)) * span;
+    const low = Math.floor(t);
+    const high = Math.min(values.length - 1, low + 1);
+    out.push(values[low] + (values[high] - values[low]) * (t - low));
+  }
+  return out;
+}
+
+// ─── Petites pièces ─────────────────────────────────────────────────────────
+
+/**
+ * Pastille de réaction. L'impulsion est déclenchée par un CHANGEMENT d'emoji ou
+ * de compteur, jamais par le montage : une pastille recyclée pendant le
+ * défilement reste donc parfaitement immobile.
  */
 function ReactionPill({
   emoji,
@@ -329,105 +683,182 @@ function ReactionPill({
   );
 }
 
-function formatTime(value?: string) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDuration(ms?: number) {
-  const total = Math.max(0, Math.round((ms || 0) / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-/** Nombre de barres affichées dans la waveform d'un message vocal. */
-const WAVEFORM_BAR_COUNT = 27;
-
-/**
- * L'enregistrement (`allowsRecordingIOS: true`) laisse la session audio iOS
- * routée vers l'écouteur interne (quasi inaudible) tant qu'elle n'est pas
- * explicitement repassée en mode lecture — même config que `LiveViewerScreen`.
- * Sans ce reset, la lecture d'un vocal juste après un enregistrement (ou le
- * tout premier vocal reçu) sort au volume de l'écouteur, pas du haut-parleur.
- */
-async function ensurePlaybackAudioMode() {
-  try {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-  } catch {
-    // Non bloquant : au pire la lecture démarre avec le mode audio courant.
-  }
-}
-
-/** dBFS (typiquement -160..0) → amplitude normalisée 0..1, seuil de silence à -50dB. */
-function normalizeMetering(db?: number) {
-  if (typeof db !== 'number' || !Number.isFinite(db)) return 0.05;
-  const floor = -50;
-  const clamped = Math.max(floor, Math.min(0, db));
-  return (clamped - floor) / -floor;
-}
-
-/** Waveform déterministe (pas de vraie donnée d'amplitude) pour les vieux messages vocaux. */
-function pseudoWaveform(seed: string, count: number): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  const out: number[] = [];
-  for (let i = 0; i < count; i += 1) {
-    h = (h * 1103515245 + 12345) >>> 0;
-    out.push(0.25 + ((h >>> 8) % 1000) / 1000 * 0.65);
-  }
-  return out;
-}
-
-/** Ramène un flux d'échantillons de métrage (capturé pendant l'enregistrement) à `barCount` valeurs. */
-function downsampleWaveform(samples: number[], barCount: number): number[] {
-  if (samples.length === 0) return new Array(barCount).fill(0.12);
-  const bucketSize = samples.length / barCount;
-  const out: number[] = [];
-  for (let i = 0; i < barCount; i += 1) {
-    const start = Math.floor(i * bucketSize);
-    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
-    let sum = 0;
-    let count = 0;
-    for (let j = start; j < end && j < samples.length; j += 1) {
-      sum += samples[j];
-      count += 1;
-    }
-    out.push(count > 0 ? sum / count : 0.12);
-  }
-  return out;
+/** Les pastilles de réaction d'UN message. */
+function ReactionRow({
+  message,
+  myId,
+  onReact,
+  onShowReactors,
+}: {
+  message: MessageItem;
+  myId: string | null;
+  onReact: (messageId: string, emoji: string) => void;
+  onShowReactors: (messageId: string, emoji: string) => void;
+}) {
+  const grouped = groupReactions(message.reactions);
+  if (grouped.length === 0) return null;
+  const messageId = String(message.id);
+  return (
+    <View style={styles.reactionPillRow}>
+      {grouped.map((g) => (
+        <ReactionPill
+          key={g.emoji}
+          emoji={g.emoji}
+          count={g.count}
+          mine={!!message.reactions?.some(
+            (r) => r.emoji === g.emoji && String(r.user_id) === String(myId),
+          )}
+          onPress={() => onReact(messageId, g.emoji)}
+          onLongPress={() => onShowReactors(messageId, g.emoji)}
+        />
+      ))}
+    </View>
+  );
 }
 
 /**
- * Lecteur d'un message vocal, posé SUR le papier — il n'y a plus de bulle
- * autour. Ce qui distinguait « moi » de « l'autre » était la couleur du fond ;
- * c'est maintenant la gouttière, donc les deux côtés se dessinent pareil :
- * bouton d'accent cerné d'un filet, barres à l'encre, part lue à l'accent.
+ * Les trois gestes d'un message — appui simple, double appui, appui long.
  *
- * Toute la mécanique audio est celle de l'écran d'origine, correctifs
- * compris — notamment l'échappatoire de chargement bloqué ci-dessous.
+ * Extraits en hook parce qu'ils servent à DEUX endroits : la ligne du relevé et
+ * un carreau de photo. Depuis que deux photos peuvent tenir sur une même ligne,
+ * la seconde n'est plus rendue par la première, et deux copies de cette
+ * composition auraient divergé au premier réglage.
+ *
+ * Tout passe par Gesture Handler : mélanger les touchables du cœur RN avec
+ * Gesture Handler sur le même arbre casse le double appui.
  */
-function VoiceLine({
+function useMessageGestures({
+  messageId,
+  alreadyHearted,
+  onSingleTap,
+  onLongPress,
+  onReact,
+}: {
+  messageId: string;
+  alreadyHearted: boolean;
+  onSingleTap: () => void;
+  onLongPress: (messageId: string, x: number, y: number) => void;
+  onReact: (messageId: string, emoji: string) => void;
+}) {
+  const pressed = useSharedValue(0);
+  const heartPop = useSharedValue(0);
+
+  /**
+   * Double appui façon Instagram : pose un cœur, ne l'enlève jamais. Un second
+   * double appui sur un message déjà aimé ne rejoue donc rien — même règle que
+   * le double appui du fil, pour la même raison : un geste qui peut retirer ce
+   * qu'il vient de poser n'est plus sûr à répéter vite.
+   */
+  const handleDoubleTap = useCallback(() => {
+    if (alreadyHearted) return;
+    heartPop.value = 0;
+    heartPop.value = withTiming(1, { duration: 650, easing: Easing.out(Easing.cubic) });
+    onReact(messageId, '❤️');
+  }, [alreadyHearted, heartPop, messageId, onReact]);
+
+  const singleTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDistance(10)
+        .onBegin(() => {
+          pressed.value = withTiming(1, { duration: 80 });
+        })
+        .onFinalize(() => {
+          pressed.value = withTiming(0, { duration: 120 });
+        })
+        .onEnd((_e, success) => {
+          if (success) runOnJS(onSingleTap)();
+        }),
+    [pressed, onSingleTap],
+  );
+
+  const doubleTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .maxDistance(10)
+        .onEnd((_e, success) => {
+          if (success) runOnJS(handleDoubleTap)();
+        }),
+    [handleDoubleTap],
+  );
+
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(280)
+        .maxDistance(10)
+        .onStart((e) => {
+          runOnJS(onLongPress)(messageId, e.absoluteX, e.absoluteY);
+        }),
+    [messageId, onLongPress],
+  );
+
+  /**
+   * Plus de `Gesture.Race` avec un glissé : celui qui révélait l'heure du
+   * message n'a plus d'objet, la gouttière l'affiche en permanence.
+   */
+  const gesture = useMemo(
+    () => Gesture.Exclusive(longPressGesture, Gesture.Exclusive(doubleTapGesture, singleTapGesture)),
+    [longPressGesture, doubleTapGesture, singleTapGesture],
+  );
+
+  const pressedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pressed.value, [0, 1], [1, 0.92]),
+  }));
+
+  const heartPopStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(heartPop.value, [0, 0.12, 0.7, 1], [0, 1, 0.9, 0], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(heartPop.value, [0, 0.35, 1], [0.4, 1.18, 0.95], Extrapolation.CLAMP) },
+    ],
+  }));
+
+  return { gesture, pressedStyle, heartPopStyle };
+}
+
+/**
+ * Message vocal — l'objet principal de la conversation, pas une pièce jointe.
+ *
+ * L'onde pleine largeur, puis une rangée de commandes en dessous : bouton de
+ * lecture, durée en gros chiffres, pastille de vitesse, et à droite le mot
+ * d'action, souligné d'un filet d'accent.
+ *
+ * **Le même dessin des deux côtés.** Mes vocaux sont rendus exactement comme
+ * ceux que je reçois : même bouton d'encre, mêmes barres, même pastille de
+ * vitesse. Ce qui dit qui parle est la POSITION (gouttière à gauche ou à
+ * droite), rien d'autre — l'accusé de lecture, lui, se pose sous le dernier
+ * message envoyé, pas dans le lecteur.
+ *
+ * ── Pourquoi le geste vient du parent ─────────────────────────────────────
+ * `waveGesture` est la composition de gestes du message (appui = lire, double
+ * appui = cœur, appui long = réactions), construite par `MessageEntry` et posée
+ * ICI autour de la seule onde. Deux raisons : l'onde est la grande cible, et la
+ * rangée de commandes contient de VRAIS boutons — un `TouchableOpacity` sous un
+ * `GestureDetector` du parent verrait les deux se déclencher sur le même appui,
+ * et changer la vitesse mettrait la lecture en pause du même coup.
+ */
+function VoiceBlock({
   uri,
   durationMs,
   waveform,
+  waveGesture,
+  waveStyle,
+  registerToggle,
 }: {
   uri: string;
   durationMs?: number;
   waveform?: number[];
+  waveGesture: ComposedGesture;
+  waveStyle: StyleProp<ViewStyle>;
+  /** Rend la lecture pilotable par l'appui simple du parent. */
+  registerToggle: (fn: (() => void) | null) => void;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [totalMs, setTotalMs] = useState(durationMs || 0);
+  const [rateIndex, setRateIndex] = useState(0);
   const soundRef = useRef<Audio.Sound | null>(null);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -442,7 +873,7 @@ function VoiceLine({
    * Sortie de secours quand le chargement/la lecture ne progresse jamais
    * (réseau faible, flux coupé en route) : sans ça, `isLoaded` reste `false`
    * indéfiniment côté expo-av, sans erreur ni statut exploitable — le bouton
-   * restait bloqué sur "lecture" avec 0 %/0 s, sans aucun moyen de réessayer.
+   * restait bloqué sur « lecture » avec 0 %/0 s, sans moyen de réessayer.
    */
   const resetToIdle = useCallback(async (showError?: boolean) => {
     clearLoadTimeout();
@@ -471,7 +902,10 @@ function VoiceLine({
   }, [clearLoadTimeout]);
 
   const bars = useMemo(
-    () => (waveform && waveform.length > 0 ? downsampleWaveform(waveform, WAVEFORM_BAR_COUNT) : pseudoWaveform(uri, WAVEFORM_BAR_COUNT)),
+    () =>
+      waveform && waveform.length > 0
+        ? resampleWaveform(waveform, WAVEFORM_BAR_COUNT)
+        : pseudoWaveform(uri, WAVEFORM_BAR_COUNT),
     [waveform, uri],
   );
 
@@ -498,7 +932,7 @@ function VoiceLine({
       if (!soundRef.current) {
         setIsLoading(true);
         setIsPlaying(true);
-        // 12s : largement assez pour un début de flux même en 4G faible.
+        // 12 s : largement assez pour un début de flux même en 4G faible.
         // Au-delà, on considère le chargement mort plutôt que de laisser
         // l'utilisateur devant un lecteur figé sans recours.
         loadTimeoutRef.current = setTimeout(() => {
@@ -506,10 +940,17 @@ function VoiceLine({
         }, 12000);
         const { sound } = await Audio.Sound.createAsync(
           { uri },
-          { shouldPlay: true, volume: 1.0 },
+          { shouldPlay: true, volume: 1.0, progressUpdateIntervalMillis: 90 },
           onStatusUpdate,
         );
         soundRef.current = sound;
+        // La vitesse est posée APRÈS le chargement, jamais dans le statut
+        // initial : passée à `createAsync`, un décodeur qui ne sait pas la
+        // tenir fait échouer la création ENTIÈRE, et le vocal devient
+        // illisible au lieu de se contenter de jouer à 1×.
+        if (PLAYBACK_RATES[rateIndex] !== 1) {
+          await sound.setRateAsync(PLAYBACK_RATES[rateIndex], true).catch(() => {});
+        }
         return;
       }
       const status = await soundRef.current.getStatusAsync();
@@ -524,60 +965,186 @@ function VoiceLine({
     } catch {
       resetToIdle(true);
     }
-  }, [uri, onStatusUpdate, isLoading, resetToIdle]);
+  }, [uri, onStatusUpdate, isLoading, resetToIdle, rateIndex]);
+
+  /**
+   * L'appui simple du parent (sur l'onde) doit lire, mais `toggle` vit ici avec
+   * le son. Il est donc prêté au parent le temps du montage, plutôt que de
+   * remonter tout l'état audio d'un cran.
+   */
+  useEffect(() => {
+    registerToggle(toggle);
+    return () => registerToggle(null);
+  }, [registerToggle, toggle]);
+
+  const cycleRate = useCallback(() => {
+    const next = (rateIndex + 1) % PLAYBACK_RATES.length;
+    setRateIndex(next);
+    // Applique la vitesse au son DÉJÀ chargé ; s'il ne l'est pas encore, la
+    // valeur est reprise à la création (voir `createAsync` plus haut).
+    soundRef.current?.setRateAsync(PLAYBACK_RATES[next], true).catch(() => {});
+  }, [rateIndex]);
 
   const progress = totalMs > 0 ? Math.min(1, positionMs / totalMs) : 0;
   const activeBarIndex = Math.round(progress * (WAVEFORM_BAR_COUNT - 1));
 
   return (
-    <View style={[styles.voiceBubble, { borderRadius: MSG_R }]}>
-      <View style={styles.voicePlayRing}>
+    <View style={styles.voiceBlock}>
+      <GestureDetector gesture={waveGesture}>
+        <Reanimated.View
+          style={[styles.voiceWave, waveStyle]}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={`Message vocal, ${formatDuration(totalMs)}`}
+          accessibilityHint="Appui pour écouter, appui double pour aimer, appui long pour réagir"
+        >
+          {bars.map((amplitude, i) => (
+            <View
+              key={i}
+              style={[
+                styles.bar,
+                // Plancher d'amplitude : des barres toutes plates ne se lisent
+                // plus comme un son, elles se lisent comme un pointillé.
+                { height: BAR_MIN + amplitude * BAR_SPAN },
+                { backgroundColor: i <= activeBarIndex ? M.accent : M.bar },
+              ]}
+            />
+          ))}
+        </Reanimated.View>
+      </GestureDetector>
+
+      <View style={styles.voiceControls}>
         <TouchableOpacity
           onPress={toggle}
           hitSlop={hitSlop}
-          style={styles.voicePlayBtn}
+          style={styles.voicePlay}
           accessibilityRole="button"
           accessibilityLabel={isPlaying ? 'Mettre en pause le message vocal' : 'Écouter le message vocal'}
         >
           {isLoading ? (
-            <ActivityIndicator size="small" color={paper.accent} />
+            <ActivityIndicator size="small" color={M.onInk} />
           ) : (
             <Ionicons
               name={isPlaying ? 'pause' : 'play'}
-              size={14}
-              color={paper.accent}
-              style={!isPlaying ? { marginLeft: 1 } : undefined}
+              size={ps(17)}
+              color={M.onInk}
+              style={!isPlaying ? { marginLeft: ps(2) } : undefined}
             />
           )}
         </TouchableOpacity>
+
+        {/* La position pendant la lecture, la durée sinon — un seul chiffre, à
+            une seule taille, comme partout ailleurs dans l'écran. */}
+        <Text style={styles.voiceDuration}>
+          {formatDuration(positionMs > 0 ? positionMs : totalMs)}
+        </Text>
+
+        <TouchableOpacity
+          onPress={cycleRate}
+          hitSlop={hitSlop}
+          style={styles.voiceRate}
+          accessibilityRole="button"
+          accessibilityLabel={`Vitesse de lecture ${RATE_LABELS[rateIndex]}`}
+        >
+          <Text style={styles.voiceRateText}>{RATE_LABELS[rateIndex]}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={toggle} hitSlop={hitSlop} style={styles.voiceAction}>
+          <Text style={styles.voiceActionText}>{isPlaying ? 'Pause' : 'Lire'}</Text>
+        </TouchableOpacity>
       </View>
-      <View style={styles.voiceWaveform}>
-        {bars.map((amplitude, i) => (
-          <View
-            key={i}
-            style={[
-              styles.voiceBar,
-              // Amplitude plancher : des barres toutes plates ne se lisent plus
-              // comme un son, elles se lisent comme une ligne pointillee.
-              { height: ps(6) + amplitude * ps(16) },
-              i <= activeBarIndex ? styles.voiceBarPlayed : styles.voiceBarIdle,
-            ]}
-          />
-        ))}
-      </View>
-      <Text style={styles.voiceDuration}>
-        {formatDuration(positionMs > 0 ? positionMs : totalMs)}
-      </Text>
     </View>
   );
 }
 
 /**
+ * Une photo : seule elle prend la largeur de la colonne sur 190 pt, en paire
+ * elle prend un carreau de 112. Elle porte ses PROPRES gestes et ses propres
+ * réactions — dans une paire, aimer celle de gauche ne doit pas poser un cœur
+ * sur celle de droite.
+ */
+const PhotoTile = memo(function PhotoTile({
+  message,
+  myId,
+  half,
+  onOpenImage,
+  onLongPress,
+  onReact,
+  onShowReactors,
+}: {
+  message: MessageItem;
+  myId: string | null;
+  half: boolean;
+  onOpenImage: (url: string) => void;
+  onLongPress: (messageId: string, x: number, y: number) => void;
+  onReact: (messageId: string, emoji: string) => void;
+  onShowReactors: (messageId: string, emoji: string) => void;
+}) {
+  const messageId = String(message.id);
+  const url = message.metadata?.attachment_url || '';
+  const caption = half ? '' : photoCaption(message);
+  const alreadyHearted = !!message.reactions?.some(
+    (r) => r.emoji === '❤️' && String(r.user_id) === String(myId),
+  );
+
+  const handleSingleTap = useCallback(() => {
+    if (url) onOpenImage(url);
+  }, [url, onOpenImage]);
+
+  const { gesture, pressedStyle, heartPopStyle } = useMessageGestures({
+    messageId,
+    alreadyHearted,
+    onSingleTap: handleSingleTap,
+    onLongPress,
+    onReact,
+  });
+
+  return (
+    <View style={half ? styles.photoHalf : styles.photoFull}>
+      <View style={styles.photoWrap}>
+        <GestureDetector gesture={gesture}>
+          <Reanimated.View
+            style={pressedStyle}
+            accessible
+            accessibilityRole="imagebutton"
+            accessibilityLabel="Photo"
+            accessibilityHint="Appui pour agrandir, appui double pour aimer, appui long pour réagir"
+          >
+            <Image
+              source={{ uri: url }}
+              style={half ? styles.photoImageHalf : styles.photoImageFull}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={0}
+              recyclingKey={url}
+            />
+          </Reanimated.View>
+        </GestureDetector>
+        <Reanimated.View pointerEvents="none" style={[styles.heartPopOverlay, heartPopStyle]}>
+          <Ionicons name="heart" size={ps(34)} color={M.accent} />
+        </Reanimated.View>
+      </View>
+
+      {/* La légende sous la photo, comme « regarde la tête de Pamplemousse ce
+          matin » dans le dessin — jamais le contenu de remplacement que pose
+          l'envoi optimiste. */}
+      {!!caption && <Text style={styles.photoCaption}>{caption}</Text>}
+
+      <ReactionRow
+        message={message}
+        myId={myId}
+        onReact={onReact}
+        onShowReactors={onShowReactors}
+      />
+    </View>
+  );
+});
+
+/**
  * Renvoi vers la story à laquelle ce message répond.
  *
- * Plus de carte : une vignette et une étiquette en capitales espacées, la
- * voix des métas du test. Le libellé dit toujours de quel côté vient la
- * réponse, puisque ce n'est plus un fond de couleur qui le dit.
+ * Pas de carte : une vignette et une étiquette en capitales espacées, la voix
+ * des métas du dessin. Le libellé dit de quel côté vient la réponse.
  */
 function StoryReplyReference({
   message,
@@ -595,19 +1162,19 @@ function StoryReplyReference({
   return (
     <View style={styles.storyReply}>
       <Text style={styles.storyReplyLabel}>
-        {fromMe ? 'RÉPONSE À SA STORY' : 'A RÉPONDU À VOTRE STORY'}
+        {fromMe ? 'Réponse à sa story' : 'A répondu à votre story'}
       </Text>
       <View style={styles.storyReplyPreview}>
         {preview ? (
           <Image source={{ uri: preview }} style={styles.storyReplyMedia} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={preview} />
         ) : (
           <View style={[styles.storyReplyMedia, styles.storyReplyPlaceholder]}>
-            <Ionicons name={isVideo ? 'play' : 'image-outline'} size={26} color={sheet.inkMeta} />
+            <Ionicons name={isVideo ? 'play' : 'image-outline'} size={ps(24)} color={M.meta} />
           </View>
         )}
         {isVideo && preview && (
           <View style={styles.storyReplyPlay}>
-            <Ionicons name="play" size={16} color="#fff" />
+            <Ionicons name="play" size={ps(15)} color="#fff" />
           </View>
         )}
         {!!metadata.story_caption && (
@@ -629,13 +1196,12 @@ interface Reactor {
 }
 
 /**
- * Qui a réagi, façon Instagram/Snapchat — ouverte par un appui long sur une
- * pastille de réaction.
+ * Qui a réagi — ouverte par un appui long sur une pastille de réaction.
  *
- * Même mécanique de feuille que `EmojiPickerSheet` (fondu du fond porté par
- * le Modal, glissé de la feuille porté à part par Reanimated) : le glissé
- * natif du Modal anime tout son contenu comme un bloc, fond compris, et se
- * voyait remonter depuis le bas comme une ombre.
+ * Même mécanique de feuille que `EmojiPickerSheet` (fondu du fond porté par le
+ * Modal, glissé de la feuille porté à part par Reanimated) : le glissé natif du
+ * Modal anime tout son contenu comme un bloc, fond compris, et se voyait
+ * remonter depuis le bas comme une ombre.
  */
 function ReactorsSheet({
   visible,
@@ -691,7 +1257,7 @@ function ReactorsSheet({
                         recyclingKey={r.avatar}
                       />
                     ) : (
-                      <View style={[styles.reactorAvatar, styles.rowAvatarFallback]}>
+                      <View style={[styles.reactorAvatar, styles.avatarFallback]}>
                         <Text style={styles.reactorAvatarText}>{r.name.slice(0, 1).toUpperCase()}</Text>
                       </View>
                     )}
@@ -714,271 +1280,161 @@ function ReactorsSheet({
   );
 }
 
-/** Séparateur de jour : « Aujourd'hui 14:32 », « Hier 09:10 », « 12 mars 08:00 ». */
-function formatSeparator(value?: string) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfMessageDay = new Date(date);
-  startOfMessageDay.setHours(0, 0, 0, 0);
-  const dayDiff = Math.round(
-    (startOfToday.getTime() - startOfMessageDay.getTime()) / (24 * 60 * 60 * 1000),
-  );
-  if (dayDiff <= 0) return `AUJOURD'HUI ${formatTime(value)}`;
-  if (dayDiff === 1) return 'HIER';
-  if (dayDiff < 7) return date.toLocaleDateString('fr-FR', { weekday: 'long' }).toUpperCase();
-  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }).toUpperCase();
-}
+// ─── Une ligne du relevé ────────────────────────────────────────────────────
 
 /**
- * ─── Une bulle, et rien qu'une bulle ────────────────────────────────────────
+ * Le message, plus tout ce qui dépend de ses VOISINS — calculé hors du rendu.
  *
- * Le corps du message était du JSX inline dans `renderItem`, dont les
- * dépendances contenaient `messages` : il lisait ses voisins pour décider du
- * groupage Instagram. La mémoïsation était donc annulée par le seul événement
- * qui compte — l'arrivée d'un message — et rien n'arrêtait la propagation, le
- * `CellRenderer` de la FlatList (une `PureComponent`) re-rendant TOUTES les
- * bulles montées faute de composant mémoïsé en dessous.
- *
- * Deux gestes le corrigent ensemble :
- *  1. le groupage devient une donnée précalculée (`DecoratedMessage`), donc
- *     `renderItem` n'a plus besoin de `messages` ;
- *  2. la bulle se défend elle-même par `React.memo`, si bien que même quand
- *     `renderItem` change encore d'identité (appui sur une bulle, accusé de
- *     lecture reçu), seules les bulles réellement touchées se re-rendent.
- *
- * Le second geste répare du même coup l'accusé de lecture « Vu », qui
- * n'apparaissait jamais à temps : la rangée lisait six valeurs du composant
- * dont cinq manquaient aux dépendances de `renderItem`, et restait donc figée
- * dans une closure périmée jusqu'au message suivant. Elle arrive désormais par
- * des props ordinaires (`showSeen`, `seenLabel`, `seenAvatars`), que le
- * comparateur de `memo` voit changer.
+ * Le groupage vivait dans `renderItem`, qui devait donc lire `messages[i ± 1]`
+ * et changeait d'identité à chaque message reçu : la mémoïsation était annulée
+ * par le seul événement qui compte, et le `CellRenderer` de la FlatList
+ * re-rendait TOUTES les lignes montées. Une passe `O(n)` sans rendu la remplace.
  */
-
-/** Le message, plus tout ce qui dépend de ses VOISINS — calculé hors du rendu. */
 interface DecoratedMessage {
   msg: MessageItem;
+  /**
+   * Seconde photo de la paire, quand deux images se suivent dans la salve. Elle
+   * n'a PAS d'entrée à elle dans la liste : la paire est une seule ligne du
+   * relevé, sous une seule heure — c'est ce que montre le dessin, et c'est aussi
+   * ce qui s'est passé (les deux photos partent d'une seule sélection).
+   */
+  pairedMsg?: MessageItem;
   sender: SenderLike;
   fromMe: boolean;
   isFirstOfGroup: boolean;
-  isLastOfGroup: boolean;
   showSeparator: boolean;
 }
 
-/** Un avatar de la rangée « Vu », déjà résolu par l'écran. */
-interface SeenAvatar {
-  key: string;
-  uri: string | null;
-  initial: string;
-  /** En groupe les avatars se chevauchent ; en tête-à-tête il n'y en a qu'un. */
-  overlap: boolean;
-}
-
 /**
- * Constantes de module, et non des littéraux recréés à chaque rendu : toutes
- * les bulles sauf la dernière sortante les reçoivent, et c'est une prop
- * identique d'un rendu à l'autre qui permet à `memo` de les épargner quand un
- * accusé de lecture arrive.
+ * Constante de module, et non un littéral recréé à chaque rendu : c'est une
+ * prop identique d'un rendu à l'autre qui permet à `memo` d'épargner les
+ * messages dont l'expéditeur n'est pas encore connu.
  */
-const NO_SEEN_AVATARS: SeenAvatar[] = [];
 const NO_SENDER: SenderLike = {};
-const SEEN_AVATAR_OVERLAP = { marginLeft: -5 } as const;
 
 interface MessageEntryProps {
   entry: DecoratedMessage;
   isGroup: boolean;
   myId: string | null;
-  expanded: boolean;
-  /** Faux sur toutes les bulles sauf la dernière sortante, une fois vue. */
-  showSeen: boolean;
+  /**
+   * Accusé de lecture, posé DANS le bloc du dernier message sortant — plus une
+   * rangée d'avatars sous la conversation. Vide partout ailleurs.
+   */
   seenLabel: string;
-  seenAvatars: SeenAvatar[];
   /** Une ref, donc une identité stable : lue au rendu, jamais écrite ici. */
   freshIdsRef: React.MutableRefObject<Set<string>>;
   onOpenImage: (url: string) => void;
-  onToggleExpanded: (messageId: string) => void;
   onLongPress: (messageId: string, x: number, y: number) => void;
   onReact: (messageId: string, emoji: string) => void;
   onShowReactors: (messageId: string, emoji: string) => void;
 }
 
 /**
- * Rayon unique, pas de coin resserré par regroupement.
+ * Une ligne : l'heure dans la gouttière, le message en face.
  *
- * La version précédente resserrait le coin intérieur d'une salve (6 px contre
- * 18) pour dire « ces messages vont ensemble ». C'est exactement le tell d'app
- * de chat générique, et désormais redondant : le rail d'accent (voir
- * `S.accentRail`) et le rythme vertical (`ps(2)` dans une salve, `ps(12)`
- * entre deux) disent déjà la même chose. Empiler les deux aurait été le
- * défaut « plusieurs indices pour une seule idée ».
+ * Les deux côtés se dessinent PAREIL — même encre, même papier, même lecteur
+ * vocal. Ce qui dit qui parle est la position : mes messages s'alignent à
+ * droite et leur heure passe dans la gouttière de droite, ceux que je reçois
+ * restent à gauche. Un seul signal, et il n'est jamais répété.
  */
-const MSG_R = ps(14);
-/** Une bulle ne dépasse jamais cette part de la largeur : la ligne reste lisible. */
-const BUBBLE_MAX = '78%';
-/** Largeur du rail d'accent, et son décalage hors de la bulle. */
-const RAIL_W = ps(2.5);
-const RAIL_OFFSET = ps(7);
-
 const MessageEntry = memo(function MessageEntry({
   entry,
   isGroup,
   myId,
-  expanded,
-  showSeen,
   seenLabel,
-  seenAvatars,
   freshIdsRef,
   onOpenImage,
-  onToggleExpanded,
   onLongPress,
   onReact,
   onShowReactors,
 }: MessageEntryProps) {
-  const { msg: item, sender, fromMe, isFirstOfGroup, isLastOfGroup, showSeparator } = entry;
+  const { msg: item, pairedMsg, sender, fromMe, isFirstOfGroup, showSeparator } = entry;
   const messageId = String(item.id);
 
   const senderAvatar = getAvatarUri(sender?.avatar || null);
-  const attachmentType = item.metadata?.attachment_type;
   const attachmentUrl = item.metadata?.attachment_url;
-  const groupedReactions = groupReactions(item.reactions);
+  const isPhoto = isPhotoMessage(item);
+  const isVoice = item.metadata?.attachment_type === 'audio' && !!attachmentUrl;
+  const showSenderRow = isGroup && !fromMe && isFirstOfGroup;
 
-  // Lecture pure (aucune mutation ici) : `freshIdsRef` est alimenté à
-  // l'arrivée du message, pas au rendu. Fondu-glissé court et SANS ressort :
-  // le message se pose, il ne rebondit pas.
+  // Lecture pure (aucune mutation ici) : `freshIdsRef` est alimenté à l'arrivée
+  // du message, pas au rendu. Fondu-glissé court et SANS ressort : le message se
+  // pose, il ne rebondit pas.
   const isFreshMessage = freshIdsRef.current.has(messageId);
-
-  /**
-   * L'avatar n'apparaît QUE dans un groupe, et seulement en tête de la salve —
-   * avec le nom, pas séparé de lui. La version précédente le posait au PIED
-   * (convention de messagerie générique), pendant que le nom ouvrait la salve
-   * plus haut : les deux repères d'identité d'un même bloc de messages
-   * pointaient donc à ses deux extrémités opposées. Fil B2 annonce toujours
-   * l'auteur au début d'une rangée (`TweetRowGutter.authorRow`) ; ici la salve
-   * en tient lieu.
-   *
-   * En tête-à-tête, l'en-tête de l'écran dit déjà à qui on parle : le répéter
-   * à chaque message vole 44 px de largeur à toutes les lignes pour une
-   * information qu'on a sous les yeux.
-   */
-  const showAvatar = isGroup && !fromMe;
-
-  // ── Gestes de la bulle ────────────────────────────────────────────────
-  // Remplace le `TouchableOpacity` d'origine : mélanger les touchables du
-  // cœur RN avec Gesture Handler sur le même arbre casse le double-tap (voir
-  // `references/gestures/SKILL.md`). Tout passe donc par une seule
-  // composition Gesture Handler.
-  const pressed = useSharedValue(0);
-  const dragPeek = useSharedValue(0);
-  const heartPop = useSharedValue(0);
 
   const alreadyHearted = !!item.reactions?.some(
     (r) => r.emoji === '❤️' && String(r.user_id) === String(myId),
   );
 
+  /**
+   * Prêté par `VoiceBlock` au montage : l'appui sur l'onde met en lecture, et
+   * l'état du son reste chez celui qui le possède.
+   */
+  const voiceToggleRef = useRef<(() => void) | null>(null);
+  const registerVoiceToggle = useCallback((fn: (() => void) | null) => {
+    voiceToggleRef.current = fn;
+  }, []);
+
   const handleSingleTap = useCallback(() => {
-    if (attachmentType === 'image' && attachmentUrl) onOpenImage(attachmentUrl);
-    else onToggleExpanded(messageId);
-  }, [attachmentType, attachmentUrl, messageId, onOpenImage, onToggleExpanded]);
+    voiceToggleRef.current?.();
+  }, []);
 
-  /**
-   * Double-tap façon Instagram : pose un cœur, ne l'enlève jamais. Un second
-   * double-tap sur un message déjà aimé ne rejoue donc rien — même règle que
-   * le double-tap du fil (`TweetRowGutter`), pour la même raison : un geste
-   * qui peut retirer ce qu'il vient de poser n'est plus sûr à répéter vite.
-   */
-  const handleDoubleTap = useCallback(() => {
-    if (alreadyHearted) return;
-    heartPop.value = 0;
-    heartPop.value = withTiming(1, { duration: 650, easing: Easing.out(Easing.cubic) });
-    onReact(messageId, '❤️');
-  }, [alreadyHearted, heartPop, messageId, onReact]);
+  const { gesture, pressedStyle, heartPopStyle } = useMessageGestures({
+    messageId,
+    alreadyHearted,
+    onSingleTap: handleSingleTap,
+    onLongPress,
+    onReact,
+  });
 
-  const singleTapGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .maxDistance(10)
-        .onBegin(() => {
-          pressed.value = withTiming(1, { duration: 80 });
-        })
-        .onFinalize(() => {
-          pressed.value = withTiming(0, { duration: 120 });
-        })
-        .onEnd((_e, success) => {
-          if (success) runOnJS(handleSingleTap)();
-        }),
-    [pressed, handleSingleTap],
+  const timeTop = isPhoto || isVoice ? TIME_TOP_MEDIA : TIME_TOP_TEXT;
+
+  const photos = pairedMsg ? (
+    <View style={styles.photoPair}>
+      <PhotoTile
+        message={item}
+        myId={myId}
+        half
+        onOpenImage={onOpenImage}
+        onLongPress={onLongPress}
+        onReact={onReact}
+        onShowReactors={onShowReactors}
+      />
+      <PhotoTile
+        message={pairedMsg}
+        myId={myId}
+        half
+        onOpenImage={onOpenImage}
+        onLongPress={onLongPress}
+        onReact={onReact}
+        onShowReactors={onShowReactors}
+      />
+    </View>
+  ) : (
+    <PhotoTile
+      message={item}
+      myId={myId}
+      half={false}
+      onOpenImage={onOpenImage}
+      onLongPress={onLongPress}
+      onReact={onReact}
+      onShowReactors={onShowReactors}
+    />
   );
 
-  const doubleTapGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .numberOfTaps(2)
-        .maxDistance(10)
-        .onEnd((_e, success) => {
-          if (success) runOnJS(handleDoubleTap)();
-        }),
-    [handleDoubleTap],
+  const voice = (
+    <VoiceBlock
+      uri={attachmentUrl || ''}
+      durationMs={item.metadata?.duration_ms}
+      waveform={item.metadata?.waveform}
+      waveGesture={gesture}
+      waveStyle={pressedStyle}
+      registerToggle={registerVoiceToggle}
+    />
   );
-
-  const longPressGesture = useMemo(
-    () =>
-      Gesture.LongPress()
-        .minDuration(280)
-        .maxDistance(10)
-        .onStart((e) => {
-          runOnJS(onLongPress)(messageId, e.absoluteX, e.absoluteY);
-        }),
-    [messageId, onLongPress],
-  );
-
-  /**
-   * Glisser la bulle fait apparaître son heure exacte, façon Instagram — mais
-   * un repère fixe au coin plutôt qu'une colonne qui suit le doigt : une
-   * bulle courte et une bulle qui remplit presque les 78% n'ouvrent pas le
-   * même espace à droite, un ancrage au coin marche pour les deux sans calcul
-   * de largeur. Purement transitoire : relâcher fait toujours disparaître
-   * l'heure, rien n'est mémorisé (contrairement à `expanded`, qui reste posé
-   * par un appui simple).
-   */
-  const revealGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-14, 14])
-        .failOffsetY([-8, 8])
-        .onUpdate((e) => {
-          dragPeek.value = e.translationX;
-        })
-        .onEnd(() => {
-          dragPeek.value = withTiming(0, { duration: 160 });
-        }),
-    [dragPeek],
-  );
-
-  const bubbleGesture = useMemo(
-    () => Gesture.Race(revealGesture, Gesture.Exclusive(longPressGesture, Gesture.Exclusive(doubleTapGesture, singleTapGesture))),
-    [revealGesture, longPressGesture, doubleTapGesture, singleTapGesture],
-  );
-
-  const pressedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pressed.value, [0, 1], [1, 0.92]),
-  }));
-
-  const revealTimeStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.abs(dragPeek.value), [10, 45], [0, 1], Extrapolation.CLAMP),
-  }));
-
-  const heartPopStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(heartPop.value, [0, 0.12, 0.7, 1], [0, 1, 0.9, 0], Extrapolation.CLAMP),
-    transform: [
-      { scale: interpolate(heartPop.value, [0, 0.35, 1], [0.4, 1.18, 0.95], Extrapolation.CLAMP) },
-    ],
-  }));
 
   return (
     <Reanimated.View
-      style={{ marginBottom: isLastOfGroup ? ps(12) : ps(2) }}
       entering={
         isFreshMessage ? FadeInDown.duration(200).easing(Easing.out(Easing.cubic)) : undefined
       }
@@ -989,12 +1445,31 @@ const MessageEntry = memo(function MessageEntry({
         </Text>
       )}
 
-      {/* Le nom n'est utile qu'en groupe : ailleurs il redit l'en-tête. */}
-      {isGroup && !fromMe && isFirstOfGroup && (
-        <View style={styles.groupSenderRow}>
+      {/* En groupe, la salve s'ouvre par son auteur — avatar ET nom du même
+          côté, dans la colonne de contenu. L'avatar tenait avant dans la
+          gouttière, qui porte désormais l'heure de chaque message. En
+          tête-à-tête, l'en-tête de l'écran dit déjà à qui on parle. */}
+      {showSenderRow && (
+        <View style={styles.senderRow}>
+          {senderAvatar ? (
+            <Image
+              source={{ uri: senderAvatar }}
+              style={styles.senderAvatar}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={0}
+              recyclingKey={senderAvatar}
+            />
+          ) : (
+            <View style={[styles.senderAvatar, styles.avatarFallback]}>
+              <Text style={styles.avatarFallbackText}>
+                {String(sender?.username || 'U').slice(0, 1).toUpperCase()}
+              </Text>
+            </View>
+          )}
           <Text
             style={[
-              styles.groupSenderName,
+              styles.senderName,
               nameIsLit(sender?.profile_customization) && {
                 color: certifiedNameColors(
                   sender?.verification_style as any,
@@ -1009,7 +1484,7 @@ const MessageEntry = memo(function MessageEntry({
           {!!sender?.verified && (
             <VerifiedBadge
               verificationStyle={(sender?.verification_style as any) || 'default'}
-              size={10}
+              size={11}
               tint={
                 certifiedNameColors(
                   sender?.verification_style as any,
@@ -1021,162 +1496,179 @@ const MessageEntry = memo(function MessageEntry({
         </View>
       )}
 
-      <View style={[styles.msgRow, fromMe ? styles.msgRowRight : styles.msgRowLeft]}>
-        {showAvatar && (
-          <View style={styles.avatarSlot}>
-            {isFirstOfGroup &&
-              (senderAvatar ? (
-                <Image source={{ uri: senderAvatar }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={senderAvatar} />
-              ) : (
-                <View style={[styles.rowAvatar, styles.rowAvatarFallback]}>
-                  <Text style={styles.rowAvatarText}>
-                    {String(sender?.username || 'U').slice(0, 1).toUpperCase()}
-                  </Text>
-                </View>
-              ))}
-          </View>
-        )}
+      {/* La grille se MIROITE pour mes messages : le bloc part à droite et
+          l'heure passe dans la gouttière de droite, à côté de lui. Garder
+          l'heure à gauche l'aurait laissée seule au bout d'une ligne vide, à
+          quarante points du message qu'elle date. */}
+      <View
+        style={[
+          styles.row,
+          fromMe && styles.rowMine,
+          showSenderRow && styles.rowAfterSender,
+        ]}
+      >
+        <Text
+          style={[styles.rowTime, fromMe && styles.rowTimeMine, { paddingTop: timeTop }]}
+          numberOfLines={1}
+        >
+          {formatTime(item.created_at || item.createdAt)}
+        </Text>
 
-        <View style={[styles.messageColumn, fromMe && styles.messageColumnMine]}>
+        <View style={[styles.rowBody, fromMe && styles.rowBodyMine]}>
           <StoryReplyReference message={item} fromMe={fromMe} />
-          <View style={styles.bubbleWrap}>
-            <GestureDetector gesture={bubbleGesture}>
-              <Reanimated.View
-                style={[styles.bubbleTouch, pressedStyle]}
-                accessible
-                accessibilityRole="button"
-                accessibilityLabel={
-                  attachmentType === 'image'
-                    ? 'Image'
-                    : attachmentType === 'audio'
-                      ? 'Message vocal'
-                      : item.content
-                }
-                accessibilityHint="Appui double pour aimer, appui long pour réagir"
-              >
-                {attachmentType === 'image' && attachmentUrl ? (
-                  <Image source={{ uri: attachmentUrl }} style={[styles.attachmentImage, { borderRadius: MSG_R }]} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={attachmentUrl} />
-                ) : attachmentType === 'audio' && attachmentUrl ? (
-                  <VoiceLine
-                    uri={attachmentUrl}
-                    durationMs={item.metadata?.duration_ms}
-                    waveform={item.metadata?.waveform}
-                  />
-                ) : (
-                  <View style={styles.bubble}>
-                    <Text style={styles.bubbleText}>{item.content}</Text>
-                  </View>
-                )}
+
+          {isPhoto ? (
+            photos
+          ) : isVoice ? (
+            <View style={[styles.holder, fromMe && styles.holderMine]}>
+              {voice}
+              <Reanimated.View pointerEvents="none" style={[styles.heartPopOverlay, heartPopStyle]}>
+                <Ionicons name="heart" size={ps(38)} color={M.accent} />
               </Reanimated.View>
-            </GestureDetector>
-
-            {/* Rail d'accent : le seul repère qui distingue encore « moi » de
-                « l'autre » côté matière — la position gauche/droite fait le
-                reste (voir la note sur `msgRow` plus bas). Il ne se dessine
-                que pour mes messages, jamais un aplat, jamais dupliqué en
-                face : un signal rare reste un signal. `bottom` s'étend d'un
-                cran quand la salve continue, pour rejoindre le message
-                suivant sans lui laisser un pixel de trait interrompu. */}
-            {fromMe && (
-              <View
-                pointerEvents="none"
-                style={[styles.accentRail, { bottom: isLastOfGroup ? 0 : -ps(2) }]}
+              <ReactionRow
+                message={item}
+                myId={myId}
+                onReact={onReact}
+                onShowReactors={onShowReactors}
               />
-            )}
-
-            {/* Heure révélée en glissant la bulle — geste transitoire, voir
-                `revealGesture`. Ancrée au coin extérieur, pas dans la marge
-                variable qu'ouvrirait une bulle plus courte que la largeur
-                max. */}
-            <Reanimated.View
-              pointerEvents="none"
-              style={[styles.revealTimePill, fromMe ? styles.revealTimePillMine : styles.revealTimePillOther, revealTimeStyle]}
-            >
-              <Text style={styles.revealTimeText}>{formatTime(item.created_at || item.createdAt)}</Text>
-            </Reanimated.View>
-
-            {/* Cœur du double-tap. En accent, comme celui du fil — mais posé
-                sur la bulle, pas plein écran : ici l'échelle est celle d'un
-                message, pas celle d'une ligne entière. */}
-            <Reanimated.View pointerEvents="none" style={[styles.heartPopOverlay, heartPopStyle]}>
-              <Ionicons name="heart" size={ps(34)} color={paper.accent} />
-            </Reanimated.View>
-          </View>
-
-          {groupedReactions.length > 0 && (
-            <View
-              style={[styles.reactionPillRow, fromMe ? styles.reactionPillRowMine : styles.reactionPillRowOther]}
-            >
-              {groupedReactions.map((g) => (
-                <ReactionPill
-                  key={g.emoji}
-                  emoji={g.emoji}
-                  count={g.count}
-                  mine={!!item.reactions?.some(
-                    (r) => r.emoji === g.emoji && String(r.user_id) === String(myId),
-                  )}
-                  onPress={() => onReact(messageId, g.emoji)}
-                  onLongPress={() => onShowReactors(messageId, g.emoji)}
-                />
-              ))}
+            </View>
+          ) : (
+            <View style={[styles.holder, fromMe && styles.holderMine]}>
+              <GestureDetector gesture={gesture}>
+                <Reanimated.View
+                  style={[styles.textOnPaper, fromMe && styles.textMine, pressedStyle]}
+                  accessible
+                  accessibilityRole="button"
+                  accessibilityLabel={item.content}
+                  accessibilityHint="Appui double pour aimer, appui long pour réagir"
+                >
+                  <Text style={[styles.bodyText, fromMe && styles.bodyTextMine]}>
+                    {item.content}
+                  </Text>
+                </Reanimated.View>
+              </GestureDetector>
+              <Reanimated.View pointerEvents="none" style={[styles.heartPopOverlay, heartPopStyle]}>
+                <Ionicons name="heart" size={ps(38)} color={M.accent} />
+              </Reanimated.View>
+              <ReactionRow
+                message={item}
+                myId={myId}
+                onReact={onReact}
+                onShowReactors={onShowReactors}
+              />
             </View>
           )}
 
-          {/*
-            UN horodatage par salve, au pied du dernier message — pas un par
-            bulle. Trois messages envoyés dans la même minute portaient trois
-            fois la même heure, juste sous le séparateur qui la donnait déjà.
-            L'appui sur une bulle révèle l'heure de CE message précis.
-          */}
-          {(isLastOfGroup || expanded) && (
-            <Text style={[styles.messageTime, fromMe ? styles.messageTimeRight : styles.messageTimeLeft]}>
-              {formatTime(item.created_at || item.createdAt)}
-            </Text>
-          )}
+          {/* L'accusé de lecture : une ligne sous le dernier message envoyé,
+              pas une rangée d'avatars, et surtout pas répété par message. */}
+          {fromMe && !!seenLabel && <Text style={styles.seenLabel}>{seenLabel}</Text>}
         </View>
       </View>
-
-      {showSeen && (
-        <View style={styles.seenRow}>
-          {seenAvatars.map((a) =>
-            a.uri ? (
-              <Image
-                key={a.key}
-                source={{ uri: a.uri }}
-                style={a.overlap ? [styles.seenAvatar, SEEN_AVATAR_OVERLAP] : styles.seenAvatar}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={0}
-                recyclingKey={a.uri}
-              />
-            ) : (
-              <View
-                key={a.key}
-                style={
-                  a.overlap
-                    ? [styles.seenAvatar, styles.rowAvatarFallback, SEEN_AVATAR_OVERLAP]
-                    : [styles.seenAvatar, styles.rowAvatarFallback]
-                }
-              >
-                <Text style={styles.seenAvatarText}>{a.initial}</Text>
-              </View>
-            ),
-          )}
-          <Text style={styles.seenLabel}>{seenLabel}</Text>
-        </View>
-      )}
     </Reanimated.View>
   );
 });
+
+// ─── Le panneau d'enregistrement ────────────────────────────────────────────
+
+/**
+ * Le haut du panneau : le voyant, la minuterie et l'onde de ce qu'on est en
+ * train de dire.
+ *
+ * Composant à part, ABONNÉ à un canal plutôt que nourri par des props. C'est ce
+ * qui permet à l'écran de ne pas se rendre dix fois par seconde pendant qu'on
+ * parle : ici ce rythme est le sujet — quarante-quatre hauteurs de barre et une
+ * minuterie — et il ne coûte que ce bloc-là, pas la liste qui dort derrière.
+ */
+const RecordingHead = memo(function RecordingHead({
+  channelRef,
+  paused,
+}: {
+  channelRef: React.MutableRefObject<RecorderChannel>;
+  paused: boolean;
+}) {
+  const [durationMs, setDurationMs] = useState(0);
+  const [bars, setBars] = useState<number[]>(() => new Array(WAVEFORM_BAR_COUNT).fill(0.06));
+
+  useEffect(() => {
+    const channel = channelRef.current;
+    channel.onTick = (tick) => {
+      setDurationMs(tick.durationMs);
+      setBars(tick.bars);
+    };
+    return () => {
+      channel.onTick = null;
+    };
+  }, [channelRef]);
+
+  return (
+    <View>
+      <View style={styles.recHeadRow}>
+        <View style={[styles.recDot, paused && styles.recDotPaused]} />
+        <Text style={styles.recLabel}>{paused ? 'En pause' : 'Enregistrement'}</Text>
+        <Text style={styles.recTimer}>{formatDuration(durationMs)}</Text>
+      </View>
+
+      <View style={styles.recWave}>
+        {bars.map((amplitude, i) => (
+          <View key={i} style={[styles.bar, styles.recBar, { height: BAR_MIN + amplitude * REC_BAR_SPAN }]} />
+        ))}
+      </View>
+
+      {/* Les deux bouts de l'onde : d'où elle part, et où elle s'arrêtera
+          d'elle-même. Le plafond est annoncé AVANT qu'on l'atteigne, sinon
+          l'arrêt automatique passe pour une panne. */}
+      <View style={styles.recScale}>
+        <Text style={styles.recScaleText}>0:00</Text>
+        <Text style={styles.recScaleText}>Max {formatDuration(MAX_RECORDING_MS)}</Text>
+      </View>
+    </View>
+  );
+});
+
+/**
+ * « Glisser pour annuler » : suit le pouce sur le thread UI, et ne passe à
+ * l'accent qu'au franchissement du premier seuil, prévenu par le même canal.
+ */
+const CancelHint = memo(function CancelHint({
+  channelRef,
+  dragX,
+}: {
+  channelRef: React.MutableRefObject<RecorderChannel>;
+  dragX: SharedValue<number>;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  useEffect(() => {
+    const channel = channelRef.current;
+    channel.onCancelArmed = setArmed;
+    return () => {
+      channel.onCancelArmed = null;
+    };
+  }, [channelRef]);
+
+  const slideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: dragX.value }] as const,
+  }));
+
+  return (
+    <Reanimated.View style={[styles.recHint, slideStyle]}>
+      <Ionicons name="close" size={ps(14)} color={armed ? M.accent : M.panelMeta} />
+      <Text style={[styles.recHintText, armed && styles.recHintTextArmed]} numberOfLines={1}>
+        Glisser pour annuler
+      </Text>
+    </Reanimated.View>
+  );
+});
+
+// ─── L'écran ────────────────────────────────────────────────────────────────
 
 export default function ConversationThreadScreen({ navigation, route }: any) {
   // Réactif (rotation, foldable, split-screen) là où `Dimensions.get` pris
   // ponctuellement servait une valeur figée au rendu d'ouverture.
   const { width: windowWidth } = useWindowDimensions();
   // Le bas de l'écran, pas seulement le haut : `SafeAreaView` ne couvre que
-  // `edges={['top']}` (le bas est géré ici, au repos seulement — voir
-  // `inputBar`), sinon le compositeur se collait à la barre d'accueil sur les
-  // appareils sans bouton. Même geste que `CommentSheet` (`insets.bottom`).
+  // `edges={['top']}`, sinon le quai se collerait à la barre d'accueil sur les
+  // appareils sans bouton. Le dessin réserve 30 px là où il n'y a pas d'inset.
   const insets = useSafeAreaInsets();
   const conversationId = route?.params?.conversationId as string;
   const conversationTitle = route?.params?.title as string;
@@ -1201,22 +1693,24 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     : undefined;
   const [typingUsers, setTypingUsers] = useState<Array<{ user_id: string; username?: string | null }>>([]);
   const [readByUser, setReadByUser] = useState<Record<string, string>>({});
-  const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null);
   const [peerStories, setPeerStories] = useState<StoryGroup | null>(null);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [attachmentSending, setAttachmentSending] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingMs, setRecordingMs] = useState(0);
+
   /**
-   * Le glissé « annuler » n'est plus un état React.
+   * L'enregistrement a TROIS temps, pas deux.
    *
-   * `setRecordingDragX` était appelé à CHAQUE événement de déplacement : tout
-   * l'écran de conversation — sa liste de messages comprise — se rendait à
-   * nouveau soixante fois par seconde pendant qu'on glissait le pouce. Seul le
-   * franchissement du seuil mérite un rendu ; le reste est du mouvement, et le
-   * mouvement va sur le thread UI.
+   * `holding` : le pouce est sur le micro, relâcher envoie, glisser à gauche
+   * annule, remonter verrouille. `locked` : le pouce est parti, on enregistre
+   * les mains libres, et ce sont les trois commandes du panneau qui décident —
+   * la corbeille annule, le bouton rond met en pause, « Envoyer » envoie. Un
+   * booléen ne pouvait pas porter le second : c'est lui que le dessin appelle
+   * « remonter pour verrouiller ».
    */
-  const [cancelArmed, setCancelArmed] = useState(false);
+  const [recState, setRecState] = useState<'idle' | 'holding' | 'locked'>('idle');
+  const [recPaused, setRecPaused] = useState(false);
+  const isRecording = recState !== 'idle';
+
   const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
   const [reactionBarFor, setReactionBarFor] = useState<{ messageId: string; x: number; y: number } | null>(null);
   /** Message pour lequel le sélecteur complet d'emoji est ouvert (bouton « + »). */
@@ -1226,13 +1720,11 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   const flatListRef = useRef<FlatList>(null);
   /**
-   * `scrollToEnd()` vise `contentSize`, qui peut être en retard d'une frame
-   * sur la vraie hauteur (mesure d'un message tout juste monté, padding du
-   * `contentContainerStyle`) — le défilement s'arrête alors juste avant le
-   * bas, un manque documenté de la méthode plutôt qu'un bug de cet écran.
-   * `scrollToOffset` vers une valeur volontairement hors d'atteinte est
-   * borné par la liste elle-même à sa vraie fin, quelle que soit la fraîcheur
-   * de la mesure.
+   * `scrollToEnd()` vise `contentSize`, qui peut être en retard d'une frame sur
+   * la vraie hauteur — le défilement s'arrête alors juste avant le bas, un
+   * manque documenté de la méthode plutôt qu'un bug de cet écran.
+   * `scrollToOffset` vers une valeur hors d'atteinte est borné par la liste
+   * elle-même à sa vraie fin, quelle que soit la fraîcheur de la mesure.
    */
   const scrollToBottom = useCallback((animated = true) => {
     flatListRef.current?.scrollToOffset({ offset: 100000, animated });
@@ -1242,15 +1734,49 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   const isTypingRef = useRef(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const waveformSamplesRef = useRef<number[]>([]);
+
+  /**
+   * ── Pourquoi la durée est une ref, et le reste un canal ──────────────────
+   *
+   * `setRecordingMs` était appelé dix fois par seconde : tout l'écran — sa liste
+   * de messages comprise — se rendait à nouveau pendant toute la durée de
+   * l'enregistrement, pour une minuterie qui n'affiche que des secondes. Et le
+   * panneau a maintenant bien plus à montrer qu'une minuterie : l'onde de ce
+   * qu'on est en train de dire, soit quarante-quatre hauteurs par relevé.
+   *
+   * La durée devient donc une ref (lue à l'arrêt, jamais rendue), et le panneau
+   * s'abonne à un canal : lui seul se rend, l'écran ne bouge pas. Même chose
+   * pour le franchissement du seuil d'annulation, qui vient du thread UI et n'a
+   * besoin d'atteindre que le libellé qui change de couleur.
+   */
+  const recordingMsRef = useRef(0);
+  const recorderChannelRef = useRef<RecorderChannel>({ onTick: null, onCancelArmed: null });
+  /** Armé une fois par enregistrement : le plafond ne peut pas envoyer deux fois. */
+  const capReachedRef = useRef(false);
+  /** Renseigné plus bas ; appelé par le rappel de métrage quand le plafond tombe. */
+  const autoStopRef = useRef<() => void>(() => {});
+  /**
+   * Génération de l'enregistrement en cours.
+   *
+   * `startRecording` est asynchrone : demande d'autorisation, configuration de
+   * la session audio, création de l'enregistreur. Un pouce relevé pendant ce
+   * temps-là appelait l'arrêt sur un `recordingRef` encore vide — puis la
+   * création se terminait et posait un enregistreur que PLUS PERSONNE n'allait
+   * fermer. Micro ouvert en fond, panneau bloqué. Chaque tentative prend donc un
+   * numéro, et une création qui arrive après son propre arrêt se referme
+   * elle-même.
+   */
+  const recordingGenRef = useRef(0);
+
   /**
    * Messages qui viennent tout juste d'arriver (envoi local ou socket) et qui
    * ont donc droit à l'animation d'entrée.
    *
-   * La décision est prise ICI, à l'arrivée du message, et surtout PAS pendant
-   * le rendu : une ligne de FlatList se re-rend plusieurs fois, et un drapeau
+   * La décision est prise ICI, à l'arrivée du message, et surtout PAS pendant le
+   * rendu : une ligne de FlatList se re-rend plusieurs fois, et un drapeau
    * calculé au rendu retombait à `undefined` avant que Reanimated n'enregistre
-   * l'animation — résultat, aucune animation ne se jouait. L'identifiant est
-   * retiré après coup pour que le recyclage pendant le scroll ne la rejoue pas.
+   * l'animation. L'identifiant est retiré après coup pour que le recyclage
+   * pendant le défilement ne la rejoue pas.
    */
   const justArrivedIdsRef = useRef<Set<string>>(new Set());
   const freshTimersRef = useRef<any[]>([]);
@@ -1268,6 +1794,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     },
     [],
   );
+
   const dot1 = useRef(new Animated.Value(0.25)).current;
   const dot2 = useRef(new Animated.Value(0.25)).current;
   const dot3 = useRef(new Animated.Value(0.25)).current;
@@ -1276,6 +1803,22 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   const recordingDragX = useSharedValue(0);
   /** Miroir du seuil côté UI : évite de renvoyer vers JS à chaque image. */
   const cancelArmedUI = useSharedValue(false);
+  /** Miroir du verrou côté UI, pour la même raison. */
+  const lockedUI = useSharedValue(false);
+  /**
+   * Le geste a-t-il conclu lui-même ?
+   *
+   * `onBegin` d'un `Pan` se déclenche au CONTACT, mais `onEnd` seulement si le
+   * geste s'est ACTIVÉ. Un appui posé et relevé sans le moindre déplacement
+   * peut donc démarrer un enregistrement que rien ne vient terminer : le
+   * panneau reste ouvert, le micro reste ouvert, et l'écran est bloqué jusqu'à
+   * ce qu'on quitte la conversation. C'est le bug qui rendait les vocaux
+   * inutilisables. `onFinalize`, lui, se déclenche TOUJOURS : ce drapeau lui dit
+   * s'il doit conclure à la place de `onEnd`.
+   */
+  const gestureEndedUI = useSharedValue(false);
+  /** Le maintien a-t-il vraiment démarré ? Sinon, rien à conclure. */
+  const holdActiveUI = useSharedValue(false);
 
   // Visualiseur d'image : glissé vertical piloté sur le thread UI (Reanimated)
   // pour rester fluide même quand le thread JS est occupé.
@@ -1298,9 +1841,9 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       if (!currentUid || !Array.isArray(list) || list.length === 0) return;
       const threshold = myLastReadAt ? new Date(myLastReadAt).getTime() : 0;
       const hasUnread = list.some((m) => {
-        const sid = String(m.sender_id || m?.sender?.id || '');
+        const sid = messageSenderId(m);
         if (!sid || sid === String(currentUid)) return false;
-        const ts = new Date(m.created_at || m.createdAt || 0).getTime();
+        const ts = messageTs(m);
         if (!Number.isFinite(ts)) return true;
         return ts > threshold;
       });
@@ -1335,19 +1878,16 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
        *
        * Elles étaient en série, et la première ne conditionnait rien : elle
        * télécharge l'annuaire COMPLET des conversations pour n'en retenir
-       * qu'une — celle qu'on vient d'ouvrir — et en extraire les participants
-       * et l'horodatage de lecture. L'identifiant de la conversation, lui, est
-       * connu depuis la navigation. C'étaient donc deux allers-retours
-       * consécutifs avant le premier message affiché, dont l'un s'allonge avec
-       * le nombre de conversations — qui n'a aucun rapport avec celle qu'on lit.
+       * qu'une — celle qu'on vient d'ouvrir — et en extraire les participants et
+       * l'horodatage de lecture. L'identifiant de la conversation, lui, est
+       * connu depuis la navigation.
        *
        * `allSettled` et non `all` : l'annuaire n'est qu'un décor (avatars,
        * accusés de lecture). S'il échoue, les messages doivent quand même
-       * s'afficher — c'est le même arbitrage que sur le fil d'accueil.
+       * s'afficher — même arbitrage que sur le fil d'accueil.
        *
        * Le vrai correctif reste côté serveur : joindre les participants à la
        * réponse des messages, ou ouvrir `GET /api/messages/conversations/:id`.
-       * On passerait alors de deux requêtes à une.
        */
       const [convSettled, msgSettled] = await Promise.allSettled([
         apiService.get('/api/messages/conversations'),
@@ -1402,7 +1942,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     loadMessages();
   }, [loadMessages]);
 
-  // Anneau de story sur l'avatar du header, comme dans Instagram Direct.
+  // Anneau de story sur l'avatar de l'en-tête, comme dans Instagram Direct.
   useEffect(() => {
     if (isGroup || !directOtherUserId) return;
     let active = true;
@@ -1415,14 +1955,12 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   }, [directOtherUserId, isGroup]);
 
   /**
-   * Remonter au clavier, comme Instagram — sans lui, le clavier recouvre la
-   * fin de la conversation sans que rien ne compense : la vue garde le même
-   * décalage de défilement pendant que la zone visible rétrécit, et les
-   * derniers messages passent derrière le clavier.
+   * Remonter au clavier — sans ça, le clavier recouvre la fin de la conversation
+   * sans que rien ne compense : la vue garde le même décalage de défilement
+   * pendant que la zone visible rétrécit.
    *
    * Inconditionnel (pas de garde `isAtBottomRef`) : ouvrir le clavier, c'est
-   * l'intention de répondre à ce qui se dit MAINTENANT, qu'on ait ou non
-   * remonté lire l'historique juste avant.
+   * l'intention de répondre à ce qui se dit MAINTENANT.
    */
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -1455,7 +1993,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         markMessageAsFresh(String(incoming.id));
         return dedupeMessagesById([...prev, incoming]);
       });
-      const senderId = String(incoming?.sender_id || incoming?.sender?.id || '');
+      const senderId = messageSenderId(incoming);
       if (myId && senderId && senderId !== String(myId)) {
         unreadService
           .withRetry(() => apiService.post(`/api/messages/conversations/${conversationId}/read`, {}))
@@ -1530,12 +2068,10 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     const optimisticId = `tmp_${Date.now()}`;
     try {
       const content = text.trim();
-      // Pas de `markMessageAsFresh` ici : ce message est le mien, j'ai déjà
-      // les yeux dessus. Le marquer « frais » jouait `FadeInDown` (200 ms) EN
-      // MÊME TEMPS que le défilement automatique vers le bas (voir
-      // `scrollToBottom`) — deux animations non coordonnées sur la même
-      // rangée, l'une déplaçant la bulle dans son repère, l'autre déplaçant
-      // la liste sous elle. Le défilement suffit déjà à dire « c'est parti ».
+      // Pas de `markMessageAsFresh` ici : ce message est le mien, j'ai déjà les
+      // yeux dessus. Le marquer « frais » jouait `FadeInDown` (200 ms) EN MÊME
+      // TEMPS que le défilement automatique vers le bas — deux animations non
+      // coordonnées sur la même rangée.
       setMessages((prev) => [
         ...prev,
         { id: optimisticId, content, created_at: new Date().toISOString(), sender_id: myId || undefined },
@@ -1564,18 +2100,17 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     }
   };
 
-  // ─── Réactions ──────────────────────────────────────────────────────────────
+  // ─── Réactions ────────────────────────────────────────────────────────────
 
   const applyReactionsLocally = useCallback((messageId: string, reactions: MessageReactionItem[]) => {
     setMessages((prev) => prev.map((m) => (String(m.id) === messageId ? { ...m, reactions } : m)));
   }, []);
 
   /**
-   * Pose ou retire ma réaction sur un message (un seul emoji par personne,
-   * comme Instagram/WhatsApp : recliquer le même emoji le retire, en choisir
-   * un autre remplace le précédent). Mise à jour optimiste immédiate, puis
-   * réconciliée par la réponse HTTP (le socket `message:reaction` fera de
-   * même pour les autres participants).
+   * Pose ou retire ma réaction (un seul emoji par personne : recliquer le même
+   * le retire, en choisir un autre remplace le précédent). Mise à jour optimiste
+   * immédiate, puis réconciliée par la réponse HTTP — le socket
+   * `message:reaction` fera de même pour les autres participants.
    */
   const sendReaction = useCallback(
     async (messageId: string, emoji: string) => {
@@ -1594,18 +2129,18 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
           applyReactionsLocally(messageId, normalizeReactions(res.reactions));
         }
       } catch {
-        // Le socket `message:reaction` (ou le prochain chargement) réconciliera l'état si l'appel échoue.
+        // Le socket (ou le prochain chargement) réconciliera l'état.
       }
     },
     [messages, myId, applyReactionsLocally],
   );
 
-  // ─── Pièces jointes (image / message vocal) ────────────────────────────────
+  // ─── Pièces jointes (photo / message vocal) ──────────────────────────────
 
   const sendAttachment = useCallback(
     async (uri: string, kind: 'image' | 'audio', durationMs?: number, waveform?: number[]) => {
       setAttachmentSending(true);
-      const optimisticId = `tmp_${Date.now()}`;
+      const optimisticId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       try {
         // Même raison que dans `send()` : pas d'entrée animée sur mon propre
         // envoi, elle se battait avec le défilement automatique.
@@ -1635,7 +2170,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         setAttachmentSending(false);
       }
     },
-    [conversationId, myId, markMessageAsFresh],
+    [conversationId, myId],
   );
 
   const pickAndSendImage = useCallback(async () => {
@@ -1647,24 +2182,38 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         });
         return;
       }
+      // Plusieurs photos d'un coup : sans ça, la paire côte à côte du dessin
+      // n'aurait jamais eu l'occasion de se produire, puisqu'il fallait rouvrir
+      // la galerie entre chaque envoi.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
+        allowsMultipleSelection: true,
+        selectionLimit: PHOTO_SELECTION_LIMIT,
         quality: 0.85,
       });
       if (result.canceled) return;
-      const asset = result.assets?.[0];
-      if (!asset?.uri) return;
-      await sendAttachment(asset.uri, 'image');
+      const assets = (result.assets || []).filter((a) => !!a?.uri);
+      if (assets.length === 0) return;
+      // En série, pas en parallèle : l'ordre d'arrivée côté serveur est celui de
+      // la sélection, et c'est cet ordre qui décide de la paire au rendu.
+      for (const asset of assets) {
+        await sendAttachment(asset.uri, 'image');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sélection impossible');
     }
   }, [sendAttachment]);
 
+  // ─── Enregistrement ──────────────────────────────────────────────────────
+
   const startRecording = useCallback(async () => {
+    const gen = recordingGenRef.current + 1;
+    recordingGenRef.current = gen;
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
+        setRecState('idle');
         toast.error('Autorisation requise', {
           description: 'Autorise l\'accès au micro pour envoyer un message vocal.',
         });
@@ -1677,55 +2226,158 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
       });
+      // PAS de `Keyboard.dismiss()` ici, même si le panneau serait plus au
+      // large sans clavier : le fermer déplace tout le quai vers le bas — donc
+      // le micro — PENDANT que le doigt est encore posé dessus. Gesture Handler
+      // perd alors la vue qu'il suivait, et l'enregistrement meurt à la
+      // première image. Le clavier n'est de toute façon ouvert que dans un cas
+      // de bord (du texte saisi puis effacé sans le refermer).
       waveformSamplesRef.current = [];
+      recordingMsRef.current = 0;
+      capReachedRef.current = false;
       const { recording } = await Audio.Recording.createAsync(
         { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
         (status) => {
-          if (typeof status.durationMillis === 'number') setRecordingMs(status.durationMillis);
           if (status.isRecording) waveformSamplesRef.current.push(normalizeMetering(status.metering));
+          if (typeof status.durationMillis === 'number') recordingMsRef.current = status.durationMillis;
+          // L'onde du panneau est le ré-échantillonnage de TOUT ce qui a été dit
+          // jusqu'ici : elle se resserre à mesure que ça dure, et ce qu'on voit
+          // en parlant est exactement l'onde qui partira.
+          recorderChannelRef.current.onTick?.({
+            durationMs: recordingMsRef.current,
+            bars: resampleWaveform(waveformSamplesRef.current, WAVEFORM_BAR_COUNT),
+          });
+          if (!capReachedRef.current && recordingMsRef.current >= MAX_RECORDING_MS) {
+            capReachedRef.current = true;
+            autoStopRef.current();
+          }
         },
         100,
       );
+
+      // Le pouce s'est relevé pendant qu'on créait l'enregistreur : il ne doit
+      // surtout pas rester ouvert derrière nous (voir `recordingGenRef`).
+      if (gen !== recordingGenRef.current) {
+        await recording.stopAndUnloadAsync().catch(() => {});
+        await ensurePlaybackAudioMode();
+        return;
+      }
+
       recordingRef.current = recording;
-      setRecordingMs(0);
-      setIsRecording(true);
+      setRecPaused(false);
+      setRecState('holding');
     } catch (error) {
+      recordingRef.current = null;
+      setRecState('idle');
+      await ensurePlaybackAudioMode();
       toast.error(error instanceof Error ? error.message : 'Impossible de démarrer l\'enregistrement');
     }
   }, []);
 
   const stopRecordingInternal = useCallback(async () => {
+    // Invalide la création éventuellement encore en vol (voir `recordingGenRef`).
+    recordingGenRef.current += 1;
     const recording = recordingRef.current;
     recordingRef.current = null;
-    setIsRecording(false);
-    // Repasse en mode lecture normal (haut-parleur) dès l'arrêt : sans ça, la
-    // prévisualisation immédiate du vocal qu'on vient d'envoyer sortirait
-    // encore au volume de l'écouteur interne.
-    await ensurePlaybackAudioMode();
-    if (!recording) return null;
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      const waveform = downsampleWaveform(waveformSamplesRef.current, WAVEFORM_BAR_COUNT);
-      return uri ? { uri, waveform } : null;
-    } catch {
+    setRecState('idle');
+    setRecPaused(false);
+    lockedUI.value = false;
+
+    if (!recording) {
+      await ensurePlaybackAudioMode();
       return null;
     }
-  }, []);
+
+    let uri: string | null = null;
+    try {
+      await recording.stopAndUnloadAsync();
+      uri = recording.getURI();
+    } catch {
+      // Le système a pu couper l'enregistreur avant nous (appel entrant, perte
+      // de la session audio). Le fichier est écrit au fil de l'eau : on tente
+      // quand même d'en récupérer le chemin plutôt que de tout jeter.
+      try {
+        uri = recording.getURI();
+      } catch {
+        uri = null;
+      }
+    }
+
+    // APRÈS l'arrêt, jamais avant. Repasser la session iOS en lecture
+    // (`allowsRecordingIOS: false`) pendant qu'un enregistrement tourne encore
+    // l'interrompt de force : `stopAndUnloadAsync` échoue alors, on repart sans
+    // fichier, et le vocal disparaît sans un mot. C'était l'ordre d'origine, et
+    // il était faux.
+    await ensurePlaybackAudioMode();
+
+    if (!uri) return null;
+    return { uri, waveform: resampleWaveform(waveformSamplesRef.current, WAVEFORM_BAR_COUNT) };
+  }, [lockedUI]);
 
   const cancelRecording = useCallback(async () => {
     await stopRecordingInternal();
-    setRecordingMs(0);
+    recordingMsRef.current = 0;
   }, [stopRecordingInternal]);
 
   const stopAndSendRecording = useCallback(async () => {
+    // La durée est lue AVANT l'arrêt, et c'est essentiel : expo-av délivre un
+    // dernier statut APRÈS `stopAndUnloadAsync`, dans lequel `durationMillis`
+    // retombe à zéro. La lire après faisait échouer le seuil des 800 ms sur
+    // TOUS les vocaux — correctement enregistrés, puis jetés en silence.
+    const durationMs = recordingMsRef.current;
     const result = await stopRecordingInternal();
-    const durationMs = recordingMs;
-    setRecordingMs(0);
-    if (!result) return;
-    if (durationMs < 800) return; // Trop court pour être un vrai message vocal
+    recordingMsRef.current = 0;
+
+    if (!result) {
+      // Un relâchement quasi immédiat n'a rien enregistré du tout : inutile de
+      // s'en plaindre. Au-delà du seuil, en revanche, on a perdu quelque chose
+      // et il faut le dire plutôt que de ne rien faire.
+      if (durationMs >= 800) {
+        toast.error('Enregistrement perdu', { description: 'Réessaie.' });
+      }
+      return;
+    }
+
+    if (durationMs < 800) {
+      toast.info('Trop court', { description: 'Maintiens le micro un peu plus longtemps.' });
+      return;
+    }
+
     await sendAttachment(result.uri, 'audio', durationMs, result.waveform);
-  }, [stopRecordingInternal, recordingMs, sendAttachment]);
+  }, [stopRecordingInternal, sendAttachment]);
+
+  /**
+   * Le plafond de deux minutes arrête ET envoie, dans les deux temps de
+   * l'enregistrement : c'est ce que le « Max 2:00 » écrit sous l'onde promet.
+   * Passe par une ref parce que le rappel de métrage est posé une seule fois, à
+   * la création de l'enregistreur.
+   */
+  useEffect(() => {
+    autoStopRef.current = () => {
+      stopAndSendRecording();
+    };
+  }, [stopAndSendRecording]);
+
+  /**
+   * Pause et reprise — la commande du bouton rond une fois les mains libres.
+   * Elle n'existe QUE là : pendant le maintien, ce bouton est sous le pouce.
+   */
+  const togglePause = useCallback(async () => {
+    const recording = recordingRef.current;
+    if (!recording) return;
+    try {
+      if (recPaused) {
+        await recording.startAsync();
+        setRecPaused(false);
+      } else {
+        await recording.pauseAsync();
+        setRecPaused(true);
+      }
+    } catch {
+      // Pause non supportée sur cet appareil : on continue d'enregistrer, ce qui
+      // est le comportement le moins destructeur.
+    }
+  }, [recPaused]);
 
   useEffect(() => {
     ensurePlaybackAudioMode();
@@ -1734,76 +2386,166 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     };
   }, []);
 
-  // Le geste ci-dessous n'est construit qu'une fois : sans cette ref
-  // « toujours à jour », ses callbacks fermeraient sur les toutes premières
-  // versions de start/stop/cancelRecording (donc sur un `recordingMs` figé à 0
-  // pour toujours) au lieu des dernières.
+  // Le geste ci-dessous n'est construit qu'une fois : sans cette ref « toujours à
+  // jour », ses rappels fermeraient sur les toutes premières versions de
+  // start/stop/cancel au lieu des dernières.
   const recordingActionsRef = useRef({ startRecording, stopAndSendRecording, cancelRecording });
   useEffect(() => {
     recordingActionsRef.current = { startRecording, stopAndSendRecording, cancelRecording };
   });
 
-  /**
-   * Geste façon Instagram/WhatsApp : on maintient le micro appuyé pour
-   * enregistrer, on relâche pour envoyer, on glisse vers la gauche au-delà
-   * du seuil pour annuler.
-   *
-   * `minDistance(0)` : le geste s'active au contact, sans attendre les 10 px
-   * réglementaires — sans quoi un message vocal court, enregistré sans bouger
-   * le pouce, ne serait jamais reconnu comme un geste terminé.
-   *
-   * Les trois passages vers JS (`runOnJS`) sont les seuls qui restent, et ils
-   * correspondent chacun à un vrai événement : on commence, on franchit le
-   * seuil, on lâche.
-   */
   const startRec = useCallback(() => recordingActionsRef.current.startRecording(), []);
   const cancelRec = useCallback(() => recordingActionsRef.current.cancelRecording(), []);
   const sendRec = useCallback(() => recordingActionsRef.current.stopAndSendRecording(), []);
+  const lockRec = useCallback(() => setRecState('locked'), []);
+  /** Le seuil franchi ne va qu'au panneau : l'écran n'a pas à se rendre pour ça. */
+  const armCancel = useCallback((armed: boolean) => {
+    recorderChannelRef.current.onCancelArmed?.(armed);
+  }, []);
 
-  const micGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .minDistance(0)
-        .onBegin(() => {
+  /**
+   * ── Maintenir pour parler ─────────────────────────────────────────────────
+   *
+   * DEUX gestes simultanés, et non un `Pan` seul. C'est la correction du bug qui
+   * rendait les vocaux inutilisables.
+   *
+   * Un `Pan` ne se déclenche vraiment (`onEnd`) que s'il s'est ACTIVÉ, et il ne
+   * s'active qu'au premier déplacement du doigt — `minDistance(0)` ne change
+   * rien à ça, il ne fait qu'abaisser le seuil de distance. Un pouce posé et
+   * relevé sans bouger d'un pixel, ce qui est EXACTEMENT le geste d'un message
+   * vocal court, ouvrait donc le micro depuis `onBegin` sans que rien ne vienne
+   * jamais le refermer : panneau bloqué, micro ouvert, écran mort.
+   *
+   * `LongPress` n'a pas ce défaut : il s'active au bout de sa durée, sans
+   * dépendre du moindre mouvement, et son `onEnd` tombe au relâchement. Son
+   * `maxDistance` par défaut vaut 10 px et l'annulerait dès qu'on glisse — il
+   * est donc ouvert en grand, puisque glisser fait partie du geste. Le `Pan`
+   * qui l'accompagne ne sert plus qu'à MESURER ce glissé.
+   *
+   * Effet de bord bienvenu des 180 ms : un simple tapotement sur le micro
+   * n'enregistre plus un vocal vide d'un dixième de seconde.
+   */
+  const micGesture = useMemo(() => {
+    const hold = Gesture.LongPress()
+      .minDuration(180)
+      // Glisser fait partie du geste (annuler, verrouiller) : il ne doit
+      // surtout pas l'annuler. Le défaut est de 10 px.
+      .maxDistance(10000)
+      .shouldCancelWhenOutside(false)
+      .onStart(() => {
+        holdActiveUI.value = true;
+        gestureEndedUI.value = false;
+        lockedUI.value = false;
+        cancelArmedUI.value = false;
+        recordingDragX.value = 0;
+        micScale.value = withSpring(1.25, MIC_SPRING);
+        runOnJS(startRec)();
+      })
+      .onEnd((_event, success) => {
+        if (!holdActiveUI.value || lockedUI.value) return;
+        gestureEndedUI.value = true;
+        // Au-delà du second seuil, ou geste interrompu par le système : on
+        // n'envoie surtout pas un message que personne n'a relâché.
+        const shouldCancel = !success || recordingDragX.value < CANCEL_SEND_DISTANCE;
+        if (shouldCancel) runOnJS(cancelRec)();
+        else runOnJS(sendRec)();
+      })
+      .onFinalize(() => {
+        micScale.value = withSpring(1, MIC_SPRING);
+        recordingDragX.value = 0;
+        if (!holdActiveUI.value) return;
+        holdActiveUI.value = false;
+        // Le verrou DÉMONTE le micro (il devient le bouton de pause) : Gesture
+        // Handler finalise donc le geste au moment même où l'on verrouille.
+        // Sans cette sortie, l'enregistrement mains libres s'arrêterait dans la
+        // seconde qui suit.
+        if (lockedUI.value) return;
+        cancelArmedUI.value = false;
+        runOnJS(armCancel)(false);
+        // Dernier filet : `onEnd` n'a pas conclu (annulation système, vue
+        // démontée). C'est ici que cet enregistrement-là se termine, sinon le
+        // micro reste ouvert derrière nous.
+        if (!gestureEndedUI.value) {
+          gestureEndedUI.value = true;
+          runOnJS(cancelRec)();
+        }
+      });
+
+    const drag = Gesture.Pan()
+      .minDistance(0)
+      .shouldCancelWhenOutside(false)
+      .onUpdate((event) => {
+        // Rien tant que le maintien n'a pas pris, et plus rien une fois
+        // verrouillé : le pouce peut alors avoir quitté l'écran.
+        if (!holdActiveUI.value || lockedUI.value) return;
+
+        // Vers la droite et vers le bas, il n'y a rien à faire : les deux
+        // gestes vont vers la gauche (annuler) et vers le haut (verrouiller).
+        const dx = Math.min(0, event.translationX);
+        const dy = Math.min(0, event.translationY);
+
+        // UN seul axe décide, celui qui domine : sans ça, un glissé en
+        // diagonale armerait l'annulation ET le verrou, et on ne saurait plus
+        // lequel des deux on est en train de faire.
+        if (dy < LOCK_ARM_DISTANCE && -dy > -dx) {
+          lockedUI.value = true;
           recordingDragX.value = 0;
           cancelArmedUI.value = false;
-          micScale.value = withSpring(1.25, MIC_SPRING);
-          runOnJS(startRec)();
-        })
-        .onUpdate((event) => {
-          // Vers la droite, il n'y a rien à faire : le geste ne va que vers
-          // l'annulation, et laisser le micro suivre à droite le suggérerait.
-          const next = Math.min(0, event.translationX);
-          recordingDragX.value = next;
+          runOnJS(armCancel)(false);
+          runOnJS(lockRec)();
+          return;
+        }
 
-          const armed = next < CANCEL_ARM_DISTANCE;
-          if (armed !== cancelArmedUI.value) {
-            cancelArmedUI.value = armed;
-            runOnJS(setCancelArmed)(armed);
-          }
-        })
-        .onEnd((event, success) => {
-          // Geste interrompu par le système : on n'envoie surtout pas un
-          // message que l'utilisateur n'a pas relâché lui-même.
-          if (!success || event.translationX < CANCEL_SEND_DISTANCE) runOnJS(cancelRec)();
-          else runOnJS(sendRec)();
-        })
-        .onFinalize(() => {
-          micScale.value = withSpring(1, MIC_SPRING);
-          recordingDragX.value = 0;
-          cancelArmedUI.value = false;
-          runOnJS(setCancelArmed)(false);
-        }),
-    [micScale, recordingDragX, cancelArmedUI, startRec, cancelRec, sendRec],
-  );
+        const next = -dx > -dy ? dx : 0;
+        recordingDragX.value = next;
+
+        const armed = next < CANCEL_ARM_DISTANCE;
+        if (armed !== cancelArmedUI.value) {
+          cancelArmedUI.value = armed;
+          runOnJS(armCancel)(armed);
+        }
+      });
+
+    return Gesture.Simultaneous(hold, drag);
+  }, [
+    micScale,
+    recordingDragX,
+    cancelArmedUI,
+    lockedUI,
+    gestureEndedUI,
+    holdActiveUI,
+    startRec,
+    cancelRec,
+    sendRec,
+    lockRec,
+    armCancel,
+  ]);
 
   const micStyle = useAnimatedStyle(() => ({
     transform: [{ scale: micScale.value }] as const,
   }));
 
-  const slideHintStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: recordingDragX.value }] as const,
+  /**
+   * Pendant l'enregistrement, la conversation s'efface derrière le panneau : le
+   * dessin met l'en-tête à 35 % et les messages à 28 %. Fondu de 160 ms —
+   * l'écran change d'état, il ne clignote pas.
+   */
+  const dim = useSharedValue(0);
+  useEffect(() => {
+    dim.value = withTiming(isRecording ? 1 : 0, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [isRecording, dim]);
+
+  const headerDimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dim.value, [0, 1], [1, 0.35]),
   }));
+  const listDimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dim.value, [0, 1], [1, 0.28]),
+  }));
+
+  // ─── Visualiseur d'image ─────────────────────────────────────────────────
 
   const closeImageViewer = useCallback(() => {
     setViewerImageUrl(null);
@@ -1816,10 +2558,10 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   }, [viewerImageScale, viewerTranslateY]);
 
   /**
-   * Glisser l'image vers le bas pour fermer, comme sur Instagram. Passe par
+   * Glisser l'image vers le bas pour fermer. Passe par
    * `react-native-gesture-handler` + Reanimated (thread UI) plutôt que
-   * `PanResponder` : c'est ce dernier qui ne captait pas fiablement le geste
-   * une fois affiché dans un `Modal` — connu côté RN, notamment sur Android.
+   * `PanResponder` : c'est ce dernier qui ne captait pas fiablement le geste une
+   * fois affiché dans un `Modal` — connu côté RN, notamment sur Android.
    */
   const viewerPanGesture = useMemo(
     () =>
@@ -1828,20 +2570,27 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
         .onUpdate((e) => {
           if (e.translationY < 0) return;
           viewerTranslateY.value = e.translationY;
-          viewerImageScale.value = interpolate(e.translationY, [0, 280], [1, 0.85], Extrapolation.CLAMP);
+          viewerImageScale.value = interpolate(
+            e.translationY,
+            [0, 320],
+            [1, 0.82],
+            Extrapolation.CLAMP,
+          );
         })
         .onEnd((e) => {
           if (e.translationY > 120 || e.velocityY > 800) {
             runOnJS(closeImageViewer)();
             return;
           }
-          // damping ≈ 2·√stiffness : amortissement critique, l'image revient
-          // en place d'un seul mouvement, sans dépassement ni oscillation.
+          // damping ≈ 2·√stiffness : amortissement critique, l'image revient en
+          // place d'un seul mouvement, sans dépassement ni oscillation.
           viewerTranslateY.value = withSpring(0, { damping: 28, stiffness: 180 });
           viewerImageScale.value = withSpring(1, { damping: 28, stiffness: 180 });
         }),
     [closeImageViewer, viewerImageScale, viewerTranslateY],
   );
+
+  // ─── Indicateur de frappe (émission) ─────────────────────────────────────
 
   useEffect(() => {
     if (!socketRef.current || !myId) return;
@@ -1868,15 +2617,13 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     }, 1400);
   }, [text, conversationId, myId]);
 
-  // ─── Accusés de lecture ───────────────────────────────────────────────────
+  // ─── Accusés de lecture ──────────────────────────────────────────────────
 
   const seenReaders = useMemo(() => {
     if (!myId || messages.length === 0) return [] as [string, string][];
-    const lastMine = [...messages]
-      .reverse()
-      .find((m) => String(m.sender_id || m?.sender?.id || '') === String(myId));
+    const lastMine = [...messages].reverse().find((m) => messageSenderId(m) === String(myId));
     if (!lastMine) return [];
-    const lastMineTs = new Date(lastMine.created_at || lastMine.createdAt || 0).getTime();
+    const lastMineTs = messageTs(lastMine);
     if (!lastMineTs) return [];
     return Object.entries(readByUser).filter(([uid, ts]) => {
       if (String(uid) === String(myId)) return false;
@@ -1908,13 +2655,11 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   const lastOutgoingMessageId = useMemo(() => {
     if (!myId || messages.length === 0) return null;
-    const lastMine = [...messages]
-      .reverse()
-      .find((m) => String(m.sender_id || m?.sender?.id || '') === String(myId));
+    const lastMine = [...messages].reverse().find((m) => messageSenderId(m) === String(myId));
     return lastMine?.id ? String(lastMine.id) : null;
   }, [messages, myId]);
 
-  // ─── Navigation ───────────────────────────────────────────────────────────
+  // ─── Navigation ──────────────────────────────────────────────────────────
 
   const openPeer = () => {
     if (isGroup) {
@@ -1935,15 +2680,14 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     openPeer();
   };
 
-  // ─── Rendu d'un message ───────────────────────────────────────────────────
+  // ─── Rendu d'un message ──────────────────────────────────────────────────
 
   /**
    * Descente automatique en bas du fil.
    *
-   * Avant : un `setTimeout` armé à CHAQUE changement de taille du contenu, y
-   * compris pendant la frappe. Deux corrections — plus de minuteur, et on ne
-   * force plus la descente si le lecteur a remonté la conversation, ce qui la
-   * lui arrachait des mains à la moindre arrivée de message.
+   * Plus de `setTimeout` armé à chaque changement de taille du contenu (frappe
+   * comprise), et on ne force plus la descente si le lecteur a remonté la
+   * conversation — ce qui la lui arrachait des mains à chaque message reçu.
    */
   const isAtBottomRef = useRef(true);
 
@@ -1959,86 +2703,67 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     scrollToBottom();
   }, [scrollToBottom]);
 
-  /**
-   * Groupage Instagram (coins resserrés au sein d'une salve, séparateur
-   * d'horodatage) précalculé une fois par changement de liste. Il vivait dans
-   * `renderItem`, qui devait donc lire `messages[index ± 1]` — et changer
-   * d'identité à chaque message reçu. Une passe `O(n)` sans rendu remplace le
-   * re-rendu de toutes les bulles montées.
-   */
-  const decorated = useMemo<DecoratedMessage[]>(
-    () =>
-      messages.map((msg, index) => {
-        const senderId = String(msg.sender_id || msg?.sender?.id || '');
-        const prevMsg = index > 0 ? messages[index - 1] : null;
-        const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
-        const currentTs = new Date(msg.created_at || msg.createdAt || 0).getTime();
-        const prevTs = new Date(prevMsg?.created_at || prevMsg?.createdAt || 0).getTime();
-        return {
-          msg,
-          // `NO_SENDER` plutôt qu'un `{}` littéral : un objet neuf à chaque
-          // passe ferait échouer la comparaison de `memo` sur les messages
-          // dont l'expéditeur n'est pas encore connu.
-          sender: msg?.sender || participantMap[senderId] || NO_SENDER,
-          fromMe: !!(myId && senderId && String(myId) === senderId),
-          isFirstOfGroup: String(prevMsg?.sender_id || prevMsg?.sender?.id || '') !== senderId,
-          isLastOfGroup: String(nextMsg?.sender_id || nextMsg?.sender?.id || '') !== senderId,
-          showSeparator:
-            index === 0 ||
-            (Number.isFinite(currentTs) &&
-              Number.isFinite(prevTs) &&
-              currentTs - prevTs > TIME_SEPARATOR_GAP_MS),
-        };
-      }),
-    [messages, participantMap, myId],
-  );
+  const decorated = useMemo<DecoratedMessage[]>(() => {
+    const out: DecoratedMessage[] = [];
+    for (let index = 0; index < messages.length; index += 1) {
+      const msg = messages[index];
+      const senderId = messageSenderId(msg);
+      const prevMsg = index > 0 ? messages[index - 1] : null;
 
-  /**
-   * Avatars de la rangée « Vu », résolus ici plutôt que dans la bulle : celle-ci
-   * n'a ainsi besoin ni de `participantMap`, ni de l'avatar de l'interlocuteur,
-   * ni du pseudo. Seule la dernière bulle sortante reçoit ce tableau ; toutes
-   * les autres reçoivent `NO_SEEN_AVATARS`, dont l'identité ne change jamais.
-   */
-  const seenAvatars = useMemo<SeenAvatar[]>(() => {
-    if (!hasBeenSeen) return NO_SEEN_AVATARS;
-    if (!isGroup) {
-      return [
-        {
-          key: 'peer',
-          uri: avatarUri,
-          initial: String(conversationUsername || 'U').slice(0, 1).toUpperCase(),
-          overlap: false,
-        },
-      ];
+      // Deux photos qui se suivent, du même émetteur, à moins d'une minute :
+      // elles viennent d'une seule sélection et prennent une seule ligne du
+      // relevé, sous une seule heure. Jamais trois — au-delà, chaque photo
+      // reprend sa pleine largeur : une grille de vignettes n'est plus une
+      // conversation, et le dessin ne montre qu'une paire.
+      const candidate = messages[index + 1];
+      const paired =
+        isPhotoMessage(msg) &&
+        isPhotoMessage(candidate) &&
+        messageSenderId(candidate) === senderId &&
+        Math.abs(messageTs(candidate) - messageTs(msg)) < PHOTO_PAIR_GAP_MS
+          ? candidate
+          : undefined;
+
+      const currentTs = messageTs(msg);
+      const prevTs = messageTs(prevMsg);
+
+      out.push({
+        msg,
+        pairedMsg: paired,
+        // `NO_SENDER` plutôt qu'un `{}` littéral : un objet neuf à chaque passe
+        // ferait échouer la comparaison de `memo` sur les messages dont
+        // l'expéditeur n'est pas encore connu.
+        sender: msg?.sender || participantMap[senderId] || NO_SENDER,
+        fromMe: !!(myId && senderId && String(myId) === senderId),
+        isFirstOfGroup: messageSenderId(prevMsg) !== senderId,
+        showSeparator:
+          index === 0 ||
+          (Number.isFinite(currentTs) &&
+            Number.isFinite(prevTs) &&
+            currentTs - prevTs > TIME_SEPARATOR_GAP_MS),
+      });
+
+      if (paired) index += 1;
     }
-    return seenReaders.slice(0, 3).map(([uid]) => ({
-      key: String(uid),
-      uri: getAvatarUri(participantMap[String(uid)]?.avatar || null),
-      initial: String(participantMap[String(uid)]?.username || 'U').slice(0, 1).toUpperCase(),
-      overlap: true,
-    }));
-  }, [hasBeenSeen, isGroup, avatarUri, conversationUsername, seenReaders, participantMap]);
+    return out;
+  }, [messages, participantMap, myId]);
 
   /**
-   * Poignées stables passées aux bulles mémoïsées. Une prop de callback
-   * recréée à chaque rendu casserait `memo` aussi sûrement qu'une dépendance
-   * de trop — et `sendReaction` lit `messages`, donc change d'identité à
-   * chaque message reçu. Il passe par une ref : la bulle n'en sait rien.
+   * Poignées stables passées aux lignes mémoïsées. Une prop de rappel recréée à
+   * chaque rendu casserait `memo` aussi sûrement qu'une dépendance de trop — et
+   * `sendReaction` lit `messages`, donc change d'identité à chaque message reçu.
+   * Il passe par une ref : la ligne n'en sait rien.
    */
   const sendReactionRef = useRef(sendReaction);
   useEffect(() => {
     sendReactionRef.current = sendReaction;
   }, [sendReaction]);
 
-  const handleBubbleReact = useCallback((messageId: string, emoji: string) => {
+  const handleReact = useCallback((messageId: string, emoji: string) => {
     sendReactionRef.current(messageId, emoji);
   }, []);
 
-  const handleBubbleToggleExpanded = useCallback((messageId: string) => {
-    setExpandedMessageId((prev) => (prev === messageId ? null : messageId));
-  }, []);
-
-  const handleBubbleLongPress = useCallback((messageId: string, x: number, y: number) => {
+  const handleLongPress = useCallback((messageId: string, x: number, y: number) => {
     setReactionBarFor({ messageId, x, y });
   }, []);
 
@@ -2048,10 +2773,9 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   /**
    * Qui a posé CET emoji sur CE message, résolu en identité affichable.
-   * `item.reactions` ne porte que `user_id` (+ un `username` pas toujours
-   * fourni par le serveur) : on complète par `participantMap`, déjà chargé
-   * pour l'en-tête et l'indicateur de frappe, et par mon propre profil pour
-   * mes réactions.
+   * `item.reactions` ne porte que `user_id` (+ un `username` pas toujours fourni
+   * par le serveur) : on complète par `participantMap`, déjà chargé pour
+   * l'en-tête et l'indicateur de frappe, et par mon propre profil.
    */
   const reactors = useMemo(() => {
     if (!reactorsFor) return [];
@@ -2093,33 +2817,26 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   );
 
   /**
-   * Mémoïsé : une closure recréée à chaque rendu invalide la mémoïsation
-   * interne de la FlatList, si bien que toutes les bulles montées se
-   * re-rendaient à chaque frappe dans le compositeur.
-   *
-   * `messages` n'y figure plus — le groupage est précalculé dans `decorated` —
-   * donc un message reçu ne recrée plus cette fonction. Les dépendances qui
-   * restent (appui sur une bulle, accusé de lecture) la recréent encore, mais
-   * `MessageEntry` est mémoïsé : seule la bulle réellement touchée se re-rend.
+   * Mémoïsé : une closure recréée à chaque rendu invalide la mémoïsation interne
+   * de la FlatList, si bien que toutes les lignes montées se re-rendaient à
+   * chaque frappe. `messages` n'y figure pas — le groupage est précalculé.
    */
   const renderItem = useCallback(
     ({ item }: { item: DecoratedMessage }) => {
       const messageId = String(item.msg.id);
-      const showSeen = item.fromMe && lastOutgoingMessageId === messageId && hasBeenSeen;
+      const pairedId = item.pairedMsg ? String(item.pairedMsg.id) : null;
+      const isLastOutgoing =
+        item.fromMe && (lastOutgoingMessageId === messageId || lastOutgoingMessageId === pairedId);
       return (
         <MessageEntry
           entry={item}
           isGroup={isGroup}
           myId={myId}
-          expanded={expandedMessageId === messageId}
-          showSeen={showSeen}
-          seenLabel={showSeen ? seenLabel : ''}
-          seenAvatars={showSeen ? seenAvatars : NO_SEEN_AVATARS}
+          seenLabel={isLastOutgoing && hasBeenSeen ? seenLabel : ''}
           freshIdsRef={justArrivedIdsRef}
           onOpenImage={openImageViewer}
-          onToggleExpanded={handleBubbleToggleExpanded}
-          onLongPress={handleBubbleLongPress}
-          onReact={handleBubbleReact}
+          onLongPress={handleLongPress}
+          onReact={handleReact}
           onShowReactors={handleShowReactors}
         />
       );
@@ -2127,15 +2844,12 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     [
       isGroup,
       myId,
-      expandedMessageId,
       lastOutgoingMessageId,
       hasBeenSeen,
       seenLabel,
-      seenAvatars,
       openImageViewer,
-      handleBubbleToggleExpanded,
-      handleBubbleLongPress,
-      handleBubbleReact,
+      handleLongPress,
+      handleReact,
       handleShowReactors,
     ],
   );
@@ -2147,81 +2861,81 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
     return typingUsers.length > 1 ? `${first} +${typingUsers.length - 1} écrivent…` : `${first} écrit…`;
   }, [typingUsers, isGroup, participantMap]);
 
-  // ─── Rendu ────────────────────────────────────────────────────────────────
+  /**
+   * Le bouton rond change de rôle, jamais de place : micro au repos et pendant
+   * le maintien, flèche d'envoi quand il y a du texte, pause une fois les mains
+   * libres. La géométrie du quai ne bouge pas, c'est son icône et son geste qui
+   * changent.
+   */
+  const roundIsSend = recState === 'idle' && canSend;
+  const roundIsPause = recState === 'locked';
+  const roundIsMic = !roundIsSend && !roundIsPause;
+
+  // ─── Rendu ───────────────────────────────────────────────────────────────
 
   return (
-    // Pas de `ScreenBackground` : il peint `colors.bg` en dur, le fond de
-    // l'app. La feuille se pose à plat, comme `FeedGutterScreen` pose la sienne.
     <View style={styles.root}>
-      {/* `SafeAreaView` de `react-native-safe-area-context`, PAS celle du
-          coeur de React Native : cette derniere ne pose aucun inset sur
-          Android. `edges={['top']}` seulement — le bas est deja tenu par
-          ce qui s'y trouve. */}
+      {/* `SafeAreaView` de `react-native-safe-area-context`, PAS celle du cœur de
+          React Native : cette dernière ne pose aucun inset sur Android.
+          `edges={['top']}` seulement — le bas est tenu par le quai. */}
       <SafeAreaView style={styles.container} edges={['top']}>
         <AppStatusBar />
 
-        {/* ── En-tête : un filet, jamais un aplat ── */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={hitSlop}>
-            <Ionicons name="chevron-back" size={26} color={paper.ink} />
+        {/* ── En-tête : un filet, jamais un aplat, et UNE seule ligne ── */}
+        <Reanimated.View
+          style={[styles.header, headerDimStyle]}
+          pointerEvents={isRecording ? 'none' : 'auto'}
+        >
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={hitSlop}>
+            <Ionicons name="chevron-back" size={ps(19)} color={M.ink} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.headerCenter} onPress={openPeer} activeOpacity={0.75}>
-            {/* L'avatar ouvre la story : c'est ce que faisait le bouton
-                appareil photo du compositeur, qui n'a donc plus lieu d'être. */}
-            <TouchableOpacity onPress={openPeerStory} activeOpacity={0.8}>
-              <StoryRing
-                size={ps(32)}
-                uri={avatarUri}
-                label={conversationTitle}
-                hasStory={!isGroup && !!peerStories?.stories?.length}
-                seen={!peerStories?.has_unseen}
-                gapColor={sheet.bg}
-                ringWidth={2}
-              />
-            </TouchableOpacity>
-            <View style={styles.headerTextBlock}>
-              <View style={styles.headerNameRow}>
-                {isGroup && (
-                  <Ionicons name="people" size={13} color={sheet.inkSoft} style={{ marginRight: 4 }} />
-                )}
-                <Text
-                  style={[
-                    styles.headerName,
-                    nameIsLit(peerCustomization) && {
-                      color: certifiedNameColors(conversationVerificationStyle as any, peerCustomization).from,
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {conversationTitle || 'Conversation'}
-                </Text>
-                {!isGroup && conversationVerified && (
-                  <View style={{ marginLeft: 4 }}>
-                    <VerifiedBadge
-                      verificationStyle={conversationVerificationStyle as any}
-                      size={13}
-                      tint={certifiedNameColors(conversationVerificationStyle as any, peerCustomization).from}
-                    />
-                  </View>
-                )}
+          {/* L'avatar ouvre la story : c'est ce que faisait le bouton appareil
+              photo du compositeur, qui n'a donc plus lieu d'être. */}
+          <TouchableOpacity onPress={openPeerStory} activeOpacity={0.8}>
+            <StoryRing
+              size={ps(32)}
+              uri={avatarUri}
+              label={conversationTitle}
+              hasStory={!isGroup && !!peerStories?.stories?.length}
+              seen={!peerStories?.has_unseen}
+              gapColor={M.bg}
+              ringWidth={2}
+            />
+          </TouchableOpacity>
+
+          <View style={styles.headerNameRow}>
+            {isGroup && (
+              <Ionicons name="people" size={ps(13)} color={M.meta} style={{ marginRight: ps(5) }} />
+            )}
+            <Text
+              style={[
+                styles.headerName,
+                nameIsLit(peerCustomization) && {
+                  color: certifiedNameColors(conversationVerificationStyle as any, peerCustomization).from,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {conversationTitle || 'Conversation'}
+            </Text>
+            {!isGroup && conversationVerified && (
+              <View style={{ marginLeft: ps(5) }}>
+                <VerifiedBadge
+                  verificationStyle={conversationVerificationStyle as any}
+                  size={13}
+                  tint={certifiedNameColors(conversationVerificationStyle as any, peerCustomization).from}
+                />
               </View>
-              <Text style={styles.headerSub} numberOfLines={1}>
-                {typingLabel ||
-                  (typingUsers.length > 0
-                    ? 'en train d\'Écrire…'
-                    : isGroup
-                      ? `${memberCount} membre${memberCount > 1 ? 's' : ''}`
-                      : `@${conversationUsername || 'user'}`)}
-              </Text>
-            </View>
-          </TouchableOpacity>
+            )}
+          </View>
 
-          {/* Actualiser et « voir le profil » ont disparu : le second
-              redisait exactement ce que fait déjà un appui sur l'avatar ou le
-              nom juste à côté (`openPeer`), et les messages arrivent déjà en
-              direct par socket sans bouton pour le demander. */}
-        </View>
+          {/* Le bouton du dessin, à droite de la barre. Il a une vraie
+              destination : le profil, ou les membres en groupe. */}
+          <TouchableOpacity onPress={openPeer} hitSlop={hitSlop}>
+            <Ionicons name="options-outline" size={ps(19)} color={M.ink} />
+          </TouchableOpacity>
+        </Reanimated.View>
 
         {/* ── Corps ── */}
         {loading ? (
@@ -2232,157 +2946,221 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
-            <FlatList
-              ref={flatListRef}
-              data={decorated}
-              keyExtractor={(item) => String(item.msg.id)}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              onScroll={handleListScroll}
-              scrollEventThrottle={160}
-              onContentSizeChange={handleContentSizeChange}
-              // Accordé à la taille de page : tout ce que le serveur envoie est
-              // monté au premier rendu, donc `scrollToEnd` connaît la vraie
-              // hauteur du contenu dès le premier appel (voir MESSAGE_PAGE_SIZE).
-              initialNumToRender={MESSAGE_PAGE_SIZE}
-              // Les suivants sont ceux qui s'accumulent pendant la session, à
-              // mesure que la conversation vit.
-              maxToRenderPerBatch={10}
-              updateCellsBatchingPeriod={50}
-              windowSize={11}
-              // `removeClippedSubviews` reste à `false`, comme sur ProfileScreen :
-              // les entrées ont une hauteur variable et portent des animations
-              // d'entrée, et le clipping est connu pour y faire disparaître des
-              // vues. Le gain serait marginal sur 30 éléments.
-              ListHeaderComponent={
-                // En-tête de la transcription : de qui est cet échange. Pas de
-                // bouton plein — un mot souligné d'accent suffit.
-                <View style={styles.threadIntro}>
-                  <StoryRing
-                    size={ps(76)}
-                    uri={avatarUri}
-                    label={conversationTitle}
-                    hasStory={false}
-                    gapColor={sheet.bg}
-                  />
-                  <Text style={styles.introName}>{conversationTitle || 'Conversation'}</Text>
-                  <Text style={styles.introSub}>
-                    {isGroup
-                      ? `Groupe · ${memberCount} membre${memberCount > 1 ? 's' : ''}`
-                      : `@${conversationUsername || 'user'}`}
-                  </Text>
-                  <TouchableOpacity style={styles.introBtn} onPress={openPeer} activeOpacity={0.8}>
-                    <Text style={styles.introBtnText}>
-                      {isGroup ? 'Voir les membres' : 'Voir le profil'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              }
-            />
+            <Reanimated.View
+              style={[styles.listHost, listDimStyle]}
+              pointerEvents={isRecording ? 'none' : 'auto'}
+            >
+              <FlatList
+                ref={flatListRef}
+                data={decorated}
+                keyExtractor={(item) => String(item.msg.id)}
+                renderItem={renderItem}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                onScroll={handleListScroll}
+                scrollEventThrottle={160}
+                onContentSizeChange={handleContentSizeChange}
+                // Accordé à la taille de page : tout ce que le serveur envoie est
+                // monté au premier rendu, donc `scrollToEnd` connaît la vraie
+                // hauteur du contenu dès le premier appel.
+                initialNumToRender={MESSAGE_PAGE_SIZE}
+                maxToRenderPerBatch={10}
+                updateCellsBatchingPeriod={50}
+                windowSize={11}
+                // `removeClippedSubviews` reste à `false` : les lignes ont une
+                // hauteur variable et portent des animations d'entrée, et le
+                // clipping est connu pour y faire disparaître des vues.
+                removeClippedSubviews={false}
+              />
+            </Reanimated.View>
 
-            {/* « écrit… » : posé dans la gouttière, comme une entrée qui
-                s'annonce sans encore rien dire. */}
-            {typingUsers.length > 0 && (
+            {/* « écrit… » : dans la colonne du relevé, à la place qu'occupera le
+                message. La gouttière reste vide — il n'y a pas encore d'heure à
+                mettre. Trois points sur le papier, sans pastille autour. */}
+            {typingUsers.length > 0 && !isRecording && (
               <View style={styles.typingRow}>
-                <View style={styles.avatarSlot}>
-                  {(() => {
-                    const uri = getAvatarUri(
-                      participantMap[String(typingUsers[0]?.user_id || '')]?.avatar || conversationAvatar || null,
-                    );
-                    return uri ? (
-                      <Image source={{ uri }} style={styles.rowAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} recyclingKey={uri} />
-                    ) : (
-                      <View style={[styles.rowAvatar, styles.rowAvatarFallback]} />
-                    );
-                  })()}
-                </View>
                 <View style={styles.typingDots}>
                   <Animated.View style={[styles.typingDot, { opacity: dot1 }]} />
                   <Animated.View style={[styles.typingDot, { opacity: dot2 }]} />
                   <Animated.View style={[styles.typingDot, { opacity: dot3 }]} />
                 </View>
+                {!!typingLabel && (
+                  <Text style={styles.typingLabel} numberOfLines={1}>
+                    {typingLabel}
+                  </Text>
+                )}
               </View>
             )}
 
-            {/* ── Compositeur : une ligne réglée, pas une boîte grise ──
-                Deux cibles au repos seulement — joindre, et le micro. */}
-            <View style={[styles.inputBar, { paddingBottom: ps(10) + insets.bottom }]}>
-              <View style={styles.inputWrap}>
-                {isRecording ? (
-                  <View style={styles.recordingRow}>
-                    <View style={styles.recordingDot} />
-                    <Text style={styles.recordingTimer}>{formatDuration(recordingMs)}</Text>
-                    {/* Le déplacement suit le pouce sur le thread UI ; seul le
-                        passage du seuil (`cancelArmed`) redescend jusqu'à
-                        React, où il change une couleur. */}
-                    <Reanimated.View style={[styles.recordingSlideHint, slideHintStyle]}>
-                      <Ionicons
-                        name="chevron-back"
-                        size={14}
-                        color={cancelArmed ? '#FF3B30' : sheet.inkMeta}
-                      />
-                      <Text
-                        style={[styles.recordingSlideHintText, cancelArmed && styles.recordingSlideHintTextActive]}
-                      >
-                        Glisser pour annuler
-                      </Text>
-                    </Reanimated.View>
+            {/* Remonter pour verrouiller : sur le chemin du pouce, au-dessus du
+                micro. Disparaît une fois verrouillé — l'affordance a servi, la
+                répéter serait du bruit. */}
+            {recState === 'holding' && (
+              <View style={styles.lockColumn} pointerEvents="none">
+                <View style={styles.lockCircle}>
+                  <Ionicons name="lock-closed-outline" size={ps(17)} color={M.ink} />
+                </View>
+                <Text style={styles.lockLabel}>Remonter pour verrouiller</Text>
+                <Ionicons name="chevron-up" size={ps(15)} color={M.chevron} />
+              </View>
+            )}
+
+            {/*
+              ── Le quai : compositeur au repos, panneau d'enregistrement en
+              parlant ──
+
+              UN seul conteneur pour les deux états, et surtout UN SEUL nœud de
+              micro, à la même place de l'arbre dans les deux cas. Ce n'est pas
+              un choix de mise en forme : le `GestureDetector` du micro porte le
+              geste EN COURS. Le démonter pour afficher un panneau à part
+              annulerait le maintien à la première image, et l'enregistrement
+              s'arrêterait avant d'avoir commencé. C'est la même mécanique qui
+              rend le verrou possible — là, on démonte volontairement le micro
+              pour le remplacer par la pause, et `onFinalize` sait qu'il ne doit
+              rien conclure (voir `micGesture`).
+            */}
+            <View
+              style={[
+                styles.dock,
+                isRecording && styles.dockRecording,
+                { paddingBottom: ps(12) + Math.max(insets.bottom, ps(18)) },
+              ]}
+            >
+              {isRecording && (
+                <>
+                  <RecordingHead channelRef={recorderChannelRef} paused={recPaused} />
+
+                  {/*
+                    Le pied est AU-DESSUS de la rangée du micro, alors que le
+                    dessin le met en dessous. C'est le seul écart de mise en
+                    page, et il est structurel : tout ce qui se glisse SOUS le
+                    bouton le remonte, donc le fait sortir de sous le pouce qui
+                    est en train de le maintenir. Gesture Handler perd alors la
+                    vue qu'il suivait et l'enregistrement s'interrompt. Le quai
+                    grandit vers le haut, jamais vers le bas.
+                  */}
+                  <View style={styles.recFoot}>
+                    <Text style={styles.recFootText}>
+                      {recState === 'locked' ? 'Prêt à partir' : 'Relâcher pour envoyer'}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={stopAndSendRecording}
+                      disabled={recState !== 'locked'}
+                      style={[styles.recSend, recState !== 'locked' && styles.recDimmed]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Envoyer le message vocal"
+                      accessibilityState={{ disabled: recState !== 'locked' }}
+                    >
+                      <Text style={styles.recSendText}>Envoyer</Text>
+                      <Ionicons name="arrow-up" size={ps(15)} color={M.panel} />
+                    </TouchableOpacity>
                   </View>
-                ) : (
-                  <TextInput
-                    style={styles.input}
-                    value={text}
-                    onChangeText={setText}
-                    // Le clavier peut déjà être ouvert (on revient d'un autre
-                    // champ, ou on avait remonté lire l'historique pendant
-                    // qu'il l'était déjà) : dans ce cas `keyboardWillShow` ne
-                    // se redéclenche pas, seul le focus le dit.
-                    onFocus={() => scrollToBottom()}
-                    placeholder="Écrire…"
-                    placeholderTextColor={sheet.inkMeta}
-                    multiline
-                    maxLength={1000}
-                  />
-                )}
-                {canSend ? (
-                  <TouchableOpacity onPress={send} style={styles.sendBtn} hitSlop={hitSlop}>
-                    <Text style={styles.sendText}>Envoyer</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.inputIcons}>
-                    {!isRecording && (
-                      <TouchableOpacity
-                        onPress={pickAndSendImage}
-                        disabled={attachmentSending}
-                        hitSlop={hitSlop}
-                        accessibilityRole="button"
-                        accessibilityLabel="Joindre une image"
-                        accessibilityState={{ disabled: attachmentSending, busy: attachmentSending }}
-                      >
-                        {attachmentSending ? (
-                          <ActivityIndicator size="small" color={sheet.inkSoft} />
-                        ) : (
-                          <Ionicons name="add" size={32} color={sheet.inkSoft} />
-                        )}
-                      </TouchableOpacity>
+                </>
+              )}
+
+              {/*
+                LA MÊME RANGÉE dans les deux états, et surtout la même hauteur :
+                le bouton rond ne change ni de taille ni de place quand le
+                panneau s'ouvre. Sa croissance visible pendant le maintien passe
+                par `transform: scale` (voir `micStyle`), qui ne touche pas à la
+                mise en page.
+              */}
+              <View style={styles.composerRow}>
+                {isRecording ? (
+                  <>
+                    {/* Vraie cible une fois les mains libres. Pendant le
+                        maintien, le pouce est sur le micro et ne peut pas
+                        l'atteindre : un bouton hors de portée s'affiche comme
+                        tel plutôt que de mentir. */}
+                    <TouchableOpacity
+                      onPress={cancelRecording}
+                      disabled={recState !== 'locked'}
+                      hitSlop={hitSlop}
+                      style={[styles.recTrash, recState !== 'locked' && styles.recDimmed]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Annuler le message vocal"
+                      accessibilityState={{ disabled: recState !== 'locked' }}
+                    >
+                      <Ionicons name="trash-outline" size={ps(17)} color={M.onPanel} />
+                    </TouchableOpacity>
+
+                    {recState === 'locked' ? (
+                      <Text style={styles.recHintText}>Mains libres</Text>
+                    ) : (
+                      <CancelHint channelRef={recorderChannelRef} dragX={recordingDragX} />
                     )}
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      onPress={pickAndSendImage}
+                      disabled={attachmentSending}
+                      hitSlop={hitSlop}
+                      accessibilityRole="button"
+                      accessibilityLabel="Joindre une photo"
+                      accessibilityState={{ disabled: attachmentSending, busy: attachmentSending }}
+                    >
+                      {attachmentSending ? (
+                        <ActivityIndicator size="small" color={M.meta} />
+                      ) : (
+                        <Ionicons name="image-outline" size={ps(21)} color={M.ink} />
+                      )}
+                    </TouchableOpacity>
+
+                    <TextInput
+                      style={styles.input}
+                      value={text}
+                      onChangeText={setText}
+                      // Le clavier peut déjà être ouvert (on revient d'un autre
+                      // champ, ou on avait remonté lire l'historique pendant
+                      // qu'il l'était déjà) : dans ce cas `keyboardWillShow` ne
+                      // se redéclenche pas, seul le focus le dit.
+                      onFocus={() => scrollToBottom()}
+                      placeholder="Écrire un message…"
+                      placeholderTextColor={M.time}
+                      multiline
+                      maxLength={1000}
+                    />
+
+                    {/* Le mot du geste, pas une icône de plus : c'est la seule
+                        chose que le micro ne dit pas de lui-même. */}
+                    {!canSend && <Text style={styles.holdHint}>Maintenir</Text>}
+                  </>
+                )}
+
+                <View style={[styles.micHalo, isRecording && styles.micHaloStrong]}>
+                  {roundIsMic ? (
                     <GestureDetector gesture={micGesture}>
                       <Reanimated.View
-                        style={[styles.micButton, isRecording && styles.micButtonActive, micStyle]}
+                        style={[styles.roundBtn, micStyle]}
                         accessibilityRole="button"
                         accessibilityLabel="Maintenir pour enregistrer un message vocal"
                       >
-                        <Ionicons
-                          name={isRecording ? 'mic' : 'mic-outline'}
-                          size={30}
-                          color={isRecording ? '#fff' : sheet.inkSoft}
-                        />
+                        <Ionicons name="mic" size={ps(21)} color={M.onAccent} />
                       </Reanimated.View>
                     </GestureDetector>
-                  </View>
-                )}
+                  ) : (
+                    <TouchableOpacity
+                      onPress={roundIsPause ? togglePause : send}
+                      style={styles.roundBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        roundIsPause
+                          ? recPaused
+                            ? 'Reprendre l\'enregistrement'
+                            : 'Mettre l\'enregistrement en pause'
+                          : 'Envoyer le message'
+                      }
+                    >
+                      <Ionicons
+                        name={roundIsPause ? (recPaused ? 'mic' : 'pause') : 'arrow-up'}
+                        size={ps(21)}
+                        color={M.onAccent}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -2433,8 +3211,8 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
               {reactionBarFor && (
                 <Reanimated.View
                   // Ouverture franche et visible, mais SANS `springify()` :
-                  // c'est lui qui faisait osciller la barre pendant près
-                  // d'une seconde.
+                  // c'est lui qui faisait osciller la barre pendant près d'une
+                  // seconde.
                   entering={ZoomIn.duration(190).easing(Easing.out(Easing.cubic))}
                   style={[
                     styles.reactionBar,
@@ -2457,7 +3235,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     </TouchableOpacity>
                   ))}
 
-                  {/* « + » : ouvre le sélecteur complet, comme Instagram. */}
+                  {/* « + » : ouvre le sélecteur complet. */}
                   <TouchableOpacity
                     onPress={() => {
                       setEmojiPickerFor(reactionBarFor.messageId);
@@ -2467,7 +3245,7 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
                     accessibilityLabel="Choisir un autre emoji"
                   >
                     <View style={styles.reactionBarMore}>
-                      <Ionicons name="add" size={20} color={paper.ink} />
+                      <Ionicons name="add" size={20} color={M.ink} />
                     </View>
                   </TouchableOpacity>
                 </Reanimated.View>
@@ -2499,155 +3277,203 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 
-/** Avatar d'une entrée : plus petit que dans le registre, la colonne est la même. */
-const ENTRY_AVATAR = ps(32);
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: sheet.bg },
+  root: { flex: 1, backgroundColor: M.bg },
   container: { flex: 1, backgroundColor: 'transparent' },
 
-  // ── En-tête ──
+  // ── En-tête ──  padding: 8px 20px 12px · gap 11
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: ps(14),
-    paddingVertical: ps(9),
+    gap: ps(11),
+    paddingHorizontal: PAD_X,
+    paddingTop: ps(8),
+    paddingBottom: ps(12),
     borderBottomWidth: 1,
-    borderBottomColor: paper.hairline,
+    borderBottomColor: M.hairline,
   },
-  backBtn: { padding: ps(4), marginRight: ps(2) },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: ps(2) },
-  headerTextBlock: { marginLeft: ps(9), flex: 1, minWidth: 0 },
-  headerNameRow: { flexDirection: 'row', alignItems: 'center', minWidth: 0 },
+  headerNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
   headerName: {
-    color: paper.ink,
-    fontSize: ps(22),
+    color: M.ink,
+    fontSize: ps(21),
     fontFamily: paperFonts.strong,
-    letterSpacing: ps(-0.3),
+    letterSpacing: ps(-0.35),
     flexShrink: 1,
   },
-  headerSub: {
-    color: sheet.inkMeta,
-    fontSize: ps(14),
-    marginTop: ps(2),
-    fontFamily: paperFonts.body,
-  },
-  listContent: { paddingBottom: ps(10) },
 
-  // ── Ouverture de la transcription ──
-  threadIntro: {
-    alignItems: 'center',
-    paddingTop: ps(22),
-    paddingBottom: ps(22),
-    paddingHorizontal: ROW_PAD_X,
-  },
-  introName: {
-    color: paper.ink,
-    fontSize: ps(20),
-    fontFamily: paperFonts.display,
-    letterSpacing: ps(-0.4),
-    marginTop: ps(12),
-    textAlign: 'center',
-  },
-  introSub: {
-    color: sheet.inkMeta,
-    fontSize: ps(13),
-    fontFamily: paperFonts.body,
-    marginTop: ps(6),
-  },
-  // Pas de bouton plein : un mot, souligné d'un filet d'accent.
-  introBtn: {
-    marginTop: ps(16),
-    borderBottomWidth: 1,
-    borderBottomColor: paper.accent,
-    paddingBottom: ps(2),
-  },
-  introBtnText: { color: paper.accent, fontSize: ps(14), fontFamily: paperFonts.strong },
+  listHost: { flex: 1 },
+  listContent: { paddingBottom: ps(8) },
 
   // ── Séparateur de jour ──
   separatorText: {
-    color: sheet.inkMeta,
-    fontSize: ps(10),
-    letterSpacing: ps(1.5),
+    color: M.time,
+    fontSize: ps(12),
+    letterSpacing: ps(1.7),
+    textTransform: 'uppercase',
     fontFamily: paperFonts.mono,
     textAlign: 'center',
-    paddingTop: ps(14),
-    paddingBottom: ps(10),
+    paddingTop: ps(20),
+    paddingBottom: ps(2),
   },
 
-  // ── Une bulle ──
-  // L'alignement gauche/droite est le repere principal de l'emetteur : c'est
-  // lui qui permet de savoir qui parle SANS lire. Le supprimer au profit d'une
-  // colonne unique rendait l'ecran illisible, c'est la lecon de la version
-  // precedente. `flex-start` (et non plus `flex-end`) parce que l'avatar
-  // ouvre desormais la salve au lieu de la clore — voir `showAvatar`.
-  msgRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: ROW_PAD_X },
-  msgRowLeft: { justifyContent: 'flex-start' },
-  msgRowRight: { justifyContent: 'flex-end' },
-  avatarSlot: { width: ps(30), alignItems: 'center', justifyContent: 'flex-start', marginRight: ps(7) },
-  rowAvatar: { width: ps(26), height: ps(26), borderRadius: ps(13) },
-  rowAvatarFallback: {
-    backgroundColor: sheet.band,
+  // ── L'ouverture d'une salve, en groupe seulement ──
+  senderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(6),
+    paddingLeft: PAD_X + TIME_COL + GRID_GAP,
+    paddingRight: PAD_X,
+    paddingTop: ROW_TOP,
+  },
+  senderAvatar: { width: ps(24), height: ps(24), borderRadius: ps(12) },
+  avatarFallback: {
+    backgroundColor: M.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowAvatarText: { color: paper.ink, fontSize: ps(11), fontFamily: paperFonts.strong },
-
-  groupSenderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: ps(4),
-    marginLeft: ROW_PAD_X + ps(37),
-    marginBottom: ps(4),
-    marginTop: ps(8),
+  avatarFallbackText: { color: M.ink, fontSize: ps(12), fontFamily: paperFonts.strong },
+  senderName: {
+    color: M.meta,
+    fontSize: ps(15),
+    letterSpacing: ps(0.4),
+    fontFamily: paperFonts.strong,
+    flexShrink: 1,
   },
-  groupSenderName: { color: sheet.inkMeta, fontSize: ps(12), fontFamily: paperFonts.strong },
 
-  messageColumn: { maxWidth: BUBBLE_MAX, alignItems: 'flex-start' },
-  messageColumnMine: { alignItems: 'flex-end' },
-  bubbleTouch: { maxWidth: '100%' },
-  // `position: relative` : ancre `accentRail` et les deux pastilles de geste,
-  // qui se positionnent en absolu pour epouser exactement la hauteur de CE
-  // conteneur (texte, image ou lecteur vocal), quel que soit son nombre de
-  // lignes. `overflow: visible` : sur Android une vue rogne ses enfants par
-  // defaut, et le coeur du double-tap comme la pastille d'heure debordent
-  // volontairement du cadre de la bulle (meme piege que documente dans
-  // `TweetRowGutter`).
-  bubbleWrap: { position: 'relative', overflow: 'visible' },
-  // Meme fond des deux cotes : ce qui distinguait « moi » tenait tout entier
-  // dans un aplat d'accent, contraire a la regle de `paper2b.ts` (« aucun
-  // aplat de couleur hors du concours »). La position et le rail suffisent.
-  bubble: { paddingHorizontal: ps(18), paddingVertical: ps(13), backgroundColor: sheet.band },
-  bubbleText: {
-    color: paper.ink,
-    fontSize: ps(26),
-    lineHeight: ps(35),
+  // ── La grille ──  46px | 12 | reste · padding 16px 20px 0
+  //
+  // Miroitée pour mes messages : `row-reverse` place la gouttière d'heure à
+  // droite et rend la colonne de contenu au bloc, qui s'y aligne à droite. Les
+  // marges, elles, restent PHYSIQUES en `row-reverse` — d'où `rowTimeMine`,
+  // qui repasse l'écart de droite à gauche.
+  row: { flexDirection: 'row', paddingHorizontal: PAD_X, paddingTop: ROW_TOP },
+  rowMine: { flexDirection: 'row-reverse' },
+  rowAfterSender: { paddingTop: ps(6) },
+  rowTime: {
+    width: TIME_COL,
+    marginRight: GRID_GAP,
+    textAlign: 'right',
+    color: M.time,
+    fontSize: ps(13),
+    lineHeight: ps(16),
+    letterSpacing: ps(0.6),
+    fontFamily: paperFonts.mono,
+  },
+  rowTimeMine: { marginRight: 0, marginLeft: GRID_GAP, textAlign: 'left' },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowBodyMine: { alignItems: 'flex-end' },
+  // `alignSelf: 'stretch'` est obligatoire, et c'est subtil : sans lui, sous le
+  // `alignItems: 'flex-end'` de `rowBodyMine`, le conteneur se rétrécissait à
+  // la largeur de son contenu. Une onde n'a pas de largeur propre — ses barres
+  // sont en `flex: 1` — donc MES vocaux sortaient plus étroits que ceux que je
+  // reçois, alors qu'ils doivent occuper la même colonne. Le texte, lui,
+  // continue de se caler à droite par `textMine`.
+  holder: { position: 'relative', alignSelf: 'stretch' },
+  // Les pastilles de réaction suivent leur message : à droite quand il l'est.
+  holderMine: { alignItems: 'flex-end' },
+
+  // ── Le texte ──
+  // Le même papier, la même encre des deux côtés : seule la position change.
+  textOnPaper: { alignSelf: 'stretch', paddingRight: ps(6) },
+  textMine: { alignSelf: 'flex-end', paddingRight: 0, paddingLeft: ps(6) },
+  bodyText: {
+    color: M.ink,
+    fontSize: ps(24),
+    lineHeight: ps(33),
     fontFamily: paperFonts.body,
   },
-  // Le seul signal qui reste de « moi » cote matiere. Jamais dessine en face :
-  // un signal repete des deux cotes cesse d'en etre un.
-  accentRail: {
-    position: 'absolute',
-    top: 0,
-    right: -RAIL_OFFSET,
-    width: RAIL_W,
-    borderRadius: RAIL_W / 2,
-    backgroundColor: paper.accent,
+  // Ce que je dis se range du côté de son heure, jusqu'au fer.
+  bodyTextMine: { textAlign: 'right' },
+
+  // L'accusé de lecture : une ligne, sous le dernier message envoyé.
+  seenLabel: {
+    marginTop: ps(6),
+    textAlign: 'right',
+    color: M.time,
+    fontSize: ps(12),
+    letterSpacing: ps(1.1),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
   },
-  // Ancrée au coin EXTÉRIEUR de la bulle, pas dans sa marge de largeur : un
-  // message d'un mot et un message qui frôle `BUBBLE_MAX` n'ouvrent pas le
-  // même espace à côté d'eux, un coin fixe fonctionne pour les deux.
-  revealTimePill: {
-    position: 'absolute',
-    bottom: -ps(9),
-    backgroundColor: sheet.bg,
-    borderRadius: ps(8),
-    paddingHorizontal: ps(6),
-    paddingVertical: ps(2),
+
+  // ── L'onde, un seul gabarit ──  hauteur 44 · gap 2 · radius 2
+  bar: { flex: 1, borderRadius: ps(2) },
+  voiceBlock: { alignSelf: 'stretch' },
+  voiceWave: { flexDirection: 'row', alignItems: 'flex-end', height: WAVE_H, gap: 2 },
+  voiceControls: { flexDirection: 'row', alignItems: 'center', gap: ps(10), marginTop: ps(10) },
+  voicePlay: {
+    width: ps(40),
+    height: ps(40),
+    borderRadius: ps(20),
+    backgroundColor: M.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  revealTimePillMine: { right: -ps(4) },
-  revealTimePillOther: { left: -ps(4) },
-  revealTimeText: { color: sheet.inkMeta, fontSize: ps(10), fontFamily: paperFonts.mono },
+  voiceDuration: {
+    color: M.ink,
+    fontSize: ps(28),
+    lineHeight: ps(28),
+    letterSpacing: ps(-0.9),
+    fontFamily: paperFonts.display,
+  },
+  voiceRate: {
+    borderWidth: 1,
+    borderColor: M.pillLine,
+    borderRadius: ps(6),
+    paddingHorizontal: ps(8),
+    paddingVertical: ps(4),
+  },
+  voiceRateText: {
+    color: M.meta,
+    fontSize: ps(12.5),
+    letterSpacing: ps(1),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+  // Le mot d'action du dessin : encre pleine, souligné d'un filet d'accent.
+  voiceAction: {
+    marginLeft: 'auto',
+    borderBottomWidth: 1,
+    borderBottomColor: M.accent,
+    paddingBottom: ps(1),
+  },
+  voiceActionText: {
+    color: M.ink,
+    fontSize: ps(12.5),
+    letterSpacing: ps(0.9),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+
+  // ── Les photos ──  seule : radius 14, hauteur 190 · paire : radius 12, 112
+  photoFull: { alignSelf: 'stretch' },
+  photoHalf: { flex: 1, minWidth: 0 },
+  photoPair: { flexDirection: 'row', gap: ps(8) },
+  // `position: relative` ancre le cœur du double appui ; `overflow: visible`
+  // parce que sur Android une vue rogne ses enfants par défaut, et le cœur
+  // déborde volontairement du cadre.
+  photoWrap: { position: 'relative', overflow: 'visible' },
+  photoImageFull: {
+    width: '100%',
+    height: ps(210),
+    borderRadius: PHOTO_R,
+    backgroundColor: M.media,
+  },
+  photoImageHalf: {
+    width: '100%',
+    height: ps(124),
+    borderRadius: TILE_R,
+    backgroundColor: M.media,
+  },
+  photoCaption: {
+    color: M.ink,
+    fontSize: ps(24),
+    lineHeight: ps(33),
+    marginTop: ps(9),
+    fontFamily: paperFonts.body,
+  },
+
   heartPopOverlay: {
     position: 'absolute',
     top: 0,
@@ -2658,55 +3484,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  attachmentImage: {
-    width: ps(220),
-    // Sur un ecran etroit la colonne peut descendre sous 220 pt : l'image se
-    // reduit alors au lieu de deborder de la bulle.
-    maxWidth: '100%',
-    height: ps(220),
-    backgroundColor: sheet.band,
-  },
-
-  // UN horodatage par salve, discret, du cote de son auteur.
-  messageTime: { color: sheet.inkMeta, fontSize: ps(10), fontFamily: paperFonts.mono, marginTop: ps(3) },
-  messageTimeRight: { textAlign: 'right', marginRight: ps(4) },
-  messageTimeLeft: { marginLeft: ps(4) },
-
-  // ── Message vocal, posé sur le papier ──
-  // Meme lecture des deux cotes (voir l'en-tete de `VoiceLine`) : plus de fond
-  // colore pour « moi », le bouton de lecture porte seul l'accent.
-  voiceBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: ps(9),
-    paddingHorizontal: ps(11),
-    paddingVertical: ps(10),
-    width: ps(228),
-    maxWidth: '100%',
-    backgroundColor: sheet.band,
-  },
-  voicePlayRing: {
-    width: ps(28),
-    height: ps(28),
-    borderRadius: ps(14),
-    borderWidth: 1,
-    borderColor: paper.hairline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voicePlayBtn: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
-  voiceWaveform: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2.5, height: ps(24) },
-  voiceBar: { flex: 1, maxWidth: 3, borderRadius: 1.5 },
-  voiceBarIdle: { backgroundColor: paper.ink, opacity: 0.25 },
-  voiceBarPlayed: { backgroundColor: paper.accent },
-  voiceDuration: { color: sheet.inkMeta, fontSize: ps(10.5), fontFamily: paperFonts.mono },
-
   // ── Renvoi vers une story ──
   storyReply: { marginBottom: ps(6) },
   storyReplyLabel: {
-    color: sheet.inkMeta,
-    fontSize: ps(9.5),
+    color: M.meta,
+    fontSize: ps(11),
     letterSpacing: ps(1.2),
+    textTransform: 'uppercase',
     fontFamily: paperFonts.mono,
     marginBottom: ps(5),
   },
@@ -2714,8 +3498,8 @@ const styles = StyleSheet.create({
   storyReplyMedia: {
     width: ps(112),
     height: ps(150),
-    borderRadius: ps(8),
-    backgroundColor: sheet.band,
+    borderRadius: TILE_R,
+    backgroundColor: M.media,
   },
   storyReplyPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   storyReplyPlay: {
@@ -2730,31 +3514,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   storyReplyCaption: {
-    color: sheet.inkMeta,
-    fontSize: ps(12),
-    lineHeight: ps(16),
+    color: M.meta,
+    fontSize: ps(14),
+    lineHeight: ps(19),
     marginTop: ps(5),
     fontFamily: paperFonts.body,
   },
 
   // ── Réactions ──
-  reactionPillRow: { flexDirection: 'row', gap: ps(4), marginTop: ps(4) },
-  reactionPillRowMine: { alignSelf: 'flex-end' },
-  reactionPillRowOther: { alignSelf: 'flex-start' },
-  // Une surface pleine et discrete : cernee de rouge, la pastille se lisait
-  // comme une erreur, pas comme une reaction.
+  reactionPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: ps(4), marginTop: ps(6) },
   reactionPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: ps(3),
-    backgroundColor: sheet.band,
-    borderRadius: ps(12),
-    paddingHorizontal: ps(7),
-    paddingVertical: ps(3),
+    gap: ps(4),
+    backgroundColor: M.surface,
+    borderWidth: 1,
+    borderColor: M.surfaceLine,
+    borderRadius: ps(14),
+    paddingHorizontal: ps(9),
+    paddingVertical: ps(4),
   },
-  reactionPillMine: { backgroundColor: paper.pillWash },
-  reactionPillEmoji: { fontSize: ps(12) },
-  reactionPillCount: { color: sheet.inkMeta, fontSize: ps(10), fontFamily: paperFonts.mono },
+  reactionPillMine: { borderColor: M.accent },
+  reactionPillEmoji: { fontSize: ps(16) },
+  reactionPillCount: { color: M.meta, fontSize: ps(12.5), fontFamily: paperFonts.mono },
 
   // Largeur dérivée de son contenu — voir REACTION_BAR_WIDTH.
   reactionBar: {
@@ -2765,9 +3547,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: REACTION_BAR_PADDING,
     paddingVertical: ps(6),
     borderRadius: ps(24),
-    backgroundColor: sheet.band,
+    // `M.surface` et non le papier : la barre se pose DEVANT la conversation.
+    // En sombre, c'est ce palier qui remplace l'ombre, qui ne s'y voit pas.
+    backgroundColor: M.surface,
     borderWidth: 1,
-    borderColor: paper.hairline,
+    borderColor: M.surfaceLine,
   },
   // Largeur fixe par emplacement : c'est ce qui garantit que le contenu tient
   // exactement dans REACTION_BAR_WIDTH, quelle que soit la largeur réelle du
@@ -2779,20 +3563,22 @@ const styles = StyleSheet.create({
     height: ps(30),
     borderRadius: ps(15),
     borderWidth: 1,
-    borderColor: paper.outline,
+    borderColor: M.surfaceLine,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   // ── Qui a réagi ──
-  reactorsBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  reactorsBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   reactorsSheet: {
     maxHeight: '62%',
     paddingTop: ps(8),
     paddingBottom: ps(28),
     borderTopLeftRadius: ps(20),
     borderTopRightRadius: ps(20),
-    backgroundColor: sheet.band,
+    backgroundColor: M.surface,
+    borderTopWidth: 1,
+    borderTopColor: M.surfaceLine,
   },
   reactorsGrabber: {
     alignSelf: 'center',
@@ -2800,109 +3586,215 @@ const styles = StyleSheet.create({
     height: ps(4),
     borderRadius: ps(2),
     marginBottom: ps(14),
-    backgroundColor: paper.outline,
+    backgroundColor: M.surfaceLine,
   },
   reactorsTitle: {
-    color: paper.ink,
-    fontSize: ps(16),
+    color: M.ink,
+    fontSize: ps(19),
     fontFamily: paperFonts.strong,
-    paddingHorizontal: ROW_PAD_X,
+    paddingHorizontal: PAD_X,
     marginBottom: ps(6),
   },
-  reactorsList: { paddingHorizontal: ROW_PAD_X, paddingTop: ps(6) },
+  reactorsList: { paddingHorizontal: PAD_X, paddingTop: ps(6) },
   reactorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: ps(11),
     paddingVertical: ps(9),
   },
-  reactorAvatar: { width: ps(38), height: ps(38), borderRadius: ps(19) },
-  reactorAvatarText: { color: paper.ink, fontSize: ps(15), fontFamily: paperFonts.strong },
-  reactorName: { color: paper.ink, fontSize: ps(15), fontFamily: paperFonts.body, flexShrink: 1 },
-  reactorHandle: { color: sheet.inkMeta, fontSize: ps(13), fontFamily: paperFonts.mono, marginLeft: 'auto' },
-
-  // ── Accusés de lecture ──
-  seenRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: ps(4),
-    justifyContent: 'flex-end',
-    paddingHorizontal: ROW_PAD_X,
-    marginTop: ps(4),
-  },
-  seenAvatar: { width: ps(14), height: ps(14), borderRadius: ps(7) },
-  seenAvatarText: { color: paper.ink, fontSize: ps(8), fontFamily: paperFonts.strong },
-  seenLabel: {
-    color: sheet.inkMeta,
-    fontSize: ps(10),
-    letterSpacing: ps(0.8),
-    fontFamily: paperFonts.mono,
-    marginLeft: ps(2),
-  },
+  reactorAvatar: { width: ps(42), height: ps(42), borderRadius: ps(21) },
+  reactorAvatarText: { color: M.ink, fontSize: ps(17), fontFamily: paperFonts.strong },
+  reactorName: { color: M.ink, fontSize: ps(19), fontFamily: paperFonts.body, flexShrink: 1 },
+  reactorHandle: { color: M.meta, fontSize: ps(14), fontFamily: paperFonts.mono, marginLeft: 'auto' },
 
   // ── « écrit… » ──
   typingRow: {
     flexDirection: 'row',
-    paddingHorizontal: ROW_PAD_X,
-    paddingBottom: ps(8),
     alignItems: 'center',
+    gap: ps(10),
+    paddingLeft: PAD_X + TIME_COL + GRID_GAP,
+    paddingRight: PAD_X,
+    paddingBottom: ps(10),
   },
-  typingDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: ps(4),
-    backgroundColor: sheet.band,
-    borderRadius: ps(14),
-    paddingHorizontal: ps(12),
-    paddingVertical: ps(9),
+  typingDots: { flexDirection: 'row', alignItems: 'center', gap: ps(5) },
+  typingDot: { width: ps(7), height: ps(7), borderRadius: ps(3.5), backgroundColor: M.chevron },
+  typingLabel: {
+    color: M.meta,
+    fontSize: ps(15),
+    fontFamily: paperFonts.mono,
+    flexShrink: 1,
   },
-  typingDot: { width: ps(6), height: ps(6), borderRadius: ps(3), backgroundColor: sheet.inkMeta },
 
-  // ── Compositeur : une ligne réglée ──
-  // `paddingBottom` fixe volontairement absent d'ici : il dépend de l'appareil
-  // (encoche ou bouton d'accueil) et est calculé au rendu — voir l'appel du
-  // composant.
-  inputBar: {
-    paddingHorizontal: ROW_PAD_X,
-    paddingTop: ps(10),
-    borderTopWidth: 1,
-    borderTopColor: paper.hairline,
+  // ── Remonter pour verrouiller ──  gap 9 · padding 0 20 16
+  lockColumn: {
+    alignItems: 'center',
+    gap: ps(9),
+    paddingHorizontal: PAD_X,
+    paddingBottom: ps(16),
   },
-  inputWrap: {
+  lockCircle: {
+    width: ps(40),
+    height: ps(40),
+    borderRadius: ps(20),
+    borderWidth: 1,
+    borderColor: M.lockLine,
+    backgroundColor: M.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockLabel: {
+    color: M.meta,
+    fontSize: ps(12),
+    letterSpacing: ps(1.3),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+
+  // ── Le quai ──  composeur : padding 12 20 30 · gap 12
+  dock: {
+    paddingHorizontal: PAD_X,
+    paddingTop: ps(12),
+    borderTopWidth: 1,
+    borderTopColor: M.hairline,
+    backgroundColor: M.bg,
+  },
+  // Le même quai, devenu panneau : il change de matière et de coins, pas de
+  // place — et surtout, il ne se démonte pas (voir le commentaire du rendu).
+  dockRecording: {
+    backgroundColor: M.panel,
+    borderTopWidth: 0,
+    borderTopLeftRadius: ps(24),
+    borderTopRightRadius: ps(24),
+    paddingTop: ps(20),
+  },
+  // `minHeight` verrouillé : la rangée fait la même hauteur que le contenu de
+  // gauche soit un champ de saisie ou une corbeille. C'est ce qui garantit que
+  // le bouton rond ne bouge pas d'un pixel quand le panneau s'ouvre sous le
+  // pouce — sans quoi Gesture Handler perd la vue qu'il suit.
+  composerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: ps(12),
-    borderBottomWidth: 1,
-    borderBottomColor: paper.hairline,
-    paddingBottom: ps(6),
+    minHeight: ps(54),
   },
   input: {
     flex: 1,
-    color: paper.ink,
-    fontSize: ps(26),
-    lineHeight: ps(35),
+    color: M.ink,
+    fontSize: ps(22),
+    lineHeight: ps(30),
     fontFamily: paperFonts.body,
-    maxHeight: ps(144),
+    maxHeight: ps(150),
     paddingVertical: ps(6),
-    paddingTop: ps(6),
   },
-  inputIcons: { flexDirection: 'row', alignItems: 'center', gap: ps(14), paddingBottom: ps(6) },
-  micButton: { alignItems: 'center', justifyContent: 'center' },
-  micButtonActive: {
+  holdHint: {
+    color: M.time,
+    fontSize: ps(11.5),
+    letterSpacing: ps(0.9),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+
+  // Le halo du dessin (`box-shadow: 0 0 0 5px` puis `7px`). Un conteneur plutôt
+  // qu'une ombre : React Native ne sait pas dessiner une ombre sans décalage ni
+  // flou sur Android.
+  // Le rembourrage NE CHANGE PAS entre les deux états, seule la couleur monte :
+  // toucher au rembourrage déplacerait le bouton qu'on est en train de tenir.
+  micHalo: { padding: ps(5), borderRadius: ps(40), backgroundColor: M.halo },
+  micHaloStrong: { backgroundColor: M.haloStrong },
+  roundBtn: {
     width: ps(44),
     height: ps(44),
     borderRadius: ps(22),
-    backgroundColor: '#FF3B30',
+    backgroundColor: M.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sendBtn: { paddingLeft: ps(10), paddingBottom: ps(8) },
-  sendText: { color: paper.accent, fontSize: ps(15), fontFamily: paperFonts.strong },
 
-  recordingRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: ps(8), paddingVertical: ps(8) },
-  recordingDot: { width: ps(8), height: ps(8), borderRadius: ps(4), backgroundColor: '#FF3B30' },
-  recordingTimer: { color: paper.ink, fontSize: ps(13), fontFamily: paperFonts.mono },
-  recordingSlideHint: { flexDirection: 'row', alignItems: 'center', gap: ps(3), marginLeft: 'auto' },
-  recordingSlideHintText: { color: sheet.inkMeta, fontSize: ps(12), fontFamily: paperFonts.body },
-  recordingSlideHintTextActive: { color: '#FF3B30' },
+  // ── Le panneau d'enregistrement ──
+  recHeadRow: { flexDirection: 'row', alignItems: 'center', gap: ps(9) },
+  recDot: { width: ps(8), height: ps(8), borderRadius: ps(4), backgroundColor: M.accent },
+  recDotPaused: { backgroundColor: M.panelScale },
+  recLabel: {
+    color: M.panelLabel,
+    fontSize: ps(12),
+    letterSpacing: ps(1.55),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+  recTimer: {
+    marginLeft: 'auto',
+    color: M.onPanel,
+    fontSize: ps(34),
+    lineHeight: ps(34),
+    letterSpacing: ps(-1.3),
+    fontFamily: paperFonts.display,
+  },
+  recWave: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: REC_WAVE_H,
+    gap: 2,
+    marginTop: ps(16),
+  },
+  recBar: { backgroundColor: M.onPanel },
+  recScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: ps(8) },
+  recScaleText: {
+    color: M.panelScale,
+    fontSize: ps(11),
+    letterSpacing: ps(1.1),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+  recTrash: {
+    width: ps(44),
+    height: ps(44),
+    borderRadius: ps(22),
+    borderWidth: 1,
+    borderColor: M.panelOutline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Pendant le maintien, le pouce est sur le micro : ces deux commandes montrent
+  // ce que le verrou donnera, sans prétendre qu'on peut les atteindre.
+  recDimmed: { opacity: 0.4 },
+  recHint: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: ps(8) },
+  recHintText: {
+    flex: 1,
+    color: M.panelMeta,
+    fontSize: ps(12),
+    letterSpacing: ps(1),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+  recHintTextArmed: { color: M.accent },
+  recFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(10),
+    marginTop: ps(16),
+    paddingTop: ps(14),
+    paddingBottom: ps(4),
+    borderTopWidth: 1,
+    borderTopColor: M.panelLine,
+  },
+  recFootText: {
+    flex: 1,
+    color: M.panelMeta,
+    fontSize: ps(12),
+    letterSpacing: ps(1),
+    textTransform: 'uppercase',
+    fontFamily: paperFonts.mono,
+  },
+  recSend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(7),
+    backgroundColor: M.onPanel,
+    borderRadius: ps(10),
+    paddingHorizontal: ps(13),
+    paddingVertical: ps(8),
+  },
+  recSendText: { color: M.panel, fontSize: ps(16), fontFamily: paperFonts.strong },
 
   // ── Visualiseur d'image : posé sur du média, donc hors palette ──
   imageViewerBackdrop: { flex: 1, backgroundColor: '#000' },

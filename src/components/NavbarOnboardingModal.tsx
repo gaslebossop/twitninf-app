@@ -396,6 +396,28 @@ export default function NavbarOnboardingModal({
   const hiddenTabs = availableTabs.filter((tab) => !selected.includes(tab.key));
 
   /**
+   * Raccourcis qui occupent RÉELLEMENT un emplacement.
+   *
+   * `selected` est la préférence brute et peut contenir des clés qui ne sont
+   * plus servies : `messages`, passé dans le socle du fil 2B, ou un onglet
+   * dont le drapeau s'est refermé depuis. Ces clés n'apparaissent ni dans la
+   * barre ni dans l'aperçu — mais elles étaient comptées, ce qui produisait le
+   * blocage suivant :
+   *
+   *   préférence ['messages', 'monetization'] sous 2B
+   *     → aperçu : 1 raccourci + 1 emplacement vide
+   *     → compteur : 2 sur 2, « Barre complète »
+   *     → impossible d'en ajouter un : le plafond est atteint
+   *
+   * L'écran affirmait donc une barre pleine tout en en montrant une à moitié
+   * vide, sans aucun moyen d'en sortir.
+   */
+  const effective = useMemo(
+    () => selected.filter((key) => availableTabs.some((tab) => tab.key === key)),
+    [selected, availableTabs],
+  );
+
+  /**
    * Nombre d'emplacements libres, selon la barre que verra l'utilisateur.
    *
    * Le fil « 2B » (drapeau `fil.refonte2b`) tient deux raccourcis, pas cinq :
@@ -409,21 +431,30 @@ export default function NavbarOnboardingModal({
   const maxTabs = feed2B ? 2 : MAX_OPTIONAL_TABS;
 
   /**
-   * Nombre MINIMUM de raccourcis, sous le fil « 2B ».
+   * Nombre MINIMUM de raccourcis : aucun, dans les deux fils.
    *
-   * Sa barre n'a que trois entrées de socle (Accueil, Recherche, Profil) : à
-   * zéro raccourci elle se retrouve à trois icônes plus le bouton, quatre
-   * colonnes sur toute la largeur de l'écran. C'est vide et ça ne ressemble
-   * plus à une barre de navigation. On impose donc de remplir les deux
-   * emplacements — c'est deux, ou on ne valide pas.
+   * Le fil « 2B » imposait d'en choisir deux, au motif que sa barre n'a que
+   * trois entrées de socle. Ce n'est plus vrai : Messages y est passé (voir le
+   * filtre `key === 'messages'` dans `BottomTabNavigator2B`), le socle en
+   * compte donc quatre — Accueil, Recherche, Messages, Profil. À zéro
+   * raccourci la barre affiche cinq colonnes bouton compris, réparties
+   * 2 | Publier | 2 : équilibrée, et bien assez fournie.
    *
-   * Les 99 % restants gardent l'ancien comportement, où ne rien choisir est un
-   * choix valable : leur socle compte déjà quatre entrées, Notifications
-   * comprise.
+   * La règle qui reste est celle de la PARITÉ, pas d'un plancher : zéro ou
+   * deux, jamais un (voir `FEED_2B_SLOTS`). Comme le plafond est ici de deux,
+   * un plancher à zéro suffit à l'exprimer — on ne peut valider qu'à zéro,
+   * un, ou deux, et le `belowFloor` ci-dessous écarte le cas « un ».
    */
-  const minTabs = feed2B ? 2 : 0;
-  const atCap = selected.length >= maxTabs;
-  const belowFloor = selected.length < minTabs;
+  const minTabs = 0;
+
+  /**
+   * Le cas « un seul raccourci » est refusé à part : il ne viole ni le
+   * plancher ni le plafond, mais il décentre le bouton « Publier » en rendant
+   * le nombre de colonnes impair.
+   */
+  const oddSelection = feed2B && effective.length === 1;
+  const atCap = effective.length >= maxTabs;
+  const belowFloor = effective.length < minTabs || oddSelection;
 
   /** Refuser en silence est un cul-de-sac : on montre pourquoi ça ne prend pas. */
   /** Secousse de refus — plafond atteint, ou plancher pas encore atteint. */
@@ -446,7 +477,7 @@ export default function NavbarOnboardingModal({
         setSelected((current) => current.filter((k) => k !== key));
         return;
       }
-      if (selected.length >= maxTabs) {
+      if (effective.length >= maxTabs) {
         rejectAtCap();
         return;
       }
@@ -477,17 +508,22 @@ export default function NavbarOnboardingModal({
       goToTutorial();
       return;
     }
-    onComplete(selected);
+    // On persiste `effective`, pas `selected` : sans ça, une clé morte
+    // (`messages` sous 2B, un onglet à drapeau refermé) resterait écrite et
+    // continuerait de manger un emplacement au prochain lancement.
+    onComplete(effective);
   };
 
-  const missing = minTabs - selected.length;
+  // Ce qu'il manque pour valider. Sur une sélection impaire, il manque une
+  // seule entrée pour retomber sur un compte pair.
+  const missing = oddSelection ? 1 : Math.max(0, minTabs - effective.length);
   const meterMessage = atCap
     ? 'Barre complète — retire un raccourci pour en changer'
     : belowFloor
       ? `Encore ${missing} raccourci${missing > 1 ? 's' : ''} à choisir`
-      : selected.length === 0
+      : effective.length === 0
         ? 'Aucun raccourci — ta barre gardera seulement le socle'
-        : `${selected.length} sur ${maxTabs} emplacement${maxTabs > 1 ? 's' : ''} utilisé${maxTabs > 1 ? 's' : ''}`;
+        : `${effective.length} sur ${maxTabs} emplacement${maxTabs > 1 ? 's' : ''} utilisé${maxTabs > 1 ? 's' : ''}`;
 
   const stepTranslate = stepAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
 
@@ -532,9 +568,13 @@ export default function NavbarOnboardingModal({
               <Text style={styles.title}>
                 {mode === 'onboarding' ? 'Compose ta barre' : 'Ta barre de navigation'}
               </Text>
+              {/* Le socle est ÉNUMÉRÉ depuis `fixedTabs`, jamais écrit en dur :
+                  celui du fil 2B remplace Notifications par Messages, et la
+                  phrase annonçait donc une barre que l'aperçu, juste en
+                  dessous, contredisait. */}
               <Text style={styles.subtitle}>
-                Le socle — Accueil, Recherche, Notifications, Profil — ne bouge jamais. À toi de
-                remplir les {maxTabs} emplacements restants avec ce que tu ouvres le plus.
+                Le socle — {fixedTabs.map((tab) => tab.label).join(', ')} — ne bouge jamais. À toi
+                de remplir les {maxTabs} emplacements restants avec ce que tu ouvres le plus.
               </Text>
 
               {/* ------- Aperçu en direct ------- */}
@@ -588,7 +628,7 @@ export default function NavbarOnboardingModal({
                   {Array.from({ length: maxTabs }, (_, i) => (
                     <View
                       key={i}
-                      style={[styles.meterPip, i < selected.length && styles.meterPipOn]}
+                      style={[styles.meterPip, i < effective.length && styles.meterPipOn]}
                     />
                   ))}
                 </View>
@@ -605,7 +645,9 @@ export default function NavbarOnboardingModal({
                 contentContainerStyle={styles.optionsContent}
               >
                 {availableTabs.map((tab) => {
-                  const rank = selected.indexOf(tab.key);
+                  // Rang dans ce qui occupe vraiment la barre : sur la
+                  // préférence brute, une clé morte décalait tous les numéros.
+                  const rank = effective.indexOf(tab.key);
                   return (
                     <OptionCard
                       key={tab.key}
@@ -696,7 +738,7 @@ export default function NavbarOnboardingModal({
 
               <Pressable
                 style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
-                onPress={() => onComplete(selected)}
+                onPress={() => onComplete(effective)}
               >
                 <Text style={styles.primaryBtnText}>Terminer</Text>
                 <Ionicons name="checkmark" size={17} color={colors.onAccent} />

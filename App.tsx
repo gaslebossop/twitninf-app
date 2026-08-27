@@ -12,6 +12,7 @@ import { EventProvider } from './src/contexts/EventContext';
 import { EventThemeProvider } from './src/components/EventThemeProvider';
 import { FunctionalEventProvider } from './src/contexts/FunctionalEventContext';
 import { FeatureFlagProvider } from './src/contexts/FeatureFlagContext';
+import { BetaProvider } from './src/contexts/BetaContext';
 import { OfflineProvider } from './src/contexts/OfflineContext';
 import { ReadingLanguageProvider, useReadingLanguage } from './src/contexts/ReadingLanguageContext';
 import ReadingLanguageModal from './src/components/ReadingLanguageModal';
@@ -205,6 +206,12 @@ export default function App() {
             tout le reste : n'importe quel écran ou garde peut alors être posé
             derrière un drapeau. */}
         <FeatureFlagProvider>
+        {/* Appartenance beta. Sous AuthProvider (elle suit le compte) et
+            au-dessus des écrans : l'en-tête des deux fils y lit le badge.
+            Distinct des drapeaux — c'est un état du compte, pas une décision
+            de déploiement, et il ne doit pas transiter par `/resolve`, qui
+            est en authentification optionnelle. */}
+        <BetaProvider>
         {/* Sous AuthProvider : le mode hors ligne dépend du palier du compte. */}
         <OfflineProvider>
           <ReadingLanguageProvider>
@@ -254,6 +261,7 @@ export default function App() {
           </StartupPopupProvider>
           </ReadingLanguageProvider>
         </OfflineProvider>
+        </BetaProvider>
         </FeatureFlagProvider>
       </AuthProvider>
       </RewardProvider>

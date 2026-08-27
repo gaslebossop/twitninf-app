@@ -2558,7 +2558,11 @@ class ApiService {
   async sendRecommendationFeedback(feedback: RecommendationFeedback): Promise<ApiResponse> {
     try {
       console.log('📊 Envoi du feedback de recommandation...');
-      const endpoint = '/api/recommendations/feedback';
+      // `/api/recommendations/feedback` n'existe pas (routeur en lecture seule) —
+      // renvoyait un 404 avalé en silence. Le feedback est enregistré dans le
+      // VectorStore via `/api/ai-recommendations/feedback`, qui accepte le même
+      // corps { tweetId, action, sessionId } (le champ `algorithm` est ignoré).
+      const endpoint = '/api/ai-recommendations/feedback';
       const response = await this.makeRequest(endpoint, {
         method: 'POST',
         body: feedback,

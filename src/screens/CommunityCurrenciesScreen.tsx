@@ -17,6 +17,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { MainStackParamList } from '../navigation/MainNavigator';
 import NewEconomyService, { UserCurrency } from '../services/newEconomyService';
 import Avatar from '../components/Avatar';
+import { LIST_TUNING } from '../utils/listTuning';
 
 function fmt(value: number, maxDigits = 2) {
   return Number(value ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: maxDigits });
@@ -116,6 +117,7 @@ export default function CommunityCurrenciesScreen() {
       ) : (
         <FlatList
           data={currencies}
+          {...LIST_TUNING}
           keyExtractor={keyExtractor}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}

@@ -328,15 +328,29 @@ function ExploreWall({
     onOpenTweet(tweet, from);
   }, [trackView, trackClick, onOpenTweet]);
 
-  const renderCard = (meta: (typeof metas)[number]) => (
-    <FeedItemEntrance
-      key={meta.tweet.id}
-      id={String(meta.tweet.id)}
-      index={orderIndex.get(String(meta.tweet.id)) ?? 0}
-      generation={entranceGeneration}
-      seen={entranceSeen}
-      tuning={WALL_ENTRANCE}
-    >
+  /**
+   * L'arrivée n'est MONTÉE que sur les cartes qui peuvent l'animer.
+   *
+   * `FeedItemEntrance` plafonne déjà le mouvement aux dix premières cartes
+   * (`WALL_ENTRANCE.maxAnimatedIndex`) : au-delà, `progress` vaut 1 pour
+   * toujours et son style animé se réduit à un `translateY: 0` constant. Mais
+   * le composant restait monté sur CHAQUE carte — une `Animated.View` de plus
+   * et un mapper de style de plus sur le thread UI, chacun s'enregistrant
+   * comme auditeur sur les valeurs partagées qu'il lit.
+   *
+   * Ici c'est pire que dans le fil : ce mur n'est pas virtualisé (voir le
+   * commentaire plus bas), donc rien ne se démonte jamais. À deux cents
+   * cartes accumulées, cela faisait deux cents composants animés vivants pour
+   * un mouvement que cent quatre-vingt-dix d'entre eux ne joueront jamais —
+   * quand Reanimated donne ~100 comme limite pratique sur un Android d'entrée
+   * de gamme.
+   *
+   * Les dix premières gardent exactement le même comportement. Même
+   * conditionnement que `FeedGutterScreen`, où il est détaillé.
+   */
+  const renderCard = (meta: (typeof metas)[number]) => {
+    const index = orderIndex.get(String(meta.tweet.id)) ?? 0;
+    const card = (
       <ExploreCard
         meta={meta}
         cardWidth={cardWidth}
@@ -345,8 +359,25 @@ function ExploreWall({
         onLike={onLikeTweet}
         onLongPress={onLongPressTweet}
       />
-    </FeedItemEntrance>
-  );
+    );
+
+    if (index >= WALL_ENTRANCE.maxAnimatedIndex) {
+      return <React.Fragment key={meta.tweet.id}>{card}</React.Fragment>;
+    }
+
+    return (
+      <FeedItemEntrance
+        key={meta.tweet.id}
+        id={String(meta.tweet.id)}
+        index={index}
+        generation={entranceGeneration}
+        seen={entranceSeen}
+        tuning={WALL_ENTRANCE}
+      >
+        {card}
+      </FeedItemEntrance>
+    );
+  };
 
   // Décision assumée, pas un oubli : ce mur n'est pas virtualisé (pas de
   // `FlatList`/`VirtualizedList`) — tout s'accumule dans ce `ScrollView` et

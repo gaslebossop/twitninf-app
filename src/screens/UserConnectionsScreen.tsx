@@ -21,6 +21,7 @@ import { certifiedNameColors, type ProfileCustomization } from '../services/prof
 import apiService from '../services/api';
 import { User } from '../types/api';
 import { colors, fonts , statusBarStyle} from '../theme';
+import { LIST_TUNING } from '../utils/listTuning';
 
 type ConnectionTab = 'followers' | 'following';
 
@@ -174,6 +175,7 @@ export default function UserConnectionsScreen({ navigation, route }: any) {
         ) : (
           <FlatList
             data={users}
+            {...LIST_TUNING}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
             refreshControl={

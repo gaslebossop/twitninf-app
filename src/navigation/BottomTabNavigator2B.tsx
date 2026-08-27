@@ -109,7 +109,7 @@ import { FLAGS } from '../config/featureFlagKeys';
 import { useForegroundInterval } from '../hooks/useForegroundInterval';
 import unreadService from '../services/unreadService';
 import { liveService } from '../services/liveService';
-import { OPTIONAL_TABS, type OptionalTabKey } from '../services/navbarPreferences';
+import { OPTIONAL_TABS, normalizeFor2B, type OptionalTabKey } from '../services/navbarPreferences';
 import { paper, paperFonts, ps } from '../theme/paper2b';
 import feedback from '../utils/feedback';
 
@@ -613,6 +613,20 @@ export default function BottomTabNavigator2B() {
     [selected, nfMapEnabled],
   );
 
+  /**
+   * Filet de sécurité, appliqué APRÈS le filtre et jamais avant.
+   *
+   * Une préférence écrite avant le test 2B peut contenir jusqu'à cinq
+   * raccourcis — la barre devient illisible — ou finir à un seul, ce qui
+   * décentre le bouton « Publier » (voir `FEED_2B_SLOTS`).
+   *
+   * ⚠️ L'ordre compte. Normaliser d'abord puis filtrer redonnerait UN seul
+   * onglet dès que la coupe à deux garde `messages` ou un onglet dont le
+   * drapeau est fermé : le filtre le retire ensuite, et on retombe
+   * exactement dans le cas qu'on voulait éviter.
+   */
+  const mountedOptional = React.useMemo(() => normalizeFor2B(optional), [optional]);
+
   return (
     <Tab.Navigator
       id={undefined}
@@ -678,7 +692,7 @@ export default function BottomTabNavigator2B() {
           <Tab.Screen name="Recherche" component={SearchScreen} />
           <Tab.Screen name="Messages" component={MessagesScreen2B} />
           {liveCount > 0 && <Tab.Screen name={LIVE_ROUTE} component={LivesScreen} />}
-          {optional.map((key) => (
+          {mountedOptional.map((key) => (
             <Tab.Screen
               key={key}
               name={OPTIONAL_SCREENS[key].route}

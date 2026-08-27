@@ -104,6 +104,16 @@ export interface FeatureFlag {
   name: string;
   description: string | null;
   enabled: boolean;
+  /**
+   * Type d'audience — QUI la fonctionnalité vise, par nature.
+   *
+   * `rollout` : un palier du trafic, affiné par des segments.
+   * `beta`    : les membres du programme beta, et personne d'autre.
+   *             `rollout_percentage` n'est alors PAS consulté par le serveur.
+   *
+   * Absent sur un drapeau créé avant l'introduction du type : vaut `rollout`.
+   */
+  audience?: 'rollout' | 'beta';
   rollout_percentage: number;
   rules: FlagRule[];
   variants: FlagVariant[];

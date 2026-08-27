@@ -26,7 +26,8 @@
  */
 
 import React, { useCallback, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -96,7 +97,32 @@ function TweetImageCell({
       accessibilityLabel={label}
     >
       <Animated.View style={[styles.fill, animatedStyle]}>
-        <Image source={{ uri: url }} style={styles.fill} resizeMode="cover" onLoad={handleLoad} />
+        {/* `expo-image` et non le `Image` du coeur RN — trois raisons, toutes
+            propres à une image montée dans une liste recyclée :
+
+            1. `cachePolicy="memory-disk"` : la même photo réapparaît sans
+               retéléchargement NI redécodage quand on remonte le fil (le
+               défaut d'expo-image est `disk` seul, il faut le demander) ;
+            2. `recyclingKey` : la vue est vidée avant de charger une nouvelle
+               source, donc une cellule réutilisée ne montre jamais, même un
+               instant, la photo de la ligne precedente ;
+            3. `allowDownscaling` (actif par défaut dès que `contentFit` vaut
+               `cover` ou `contain`) redimensionne au format réel de la cellule
+               au lieu de garder un bitmap pleine resolution en memoire.
+
+            Rendu inchangé : `contentFit="cover"` est l'equivalent exact de
+            `resizeMode="cover"`, et `transition={0}` laisse le fondu maison
+            (`alreadySeen`) seul maître — celui d'expo-image se rejouerait à
+            chaque recyclage, ce que ce composant existe pour éviter. */}
+        <Image
+          source={{ uri: url }}
+          style={styles.fill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={url}
+          transition={0}
+          onLoad={handleLoad}
+        />
       </Animated.View>
     </Pressable>
   );
@@ -116,6 +142,8 @@ function TweetImages({ urls, onBeforeOpen }: TweetImagesProps) {
     },
     [onBeforeOpen]
   );
+
+  const closeViewer = useCallback(() => setViewerIndex(null), []);
 
   if (images.length === 0) return null;
 
@@ -138,12 +166,22 @@ function TweetImages({ urls, onBeforeOpen }: TweetImagesProps) {
         ))}
       </View>
 
-      <ImageViewer
-        urls={images}
-        initialIndex={viewerIndex ?? 0}
-        visible={viewerIndex !== null}
-        onClose={() => setViewerIndex(null)}
-      />
+      {/* Montée SEULEMENT quand elle s'ouvre.
+          `ImageViewer` rend `null` tant qu'il est invisible, mais ses crochets,
+          eux, s'exécutent quand même : six `useSharedValue`, trois
+          `useAnimatedStyle` et trois objets de geste, AVANT le `return null`.
+          Passée en propriété `visible`, la visionneuse posait donc tout cela
+          sur chaque ligne illustrée du fil, en permanence — et chaque
+          `useAnimatedStyle` s'enregistre comme auditeur sur les valeurs
+          partagées qu'il lit. Même conditionnement que `TweetImagesPaper`. */}
+      {viewerIndex !== null && (
+        <ImageViewer
+          urls={images}
+          initialIndex={viewerIndex}
+          visible
+          onClose={closeViewer}
+        />
+      )}
     </>
   );
 }

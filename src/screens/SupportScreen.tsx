@@ -18,6 +18,8 @@ import { ScreenBackground, BackButton, ScreenSkeleton } from '../components/ui';
 import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import { colors, fonts , statusBarStyle} from '../theme';
 import { toast } from '../components/ui/Toast';
+import { useAuth } from '../contexts/AuthContext';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import {
   CATEGORY_LABELS,
   STATUS_LABELS,
@@ -59,6 +61,8 @@ interface Props {
 
 export default function SupportScreen({ navigation }: Props) {
   const { top: headerTopInset } = useHeaderMetrics();
+  const { user } = useAuth();
+  const isUltra = effectiveSubscriptionTier(!!user?.premium, (user as any)?.subscription_tier) === 'ultra';
 
   const [summary, setSummary] = useState<SupportSummary | null>(null);
   const [tickets, setTickets] = useState<SupportTicketSummary[]>([]);
@@ -179,6 +183,23 @@ export default function SupportScreen({ navigation }: Props) {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
           }
         >
+          {!staffMode && isUltra && (
+            <TouchableOpacity
+              style={styles.agentCard}
+              onPress={() => navigation.navigate('UltraSupportAgent')}
+              activeOpacity={0.85}
+            >
+              <View style={styles.agentIcon}>
+                <Ionicons name="sparkles" size={18} color={colors.accent} />
+              </View>
+              <View style={styles.agentTextWrap}>
+                <Text style={styles.agentTitle}>Agent IA Ultra</Text>
+                <Text style={styles.agentSubtitle}>Réponse immédiate, escalade en ticket si besoin</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.accent} />
+            </TouchableOpacity>
+          )}
+
           {!!summary && (
             <View style={[styles.slaCard, (staffMode || summary.isPro) && styles.slaCardPro]}>
               <View style={styles.slaHead}>
@@ -364,6 +385,29 @@ const styles = StyleSheet.create({
 
   // La barre d'onglets absolue de l'app recouvrirait le dernier élément.
   content: { padding: 16, paddingBottom: 120 },
+
+  agentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.accentMuted,
+    marginBottom: 12,
+  },
+  agentIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agentTextWrap: { flex: 1, minWidth: 0 },
+  agentTitle: { color: colors.textPrimary, fontSize: 14.5, fontFamily: fonts.bold },
+  agentSubtitle: { color: colors.textSecondary, fontSize: 12, marginTop: 2, fontFamily: fonts.regular },
 
   slaCard: {
     padding: 14,

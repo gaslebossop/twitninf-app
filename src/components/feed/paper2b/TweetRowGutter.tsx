@@ -59,6 +59,7 @@
  */
 
 import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { retweetersLabel, retweetersOf, sameRetweeters } from '../../../utils/retweeters';
 import {
   View,
   Text,
@@ -79,7 +80,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Avatar from '../../Avatar';
 import ClickableMentions from '../../ClickableMentions';
 import TweetImagesPaper from './TweetImagesPaper';
-import TweetVideo from '../TweetVideo';
+import TweetVideoPaper from './TweetVideoPaper';
 import TweetVoiceMessage from '../TweetVoiceMessage';
 import TweetMusicCard from '../TweetMusicCard';
 import TweetLanguageSwitcher from '../../TweetLanguageSwitcher';
@@ -182,7 +183,12 @@ interface RowContentProps {
   isReply: boolean;
   depth: number;
   isRetweet: boolean;
-  retweeterUsername?: string;
+  /**
+   * Mention deja redigee (« @a, @b et 2 autres ont reposte »). Rediger ici
+   * plutot que de passer la liste evite de dupliquer les regles d'accord entre
+   * les deux fils.
+   */
+  repostedLabel?: string | null;
   replyToName?: string;
   displayAuthor: any;
   hasActiveStory: boolean;
@@ -245,7 +251,7 @@ const RowContent = memo(function RowContent({
   isReply,
   depth,
   isRetweet,
-  retweeterUsername,
+  repostedLabel,
   replyToName,
   displayAuthor,
   hasActiveStory,
@@ -331,10 +337,10 @@ const RowContent = memo(function RowContent({
 
   return (
     <View style={contentStyle}>
-      {isRetweet && !!retweeterUsername && (
+      {isRetweet && !!repostedLabel && (
         <View style={S.repostedBy}>
           <Ionicons name="repeat" size={ps(12)} color={paper.inkMeta} />
-          <Text style={S.repostedByText} numberOfLines={1}>@{retweeterUsername} a reposté</Text>
+          <Text style={S.repostedByText} numberOfLines={1}>{repostedLabel}</Text>
         </View>
       )}
 
@@ -452,7 +458,11 @@ const RowContent = memo(function RowContent({
       )}
 
       {!isContentLocked && !!videoUrl && (
-        <TweetVideo
+        <TweetVideoPaper
+          /* L'identifiant de la LIGNE, pas celui du tweet d'origine d'un
+             retweet : c'est celui-là que la liste déclare visible, et donc le
+             seul que la scène (`videoStage`) sait reconnaître. */
+          tweetId={tweetId}
           videoUrl={videoUrl}
           thumbnailUrl={videoThumbnailUrl}
           onBeforeOpen={onBeforeOpen}
@@ -590,6 +600,13 @@ function TweetRowGutter({
   const isContest = (tweet as any).tweet_type === 'concours';
   const originalTweet = (tweet as any)?.originalTweet || null;
   const retweeter = tweet.author;
+
+  // Plusieurs comptes suivis peuvent avoir reposte le meme tweet : l'API les
+  // empile sur une seule ligne au lieu d'en servir une par personne.
+  const repostedLabel = React.useMemo(
+    () => (isRetweet ? retweetersLabel(retweetersOf(tweet), 'reposté') : null),
+    [isRetweet, tweet],
+  );
 
   const displayAuthor = isRetweet && originalTweet?.author ? originalTweet.author : tweet.author;
   const displayAuthorId = displayAuthor?.id ? String(displayAuthor.id) : '';
@@ -1071,7 +1088,7 @@ function TweetRowGutter({
         isReply={isReply}
         depth={depth}
         isRetweet={isRetweet}
-        retweeterUsername={retweeter?.username}
+        repostedLabel={repostedLabel}
         replyToName={replyToName}
         displayAuthor={displayAuthor}
         hasActiveStory={hasActiveStory}
@@ -1133,6 +1150,11 @@ function areEqual(prev: TweetRowGutterProps, next: TweetRowGutterProps) {
     // Sans cette ligne, une correction du tweet d'origine ne remontait
     // jamais dans le fil de ceux qui l'ont reposté.
     (a as any).originalTweet?.content === (b as any).originalTweet?.content &&
+    // La mention « untel a retweeté » est bâtie sur `retweeters`, que l'API
+    // recalcule à chaque chargement : quelqu'un d'autre a pu reposter depuis.
+    // Sans cette comparaison, la ligne garderait l'ancienne mention — le tweet
+    // n'a pas changé d'identité, donc rien d'autre ne la ferait rejouer.
+    sameRetweeters((a as any).retweeters, (b as any).retweeters) &&
     // Le verrou payant décide de TOUT le rendu de la colonne de contenu
     // (texte brouillé, médias masqués, pavé d'achat). Un déverrouillage qui
     // n'était pas comparé laissait la ligne montrer son cadenas alors que

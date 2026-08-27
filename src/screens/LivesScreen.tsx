@@ -13,6 +13,7 @@ import { liveService, LiveRoom } from '../services/liveService';
 import { apiService } from '../services';
 import { ScreenSkeleton } from '../components/ui';
 import useForegroundInterval from '../hooks/useForegroundInterval';
+import { LIST_TUNING } from '../utils/listTuning';
 
 const { width, height } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 49;
@@ -169,6 +170,7 @@ export default function LivesScreen() {
       {/* Liste TikTok-style */}
       <FlatList
         data={lives}
+        {...LIST_TUNING}
         keyExtractor={keyExtractor}
         contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 80 }}
         refreshControl={

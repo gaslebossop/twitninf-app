@@ -8,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   StyleSheet,
   StatusBar,
   Platform,
@@ -28,6 +29,8 @@ import BanAlertBanner from '../components/BanAlertBanner';
 import { resolveStoryMedia } from '../services/storiesService';
 import { certifiedNameColors, nameIsLit, type ProfileCustomization } from '../services/profileCustomizationService';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { toast } from '../components/ui/Toast';
+import strikeService from '../services/strikeService';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -257,6 +260,35 @@ function NotificationItemBase({ notification, onOpen, onDelete }: NotificationIt
                 Pertinence : {(content.score * 100).toFixed(0)} %
               </Text>
             )}
+            {/* Strike Ultra reçu sur un de mes tweets, pas encore contesté
+                (`outcome` absent) : seule action possible depuis cette
+                notification — une revue indépendante, pas un rétablissement
+                automatique. */}
+            {content.domain === 'strike' && !!content.strike_id && !content.outcome && (
+              <TouchableOpacity
+                style={styles.strikeContestButton}
+                onPress={async () => {
+                  const result = await strikeService.contestStrike(content.strike_id);
+                  if (!result.success) {
+                    toast.error('Contestation impossible', { description: result.message });
+                    return;
+                  }
+                  const upheld = result.data?.strike?.status === 'upheld';
+                  if (upheld) {
+                    toast.info('Strike confirmé', {
+                      description: 'La revue indépendante a confirmé le retrait de la diffusion.',
+                    });
+                  } else {
+                    toast.success('Strike annulé', {
+                      description: 'La revue indépendante a rétabli la diffusion de ce tweet.',
+                    });
+                  }
+                }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={14} color={colors.accent} />
+                <Text style={styles.strikeContestButtonText}>Contester ce strike</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -289,6 +321,28 @@ const TABS: { key: FilterKey; label: string }[] = [
 ];
 
 // ─── Écran principal ──────────────────────────────────────────────────────────
+
+/**
+ * La liste des notifications — animée sur iOS SEULEMENT, et c'est délibéré.
+ *
+ * `Animated.FlatList` n'est pas un `FlatList` avec une prop en plus : il impose
+ * son propre `CellRendererComponent`, qui est une `Animated.View`. Chaque
+ * cellule montée devient donc un composant animé complet (filtrage de props,
+ * gestionnaire d'événements natifs, mise à jour de props JS), là où un
+ * `FlatList` nu n'enveloppe la cellule dans rien du tout.
+ *
+ * Or le seul consommateur du gestionnaire animé est le logo d'actualisation
+ * (`usePullRefreshLogo` → `pull`), qui n'existe QUE sur iOS : `pull` se nourrit
+ * d'un `contentOffset.y` NÉGATIF, que seul le rebond iOS produit, et
+ * `PullRefreshLogo` n'est monté que sur iOS (Android garde son
+ * `RefreshControl` natif). Sur Android, chaque cellule payait un composant
+ * animé pour alimenter une valeur que personne ne lit.
+ *
+ * Même arbitrage, mot pour mot, que `FeedGutterScreen` — voir le commentaire
+ * de `FeedList` là-bas. `Platform.OS` est constant sur la durée de vie du
+ * processus : la liste ne se remonte jamais à cause de ce choix.
+ */
+const NotificationList = (Platform.OS === 'ios' ? Animated.FlatList : FlatList) as typeof Animated.FlatList;
 
 export default function NotificationsScreen() {
   const { isUserBanned, isUserSuspended, user } = useAuth();
@@ -515,7 +569,7 @@ export default function NotificationsScreen() {
       */}
       <View style={styles.listWrap}>
       {Platform.OS === 'ios' && <PullRefreshLogo key={logoKey} pull={pull} active={refreshing} />}
-      <Animated.FlatList
+      <NotificationList
         // Voir `usePullRefreshLogo` : la traction est lue par cette ref, sur
         // le thread UI, pas par `onScroll` (que `VirtualizedList` compose).
         ref={listRef}
@@ -523,7 +577,10 @@ export default function NotificationsScreen() {
         refreshControl={Platform.OS === 'ios' ? undefined : (
           <AppRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         )}
-        onScroll={scrollHandler}
+        // Rien à écouter sur Android : `pull` n'y est jamais lu (voir
+        // `NotificationList`). Un gestionnaire animé branché pour personne
+        // tourne quand même à chaque image, sur le thread UI.
+        onScroll={Platform.OS === 'ios' ? scrollHandler : undefined}
         scrollEventThrottle={1}
         alwaysBounceVertical
         showsVerticalScrollIndicator={false}
@@ -812,6 +869,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     fontFamily: fonts.medium,
+  },
+  strikeContestButton: {
+    marginTop: 10,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  strikeContestButtonText: {
+    fontSize: 14,
+    color: colors.accent,
+    fontFamily: fonts.semibold,
   },
 
   // ── Bandeau demandes d'abonnement

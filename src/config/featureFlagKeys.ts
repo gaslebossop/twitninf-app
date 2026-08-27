@@ -63,6 +63,15 @@ export const FLAGS = {
    * navigation — les originaux (`TweetsScreen`, `BottomTabNavigator`) sont
    * intacts et servis a tous les autres.
    *
+   * ⚠️ Depuis le 2026-08-22, ce drapeau n'est PLUS tire au sort : il est de
+   * type `audience = 'beta'`. Il suit l'appartenance au programme beta
+   * (`contexts/BetaContext`, `/api/beta`), et son palier global n'est plus
+   * consulte DU TOUT par l'evaluateur — le relever ne sert la refonte a
+   * personne. C'est la console beta qui decide qui la voit.
+   *
+   * Seule la liste d'acces continue de passer avant : quelques comptes de test
+   * internes voient la refonte sans etre membres.
+   *
    * A retirer avec `screens/FeedGutterScreen.tsx`,
    * `components/feed/TweetRowGutter.tsx`, `navigation/BottomTabNavigator2B.tsx`
    * et `theme/paper2b.ts` — que le test soit adopte ou abandonne.

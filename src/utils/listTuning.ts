@@ -37,4 +37,23 @@ export const LIST_TUNING = {
   removeClippedSubviews: Platform.OS === 'android',
 } as const;
 
+/**
+ * Variante pour les listes `inverted` — les chats de live, où le dernier
+ * message est en bas.
+ *
+ * Tout est identique SAUF `removeClippedSubviews`, laissé à `false` sur les
+ * deux plateformes. Combiné à `inverted`, il est connu pour laisser des
+ * cellules vides : la liste est retournée par une transformation d'échelle
+ * négative, et le calcul de ce qui sort du champ ne s'accorde pas avec elle.
+ * Un message de chat qui n'apparaît pas est un bien plus gros défaut que
+ * quelques vues gardées attachées.
+ */
+export const LIST_TUNING_INVERTED = {
+  initialNumToRender: LIST_TUNING.initialNumToRender,
+  maxToRenderPerBatch: LIST_TUNING.maxToRenderPerBatch,
+  updateCellsBatchingPeriod: LIST_TUNING.updateCellsBatchingPeriod,
+  windowSize: LIST_TUNING.windowSize,
+  removeClippedSubviews: false,
+} as const;
+
 export default LIST_TUNING;

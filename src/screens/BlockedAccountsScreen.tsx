@@ -15,6 +15,7 @@ import { ScreenBackground, BackButton, ScreenSkeleton, EmptyState } from '../com
 import Avatar from '../components/Avatar';
 import apiService from '../services/api';
 import { toast } from '../components/ui/Toast';
+import { LIST_TUNING } from '../utils/listTuning';
 
 interface BlockedUser {
   id: string;
@@ -105,6 +106,7 @@ export default function BlockedAccountsScreen({ navigation }: any) {
         ) : (
           <FlatList
             data={users}
+            {...LIST_TUNING}
             keyExtractor={keyExtractor}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
             contentContainerStyle={users.length === 0 ? styles.emptyContent : styles.listContent}

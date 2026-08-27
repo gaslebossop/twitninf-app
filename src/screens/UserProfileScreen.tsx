@@ -47,6 +47,8 @@ import { STORY_GRADIENT } from '../components/StoryRing';
 import StoryViewer from '../components/StoryViewer';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { promptAsync } from '../components/ui/PromptSheet';
+import strikeService from '../services/strikeService';
 import {
   AvatarDecorationLayer,
   AvatarDecorationOrnament,
@@ -475,9 +477,38 @@ export default function UserProfileScreen() {
   }, []);
 
   /** Même découpage propriétaire/visiteur que le fil principal (TweetsScreen). */
+  /** Strike Ultra : voir `TweetsScreen.handleStrikeTweet`, même comportement. */
+  const handleStrikeTweet = useCallback(async (tweetId: string) => {
+    const reason = await promptAsync({
+      title: 'Striker ce tweet',
+      message: 'Bloque la diffusion instantanément, sans revue. L\'auteur pourra contester.',
+      placeholder: 'Motif du strike (10 caractères minimum)…',
+      multiline: true,
+      maxLength: 500,
+      confirmLabel: 'Striker',
+      destructive: true,
+      icon: 'flag',
+    });
+    if (!reason) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      toast.error('Motif trop court', { description: 'Décris en au moins 10 caractères.' });
+      return;
+    }
+    const result = await strikeService.createStrike(tweetId, trimmed);
+    if (!result.success) {
+      toast.error('Strike impossible', { description: result.message });
+      return;
+    }
+    toast.success('Diffusion bloquée', {
+      description: 'Ce tweet n\'apparaît plus dans les recommandations. L\'auteur peut contester.',
+    });
+  }, []);
+
   const handleOptionsMenu = useCallback((tweetId: string) => {
     const tweet = tweets.find((t) => t.id === tweetId);
     const isOwnTweet = !!(currentUser?.id && tweet?.author?.id === currentUser.id);
+    const isUltra = effectiveSubscriptionTier(!!currentUser?.premium, (currentUser as any)?.subscription_tier) === 'ultra';
 
     const entries: ActionSheetItem[] = isOwnTweet
       ? [
@@ -503,6 +534,15 @@ export default function UserProfileScreen() {
           },
           { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
           { label: 'Signaler', icon: 'flag-outline', onPress: () => handleReport(tweetId) },
+          ...(isUltra
+            ? [{
+              label: 'Striker (bloquer la diffusion)',
+              icon: 'flag' as const,
+              hint: 'Ultra — immédiat, sans revue, contestable par l\'auteur',
+              onPress: () => handleStrikeTweet(tweetId),
+              destructive: true,
+            }]
+            : []),
           {
             label: 'Bloquer cet utilisateur',
             icon: 'ban-outline',
@@ -512,7 +552,7 @@ export default function UserProfileScreen() {
         ];
 
     showActionSheet({ items: entries });
-  }, [tweets, currentUser?.id, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport, handleBlockToggle, bookmarkedTweets]);
+  }, [tweets, currentUser?.id, currentUser?.premium, handleShare, handleDeleteTweet, handleBookmark, handleSkip, handleReport, handleBlockToggle, handleStrikeTweet, bookmarkedTweets]);
 
   /**
    * L'état d'interaction vit à côté des tweets : on le fusionne une fois par

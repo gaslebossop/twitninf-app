@@ -41,6 +41,7 @@ import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
 import { linkGAuthAccount } from '../services/gAuthLogin';
 import { useFlag } from '../contexts/FeatureFlagContext';
+import { useIsBetaMember } from '../contexts/BetaContext';
 import { useFeed2BTour } from '../components/tour/Feed2BTour';
 import { FLAGS } from '../config/featureFlagKeys';
 
@@ -55,6 +56,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const nfMapEnabled = useFlag(FLAGS.NF_MAP);
   const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
   const feed2BEnabled = useFlag(FLAGS.FEED_2B);
+  const isBetaMember = useIsBetaMember();
   const { start: startFeed2BTour } = useFeed2BTour();
   const { user, refreshCurrentUser } = useAuth();
   const { isAdmin, isSuperAdmin } = useAdminPermissions();
@@ -432,6 +434,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               'Pointe l\'écran qui a cassé, l\'app joint le contexte toute seule',
               'bug-outline',
               () => navigation.navigate('ReportBug')
+            )}
+
+            {/* Toujours visible, membre ou pas : c'est la seule porte d'entree
+                pour qui n'est pas encore dedans. Le sous-titre, lui, change. */}
+            {renderActionButton(
+              'Programme beta',
+              isBetaMember
+                ? 'Tu testes la version beta — voir ce qui est actif'
+                : 'Tester les nouveautés avant tout le monde, sur candidature',
+              'flask-outline',
+              () => navigation.navigate('Beta')
             )}
 
             {renderActionButton(

@@ -26,6 +26,7 @@ import Avatar from '../components/Avatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, statusBarStyle } from '../theme';
+import { LIST_TUNING_INVERTED } from '../utils/listTuning';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -415,6 +416,7 @@ export default function LiveViewerScreen() {
                 keyExtractor={chatKeyExtractor}
                 renderItem={renderChatRow}
                 inverted
+                {...LIST_TUNING_INVERTED}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.chatList}
                 ListEmptyComponent={

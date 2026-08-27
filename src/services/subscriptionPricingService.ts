@@ -14,6 +14,16 @@ export interface TierPrice {
   live: boolean;
 }
 
+/**
+ * Ultra n'a pas de prix catalogue en euros converti au cours du moment comme
+ * Plus/Pro : c'est un montant NF FIXE (300 NF), demandé tel quel. `live` vaut
+ * donc toujours `true` côté API — il n'y a pas de cours à attendre.
+ */
+export interface UltraPrice {
+  nf: number;
+  live: boolean;
+}
+
 export interface SubscriptionPricing {
   currency_symbol: string;
   /** Valeur d'un NF en euros au moment de la requête. */
@@ -21,6 +31,7 @@ export interface SubscriptionPricing {
   duration_days: number;
   plus: TierPrice;
   pro: TierPrice;
+  ultra: UltraPrice;
   upgrade: TierPrice;
 }
 
@@ -37,6 +48,7 @@ const LEGACY_PRICING: SubscriptionPricing = {
   duration_days: 5,
   plus: { eur: 0, nf: 0, live: false },
   pro: { eur: 0, nf: 0, live: false },
+  ultra: { nf: 0, live: false },
   upgrade: { eur: 0, nf: 0, live: false },
 };
 

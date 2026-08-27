@@ -131,7 +131,7 @@ export const PROFILE_TITLE_MAX = 40;
 
 export interface CustomizationState {
   customization: ProfileCustomization;
-  tier: 'free' | 'plus' | 'pro';
+  tier: 'free' | 'plus' | 'pro' | 'ultra';
   can_customize: boolean;
   can_use_decorations: boolean;
   /** Droit adossé à la certification, pas à l'abonnement. */

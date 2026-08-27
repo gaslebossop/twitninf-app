@@ -55,15 +55,19 @@ export default function PremiumPurchaseModal({
     if (visible) void loadWallet();
   }, [visible]);
 
-  // Le palier vient de la feuille : elle vend Plus ou Pro, plus seulement Pro.
-  const purchase = async (tier: 'plus' | 'pro') => {
+  // Le palier vient de la feuille : elle vend Plus, Pro ou Ultra.
+  const purchase = async (tier: 'plus' | 'pro' | 'ultra') => {
     setLoading(true);
     try {
-      const result = await apiService.request('/api/users/purchase-subscription', {
-        method: 'POST',
-        requiresAuth: true,
-        body: { tier },
-      });
+      // Ultra a son propre point d'entrée : prix fixe en NF, pas de `{ tier }`
+      // à passer (contrairement à Plus/Pro, tarifiés en euros convertis).
+      const result = tier === 'ultra'
+        ? await apiService.request('/api/users/purchase-ultra', { method: 'POST', requiresAuth: true })
+        : await apiService.request('/api/users/purchase-subscription', {
+            method: 'POST',
+            requiresAuth: true,
+            body: { tier },
+          });
       const purchase = result?.data;
       if (
         result?.success !== true ||

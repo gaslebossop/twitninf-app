@@ -54,6 +54,7 @@ import { toast } from '../components/ui/Toast';
 import {
   effectiveSubscriptionTier,
   isSubscriptionActiveFor,
+  canUseFeature,
 } from '../utils/subscriptionTier';
 
 /**
@@ -136,7 +137,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
   const [savingIncognito, setSavingIncognito] = useState(false);
 
   const tier = effectiveSubscriptionTier(!!user?.premium, user?.subscription_tier);
-  const isPro = tier === 'pro';
+  const isPro = canUseFeature(tier, 'pro');
   const hasInsights = tier !== 'free'
     && isSubscriptionActiveFor(tier, user?.subscription_expires_at);
 

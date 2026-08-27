@@ -28,7 +28,8 @@ import React, {
  */
 export type StartupPopupId =
   | 'language' | 'patch' | 'birthday' | 'navbar' | 'profile'
-  | 'consent' | 'follow_onboarding' | 'update' | 'sleep' | 'feed2b';
+  | 'consent' | 'follow_onboarding' | 'update' | 'sleep' | 'feed2b'
+  | 'navbar2b';
 
 /**
  * Du plus bloquant au plus accessoire.
@@ -75,6 +76,7 @@ const PRIORITY: StartupPopupId[] = [
   // barre que la personne n'a jamais vue. Présenter le fil d'abord donne le
   // contexte qui rend ce choix compréhensible.
   'feed2b',
+  'navbar2b',
   'navbar', 'profile',
 ];
 

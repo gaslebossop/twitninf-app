@@ -1,5 +1,6 @@
 import { fonts , statusBarStyle} from '../theme';
-import { AppStatusBar, ScreenBackground, AppRefreshControl } from '../components/ui';
+import { AppStatusBar, ScreenBackground, AppRefreshControl, BetaBadge } from '../components/ui';
+import { useIsBetaMember } from '../contexts/BetaContext';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import { withoutOrphanReplies } from '../utils/feed';
 import AlgoCheckCard from '../components/feed/AlgoCheckCard';
@@ -84,6 +85,9 @@ import PaywallSetupSheet from '../components/PaywallSetupSheet';
 import { colors, glow, withAlpha } from '../theme';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { promptAsync } from '../components/ui/PromptSheet';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
+import strikeService from '../services/strikeService';
 
 const C = {
   bg: colors.bg,
@@ -255,6 +259,7 @@ export default function TweetsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FeedTab>('forYou');
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const isBetaMember = useIsBetaMember();
 
   // ─── Onglet Explorer — état entièrement séparé ─────────────────────────────
   //
@@ -716,6 +721,11 @@ export default function TweetsScreen() {
         promoted_account: promotedAccount,
         parent_tweet_id: tweetData.parent_tweet_id || rec.parent_tweet_id || null,
         originalTweet: tweetData.originalTweet || rec.originalTweet || null,
+        // Comptes SUIVIS ayant retweeté ce tweet, le plus suivi en tête (voir
+        // `attachRetweeters` côté API). Cette normalisation recopie les champs
+        // un à un : l'oublier ici ferait retomber la ligne sur « untel a
+        // retweeté » alors que l'API en envoie plusieurs.
+        retweeters: tweetData.retweeters || rec.retweeters || null,
         // « Traduction (bêta) » : cette normalisation recopie les champs un à
         // un, donc un champ oublié ici disparaît du fil même quand l'API
         // l'envoie — c'est ce qui laissait les tweets en version originale
@@ -1401,10 +1411,45 @@ export default function TweetsScreen() {
    * « Supprimer ». Même cause pour l'état de favori, qui affichait
    * « Ajouter aux favoris » sur un tweet déjà en favori.
    */
+  /**
+   * Strike Ultra : bloque la diffusion (recommandations, recherche, fils
+   * publics) sans supprimer le tweet ni toucher sa monétisation. L'auteur
+   * peut contester — voir la notification qu'il reçoit et
+   * `NotificationsScreen`. Aucune revue avant l'action : c'est le principe du
+   * strike, seule la contestation en déclenche une.
+   */
+  const handleStrikeTweet = async (tweetId: string) => {
+    const reason = await promptAsync({
+      title: 'Striker ce tweet',
+      message: 'Bloque la diffusion instantanément, sans revue. L\'auteur pourra contester.',
+      placeholder: 'Motif du strike (10 caractères minimum)…',
+      multiline: true,
+      maxLength: 500,
+      confirmLabel: 'Striker',
+      destructive: true,
+      icon: 'flag',
+    });
+    if (!reason) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      toast.error('Motif trop court', { description: 'Décris en au moins 10 caractères.' });
+      return;
+    }
+    const result = await strikeService.createStrike(tweetId, trimmed);
+    if (!result.success) {
+      toast.error('Strike impossible', { description: result.message });
+      return;
+    }
+    toast.success('Diffusion bloquée', {
+      description: 'Ce tweet n\'apparaît plus dans les recommandations. L\'auteur peut contester.',
+    });
+  };
+
   const handleOptionsMenu = (tweetId: string) => {
     const tweet = tweetsRef.current.find((t) => t.id === tweetId);
     const bookmarked = bookmarkedRef.current;
     const isOwnTweet = !!(user?.id && tweet?.author?.id === user.id);
+    const isUltra = effectiveSubscriptionTier(!!user?.premium, (user as any)?.subscription_tier) === 'ultra';
 
     // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
     // propre tweet, le menu ne propose que ce qui reste pertinent.
@@ -1458,6 +1503,15 @@ export default function TweetsScreen() {
           },
           { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
           { label: 'Signaler', icon: 'flag-outline', onPress: () => handleReport(tweetId) },
+          ...(isUltra
+            ? [{
+              label: 'Striker (bloquer la diffusion)',
+              icon: 'flag' as const,
+              hint: 'Ultra — immédiat, sans revue, contestable par l\'auteur',
+              onPress: () => handleStrikeTweet(tweetId),
+              destructive: true,
+            }]
+            : []),
           {
             label: 'Bloquer cet utilisateur',
             icon: 'ban-outline',
@@ -1611,11 +1665,22 @@ export default function TweetsScreen() {
           }
           return;
         }
+        // Un retweet PUR n'a pas de contenu propre : ouvrir sa ligne affichait
+        // un écran de détail vide, sans texte, sans média, sans réponses. Ce
+        // qu'on veut voir, c'est le tweet retweeté — même cible que les
+        // compteurs et les interactions de la ligne (voir l'API,
+        // `engagementTargetSql`). Une CITATION, elle, a son propre texte et
+        // s'ouvre bien elle-même.
+        const opened = tweetsRef.current.find((t) => t.id === tweetId) as any;
+        const isPureRetweet = !!(opened?.is_retweet || opened?.tweet_type === 'retweet');
+        const target = isPureRetweet && opened?.originalTweet?.id ? opened.originalTweet : opened;
+        const targetId = target?.id ? String(target.id) : tweetId;
+
         // `isThread` evite au detail d'afficher le squelette d'un tweet isole
         // pour ce qui est en fait une reponse (voir TweetDetailScreen).
         (navigation as any).navigate('TweetDetail', {
-          tweetId,
-          isThread: !!(tweetsRef.current.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
+          tweetId: targetId,
+          isThread: !!target?.parent_tweet_id,
         });
         break;
       }
@@ -2338,6 +2403,11 @@ export default function TweetsScreen() {
               resizeMode="contain"
             />
             <Text style={S.brandWord}>Twitninf</Text>
+            {/* Rendu UNIQUEMENT aux membres : un badge que tout le monde voit
+                ne dit plus « tu testes », il dit « l'app est instable ». */}
+            {isBetaMember && (
+              <BetaBadge onPress={() => (navigation as any).navigate('Beta')} />
+            )}
           </View>
 
           <TouchableOpacity

@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useRef, useState } from 'react';
+import { retweetersLabel, retweetersOf, sameRetweeters } from '../../utils/retweeters';
 import {
   View,
   Text,
@@ -140,6 +141,34 @@ function TweetRow({
   // pas encore dans le palier de déploiement.
   const superHeartEnabled = useFlag(FLAGS.SUPER_HEART);
 
+  /**
+   * L'éclat de réaction n'est MONTÉ qu'une fois qu'un doigt s'est posé —
+   * jamais au repos. Correctif porté depuis `paper2b/TweetRowGutter`, où il a
+   * été mesuré (voir `docs/2B-FLUIDITE-RENDU.md`).
+   *
+   * ── Ce que ça coûtait ────────────────────────────────────────────────
+   * `ReactionBurst` dessine tout en absolu autour d'une ancre de 0 × 0 :
+   * disque, anneaux, et une particule par point, chacune portant son propre
+   * `useAnimatedStyle`. Cette ligne en montait TROIS (repost 11 vues animées,
+   * cœur 11, Super Cœur 22 avec ses seize particules et son halo), soit
+   * ~44 vues animées et autant de « mappers » Reanimated — tous à opacité 0,
+   * sur CHAQUE ligne du fil, en permanence. Avec `windowSize: 7`, le fil en
+   * tenait plusieurs centaines, et chaque `useAnimatedStyle` s'enregistre
+   * comme auditeur sur les valeurs partagées qu'il lit tandis que le registre
+   * des mappers est retrié à chaque montage. Software Mansion donne ~100
+   * composants animés simultanés comme limite pratique sur un Android
+   * d'entrée de gamme.
+   *
+   * ── Pourquoi l'armement arrive à temps ───────────────────────────────
+   * Il part de `onPressIn` (doigt posé), pas de `onPress` : le montage a toute
+   * la durée de l'appui pour se faire, et l'éclat ne démarre de toute façon
+   * qu'après son propre délai. Pour le double-tap sur la ligne, c'est le
+   * PREMIER appui qui arme — il reste jusqu'à 280 ms avant le second. Le
+   * ressort de l'icône, lui, n'a jamais été conditionné : il est instantané.
+   */
+  const [burstArmed, setBurstArmed] = useState(false);
+  const armBurst = useCallback(() => setBurstArmed(true), []);
+
   // ── Valeurs d'animation : thread UI, jamais dans le state React ────────────
   const like = useReactionAnimation();
   // Éclat séparé du like normal : les deux gestes peuvent viser la même
@@ -161,6 +190,12 @@ function TweetRow({
   const isContest = (tweet as any).tweet_type === 'concours';
   const originalTweet = (tweet as any)?.originalTweet || null;
   const retweeter = tweet.author;
+  // Plusieurs comptes suivis peuvent avoir retweeté le même tweet : l'API les
+  // empile sur une seule ligne au lieu d'en servir une par personne.
+  const retweetLabel = React.useMemo(
+    () => (isRetweet ? retweetersLabel(retweetersOf(tweet), 'retweeté') : null),
+    [isRetweet, tweet],
+  );
 
   const displayAuthor = isRetweet && originalTweet?.author ? originalTweet.author : tweet.author;
   const displayAuthorId = displayAuthor?.id ? String(displayAuthor.id) : '';
@@ -347,6 +382,11 @@ function TweetRow({
 
     const now = Date.now();
     const isDoubleTap = now - lastTapRef.current < DOUBLE_TAP_MS;
+    // Armé dès le PREMIER appui : le double-tap laisse jusqu'à 280 ms entre
+    // les deux, l'éclat a donc tout le temps de se monter avant d'être joué.
+    // Un appui simple ouvre le tweet, donc démonte la ligne — armer là ne
+    // coûte rien.
+    if (!isDoubleTap) armBurst();
     lastTapRef.current = now;
 
     if (isDoubleTap) {
@@ -369,7 +409,7 @@ function TweetRow({
       navTimerRef.current = null;
       onAction({ type: 'open', tweetId: tweet.id });
     }, 260);
-  }, [isAd, isLiked, onAction, playBigHeart, playLike, tweet]);
+  }, [isAd, isLiked, onAction, playBigHeart, playLike, tweet, armBurst, isContentLocked]);
 
   // `LayoutAnimation` est peu fiable sous la New Architecture (activée ici) :
   // on s'appuie sur l'animation de layout de Reanimated, appliquée à la vue.
@@ -414,10 +454,10 @@ function TweetRow({
           <Ionicons name="heart" size={90} color={C.white} />
         </Animated.View>
 
-        {isRetweet && retweeter?.username && (
+        {isRetweet && !!retweetLabel && (
           <View style={S.retweetLabel}>
             <Ionicons name="repeat" size={13} color={C.textSecondary} />
-            <Text style={S.retweetLabelText}>@{retweeter.username} a retweeté</Text>
+            <Text style={S.retweetLabelText} numberOfLines={1}>{retweetLabel}</Text>
           </View>
         )}
 
@@ -654,11 +694,16 @@ function TweetRow({
               <TouchableOpacity
                 style={[S.actionChip, S.burstAnchorBtn, isRetweeted && S.actionChipRetweetActive]}
                 onPress={handleRetweetPress}
+                // Monte l'éclat au POSÉ du doigt, pas au relâchement : voir
+                // `burstArmed`. Ne déclenche rien d'autre.
+                onPressIn={armBurst}
                 disabled={isAd}
                 activeOpacity={0.7}
               >
                 <View style={S.burstHost}>
-                  <ReactionBurst progress={retweet.progress} palette={RETWEET_PALETTE} iconSize={16} />
+                  {burstArmed && (
+                    <ReactionBurst progress={retweet.progress} palette={RETWEET_PALETTE} iconSize={16} />
+                  )}
                   <Animated.View style={retweet.iconStyle}>
                     <Ionicons
                       name={isRetweeted ? 'repeat' : 'repeat-outline'}
@@ -678,23 +723,34 @@ function TweetRow({
                 style={[S.actionChip, S.burstAnchorBtn, isLiked && S.actionChipLikeActive]}
                 onPress={handleLikePress}
                 onLongPress={handleSuperLikeLongPress}
+                onPressIn={armBurst}
                 delayLongPress={420}
                 disabled={isAd}
                 activeOpacity={0.7}
               >
                 <View style={S.burstHost}>
-                  <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={16} />
+                  {burstArmed && (
+                    <ReactionBurst progress={like.progress} palette={LIKE_PALETTE} iconSize={16} />
+                  )}
                   {/* Nettement plus grand que le like normal (38 vs 16), avec
                       halo + double anneau + deux fois plus de particules :
                       un geste payant et rare doit se voir depuis plus loin
-                      que l'icône de 16px qui le déclenche. */}
-                  <ReactionBurst
-                    progress={superLike.progress}
-                    palette={SUPER_HEART_PALETTE}
-                    iconSize={38}
-                    particleCount={16}
-                    halo
-                  />
+                      que l'icône de 16px qui le déclenche.
+
+                      Conditionné AUSSI au palier : c'est l'éclat le plus lourd
+                      des trois (22 vues animées à lui seul) et il ne peut pas
+                      se produire hors du drapeau — `handleSuperLikeLongPress`
+                      sort immédiatement. Le monter pour les comptes qui n'y
+                      ont pas droit était du décor impossible à déclencher. */}
+                  {burstArmed && superHeartEnabled && (
+                    <ReactionBurst
+                      progress={superLike.progress}
+                      palette={SUPER_HEART_PALETTE}
+                      iconSize={38}
+                      particleCount={16}
+                      halo
+                    />
+                  )}
                   <Animated.View style={like.iconStyle}>
                     <Ionicons
                       name={isLiked ? 'heart' : 'heart-outline'}
@@ -778,6 +834,11 @@ function areEqual(prev: TweetRowProps, next: TweetRowProps) {
     // sans que le tweet change d'identité. Sur un retweet pur, l'auteur
     // affiché est celui du tweet d'origine (voir `displayAuthor`) : les deux
     // sont donc à comparer.
+    // La mention « untel a retweeté » est bâtie sur `retweeters`, que l'API
+    // recalcule à chaque chargement : quelqu'un d'autre a pu reposter depuis.
+    // Sans cette comparaison, la ligne garderait l'ancienne mention — le tweet
+    // n'a pas changé d'identité, donc rien d'autre ne la ferait rejouer.
+    sameRetweeters((a as any).retweeters, (b as any).retweeters) &&
     sameAuthor(a.author, b.author) &&
     sameAuthor((a as any).originalTweet?.author, (b as any).originalTweet?.author) &&
     prev.index === next.index &&

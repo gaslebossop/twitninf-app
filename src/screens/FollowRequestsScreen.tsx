@@ -22,6 +22,7 @@ import unreadService from '../services/unreadService';
 import VerifiedBadge from '../components/VerifiedBadge';
 import PremiumDisplayName from '../components/PremiumDisplayName';
 import { certifiedNameColors, type ProfileCustomization } from '../services/profileCustomizationService';
+import { LIST_TUNING } from '../utils/listTuning';
 
 interface FollowRequest {
   id: string;
@@ -195,6 +196,7 @@ export default function FollowRequestsScreen({ navigation }: any) {
         ) : (
           <FlatList
             data={requests}
+            {...LIST_TUNING}
             keyExtractor={keyExtractor}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
             contentContainerStyle={requests.length === 0 ? styles.emptyContent : styles.listContent}

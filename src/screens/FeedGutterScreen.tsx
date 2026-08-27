@@ -20,7 +20,8 @@
 import { paper, paperFonts, isPaperDark, ps } from '../theme/paper2b';
 import unreadService from '../services/unreadService';
 import { useForegroundInterval } from '../hooks/useForegroundInterval';
-import { AppStatusBar } from '../components/ui';
+import { AppStatusBar, BetaBadge } from '../components/ui';
+import { useIsBetaMember } from '../contexts/BetaContext';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
 import { withoutOrphanReplies, threadDepthAt } from '../utils/feed';
 // 2B ne NOMME NeuralRank nulle part : la pastille « NeuralRank v2 » de
@@ -45,7 +46,7 @@ import {
   afterInteraction,
 } from '../utils/algoCheck';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -104,6 +105,7 @@ import { useEventStyles } from '../hooks/useEventStyles';
 import EventStrip from '../components/events/EventStrip';
 import ReportSheet from '../components/ReportSheet';
 import TweetRowGutter from '../components/feed/paper2b/TweetRowGutter';
+import { resetStage, resumeStage, setVisibleTweets, suspendStage } from '../components/feed/paper2b/videoStage';
 import type { TweetRowAction } from '../components/feed/TweetRow';
 import PromotedAccountCard from '../components/feed/PromotedAccountCard';
 import TweetSkeleton from '../components/feed/TweetSkeleton';
@@ -124,6 +126,9 @@ import PaywallSetupSheet from '../components/PaywallSetupSheet';
 // ─── Palette ── « papier », propre au test (src/theme/paper2b) ──────────────
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { promptAsync } from '../components/ui/PromptSheet';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
+import strikeService from '../services/strikeService';
 
 /**
  * La palette du fil, redirigée vers « papier ».
@@ -367,6 +372,7 @@ export default function FeedGutterScreen() {
 
   const [activeTab, setActiveTab] = useState<FeedTab>('forYou');
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const isBetaMember = useIsBetaMember();
 
   // ─── Onglet Explorer — état entièrement séparé ─────────────────────────────
   //
@@ -833,6 +839,11 @@ export default function FeedGutterScreen() {
         promoted_account: promotedAccount,
         parent_tweet_id: tweetData.parent_tweet_id || rec.parent_tweet_id || null,
         originalTweet: tweetData.originalTweet || rec.originalTweet || null,
+        // Comptes SUIVIS ayant retweeté ce tweet, le plus suivi en tête (voir
+        // `attachRetweeters` côté API). Cette normalisation recopie les champs
+        // un à un : l'oublier ici ferait retomber la ligne sur « untel a
+        // retweeté » alors que l'API en envoie plusieurs.
+        retweeters: tweetData.retweeters || rec.retweeters || null,
         // « Traduction (bêta) » : cette normalisation recopie les champs un à
         // un, donc un champ oublié ici disparaît du fil même quand l'API
         // l'envoie — c'est ce qui laissait les tweets en version originale
@@ -1522,10 +1533,39 @@ export default function FeedGutterScreen() {
    * « Supprimer ». Même cause pour l'état de favori, qui affichait
    * « Ajouter aux favoris » sur un tweet déjà en favori.
    */
+  /** Strike Ultra : voir `TweetsScreen.handleStrikeTweet`, même comportement. */
+  const handleStrikeTweet = async (tweetId: string) => {
+    const reason = await promptAsync({
+      title: 'Striker ce tweet',
+      message: 'Bloque la diffusion instantanément, sans revue. L\'auteur pourra contester.',
+      placeholder: 'Motif du strike (10 caractères minimum)…',
+      multiline: true,
+      maxLength: 500,
+      confirmLabel: 'Striker',
+      destructive: true,
+      icon: 'flag',
+    });
+    if (!reason) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      toast.error('Motif trop court', { description: 'Décris en au moins 10 caractères.' });
+      return;
+    }
+    const result = await strikeService.createStrike(tweetId, trimmed);
+    if (!result.success) {
+      toast.error('Strike impossible', { description: result.message });
+      return;
+    }
+    toast.success('Diffusion bloquée', {
+      description: 'Ce tweet n\'apparaît plus dans les recommandations. L\'auteur peut contester.',
+    });
+  };
+
   const handleOptionsMenu = (tweetId: string) => {
     const tweet = tweetsRef.current.find((t) => t.id === tweetId);
     const bookmarked = bookmarkedRef.current;
     const isOwnTweet = !!(user?.id && tweet?.author?.id === user.id);
+    const isUltra = effectiveSubscriptionTier(!!user?.premium, (user as any)?.subscription_tier) === 'ultra';
 
     // Se bloquer/s'ignorer/se signaler soi-même n'a pas de sens : sur son
     // propre tweet, le menu ne propose que ce qui reste pertinent.
@@ -1579,6 +1619,15 @@ export default function FeedGutterScreen() {
           },
           { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
           { label: 'Signaler', icon: 'flag-outline', onPress: () => handleReport(tweetId) },
+          ...(isUltra
+            ? [{
+              label: 'Striker (bloquer la diffusion)',
+              icon: 'flag' as const,
+              hint: 'Ultra — immédiat, sans revue, contestable par l\'auteur',
+              onPress: () => handleStrikeTweet(tweetId),
+              destructive: true,
+            }]
+            : []),
           {
             label: 'Bloquer cet utilisateur',
             icon: 'ban-outline',
@@ -1733,11 +1782,22 @@ export default function FeedGutterScreen() {
           }
           return;
         }
+        // Un retweet PUR n'a pas de contenu propre : ouvrir sa ligne affichait
+        // un écran de détail vide, sans texte, sans média, sans réponses. Ce
+        // qu'on veut voir, c'est le tweet retweeté — même cible que les
+        // compteurs et les interactions de la ligne (voir l'API,
+        // `engagementTargetSql`). Une CITATION, elle, a son propre texte et
+        // s'ouvre bien elle-même.
+        const opened = tweetsRef.current.find((t) => t.id === tweetId) as any;
+        const isPureRetweet = !!(opened?.is_retweet || opened?.tweet_type === 'retweet');
+        const target = isPureRetweet && opened?.originalTweet?.id ? opened.originalTweet : opened;
+        const targetId = target?.id ? String(target.id) : tweetId;
+
         // `isThread` evite au detail d'afficher le squelette d'un tweet isole
         // pour ce qui est en fait une reponse (voir TweetDetailScreen).
         (navigation as any).navigate('TweetDetail', {
-          tweetId,
-          isThread: !!(tweetsRef.current.find((t) => t.id === tweetId) as any)?.parent_tweet_id,
+          tweetId: targetId,
+          isThread: !!target?.parent_tweet_id,
         });
         break;
       }
@@ -1886,9 +1946,24 @@ export default function FeedGutterScreen() {
       // les transitions : un callback manque (remontage de la liste, retour
       // d'arriere-plan) desynchroniserait un suivi fonde sur `changed` seul,
       // alors qu'un etat recale a chaque passage se repare tout seul.
-      viewTrackingRef.current.notifyVisible(
-        (viewableItems || []).filter((e) => e.isViewable).map((e) => e.item?.id),
-      );
+      const visibleIds = (viewableItems || []).filter((e) => e.isViewable).map((e) => e.item?.id);
+      viewTrackingRef.current.notifyVisible(visibleIds);
+
+      /**
+       * La lecture automatique des vidéos se branche ICI, sur la liste des
+       * visibles DANS L'ORDRE — c'est ce qui fait jouer la plus haute des deux
+       * quand deux vidéos sont à l'écran.
+       *
+       * Passer par un module (`videoStage`) plutôt que par un état React : une
+       * propriété `videoActif` redescendue jusqu'aux lignes les rerendrait
+       * toutes à chaque changement de visibilité, dans un fil qui défile. Ici,
+       * seul le lecteur concerné apprend qu'il change d'état.
+       *
+       * ⚠️ Ce callback tourne sur le thread JS pendant le défilement
+       * (`VirtualizedList._onScroll`) : `setVisibleTweets` rend la main
+       * immédiatement quand la liste n'a pas bougé, le cas le plus fréquent.
+       */
+      setVisibleTweets(visibleIds);
 
       const entries = Array.isArray(changed) ? changed : viewableItems;
 
@@ -1912,6 +1987,45 @@ export default function FeedGutterScreen() {
       }
     }
   ).current;
+
+  /**
+   * Les quatre situations où une vidéo du fil ne doit PAS jouer.
+   *
+   * Une vidéo laissée en lecture derrière un autre écran, c'est une bande-son
+   * qui sort de nulle part — le défaut le plus voyant d'une lecture
+   * automatique. Les quatre conditions sont rassemblées ici, dans le seul
+   * endroit qui les connaît toutes :
+   *
+   *   - l'app est en arrière-plan ;
+   *   - le fil n'est plus l'écran affiché (profil, détail d'un tweet…) ;
+   *   - Explorer a pris la place (c'est un onglet du même écran) ;
+   *   - la lecture immersive d'Explorer est ouverte — un CALQUE monté dans cet
+   *     écran, donc invisible pour la navigation : sans cette ligne, la vidéo
+   *     du fil continuerait de jouer derrière elle.
+   *
+   * Le plein écran d'une vidéo du fil, lui, se coupe tout seul
+   * (`TweetVideoPaper` appelle `suspendStage` avant de monter la visionneuse).
+   */
+  const feedFocused = useIsFocused();
+  const [appForeground, setAppForeground] = useState(true);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      setAppForeground(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    const canPlay = appForeground && feedFocused && activeTab !== 'explore' && immersiveIndex === null;
+    if (canPlay) resumeStage();
+    else suspendStage();
+  }, [appForeground, feedFocused, activeTab, immersiveIndex]);
+
+  // Sortie du fil : la scène est un module, elle survit au démontage de
+  // l'écran. Sans remise à plat, la prochaine visite hériterait de la liste de
+  // visibles de la précédente.
+  useEffect(() => () => resetStage(), []);
 
   useEffect(() => {
     viewTrackingRef.current = {
@@ -2597,14 +2711,25 @@ export default function FeedGutterScreen() {
           le seul chemin vers les notifications pour les comptes du test. */}
       <View style={S.header}>
         <View style={S.headerTopRow}>
-          {/* `brand-mark.png` (192×192), pas `icon.png` (1920×1920) : même
-              raison qu'en 2A, voir `TweetsScreen.tsx`. */}
-          <Image
-            source={require('../../assets/brand-mark.png')}
-            style={S.brandMark}
-            resizeMode="contain"
-          />
-          <Text style={S.brandWord}>Twitninf</Text>
+          {/* Marque, mot et badge forment UN bloc : c'est lui qui porte le
+              `marginRight: 'auto'` qui pousse cloche et avatar au bord droit.
+              Le porter sur le mot seul renverrait le badge de l'autre cote de
+              l'en-tete, contre la cloche. */}
+          <View style={S.brandLockup}>
+            {/* `brand-mark.png` (192×192), pas `icon.png` (1920×1920) : même
+                raison qu'en 2A, voir `TweetsScreen.tsx`. */}
+            <Image
+              source={require('../../assets/brand-mark.png')}
+              style={S.brandMark}
+              resizeMode="contain"
+            />
+            <Text style={S.brandWord}>Twitninf</Text>
+            {/* Ton « papier » : le magenta de Pulse n'existe pas dans cette
+                palette et s'y lirait comme un element colle d'un autre ecran. */}
+            {isBetaMember && (
+              <BetaBadge tone="paper" onPress={() => (navigation as any).navigate('Beta')} />
+            )}
+          </View>
 
           <TouchableOpacity
             onPress={() => (navigation as any).navigate('Notifications')}
@@ -2845,6 +2970,13 @@ const S = StyleSheet.create({
     paddingTop: ps(12),
     paddingBottom: ps(16),
   },
+  brandLockup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: ps(10),
+    // Pousse cloche et avatar contre le bord droit sans vue d'espacement.
+    marginRight: 'auto',
+  },
   brandMark: {
     width: ps(27),
     height: ps(27),
@@ -2856,8 +2988,6 @@ const S = StyleSheet.create({
     fontSize: ps(28),
     letterSpacing: ps(-0.84),
     color: paper.ink,
-    // Pousse cloche et avatar contre le bord droit sans vue d'espacement.
-    marginRight: 'auto',
   },
   bellBtn: {
     width: ps(25),

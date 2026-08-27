@@ -345,12 +345,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     void loadWalletBalance();
   };
 
-  const handlePurchaseSubscription = async (tier: 'plus' | 'pro') => {
+  const handlePurchaseSubscription = async (tier: 'plus' | 'pro' | 'ultra') => {
     try {
       setPremiumLoading(true);
-      const result = await apiService.request('/api/users/purchase-subscription', {
-        method: 'POST', requiresAuth: true, body: { tier }
-      });
+      // Ultra a son propre point d'entrée : prix fixe en NF, pas de
+      // `{ tier }` à passer (contrairement à Plus/Pro, tarifiés en euros
+      // convertis au cours du moment par la même route).
+      const result = tier === 'ultra'
+        ? await apiService.request('/api/users/purchase-ultra', { method: 'POST', requiresAuth: true })
+        : await apiService.request('/api/users/purchase-subscription', {
+            method: 'POST', requiresAuth: true, body: { tier }
+          });
       const purchase = result?.data;
       if (
         result?.success !== true ||
@@ -366,7 +371,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       setCustomization(state.customization);
       setCustomizationHydrated(true);
       setShowPremiumModal(false);
-      const label = tier === 'pro' ? 'Pro' : 'Plus';
+      const label = tier === 'ultra' ? 'Ultra' : tier === 'pro' ? 'Pro' : 'Plus';
       // La durée vient de la réponse d'achat : l'annoncer en dur a déjà promis
       // un mois là où l'abonnement en couvrait cinq jours.
       const days = Number(purchase?.duration_days) || 5;
@@ -1082,7 +1087,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           <>
 
         {/* ── PREMIUM BANNER ── */}
-        {subTier !== 'pro' && (
+        {subTier !== 'ultra' && (
           <TouchableOpacity
             style={S.premiumBanner}
             onPress={handleOpenPremiumModal}
@@ -1091,12 +1096,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <Ionicons name="diamond" size={18} color={colors.gold} />
             <View style={{ marginLeft: 12, flex: 1 }}>
               <Text style={S.premiumBannerTitle}>
-                {subTier === 'plus' ? 'Passer à Pro' : 'Abonnements Plus & Pro'}
+                {subTier === 'plus' ? 'Passer à Pro' : subTier === 'pro' ? 'Passer à Ultra' : 'Abonnements Plus, Pro & Ultra'}
               </Text>
               <Text style={S.premiumBannerSub}>
                 {subTier === 'plus'
                   ? 'Mise à niveau vers Premium Pro'
-                  : 'Premium Pro · 15 € en NF · 5 jours'}
+                  : subTier === 'pro'
+                    ? 'Réservé aux gros créateurs · 300 NF'
+                    : 'Premium Pro · 15 € en NF · 5 jours'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />

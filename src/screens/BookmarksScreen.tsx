@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshControl, Share, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { FlatList, RefreshControl, Share, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import { colors, fonts, statusBarStyle } from '../theme';
 import { ScreenBackground, BackButton, ScreenSkeleton, EmptyState } from '../components/ui';
@@ -12,6 +11,10 @@ import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
 import ReportSheet from '../components/ReportSheet';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
+import { promptAsync } from '../components/ui/PromptSheet';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
+import strikeService from '../services/strikeService';
+import { LIST_TUNING } from '../utils/listTuning';
 
 /**
  * Mes favoris. Jamais ceux d'un autre — `GET /api/tweets/bookmarks` ne
@@ -140,6 +143,34 @@ export default function BookmarksScreen() {
     });
   }, []);
 
+  /** Strike Ultra : voir `TweetsScreen.handleStrikeTweet`, même comportement. */
+  const handleStrikeTweet = useCallback(async (tweetId: string) => {
+    const reason = await promptAsync({
+      title: 'Striker ce tweet',
+      message: 'Bloque la diffusion instantanément, sans revue. L\'auteur pourra contester.',
+      placeholder: 'Motif du strike (10 caractères minimum)…',
+      multiline: true,
+      maxLength: 500,
+      confirmLabel: 'Striker',
+      destructive: true,
+      icon: 'flag',
+    });
+    if (!reason) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      toast.error('Motif trop court', { description: 'Décris en au moins 10 caractères.' });
+      return;
+    }
+    const result = await strikeService.createStrike(tweetId, trimmed);
+    if (!result.success) {
+      toast.error('Strike impossible', { description: result.message });
+      return;
+    }
+    toast.success('Diffusion bloquée', {
+      description: 'Ce tweet n\'apparaît plus dans les recommandations. L\'auteur peut contester.',
+    });
+  }, []);
+
   const rowContext = React.useMemo(() => ({ tab: 'bookmarks', algorithm: 'none' }), []);
 
   const handleRowAction = useCallback((action: TweetRowAction) => {
@@ -173,6 +204,7 @@ export default function BookmarksScreen() {
       case 'options': {
         const tweet = tweetsRef.current.find((t) => t.id === tweetId);
         const isOwnTweet = !!(currentUser?.id && tweet?.author?.id === currentUser.id);
+        const isUltra = effectiveSubscriptionTier(!!currentUser?.premium, (currentUser as any)?.subscription_tier) === 'ultra';
         const { showActionSheet } = require('../components/ui/ActionSheet');
         showActionSheet({
           items: isOwnTweet
@@ -181,6 +213,15 @@ export default function BookmarksScreen() {
                 { label: 'Retirer des favoris', icon: 'bookmark', onPress: () => handleBookmark(tweetId) },
                 { label: 'Partager', icon: 'share-outline', onPress: () => handleShare(tweetId) },
                 { label: 'Signaler', icon: 'flag-outline', onPress: () => handleReport(tweetId) },
+                ...(isUltra
+                  ? [{
+                    label: 'Striker (bloquer la diffusion)',
+                    icon: 'flag' as const,
+                    hint: 'Ultra — immédiat, sans revue, contestable par l\'auteur',
+                    onPress: () => handleStrikeTweet(tweetId),
+                    destructive: true,
+                  }]
+                  : []),
                 {
                   label: 'Bloquer cet utilisateur',
                   icon: 'ban-outline',
@@ -195,7 +236,7 @@ export default function BookmarksScreen() {
       default:
         break;
     }
-  }, [navigation, currentUser?.id, handleLike, handleRetweet, handleShare, handleBookmark, handleBlock, handleReport]);
+  }, [navigation, currentUser?.id, currentUser?.premium, handleLike, handleRetweet, handleShare, handleBookmark, handleBlock, handleReport, handleStrikeTweet]);
 
   const renderItem = useCallback(({ item, index }: { item: Tweet; index: number }) => (
     <TweetRow
@@ -221,11 +262,18 @@ export default function BookmarksScreen() {
           <View style={{ width: 36 }} />
         </View>
 
+        {/* Un `FlatList` NU, pas `Animated.FlatList` : cette liste n'a aucune
+            prop animée — ni gestionnaire de défilement, ni
+            `itemLayoutAnimation`, ni style animé. Or `Animated.FlatList` impose
+            son propre `CellRendererComponent`, une `Animated.View`, donc un
+            composant animé complet par cellule montée. C'était payé sur les
+            deux plateformes pour exactement rien. */}
         {loading ? (
           <ScreenSkeleton variant="list" />
         ) : (
-          <Animated.FlatList
+          <FlatList
             data={tweets}
+            {...LIST_TUNING}
             keyExtractor={keyExtractor}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
             contentContainerStyle={tweets.length === 0 ? styles.emptyContent : styles.listContent}

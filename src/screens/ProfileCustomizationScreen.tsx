@@ -160,7 +160,7 @@ function Section({
 export default function ProfileCustomizationScreen({ navigation }: any) {
   const { user, refreshCurrentUser } = useAuth() as any;
   const [draft, setDraft] = useState<ProfileCustomization>({});
-  const [tier, setTier] = useState<'free' | 'plus' | 'pro'>('free');
+  const [tier, setTier] = useState<'free' | 'plus' | 'pro' | 'ultra'>('free');
   const [canCustomize, setCanCustomize] = useState(false);
   const [canUseDecorations, setCanUseDecorations] = useState(false);
   const [canUseCertified, setCanUseCertified] = useState(false);
@@ -641,7 +641,7 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
               parcourir tout l'écran pour valider un changement de couleur. */}
           <View style={styles.actionBar}>
             <Text style={styles.tierNote}>
-              Palier {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Gratuit'}
+              Palier {tier === 'ultra' ? 'Ultra' : tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Gratuit'}
             </Text>
             <Tappable
               onPress={save}

@@ -9,7 +9,7 @@ interface PremiumBadgeProps {
   style?: any;
   animated?: boolean;
   /** Palier API (free / plus / pro) */
-  subscriptionTier?: 'free' | 'plus' | 'pro';
+  subscriptionTier?: 'free' | 'plus' | 'pro' | 'ultra';
   /** Id badge AsyncStorage (`selectedBadge`) ; si absent, défaut selon palier */
   memberBadgeId?: string | null;
   /**
@@ -81,7 +81,7 @@ export default function PremiumBadge({
       ? { box: size, icon: Math.round(size * 0.59) }
       : preset;
 
-  const isPaid = subscriptionTier === 'plus' || subscriptionTier === 'pro';
+  const isPaid = subscriptionTier === 'plus' || subscriptionTier === 'pro' || subscriptionTier === 'ultra';
   const resolved = useMemo(
     () => clampMemberBadgeId(memberBadgeId ?? null, isPaid, subscriptionTier),
     [memberBadgeId, isPaid, subscriptionTier]

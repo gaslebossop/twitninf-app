@@ -73,8 +73,26 @@ const HALTS: Record<string, string> = {
  * Audiences prêtes à l'emploi. Chacune se traduit en un segment côté serveur —
  * l'écran ne fait que masquer la syntaxe, il n'invente pas de mécanisme.
  */
-const AUDIENCES: Array<{ id: string; label: string; hint?: string; conditions: FlagCondition[] }> = [
+const AUDIENCES: Array<{
+  id: string;
+  label: string;
+  hint?: string;
+  conditions: FlagCondition[];
+  /**
+   * Audience portée par le TYPE du drapeau (`audience: 'beta'` côté serveur)
+   * et non par un segment de conditions. Elle n'a donc ni palier ni montée :
+   * on est membre du programme, ou on ne l'est pas.
+   */
+  isType?: boolean;
+}> = [
   { id: 'everyone', label: 'Tout le monde', conditions: [] },
+  {
+    id: 'beta',
+    label: 'Membres de la beta',
+    hint: 'Eux seuls — ni palier, ni montée automatique',
+    conditions: [],
+    isType: true,
+  },
   {
     id: 'verified',
     label: 'Comptes certifiés',
@@ -148,6 +166,8 @@ const REASONS: Record<string, string> = {
   rollout_excluded: 'Hors du palier',
   rule: 'Inclus par l’audience',
   rollout: 'Inclus par le palier',
+  beta: 'Membre de la beta',
+  not_beta: 'Pas membre de la beta',
   unknown_flag: 'Drapeau inconnu',
   error: 'Erreur d’évaluation',
 };
@@ -167,6 +187,11 @@ const absoluteRules = (flag: FeatureFlag): FlagRule[] => flag.rules.filter((rule
 
 /** Audience reconnue, ou `null` si le ciblage a été affiné hors de l'app. */
 function detectAudience(flag: FeatureFlag): string | null {
+  // Le TYPE prime sur les segments : un drapeau réservé à la beta l'est par
+  // nature, quoi que contiennent ses règles. Le lire après elles le ferait
+  // passer pour « tout le monde » dès qu'il n'a pas de segment.
+  if (flag.audience === 'beta') return 'beta';
+
   // Un boost ne restreint personne : un drapeau qui n'a que des boosts
   // s'adresse bien à tout le monde, les uns simplement plus tôt que les autres.
   const rules = absoluteRules(flag);
@@ -188,6 +213,12 @@ function detectBoost(flag: FeatureFlag): string | null {
 
 /** Configurations que cet écran ne sait pas représenter fidèlement. */
 function isAdvanced(flag: FeatureFlag): boolean {
+  // Un drapeau `beta` est exactement ce que cet écran sait montrer — il ne
+  // doit surtout pas tomber dans « ciblage personnalisé », qui verrouillerait
+  // le bloc et empêcherait d'en sortir depuis l'app.
+  if (flag.audience === 'beta') {
+    return flag.variants.length > 0 || flag.blocklist.length > 0 || flag.bucket_by !== 'user';
+  }
   return (
     detectAudience(flag) === null ||
     (flag.rules.some(isBoostRule) && detectBoost(flag) === null) ||
@@ -257,6 +288,10 @@ function summarize(flag: FeatureFlag): string {
   const who = audience ? audience.label.toLowerCase() : 'ciblage personnalisé';
   const step = effectiveStep(flag);
   const testers = flag.allowlist.length > 0 ? ` + ${flag.allowlist.length} testeurs` : '';
+
+  // La beta n'a pas de palier : afficher « 0 % » ou « 100 % » ferait croire à
+  // un déploiement en cours alors que l'audience est une liste de personnes.
+  if (audienceId === 'beta') return `Membres de la beta${testers}`;
 
   const climbing = planRunning(flag) ? ' · monte seule' : '';
   // Générique : le boost ne vise pas forcément les abonnés.
@@ -469,6 +504,13 @@ function FlagDetail({
     [audienceId]
   );
 
+  /**
+   * Audience portée par le type du drapeau. Elle n'a ni palier ni montée : le
+   * serveur ne consulte plus `rollout_percentage`, donc laisser ces réglages à
+   * l'écran donnerait des boutons qui ont l'air de marcher et ne font rien.
+   */
+  const isBeta = audience.isType === true;
+
   // Décrit le plan tel qu'il est EN BASE, pas l'état des commandes ci-dessus :
   // c'est ce qui se passera si on quitte l'écran sans enregistrer.
   const statusLine = planStatus(flag);
@@ -486,6 +528,20 @@ function FlagDetail({
    * alors à empêcher la montée d'avoir jamais lieu.
    */
   const reconcileAutoRollout = async (savedKey: string) => {
+    // Une montée n'a aucun sens sur un drapeau beta : il n'y a pas de palier à
+    // faire monter. Si un plan tournait avant la bascule, on l'arrête — le
+    // laisser armé ferait remonter le palier d'un drapeau que personne ne lit.
+    if (isBeta) {
+      if (running) {
+        try {
+          await featureFlagService.adminSetAutoRollout(savedKey, { enabled: false });
+        } catch {
+          /* Le drapeau est enregistré ; l'échec de l'arrêt n'est pas bloquant. */
+        }
+      }
+      return;
+    }
+
     const stepChanged = !isNew && step !== effectiveStep(flag!);
     const intervalChanged = intervalMinutes !== flag?.auto_rollout?.interval_minutes;
 
@@ -534,11 +590,25 @@ function FlagDetail({
       ? [{ id: 'boost', label: boost.label, boost: boost.boost, conditions: boost.conditions }]
       : [];
 
-    const targeting = advanced
-      ? { rollout_percentage: step }
+    // Le type de drapeau est envoyé à CHAQUE enregistrement, pas seulement
+    // quand il change : sans ça, repasser un drapeau beta sur « tout le
+    // monde » depuis l'écran laisserait `audience = 'beta'` en base et la
+    // fonctionnalité resterait invisible malgré un palier à 100 %.
+    const targeting = isBeta
+      ? {
+          audience: 'beta',
+          // Les deux sont vidés pour que la ligne ne mente pas : le serveur ne
+          // les lit plus, mais un « 25 % » resté affiché ferait croire à un
+          // déploiement partiel qui n'existe pas.
+          rules: [],
+          rollout_percentage: 0,
+        }
+      : advanced
+      ? { audience: 'rollout', rollout_percentage: step }
       : audience.id === 'everyone'
-      ? { rules: boostRule, rollout_percentage: step }
+      ? { audience: 'rollout', rules: boostRule, rollout_percentage: step }
       : {
+          audience: 'rollout',
           // Un boost est relatif au palier GLOBAL : combiné à une audience
           // exclusive, il se calculerait sur un palier resté à 0. L'écran ne
           // propose donc le boost que sur « tout le monde ».
@@ -718,28 +788,43 @@ function FlagDetail({
           )}
         </View>
 
-        <View style={styles.block}>
-          <Text style={styles.blockTitle}>Combien — {step} %</Text>
-          <View style={styles.steps}>
-            {STEPS.map((value) => (
-              <Tappable
-                key={value}
-                onPress={() => setStep(value)}
-                style={[styles.step, step === value && styles.stepActive]}
-                haptic="tap"
-              >
-                <Text style={[styles.stepText, step === value && styles.stepTextActive]}>{value}%</Text>
-              </Tappable>
-            ))}
+        {/* Le palier n'existe pas pour une audience portée par le type : le
+            serveur ne le consulte plus. Montrer les boutons quand même
+            donnerait des contrôles qui semblent marcher et ne font rien. */}
+        {isBeta ? (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Combien</Text>
+            <Text style={styles.hint}>
+              Pas de palier ici : la fonctionnalité est servie à 100 % des membres de la beta, et
+              à personne d’autre. Qui est membre se décide dans la console beta, pas ici.
+            </Text>
           </View>
-          <Text style={styles.hint}>
-            {step === 0
-              ? 'Seuls les testeurs ci-dessous la voient.'
-              : `${step} % des comptes concernés, tirés de façon stable : monter ne l’enlève à personne.`}
-          </Text>
-        </View>
+        ) : (
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Combien — {step} %</Text>
+            <View style={styles.steps}>
+              {STEPS.map((value) => (
+                <Tappable
+                  key={value}
+                  onPress={() => setStep(value)}
+                  style={[styles.step, step === value && styles.stepActive]}
+                  haptic="tap"
+                >
+                  <Text style={[styles.stepText, step === value && styles.stepTextActive]}>
+                    {value}%
+                  </Text>
+                </Tappable>
+              ))}
+            </View>
+            <Text style={styles.hint}>
+              {step === 0
+                ? 'Seuls les testeurs ci-dessous la voient.'
+                : `${step} % des comptes concernés, tirés de façon stable : monter ne l’enlève à personne.`}
+            </Text>
+          </View>
+        )}
 
-        {!advanced && audience.id === 'everyone' && (
+        {!advanced && !isBeta && audience.id === 'everyone' && (
           <View style={styles.block}>
             <Text style={styles.blockTitle}>Qui passe en premier</Text>
             {[{ id: null, label: 'Personne en particulier', hint: undefined }, ...BOOSTS].map((item) => {
@@ -772,6 +857,10 @@ function FlagDetail({
           </View>
         )}
 
+        {/* Rien à faire monter sur une audience portée par le type : il n'y a
+            pas de palier. Le bloc disparaît plutôt que d'afficher un
+            interrupteur sans effet. */}
+        {!isBeta && (
         <View style={styles.block}>
           <View style={styles.switchRow}>
             <Text style={styles.blockTitle}>Monter toute seule</Text>
@@ -832,6 +921,7 @@ function FlagDetail({
             </View>
           ) : null}
         </View>
+        )}
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Testeurs</Text>
@@ -844,7 +934,14 @@ function FlagDetail({
             autoCapitalize="none"
             multiline
           />
-          <Text style={styles.hint}>Ils la voient toujours, même à 0 %.</Text>
+          {/* La liste d'accès est évaluée AVANT la porte beta côté serveur :
+              un testeur interne voit la fonctionnalité sans être membre du
+              programme. Le dire, sinon on croit devoir l'y inscrire. */}
+          <Text style={styles.hint}>
+            {isBeta
+              ? 'Ils la voient toujours, même sans être membres de la beta.'
+              : 'Ils la voient toujours, même à 0 %.'}
+          </Text>
         </View>
 
         {!isNew && (

@@ -1,6 +1,6 @@
-/** Aligné sur l’API : free, plus, pro */
+/** Aligné sur l’API : free, plus, pro, ultra */
 
-export type SubscriptionTier = 'free' | 'plus' | 'pro';
+export type SubscriptionTier = 'free' | 'plus' | 'pro' | 'ultra';
 
 /**
  * Durée d'un abonnement, en jours.
@@ -46,11 +46,12 @@ export const SUBSCRIPTION_PRO_EXTRAS: { icon: string; text: string }[] = [
 ];
 
 export function normalizedTier(raw?: string | null): SubscriptionTier {
-  if (raw === 'plus' || raw === 'pro') return raw;
+  if (raw === 'plus' || raw === 'pro' || raw === 'ultra') return raw;
   return 'free';
 }
 
 export function tierRank(t: SubscriptionTier): number {
+  if (t === 'ultra') return 3;
   if (t === 'pro') return 2;
   if (t === 'plus') return 1;
   return 0;

@@ -537,7 +537,7 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
             nulle part : l'argent n'est pas gagné à l'unité, il est DÉCOUPÉ
             dans un pot que d'autres créateurs découpent en même temps. D'où
             les crans plutôt qu'une jauge — des parts discrètes partagées. */}
-        {projection ? (
+        {projection && projection.qualifiedViews > 0 ? (
           <View style={styles.block}>
             <Rule />
             <View style={styles.blockHead}>
@@ -637,7 +637,7 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
         )}
 
         {/* --- 4. Pourquoi cette part ---------------------------------- */}
-        {projection && weights && (
+        {projection && projection.qualifiedViews > 0 && weights && (
           <View style={styles.block}>
             <Rule />
             <View style={styles.blockHead}>
@@ -876,7 +876,7 @@ export default function TweetMonetizationScreen({ navigation }: Props) {
           </View>
         )}
 
-        {!history.length && !projection && (
+        {!history.length && !projection?.qualifiedViews && (
           <EmptyState
             icon="stats-chart-outline"
             title="Rien à afficher pour l’instant"
