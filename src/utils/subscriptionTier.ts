@@ -64,7 +64,7 @@ export function effectiveSubscriptionTier(premium: boolean, tier?: string | null
   return premium ? 'pro' : 'free';
 }
 
-export function canUseFeature(userTier: SubscriptionTier, required: 'plus' | 'pro'): boolean {
+export function canUseFeature(userTier: SubscriptionTier, required: 'plus' | 'pro' | 'ultra'): boolean {
   return tierRank(userTier) >= tierRank(required);
 }
 

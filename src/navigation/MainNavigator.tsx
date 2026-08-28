@@ -57,6 +57,8 @@ import PaidContentSalesScreen from '../screens/PaidContentSalesScreen';
 import ScheduledPostsScreen from '../screens/ScheduledPostsScreen';
 import ProfileInsightsScreen from '../screens/ProfileInsightsScreen';
 import UsernameMarketScreen from '../screens/UsernameMarketScreen';
+import ContractsScreen from '../screens/ContractsScreen';
+import ContractDetailScreen from '../screens/ContractDetailScreen';
 import EditTweetScreen from '../screens/EditTweetScreen';
 import NewEconomyScreen from '../screens/NewEconomyScreen';
 import TradingScreen from '../screens/TradingScreen';
@@ -277,6 +279,8 @@ export type MainStackParamList = {
     tab?: 'visitors' | 'impersonation' | 'rising' | 'niche' | 'velocity';
   } | undefined;
   UsernameMarket: undefined;
+  CreatorContracts: undefined;
+  ContractDetail: { contractId: string };
   /** `content` : texte actuel, pour ne pas rouvrir l'éditeur sur un champ vide. */
   EditTweet: { tweetId: string; content?: string };
 
@@ -1246,6 +1250,16 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="UsernameMarket"
         component={UsernameMarketScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="CreatorContracts"
+        component={ContractsScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack.Screen
+        name="ContractDetail"
+        component={ContractDetailScreen}
         options={{ headerShown: false }}
       />
       <MainStack.Screen

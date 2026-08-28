@@ -138,6 +138,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
 
   const tier = effectiveSubscriptionTier(!!user?.premium, user?.subscription_tier);
   const isPro = canUseFeature(tier, 'pro');
+  const isUltra = canUseFeature(tier, 'ultra');
   const hasInsights = tier !== 'free'
     && isSubscriptionActiveFor(tier, user?.subscription_expires_at);
 
@@ -307,6 +308,16 @@ export default function CreatorStudioScreen({ navigation }: Props) {
               : 'Réserve, vends ou rachète un nom d\'utilisateur'}
             value={usernameNet > 0 ? `${usernameNet} NF` : undefined}
             onPress={() => navigation.navigate('UsernameMarket')}
+          />
+
+          <StudioCard
+            icon="briefcase"
+            tone="gold"
+            title="Contrats sponsorisés"
+            subtitle={isUltra
+              ? 'Propositions reçues et marketplace'
+              : 'Propose une collaboration à un créateur Ultra'}
+            onPress={() => navigation.navigate('CreatorContracts')}
           />
 
           <Text style={styles.sectionLabel}>Audience</Text>
