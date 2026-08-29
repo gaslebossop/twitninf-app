@@ -576,6 +576,14 @@ class ApiService {
       
       console.log('📦 Réponse de connexion:', response);
       
+      // Vérification en deux étapes : la réponse est un SUCCÈS sans jeton.
+      // Sans ce garde, `setAuthTokens(undefined)` effaçait la session et
+      // l'app se croyait connectée sans utilisateur.
+      if (response.success && response.data?.twoFactorRequired) {
+        console.log('🔐 Second facteur requis');
+        return response;
+      }
+
       if (response.success && response.data) {
         await this.setAuthTokens(
           response.data.token,
@@ -596,6 +604,46 @@ class ApiService {
         errors: []
       };
     }
+  }
+
+  // ── Vérification en deux étapes ───────────────────────────────────────
+  /** Valide le second facteur et ouvre la session (mêmes jetons que `login`). */
+  async verifyTwoFactor(challengeId: string, code: string): Promise<AuthResponse> {
+    const response = await this.makeRequest('/api/auth/2fa/verify', {
+      method: 'POST',
+      body: { challengeId, code },
+    });
+    if (response.success && response.data?.token) {
+      await this.setAuthTokens(response.data.token, response.data.refreshToken);
+      this.token = response.data.token;
+    }
+    return response;
+  }
+
+  async sendTwoFactorEmailCode(challengeId: string): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/challenge/email', { method: 'POST', body: { challengeId } });
+  }
+
+  async getTwoFactorStatus(): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa', { requiresAuth: true });
+  }
+  async startTwoFactorEmail(): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/email/start', { method: 'POST', requiresAuth: true });
+  }
+  async confirmTwoFactorEmail(code: string): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/email/confirm', { method: 'POST', body: { code }, requiresAuth: true });
+  }
+  async startTwoFactorTotp(): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/totp/start', { method: 'POST', requiresAuth: true });
+  }
+  async confirmTwoFactorTotp(code: string): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/totp/confirm', { method: 'POST', body: { code }, requiresAuth: true });
+  }
+  async disableTwoFactor(password: string, method: 'email' | 'totp' | 'all'): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/disable', { method: 'POST', body: { password, method }, requiresAuth: true });
+  }
+  async regenerateTwoFactorCodes(password: string): Promise<ApiResponse<any>> {
+    return this.makeRequest('/api/auth/2fa/recovery-codes', { method: 'POST', body: { password }, requiresAuth: true });
   }
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {

@@ -17,7 +17,7 @@
 set -eu
 
 DIR=/home/debian/api/src/public/gstore
-BASE_URL=https://twitninf.duckdns.org/static/gstore
+BASE_URL=https://api.twitninf.fr/static/gstore
 
 # Liste blanche : la cle de la CI ne doit pas pouvoir publier n'importe quel
 # paquet dans le catalogue, meme si le depot qui la porte est compromis.

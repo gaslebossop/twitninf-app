@@ -73,6 +73,30 @@ module.exports = ({ config }) => {
        * compris — ne pouvait détecter une mise à jour.
        */
       versionCode: Number(process.env.EXPO_PUBLIC_BUILD_VERSION) || 1,
+      /**
+       * App Links : un lien https://twitninf.fr/tweet/… ouvre l'APP au lieu du
+       * navigateur.
+       *
+       * `autoVerify` n'est qu'une demande : Android ne l'accorde que s'il
+       * trouve `https://<host>/.well-known/assetlinks.json` contenant
+       * l'empreinte SHA-256 du certificat qui a signé l'APK installé. Si le
+       * build repart sur la mauvaise clé (voir l'incident de signature du
+       * 2026-08-17), la vérification échoue en silence et les liens
+       * retournent au navigateur.
+       */
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          category: ["BROWSABLE", "DEFAULT"],
+          data: [
+            { scheme: "https", host: "twitninf.fr", pathPrefix: "/tweet" },
+            { scheme: "https", host: "twitninf.fr", pathPrefix: "/profile" },
+            { scheme: "https", host: "www.twitninf.fr", pathPrefix: "/tweet" },
+            { scheme: "https", host: "www.twitninf.fr", pathPrefix: "/profile" }
+          ]
+        }
+      ],
       useNextNotificationsApi: true,
       permissions: [
         "INTERNET",

@@ -97,7 +97,13 @@ interface AuthContextType {
   isAdmin: boolean;
   isModerator: boolean;
   hasAdminAccess: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
+  login: (username: string, password: string) => Promise<{
+    success: boolean;
+    message: string;
+    /** Présent quand le compte exige un second facteur : la session n'est pas ouverte. */
+    twoFactor?: { challengeId: string; methods: ('email' | 'totp')[]; emailHint: string | null };
+  }>;
+  completeTwoFactor: (challengeId: string, code: string) => Promise<{ success: boolean; message: string }>;
   register: (username: string, fullName: string, password: string) => Promise<{ success: boolean; message: string }>;
   /** Termine une connexion G : jetons déjà émis par le serveur (voir services/gAuthLogin.ts), reste à ouvrir la session locale. */
   completeGAuthLogin: (token: string, refreshToken: string) => Promise<{ success: boolean; message: string }>;
@@ -373,11 +379,51 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  /**
+   * Termine une connexion en deux étapes.
+   *
+   * Rigoureusement le même travail que `login` une fois le jeton obtenu :
+   * jetons posés, utilisateur en mémoire, compte enregistré, jeton de
+   * notification envoyé. Deux chemins qui monteraient la session
+   * différemment finiraient par diverger sur un détail invisible.
+   */
+  const completeTwoFactor = async (challengeId: string, code: string) => {
+    try {
+      const response = await apiService.verifyTwoFactor(challengeId, code);
+      if (!response.success || !(response.data as any)?.token) {
+        return { success: false, message: response.message || 'Code incorrect' };
+      }
+
+      const { token, refreshToken, user: userData } = response.data as any;
+      await apiService.setSessionAccessToken(token, refreshToken ?? null);
+      setUser(userData);
+      setIsAuthenticated(true);
+      await upsertAccount(toAccountMeta(userData), { token, refreshToken });
+      await sendNotificationToken();
+
+      return { success: true, message: 'Connexion réussie' };
+    } catch (error: any) {
+      return { success: false, message: error?.message || 'Vérification impossible' };
+    }
+  };
+
   const login = async (username: string, password: string) => {
     try {
       console.log('AuthContext - login: Debut');
       const response = await apiService.login({ username, password });
       
+      // Vérification en deux étapes : mot de passe accepté, mais la session
+      // n'est PAS ouverte. On rend le défi à l'écran, qui enchaîne sur la
+      // saisie du code — ouvrir la session ici reviendrait à ignorer le
+      // second facteur.
+      if (response.success && (response.data as any)?.twoFactorRequired) {
+        return {
+          success: false,
+          twoFactor: response.data as any,
+          message: 'Vérification en deux étapes requise',
+        };
+      }
+
       if (response.success && response.data) {
         const { token, refreshToken, user: userData } = response.data as any;
         await apiService.setSessionAccessToken(token, refreshToken ?? null);
@@ -660,6 +706,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       isModerator,
       hasAdminAccess,
       login,
+      completeTwoFactor,
       register,
       completeGAuthLogin,
       logout,

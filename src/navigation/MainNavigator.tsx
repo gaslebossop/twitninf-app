@@ -120,6 +120,7 @@ import FollowRequestsScreen from '../screens/FollowRequestsScreen';
 import UserConnectionsScreen from '../screens/UserConnectionsScreen';
 import BookmarksScreen from '../screens/BookmarksScreen';
 import BlockedAccountsScreen from '../screens/BlockedAccountsScreen';
+import TwoFactorScreen from '../screens/TwoFactorScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import ContestScreen from '../screens/ContestScreen';
 import CreateContestScreen from '../screens/CreateContestScreen';
@@ -253,6 +254,7 @@ export type MainStackParamList = {
   FollowRequests: undefined;
   Bookmarks: undefined;
   BlockedAccounts: undefined;
+  TwoFactor: undefined;
   UserConnections: {
     userId: string;
     username?: string;
@@ -1147,6 +1149,11 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="BlockedAccounts"
         component={BlockedAccountsScreen}
+        options={{ presentation: 'card', headerShown: false }}
+      />
+      <MainStack.Screen
+        name="TwoFactor"
+        component={TwoFactorScreen}
         options={{ presentation: 'card', headerShown: false }}
       />
 

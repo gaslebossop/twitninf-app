@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { navigationRef } from './NavigationService';
 import { recordScreen } from '../services/breadcrumbs';
+import { useDeepLinkNavigation } from '../services/deepLinks';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Platform } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,6 +38,12 @@ const TransparentTheme = {
 
 export default function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
+  // Un lien partagé peut arriver avant que l'arbre de navigation existe :
+  // `useDeepLinkNavigation` le garde en attente jusqu'à ce que les deux
+  // conditions soient réunies (prêt ET connecté).
+  const [navigationReady, setNavigationReady] = useState(false);
+  useDeepLinkNavigation(isAuthenticated, navigationReady);
+
   if (__DEV__) console.count('[loop-hunt] AppNavigator render');
 
   if (isLoading) {
@@ -55,7 +62,10 @@ export default function AppNavigator() {
       <NavigationContainer
         ref={navigationRef}
         theme={TransparentTheme}
-        onReady={() => recordScreen(navigationRef.getCurrentRoute()?.name)}
+        onReady={() => {
+          setNavigationReady(true);
+          recordScreen(navigationRef.getCurrentRoute()?.name);
+        }}
         onStateChange={() => recordScreen(navigationRef.getCurrentRoute()?.name)}
       >
         <RootStack.Navigator

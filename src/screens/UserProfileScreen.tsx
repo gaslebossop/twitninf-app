@@ -31,6 +31,7 @@ import Avatar from '../components/Avatar';
 import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
 import ReportSheet from '../components/ReportSheet';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
+import { webProfileUrl } from '../config/webUrl';
 import ModerationActions from '../components/ModerationActions';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import challengeProgressService from '../services/challengeProgressService';
@@ -416,6 +417,22 @@ export default function UserProfileScreen() {
    * bloquer depuis un tweet n'a jamais eu de raison de peser moins que
    * bloquer depuis l'en-tête.
    */
+  /**
+   * Partage le lien PUBLIC du compte, celui du client web.
+   *
+   * Le lien du tweet vient de l'API (elle trace le partage) ; celui d'un
+   * profil n'a rien à tracer et se compose ici, à partir du même domaine web.
+   */
+  const handleShareProfile = async (username?: string | null) => {
+    if (!username) return;
+    const url = webProfileUrl(username);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      // Feuille de partage annulée — rien à signaler.
+    }
+  };
+
   const handleBlockToggle = useCallback(async (targetUserId: string, targetUsername?: string) => {
     if (blockedState === 'by_me') {
       const response = await apiService.unblockUser(targetUserId);
@@ -1042,12 +1059,19 @@ export default function UserProfileScreen() {
                   <TouchableOpacity
                     style={S.profileOptionsBtn}
                     onPress={() => showActionSheet({
-                      items: [{
-                        label: 'Bloquer ce compte',
-                        icon: 'ban-outline',
-                        destructive: true,
-                        onPress: () => handleBlockToggle(userProfile.id, userProfile.username),
-                      }],
+                      items: [
+                        {
+                          label: 'Partager ce compte',
+                          icon: 'share-outline',
+                          onPress: () => handleShareProfile(userProfile.username),
+                        },
+                        {
+                          label: 'Bloquer ce compte',
+                          icon: 'ban-outline',
+                          destructive: true,
+                          onPress: () => handleBlockToggle(userProfile.id, userProfile.username),
+                        },
+                      ],
                     })}
                     activeOpacity={0.85}
                     aria-label="Plus d'options"

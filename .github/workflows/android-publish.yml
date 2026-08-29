@@ -71,7 +71,7 @@ jobs:
       - name: Numero de build (compteur du catalogue G-Store)
         run: |
           set -euo pipefail
-          CATALOG="https://twitninf.duckdns.org/static/gstore/catalog.json"
+          CATALOG="https://api.twitninf.fr/static/gstore/catalog.json"
           PACKAGE="com.gasleboss.TwitNin"
 
           CURRENT=$(curl -sS -m 20 "$CATALOG"             | python3 -c "import json,sys;print(next((a.get('versionCode',0) for a in json.load(sys.stdin).get('apps',[]) if a.get('packageName')=='$PACKAGE'), 0))"             || echo 0)

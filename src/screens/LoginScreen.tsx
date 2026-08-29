@@ -18,6 +18,7 @@ import Svg, { Path, Circle, Line, Rect, Text as SvgText } from 'react-native-svg
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { signInWithGAuth } from '../services/gAuthLogin';
+import { apiService } from '../services/api';
 import {
   wp,
   hp,
@@ -120,7 +121,7 @@ const AppleIcon = () => (
 // ── Composant principal ────────────────────────────────────────────
 const LoginScreen: React.FC = () => {
   const navigation: any = useNavigation();
-  const { login, completeGAuthLogin, isAuthenticated } = useAuth();
+  const { login, completeTwoFactor, completeGAuthLogin, isAuthenticated } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -129,6 +130,11 @@ const LoginScreen: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<
+    { challengeId: string; methods: ('email' | 'totp')[]; emailHint: string | null } | null
+  >(null);
+  const [code, setCode] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Animations d'entrée
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -148,6 +154,14 @@ const LoginScreen: React.FC = () => {
     ]).start();
   };
 
+  /**
+   * Défi de vérification en deux étapes.
+   *
+   * Gardé DANS cet écran plutôt que sur un écran dédié : le défi n'a de sens
+   * qu'entre le mot de passe et la session, il expire en 10 minutes, et un
+   * écran de plus dans la pile publique serait atteignable sans défi en
+   * cours — donc à protéger pour rien.
+   */
   const handleLogin = async () => {
     setError(null);
 
@@ -160,6 +174,16 @@ const LoginScreen: React.FC = () => {
     setIsLoading(true);
     try {
       const result = await login(username.trim(), password);
+      if (result.twoFactor) {
+        setChallenge(result.twoFactor);
+        setCode('');
+        setNotice(
+          result.twoFactor.methods.length === 1 && result.twoFactor.methods[0] === 'email'
+            ? `Code envoyé à ${result.twoFactor.emailHint ?? 'ton adresse'}.`
+            : null,
+        );
+        return;
+      }
       if (!result.success) {
         setError(result.message);
         shakeError();
@@ -177,6 +201,38 @@ const LoginScreen: React.FC = () => {
       shakeError();
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!challenge || !code.trim()) return;
+    setError(null);
+    setIsLoading(true);
+    try {
+      const result = await completeTwoFactor(challenge.challengeId, code.trim());
+      if (!result.success) {
+        setError(result.message);
+        shakeError();
+        return;
+      }
+      goToMainApp();
+    } catch {
+      setError('Une erreur est survenue lors de la vérification.');
+      shakeError();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!challenge) return;
+    setError(null);
+    const response = await apiService.sendTwoFactorEmailCode(challenge.challengeId);
+    if (response.success) {
+      setNotice(`Code envoyé à ${challenge.emailHint ?? 'ton adresse'}.`);
+    } else {
+      setError(response.message || 'Envoi impossible.');
+      shakeError();
     }
   };
 
@@ -267,6 +323,83 @@ const LoginScreen: React.FC = () => {
           ]}
         >
          <GlassCard padding={20} highlight>
+          {challenge ? (
+            <>
+              <View style={styles.fieldBlock}>
+                <Text style={styles.label}>CODE DE VÉRIFICATION</Text>
+                <Text style={styles.twoFactorHint}>
+                  {challenge.methods.length > 1
+                    ? "Code de ton application d'authentification, ou demande un code par e-mail."
+                    : challenge.methods[0] === 'totp'
+                      ? "Code affiché par ton application d'authentification."
+                      : `Code envoyé à ${challenge.emailHint ?? 'ton adresse'}.`}
+                </Text>
+                <View style={[styles.inputRow, focusedField === 'code' && styles.inputFocused]}>
+                  <TextInput
+                    style={[styles.input, styles.codeInput]}
+                    placeholder="000000"
+                    placeholderTextColor={colors.overlayStrong}
+                    value={code}
+                    onChangeText={setCode}
+                    onFocus={() => setFocusedField('code')}
+                    onBlur={() => setFocusedField(null)}
+                    keyboardType="number-pad"
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    textContentType="oneTimeCode"
+                    autoFocus
+                  />
+                </View>
+                {!!notice && <Text style={styles.twoFactorHint}>{notice}</Text>}
+              </View>
+
+              {error && (
+                <Animated.View style={[styles.errorBox, { transform: [{ translateX: errorShake }] }]}>
+                  <AlertIcon />
+                  <Text style={styles.errorText}>{error}</Text>
+                </Animated.View>
+              )}
+
+              <TouchableOpacity
+                onPress={handleVerifyCode}
+                activeOpacity={0.85}
+                disabled={isLoading}
+                style={[styles.loginBtn, isLoading && { opacity: 0.65 }]}
+              >
+                <LinearGradient
+                  colors={gradients.accent}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.loginBtnInner}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.loginBtnText}>Valider</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {challenge.methods.includes('email') && (
+                <TouchableOpacity onPress={handleResendCode} activeOpacity={0.7} style={styles.twoFactorLink}>
+                  <Text style={styles.twoFactorLinkText}>Recevoir un code par e-mail</Text>
+                </TouchableOpacity>
+              )}
+              {/* Un code de secours se saisit dans le même champ : l'API les
+                  accepte indifféremment, l'utilisateur n'a pas de mode à choisir. */}
+              <Text style={styles.twoFactorHint}>
+                Tu peux aussi saisir l'un de tes codes de secours.
+              </Text>
+              <TouchableOpacity
+                onPress={() => { setChallenge(null); setCode(''); setError(null); setNotice(null); }}
+                activeOpacity={0.7}
+                style={styles.twoFactorLink}
+              >
+                <Text style={styles.twoFactorCancelText}>Annuler</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+          <>
           {/* Username */}
           <View style={styles.fieldBlock}>
             <Text style={styles.label}>NOM D'UTILISATEUR</Text>
@@ -363,6 +496,8 @@ const LoginScreen: React.FC = () => {
               )}
             </LinearGradient>
           </TouchableOpacity>
+          </>
+          )}
          </GlassCard>
         </Animated.View>
 
@@ -573,6 +708,36 @@ const styles = StyleSheet.create({
     fontWeight: '700', fontFamily: fonts.bold,
     color: '#ffffff',
     letterSpacing: 0.3,
+  },
+
+  // ── Vérification en deux étapes ─────────────────────────────────────
+  codeInput: {
+    // Un code se lit chiffre par chiffre : l'interlettrage évite de relire
+    // deux fois pour distinguer « 118 » de « 1 18 ».
+    letterSpacing: 8,
+    textAlign: 'center',
+    fontSize: (fontSize?.md ?? 15) + 6,
+  },
+  twoFactorHint: {
+    fontSize: (fontSize?.sm ?? 13),
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  twoFactorLink: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+  },
+  twoFactorLinkText: {
+    fontSize: fontSize?.sm ?? 13,
+    fontFamily: fonts.bold,
+    color: colors.accent,
+  },
+  twoFactorCancelText: {
+    fontSize: fontSize?.sm ?? 13,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
   },
 
   // Footer

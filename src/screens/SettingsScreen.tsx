@@ -306,6 +306,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             )}
 
             {renderActionButton(
+              'Vérification en deux étapes',
+              'Un code en plus du mot de passe à chaque connexion',
+              'shield-checkmark-outline',
+              () => navigation.navigate('TwoFactor')
+            )}
+
+            {renderActionButton(
               'Comptes bloqués',
               'Voir et débloquer les comptes que vous avez bloqués',
               'ban-outline',

@@ -23,6 +23,7 @@ import {
   Modal,
   Pressable,
   KeyboardAvoidingView,
+  Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -73,6 +74,7 @@ import {
 import { useProfileBannerHeight } from '../hooks/useProfileBannerHeight';
 import { toast } from '../components/ui/Toast';
 import { showActionSheet } from '../components/ui/ActionSheet';
+import { webProfileUrl } from '../config/webUrl';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
 import useForegroundInterval from '../hooks/useForegroundInterval';
 
@@ -707,6 +709,33 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 activeOpacity={0.8}
               >
                 <Ionicons name="color-palette-outline" size={18} color={colors.textPrimary} />
+              </TouchableOpacity>
+
+              {/* Partager son propre compte : même lien public que celui
+                  proposé sur le profil d'un autre, vers le client web. */}
+              <TouchableOpacity
+                style={[
+                  S.outlineIconBtn,
+                  themed && {
+                    borderColor: withAlpha(profileAccent, 0.55),
+                    backgroundColor: withAlpha(profileAccent, 0.16),
+                  },
+                ]}
+                onPress={async () => {
+                  const username = (user as any)?.username;
+                  if (!username) return;
+                  const url = webProfileUrl(username);
+                  try {
+                    await Share.share({ message: url, url });
+                  } catch {
+                    // Feuille de partage annulée — rien à signaler.
+                  }
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Partager mon compte"
+              >
+                <Ionicons name="share-outline" size={18} color={colors.textPrimary} />
               </TouchableOpacity>
 
               <TouchableOpacity

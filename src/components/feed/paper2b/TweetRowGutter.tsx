@@ -218,6 +218,7 @@ interface RowContentProps {
   replyCount: number;
   onProfilePress: () => void;
   onReplyPress: () => void;
+  onSharePress: () => void;
   onBeforeOpen: () => void;
   onVideoDuration: (ms: number) => void;
   onUnlocked: () => void;
@@ -281,6 +282,7 @@ const RowContent = memo(function RowContent({
   replyCount,
   onProfilePress,
   onReplyPress,
+  onSharePress,
   onBeforeOpen,
   onVideoDuration,
   onUnlocked,
@@ -526,6 +528,19 @@ const RowContent = memo(function RowContent({
               ? `${fmtCount(replyCount)} réponse${replyCount > 1 ? 's' : ''}`
               : 'Aucune réponse'}
           </Text>
+          {/* Partage en texte nu, pas en pilule : deux pilules côte à côte
+              feraient deux appels à l'action de même poids, alors que
+              « Répondre » reste le geste que cette ligne demande. */}
+          <TouchableOpacity
+            style={S.sharePill}
+            onPress={onSharePress}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Partager ce tweet"
+          >
+            <Text style={S.shareText}>Partager</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={S.replyPill}
             onPress={onReplyPress}
@@ -905,6 +920,11 @@ function TweetRowGutter({
    * malgré tout — c'est exactement le piège que la mémoïsation est censée
    * éviter.
    */
+  const handleSharePress = useCallback(() => {
+    blockRowPress();
+    onAction({ type: 'share', tweetId: tweet.id });
+  }, [blockRowPress, onAction, tweet.id]);
+
   const handleProfilePress = useCallback(() => {
     onAction({ type: 'profile', tweetId: tweet.id, payload: { author: displayAuthor, index } });
   }, [onAction, tweet.id, displayAuthor, index]);
@@ -1118,6 +1138,7 @@ function TweetRowGutter({
         replyCount={replyCount}
         onProfilePress={handleProfilePress}
         onReplyPress={handleReplyPress}
+        onSharePress={handleSharePress}
         onBeforeOpen={blockRowPress}
         onVideoDuration={handleVideoDuration}
         onUnlocked={handleUnlocked}
@@ -1460,6 +1481,17 @@ const S = StyleSheet.create({
     marginTop: ps(8),
   },
   replies: {
+    fontFamily: paperFonts.mono,
+    fontSize: ps(12.5),
+    color: paper.inkMeta,
+  },
+  sharePill: {
+    // Pas de `marginLeft: 'auto'` ici : c'est la pilule « Répondre » qui garde
+    // le sien et pousse tout le bloc à droite. En poser un second, le premier
+    // mangerait l'espace et « Partager » se collerait au compteur.
+    paddingVertical: ps(5),
+  },
+  shareText: {
     fontFamily: paperFonts.mono,
     fontSize: ps(12.5),
     color: paper.inkMeta,

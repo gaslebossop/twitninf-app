@@ -89,7 +89,7 @@ export const INSTALL_CHANNEL = Platform.OS === 'ios' ? 'Kospor Injection' : 'G-S
 export const STORE_DEEP_LINK = 'gstore://app/com.gasleboss.TwitNin';
 
 /** Page d'installation publique, quand G-Store n'est pas encore sur l'appareil. */
-export const STORE_WEB_URL = 'https://twitninf.duckdns.org/static/gstore/';
+export const STORE_WEB_URL = 'https://api.twitninf.fr/static/gstore/';
 
 /**
  * Interroge le flux et renvoie la version publiée si elle est plus récente que
@@ -130,7 +130,7 @@ async function fetchJson(url: string): Promise<any | null> {
  * le gist pour iOS, le catalogue G-Store pour Android. Ils n'ont plus aucune
  * raison de coincider.
  */
-const GSTORE_CATALOG_URL = 'https://twitninf.duckdns.org/static/gstore/catalog.json';
+const GSTORE_CATALOG_URL = 'https://api.twitninf.fr/static/gstore/catalog.json';
 const ANDROID_PACKAGE = 'com.gasleboss.TwitNin';
 
 async function fetchAndroidUpdate(): Promise<UpdateInfo | null> {
