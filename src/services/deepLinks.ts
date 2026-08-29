@@ -21,7 +21,7 @@ import { WEB_BASE_URL } from '../config/webUrl';
  */
 
 export interface DeepLinkTarget {
-  screen: 'TweetDetail' | 'UserProfile';
+  screen: 'TweetDetail' | 'UserProfile' | 'ConversationThread';
   params: Record<string, string>;
 }
 
@@ -65,6 +65,14 @@ export function parseDeepLink(rawUrl: string): DeepLinkTarget | null {
 
   if (kind === 'tweet' || kind === 'tweets') return { screen: 'TweetDetail', params: { tweetId: value } };
   if (kind === 'profile' || kind === 'user') return { screen: 'UserProfile', params: { username: value } };
+  // Deux orthographes pour une même cible : `messages/<id>` est le chemin du
+  // site (donc celui des App Links Android et celui que pousse une
+  // notification de message), `conversation/<id>` celui du schéma privé, qu'on
+  // garde parlant. L'écran ne réclame que l'identifiant — il retrouve le nom
+  // et l'avatar du correspondant en chargeant la conversation.
+  if (kind === 'conversation' || kind === 'conversations' || kind === 'messages') {
+    return { screen: 'ConversationThread', params: { conversationId: value } };
+  }
 
   return null;
 }

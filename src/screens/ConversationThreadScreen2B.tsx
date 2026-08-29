@@ -1671,14 +1671,41 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
   // appareils sans bouton. Le dessin réserve 30 px là où il n'y a pas d'inset.
   const insets = useSafeAreaInsets();
   const conversationId = route?.params?.conversationId as string;
-  const conversationTitle = route?.params?.title as string;
-  const conversationUsername = route?.params?.username as string | undefined;
-  const conversationAvatar = route?.params?.avatar as string | null | undefined;
-  const conversationVerified = !!route?.params?.verified;
-  const conversationVerificationStyle = route?.params?.verificationStyle || 'default';
-  const isGroup = !!route?.params?.isGroup;
-  const memberCount = Number(route?.params?.memberCount || 0);
-  const directOtherUserId = route?.params?.otherUserId as string | undefined;
+  /**
+   * En-tete de secours quand l'ecran est ouvert par un LIEN et non depuis la
+   * liste : un `twitninf://conversation/<id>` — ce que pousse une notification
+   * de message, et ce que produit un partage — ne transporte que
+   * l'identifiant. Sans ceci l'en-tete restait « Conversation » avec un
+   * avatar vide pendant toute la visite, alors que l'annuaire charge par
+   * `loadMessages` porte deja le nom et la photo du correspondant.
+   *
+   * Les parametres de navigation gardent la priorite : ils sont la des le
+   * premier rendu, l'annuaire n'arrive qu'apres un aller-retour reseau.
+   */
+  const [convMeta, setConvMeta] = useState<{
+    title: string;
+    username?: string;
+    avatar: string | null;
+    verified: boolean;
+    verificationStyle: string;
+    isGroup: boolean;
+    memberCount: number;
+    otherUserId?: string;
+  } | null>(null);
+  const conversationTitle = (route?.params?.title as string) || convMeta?.title || '';
+  const conversationUsername = (route?.params?.username as string | undefined) || convMeta?.username;
+  const conversationAvatar = (route?.params?.avatar as string | null | undefined) ?? convMeta?.avatar;
+  const conversationVerified = route?.params?.verified !== undefined
+    ? !!route?.params?.verified
+    : !!convMeta?.verified;
+  const conversationVerificationStyle = route?.params?.verificationStyle
+    || convMeta?.verificationStyle
+    || 'default';
+  const isGroup = route?.params?.isGroup !== undefined
+    ? !!route?.params?.isGroup
+    : !!convMeta?.isGroup;
+  const memberCount = Number(route?.params?.memberCount || convMeta?.memberCount || 0);
+  const directOtherUserId = (route?.params?.otherUserId as string | undefined) || convMeta?.otherUserId;
 
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1901,6 +1928,23 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
       if (convRes?.success && Array.isArray(convRes?.conversations)) {
         const conv = convRes.conversations.find((c: any) => c?.id === conversationId);
         if (conv) {
+          // De quoi tenir l'en-tete quand la navigation n'a rien passe (voir
+          // `convMeta`). Meme derivation que `MessagesScreen2B.openConversation`,
+          // pour que l'ecran soit identique quel que soit le chemin d'arrivee.
+          const convIsGroup = conv?.type === 'group';
+          const peer = (Array.isArray(conv?.participants) ? conv.participants : [])
+            .find((p: any) => p?.id && String(p.id) !== String(authUserId || ''));
+          setConvMeta({
+            title: conv?.title || (convIsGroup ? 'Groupe' : peer?.full_name || peer?.username || ''),
+            username: convIsGroup ? undefined : peer?.username || undefined,
+            avatar: (convIsGroup ? conv?.avatar : peer?.avatar) || null,
+            verified: !convIsGroup && !!peer?.verified,
+            verificationStyle: (!convIsGroup && peer?.verification_style) || 'default',
+            isGroup: convIsGroup,
+            memberCount: Array.isArray(conv?.participants) ? conv.participants.length : 0,
+            otherUserId: convIsGroup || !peer?.id ? undefined : String(peer.id),
+          });
+
           const map: Record<string, SenderLike> = {};
           (Array.isArray(conv?.participants) ? conv.participants : []).forEach((p: any) => {
             if (p?.id) {

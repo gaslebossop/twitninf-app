@@ -92,8 +92,15 @@ module.exports = ({ config }) => {
           data: [
             { scheme: "https", host: "twitninf.fr", pathPrefix: "/tweet" },
             { scheme: "https", host: "twitninf.fr", pathPrefix: "/profile" },
+            // La barre finale est voulue : elle capte `/messages/<id>` — un
+            // fil précis, ce que pousse une notification de message — sans
+            // capter `/messages` tout court, qui n'est que la liste et n'a
+            // aucun écran à ouvrir (`parseDeepLink` la rejetterait, l'app
+            // s'ouvrirait pour ne rien faire).
+            { scheme: "https", host: "twitninf.fr", pathPrefix: "/messages/" },
             { scheme: "https", host: "www.twitninf.fr", pathPrefix: "/tweet" },
-            { scheme: "https", host: "www.twitninf.fr", pathPrefix: "/profile" }
+            { scheme: "https", host: "www.twitninf.fr", pathPrefix: "/profile" },
+            { scheme: "https", host: "www.twitninf.fr", pathPrefix: "/messages/" }
           ]
         }
       ],
