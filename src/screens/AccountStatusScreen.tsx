@@ -266,8 +266,11 @@ export default function AccountStatusScreen() {
               ))}
             </View>
             <Text style={styles.note}>
-              Tes posts restent visibles sur ton profil et pour tes abonnés — ils ne sont
-              simplement plus mis en avant sur ces surfaces.
+              {/* Depuis le 2026-08-30, `ghosted` ferme aussi le fil d’abonnement : la
+                  phrase rassurante d’avant devenait fausse au cran le plus haut. */}
+              {status.restricted_surfaces.includes('follower_feed')
+                ? 'Tes posts restent en ligne et lisibles sur ton profil — ils ne sont plus distribués dans aucun fil, y compris celui de tes abonnés.'
+                : 'Tes posts restent visibles sur ton profil et dans le fil de tes abonnés — ils ne sont simplement plus mis en avant sur ces surfaces.'}
             </Text>
           </GlassCard>
         )}
