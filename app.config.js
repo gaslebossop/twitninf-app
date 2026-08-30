@@ -163,6 +163,17 @@ module.exports = ({ config }) => {
     // Signature de release stable — sans elle, chaque build porte une clé
     // aléatoire et Android refuse la mise à jour de l'APK précédent.
     "./plugins/withReleaseSigning",
+    // Épinglage de certificat, posé par le SYSTÈME (network security config
+    // Android + NSPinnedDomains iOS), donc valable pour tout appel réseau sans
+    // qu'aucun d'eux n'ait à être réécrit.
+    //
+    // Les empreintes par défaut sont celles des RACINES ISRG, pas celle du
+    // certificat du serveur : certbot fabrique une clé neuve à chaque
+    // renouvellement (aucun `reuse_key` dans /etc/letsencrypt/renewal), donc
+    // épingler la feuille couperait tout le parc installé fin octobre. Le
+    // raisonnement complet, les garde-fous et la commande pour recalculer les
+    // empreintes sont en tête du plugin.
+    "./plugins/withSslPinning",
     "expo-secure-store",
     "expo-web-browser",
     // ⚠️ PAS de plugin "expo-camera" ici, et c'est délibéré.
