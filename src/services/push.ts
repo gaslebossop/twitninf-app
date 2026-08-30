@@ -2,6 +2,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { configureNotifications, getChannelForType } from './notificationConfig';
+import { apiService } from './api';
 
 const PARIS_TIMEZONE = 'Europe/Paris';
 const DAILY_REMINDER_HOURS = [12, 16, 20];
@@ -163,9 +164,64 @@ export async function checkNotificationStatus() {
   }
 }
 
+/**
+ * Le serveur peut-il relancer ce compte lui-même ?
+ *
+ * `true` quand au moins un abonnement Web Push est enregistré ET que le
+ * serveur a ses clés VAPID. `null` quand la question n'a pas de réponse —
+ * hors ligne, ou pas encore connecté.
+ *
+ * La distinction compte : `null` ne doit PAS être traité comme `false`
+ * seulement, mais comme « on ne sait pas », et dans le doute on garde les
+ * rappels locaux. Perdre une notification est pire que d'en avoir deux.
+ */
+async function serverHandlesReminders(): Promise<boolean | null> {
+  try {
+    const response = await apiService.get('/api/push/status');
+    const data = response?.data;
+    if (!response?.success || !data) return null;
+    return Boolean(data.configured) && Number(data.subscriptions) > 0;
+  } catch {
+    return null;
+  }
+}
+
+/** Retire les rappels quotidiens déjà posés par cette fonctionnalité. */
+async function cancelDailyReminders(): Promise<number> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const tagged = scheduled.filter(
+    (item) => item.content?.data?.localScheduleTag === DAILY_REMINDER_TAG
+  );
+  for (const reminder of tagged) {
+    await Notifications.cancelScheduledNotificationAsync(reminder.identifier);
+  }
+  return tagged.length;
+}
+
+/**
+ * Rappels quotidiens LOCAUX — désormais un repli, plus le mécanisme principal.
+ *
+ * Le serveur relance chaque personne à l'heure où elle est réellement active
+ * (voir `dailyNudgeService` côté API), et son message porte un vrai contenu.
+ * Ces rappels-ci restent pour qui n'est joignable par aucun autre moyen :
+ * l'app iOS sideloadée ne peut pas obtenir de jeton push (l'entitlement
+ * `aps-environment` demande un compte Apple payant), et sans abonnement Web
+ * Push elle n'aurait plus aucune notification.
+ *
+ * Dès qu'un abonnement Web Push existe, ces rappels sont ANNULÉS : les
+ * laisser tourner en plus donnerait deux notifications pour la même
+ * intention, à des heures différentes — et les heures fixes sont justement
+ * celles qui visent à côté (mesuré : le pic d'audience réel est à minuit).
+ */
 export async function setupFranceDailyLocalNotifications() {
   try {
     await initializeNotifications();
+
+    if (await serverHandlesReminders()) {
+      const removed = await cancelDailyReminders();
+      console.log(`🔔 Rappels FR - pris en charge par le serveur (${removed} rappel(s) local(aux) retiré(s))`);
+      return false;
+    }
 
     const existingPermissions = await Notifications.getPermissionsAsync();
     let permissionStatus = existingPermissions.status;
@@ -179,14 +235,7 @@ export async function setupFranceDailyLocalNotifications() {
       return false;
     }
 
-    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-    const taggedReminders = scheduled.filter(
-      (item) => item.content?.data?.localScheduleTag === DAILY_REMINDER_TAG
-    );
-
-    for (const reminder of taggedReminders) {
-      await Notifications.cancelScheduledNotificationAsync(reminder.identifier);
-    }
+    await cancelDailyReminders();
 
     for (const hour of DAILY_REMINDER_HOURS) {
       const message = DAILY_REMINDER_MESSAGES[hour] || {
