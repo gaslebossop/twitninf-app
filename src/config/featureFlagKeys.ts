@@ -79,13 +79,30 @@ export const FLAGS = {
   FEED_2B: 'fil.refonte2b',
 
   /**
-   * Variantes A/B des tweets (`enableExperiments`), jusque-là réservées à
-   * Windows — le mobile n'envoyait jamais `ab_test`.
+   * Variantes A/B des tweets, jusque-là réservées à Windows.
    *
    * Posé le 2026-08-20 à 10 %, SANS montée automatique : ouverture
    * progressive délibérée, pas une fonctionnalité qui monte toute seule.
    * Bucket sur `user_id` (défaut) pour qu'un même lecteur ne voie pas le
    * texte d'un tweet changer à chaque rafraîchissement.
+   *
+   * ⚠ Il ouvre les DEUX côtés de la même cohorte, et c'est délibéré :
+   *
+   *   - en LECTURE, il décide si le fil demande `enableExperiments` au moteur
+   *     et sert donc des variantes (côté API, `neuralRankRoutes.js`) ;
+   *   - en ÉCRITURE, depuis le 2026-08-31, il fait apparaître la puce
+   *     « TEST A/B » du composeur (`screens/CreateTweetScreen.tsx`) et il
+   *     autorise le client mobile à lancer une expérience (côté API,
+   *     `services/tweetAbTestService.js`).
+   *
+   * Deux drapeaux séparés auraient permis d'écrire un test que personne dans sa
+   * propre cohorte ne peut voir.
+   *
+   * Le drapeau ne remplace pas les conditions de compte, qui restent au
+   * serveur : compte certifié, plus de dix abonnés, deux expériences
+   * simultanées au maximum. Un auteur qui a le drapeau sans remplir ces
+   * conditions voit la puce et reçoit un refus expliqué — mieux qu'un bouton
+   * absent sans raison.
    */
   AB_TEST: 'fil.abtest',
 } as const;

@@ -342,6 +342,40 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const canAttachImages = useFlag(FLAGS.TWEET_IMAGES) && !quoteTweetId && !videoUri;
 
   /**
+   * Lancer une expérience A/B depuis le composeur.
+   *
+   * Le drapeau est le MÊME que celui qui décide, côté lecture, si un lecteur
+   * reçoit des variantes : être dans la cohorte A/B, c'est y être des deux
+   * côtés. Deux drapeaux séparés auraient laissé écrire un test que personne
+   * dans sa propre cohorte ne peut voir.
+   *
+   * Les exclusions ne sont pas décoratives — ce sont les refus que l'API
+   * opposerait (voir `services/tweetAbTestService.js`), sauf la dernière :
+   *
+   *   - une réponse ne peut pas porter d'expérience ;
+   *   - une citation non plus (elle passe par la route retweet, qui ne connaît
+   *     pas `ab_test`) ;
+   *   - une publication privée non plus : il n'y a pas d'audience à départager.
+   *   - une pièce jointe, enfin, ne serait PAS reprise par l'écran A/B, qui ne
+   *     compare que des formulations. Proposer le bouton ferait perdre l'image
+   *     qu'on vient d'attacher, en silence.
+   *
+   * Le compte doit aussi être certifié et compter plus de dix abonnés, mais ça,
+   * seul le serveur le sait : le refus arrive alors avec son message, plutôt
+   * qu'un bouton absent sans explication.
+   */
+  const abTestFlag = useFlag(FLAGS.AB_TEST);
+  const canRunAbTest =
+    abTestFlag &&
+    !parentTweetId &&
+    !quoteTweetId &&
+    !isPrivate &&
+    imageUris.length === 0 &&
+    !videoUri &&
+    !audioUri &&
+    !selectedTrack;
+
+  /**
    * Choix des images. `allowsMultipleSelection` avec la limite restante :
    * refuser après coup une sélection de dix images serait une perte de temps
    * pour l'auteur, autant ne pas la lui laisser faire.
@@ -1386,6 +1420,26 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     <Ionicons name="gift-outline" size={17} color={colors.textMuted} />
                     <Text style={styles.optionText}>CONCOURS</Text>
                   </TouchableOpacity>
+
+                  {/* Test A/B : comme le concours, il a son propre écran. Deux
+                      à quatre formulations du même tweet y sont saisies, le
+                      moteur les sert en alternance et garde celle qui prend.
+                      Le texte déjà écrit part avec, comme témoin. */}
+                  {canRunAbTest && (
+                    <TouchableOpacity
+                      style={styles.optionChip}
+                      onPress={() =>
+                        (navigation as any).navigate('CreateTweetABTest', {
+                          prefill: content.trim(),
+                        })
+                      }
+                      activeOpacity={0.8}
+                      accessibilityLabel="Lancer un test A/B"
+                    >
+                      <Ionicons name="flask-outline" size={17} color={colors.textMuted} />
+                      <Text style={styles.optionText}>TEST A/B</Text>
+                    </TouchableOpacity>
+                  )}
 
                   <TouchableOpacity
                     style={[

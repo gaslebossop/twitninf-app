@@ -170,6 +170,8 @@ export type MainStackParamList = {
     parentTweetId?: string;
     replyTo?: string;
     quoteTweetId?: string;
+    /** Texte deja saisi dans le composeur : il devient la version temoin. */
+    prefill?: string;
   };
   TweetDetail: { tweetId: string };
   EditProfile: undefined;

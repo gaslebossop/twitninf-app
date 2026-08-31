@@ -417,7 +417,31 @@ export interface CreateTweetRequest {
   spotify_track?: SpotifyTrack | null;
   audio_url?: string;
   audio_duration?: number;
+  /**
+   * Lance une expérience A/B sur ce tweet.
+   *
+   * ⚠ `content` EST la première version (le témoin). `variants` ne porte que
+   * les AUTRES formulations — envoyer le témoin deux fois fait échouer la
+   * publication sur « les versions doivent être différentes ».
+   *
+   * L'API refuse (403) si le compte n'est pas certifié, s'il a moins de 11
+   * abonnés, si c'est une réponse ou un tweet privé, ou si le client n'est pas
+   * dans la cohorte — voir `services/tweetAbTestService.js` côté API.
+   */
+  ab_test?: {
+    /** Les versions autres que `content`. Total (témoin inclus) : 2 à 4. */
+    variants: string[];
+    strategy?: 'adaptive';
+  };
 }
+
+/** Bornes de l'expérience A/B, telles que l'API les impose. */
+export const AB_TEST_LIMITS = {
+  /** Témoin inclus. */
+  MIN_VERSIONS: 2,
+  MAX_VERSIONS: 4,
+  MAX_CONTENT_LENGTH: 600,
+} as const;
 
 /** Une version traduite d'un tweet, générée à la publication. */
 export interface TweetTranslation {
