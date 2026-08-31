@@ -536,8 +536,7 @@ export default function TweetsScreen() {
 
   const sendNotificationToken = async () => {
     try {
-      const projectId = '341da021-111f-4a0c-9f54-0b5f4c9c3965';
-      const notificationToken = await registerForPushNotifications(projectId);
+      const notificationToken = await registerForPushNotifications();
       if (notificationToken) {
         await apiService.updateNotificationToken(notificationToken);
       }

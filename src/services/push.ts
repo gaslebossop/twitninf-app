@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -37,7 +38,37 @@ export const initializeNotifications = async () => {
   return notificationsConfigured;
 };
 
-export async function registerForPushNotifications(projectId: string): Promise<string | null> {
+/**
+ * Identifiant du projet EAS, lu dans la config du build.
+ *
+ * ── Le bug qu'il corrige ─────────────────────────────────────────────────
+ * Cinq endroits codaient `341da021-111f-4a0c-9f54-0b5f4c9c3965` en dur, alors
+ * que le projet EAS de ce build est `5370e501-b1a8-4999-bc98-83194b608a8e`
+ * (`app.config.js`, `extra.eas.projectId`). `getExpoPushTokenAsync` echoue
+ * quand le projectId ne correspond pas aux identifiants du build : aucun
+ * jeton, donc aucun envoi au serveur.
+ *
+ * Constat en base le 2026-08-31 : **1 jeton push pour 3 562 comptes.** Aucune
+ * notification distante n'atteignait personne, quel qu'en soit le type — ce
+ * n'est pas une fonctionnalite qui manquait, c'est le transport entier qui
+ * etait mort, en silence.
+ *
+ * Le piege qui l'a rendu invisible : `App.tsx` resolvait DEJA correctement
+ * l'identifiant depuis `Constants`, mais il se contente de garder le jeton en
+ * etat local. Le seul chemin qui le POSTE au serveur est celui d'
+ * `AuthContext`, et c'est precisement celui qui codait le mauvais en dur.
+ *
+ * Plus aucun repli code en dur : un identifiant faux echoue silencieusement,
+ * alors qu'un identifiant absent se voit dans les logs.
+ */
+export function resolveProjectId(): string | null {
+  const c = Constants as any;
+  return c?.expoConfig?.extra?.eas?.projectId || c?.easConfig?.projectId || null;
+}
+
+export async function registerForPushNotifications(
+  projectId: string = resolveProjectId() ?? '',
+): Promise<string | null> {
   try {
     console.log('🔔 Push Service - Début enregistrement notifications');
     console.log('🔔 Push Service - Project ID:', projectId);
@@ -76,7 +107,14 @@ export async function registerForPushNotifications(projectId: string): Promise<s
     console.log('🔔 Push Service - Tentative d\'obtention du token Expo...');
     
     // Obtenir le token avec la configuration appropriée
-    const tokenResult = await Notifications.getExpoPushTokenAsync({ 
+    if (!projectId) {
+      // Sans identifiant, `getExpoPushTokenAsync` echouerait avec un message
+      // opaque. On le dit ici, une fois, en clair.
+      console.warn('🔔 Push Service - projectId EAS introuvable : aucun jeton ne sera demande');
+      return null;
+    }
+
+    const tokenResult = await Notifications.getExpoPushTokenAsync({
       projectId
     });
     

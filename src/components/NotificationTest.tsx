@@ -24,8 +24,7 @@ export default function NotificationTest() {
       console.log('🔔 Test - Début enregistrement notifications...');
       
       // Utiliser votre Project ID
-      const projectId = '341da021-111f-4a0c-9f54-0b5f4c9c3965';
-      const newToken = await registerForPushNotifications(projectId);
+      const newToken = await registerForPushNotifications();
       
       if (newToken) {
         setToken(newToken);
