@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { colors, fonts, statusBarStyle } from '../theme';
+import { colors, fonts, statusBarStyle, withAlpha } from '../theme';
 import { AppHeader, ScreenBackground } from '../components/ui';
 import { APP_VERSION } from '../services/clientIdentity';
 import { PATCH_NOTES } from '../data/patchNotes';
@@ -26,8 +26,23 @@ const VersionNotesScreen: React.FC<VersionNotesScreenProps> = ({ navigation }) =
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {PATCH_NOTES.map((note) => (
-            <View key={note.date} style={styles.entry}>
+          {PATCH_NOTES.map((note, index) => (
+            // Cle sur la VERSION, pas sur la date : deux sorties le meme jour
+            // se seraient ecrasees dans la liste.
+            <View key={note.version} style={styles.entry}>
+              <View style={styles.stampRow}>
+                {/* La version d'abord, en chasse fixe : c'est l'identifiant de
+                    la sortie, la date n'en est que le reperage. Les deux
+                    etaient absents l'un de l'autre — l'ecran affichait des
+                    dates sans jamais dire a quelle version elles
+                    correspondaient. */}
+                <Text style={styles.version}>{note.version}</Text>
+                {index === 0 && (
+                  <View style={styles.currentPill}>
+                    <Text style={styles.currentPillText}>Version installée</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.date}>{note.date}</Text>
               <Text style={styles.entryTitle}>{note.title}</Text>
               {note.items.map((item) => (
@@ -49,6 +64,24 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
   entry: { marginBottom: 26 },
+  stampRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  version: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
+  currentPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: withAlpha(colors.accent, 0.16),
+  },
+  currentPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.accent,
+  },
   date: {
     fontSize: 12,
     color: colors.textMuted,
