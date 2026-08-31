@@ -273,4 +273,33 @@ export const towardWhite = (hex: string, keep: number): string => {
   return `#${pair(r)}${pair(g)}${pair(b)}`;
 };
 
+/**
+ * Assombrit une couleur vers le noir. Contrepartie exacte de `towardWhite`,
+ * mêmes conventions : `keep` est la part de la couleur d'origine (1 = intacte,
+ * 0 = noir), et le retour est du HEX pour rester composable avec `withAlpha`.
+ *
+ * Sert là où il faut une SECONDE teinte tirée d'une seule couleur choisie.
+ * Le cas concret : la lueur du nom veut deux teintes différentes — c'est
+ * l'écart entre elles qui fait la profondeur, comme un vrai tube néon qui ne
+ * rayonne pas la même couleur au centre et en périphérie. Or la couleur
+ * secondaire d'un profil retombe sur la principale quand elle n'est pas
+ * choisie, ce qui est le cas par défaut : les deux teintes devenaient
+ * identiques et la lueur s'aplatissait en brume monochrome.
+ */
+export const towardBlack = (hex: string, keep: number): string => {
+  if (!hex || hex[0] !== '#') return hex;
+  let h = hex.slice(1);
+  if (h.length === 3) {
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  const num = parseInt(h, 16);
+  const k = Math.max(0, Math.min(1, keep));
+  const mix = (channel: number) => Math.round(channel * k);
+  const pair = (channel: number) => channel.toString(16).padStart(2, '0');
+  return `#${pair(mix((num >> 16) & 255))}${pair(mix((num >> 8) & 255))}${pair(mix(num & 255))}`;
+};
+
 export default colors;

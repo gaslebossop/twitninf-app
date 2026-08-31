@@ -82,12 +82,35 @@ interface CreateTweetScreenProps {
 }
 
 
+/**
+ * Longueur max du message envoye aux abonnes.
+ *
+ * Doit rester alignee sur `MESSAGE_MAX` de `api/src/services/
+ * authorBroadcastService.js` et sur le validateur de `POST /api/tweets`.
+ * Au-dela, le serveur tronque en silence : le compteur mentirait.
+ */
+const NOTIFY_MESSAGE_MAX = 140;
+
 export default function CreateTweetScreen({ navigation, route }: CreateTweetScreenProps) {
   const { height: windowHeight } = useWindowDimensions();
   const { top: headerTopInset } = useHeaderMetrics();
 
   const [content, setContent] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  /**
+   * Prevenir ses abonnes (Ultra).
+   *
+   * Par defaut ACTIVE : notifier ses abonnes quand on publie est le
+   * comportement attendu, pas une option a aller chercher. Ce qu'Ultra ouvre,
+   * ce sont les deux ecarts au defaut — se taire, ou choisir ses mots.
+   *
+   * `notifyMessage` vide = le message par defaut (« @auteur a publie »), ecrit
+   * par le serveur. On ne le pre-remplit pas dans le champ : un texte deja la
+   * se lit comme quelque chose a effacer, alors que c'est le comportement
+   * normal. Il est donc en placeholder.
+   */
+  const [notifyFollowers, setNotifyFollowers] = useState(true);
+  const [notifyMessage, setNotifyMessage] = useState('');
   const [isSensitive, setIsSensitive] = useState(false);
   /** « Traduction (bêta) » — réservée aux abonnés Pro actifs (revalidé par l'API). */
   const [translationEnabled, setTranslationEnabled] = useState(false);
@@ -191,6 +214,18 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
    */
   const canUseTranslation =
     canUseFeature(authorTier, 'pro') &&
+    isSubscriptionActiveFor(authorTier, currentUser?.subscription_expires_at);
+
+  /**
+   * Notifier ses abonnes : Ultra, et Ultra actif seulement.
+   *
+   * Le serveur revérifie et se contente de sauter la notification si le palier
+   * ne l'ouvre pas — il ne refuse PAS la publication. Le contrôle ici n'est
+   * donc pas une sécurité, c'est une question d'honnêteté : afficher un
+   * interrupteur qui ne fera rien est pire que ne rien afficher.
+   */
+  const canNotifyFollowers =
+    canUseFeature(authorTier, 'ultra') &&
     isSubscriptionActiveFor(authorTier, currentUser?.subscription_expires_at);
 
   // Brouillons — même population que la limite étendue : c'est l'abonnement
@@ -820,6 +855,17 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         ...(mediaUrls.length > 0 ? { media_urls: mediaUrls } : {}),
         ...(selectedTrack ? { spotify_track: selectedTrack } : {}),
         ...(audioPayload ? { audio_url: audioPayload.url, audio_duration: audioPayload.duration } : {}),
+        // Envoye des que l'option a un sens pour ce tweet, dans les DEUX etats :
+        // le defaut est desormais de notifier, donc `false` porte une decision
+        // (« je me tais ») et ne peut plus etre omis.
+        ...(canNotifyFollowers && !parentTweetId && !isPrivate
+          ? {
+              notify_followers: notifyFollowers,
+              ...(notifyFollowers && notifyMessage.trim()
+                ? { notify_message: notifyMessage.trim() }
+                : {}),
+            }
+          : {}),
       };
 
       // Si c'est une citation, utiliser la route retweet avec commentaire
@@ -1482,7 +1528,65 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                       {isSensitive ? 'SENSIBLE' : 'STANDARD'}
                     </Text>
                   </TouchableOpacity>
+
+                  {/* Prevenir ses abonnes — Ultra.
+
+                      Retire sur une reponse et sur un tweet prive : dans les
+                      deux cas le serveur sauterait la notification, et un
+                      interrupteur qu'on peut activer sans effet est un
+                      mensonge d'interface. */}
+                  {canNotifyFollowers && !parentTweetId && !isPrivate && (
+                    <TouchableOpacity
+                      style={[
+                        styles.optionChip,
+                        notifyFollowers && styles.optionChipNotify,
+                      ]}
+                      onPress={() => setNotifyFollowers(!notifyFollowers)}
+                      activeOpacity={0.8}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: notifyFollowers }}
+                      accessibilityLabel="Prevenir mes abonnes de cette publication"
+                    >
+                      <Ionicons
+                        name={notifyFollowers ? 'notifications' : 'notifications-off-outline'}
+                        size={17}
+                        color={notifyFollowers ? colors.onAccent : colors.textMuted}
+                      />
+                      <Text style={[
+                        styles.optionText,
+                        notifyFollowers && { color: colors.onAccent },
+                      ]}>
+                        {notifyFollowers ? 'NOTIF' : 'SANS NOTIF'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+
+                {/* Le message part en notification push : il est lu HORS de
+                    l'app, sans le tweet sous les yeux. D'ou le champ separe —
+                    reprendre le debut du tweet donnerait une notification qui
+                    n'a de sens qu'une fois ouverte. */}
+                {canNotifyFollowers && notifyFollowers && !parentTweetId && !isPrivate && (
+                  <View style={styles.notifyPanel}>
+                    <TextInput
+                      style={styles.notifyInput}
+                      placeholder={`@${currentUser?.username || 'toi'} vient de publier`}
+                      placeholderTextColor={colors.textMuted}
+                      value={notifyMessage}
+                      onChangeText={setNotifyMessage}
+                      maxLength={NOTIFY_MESSAGE_MAX}
+                      multiline
+                    />
+                    <View style={styles.notifyFoot}>
+                      <Text style={styles.notifyHint}>
+                        Une seule notification par tranche de 6 h
+                      </Text>
+                      <Text style={styles.notifyCount}>
+                        {notifyMessage.length}/{NOTIFY_MESSAGE_MAX}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 {/* Recherche Spotify — panneau en ligne, pas de <Modal> (les
                     hôtes toast/confirm ne s'affichent pas sous une fenêtre
@@ -2102,6 +2206,48 @@ const styles = StyleSheet.create({
   },
   optionChipSensitive: {
     backgroundColor: colors.gold,
+  },
+  /* Meme traitement plein que les autres options actives : ce n'est pas un
+     avantage a decorer, c'est un interrupteur dont l'etat doit se lire. */
+  optionChipNotify: {
+    backgroundColor: colors.accent,
+  },
+
+  /* ── Message envoye aux abonnes ──────────────────────────────────────── */
+  notifyPanel: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  notifyInput: {
+    color: colors.textPrimary,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    minHeight: 44,
+    padding: 0,
+    textAlignVertical: 'top',
+  },
+  notifyFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    gap: 12,
+  },
+  notifyHint: {
+    flex: 1,
+    color: colors.textMuted,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+  },
+  notifyCount: {
+    color: colors.textMuted,
+    fontFamily: fonts.mono,
+    fontSize: 13,
   },
   optionText: {
     color: colors.textMuted,

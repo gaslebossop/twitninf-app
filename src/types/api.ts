@@ -418,6 +418,21 @@ export interface CreateTweetRequest {
   audio_url?: string;
   audio_duration?: number;
   /**
+   * Prévenir ses abonnés de cette publication — réservé à Ultra.
+   *
+   * Contrairement à `translation_enabled`, l'API ne renvoie PAS 403 si le
+   * palier ne l'ouvre pas : elle publie et saute la notification. C'est
+   * délibéré — perdre un tweet écrit parce qu'une option accessoire n'est pas
+   * ouverte serait la pire des sanctions. Le client ne doit malgré tout
+   * afficher l'option qu'aux comptes Ultra.
+   *
+   * Sans notification : une seule diffusion par tranche de 6 h et par auteur,
+   * jamais sur une réponse, jamais sur un tweet privé.
+   */
+  notify_followers?: boolean;
+  /** Message reçu par les abonnés. Vide → « @auteur vient de publier ». 140 max. */
+  notify_message?: string;
+  /**
    * Lance une expérience A/B sur ce tweet.
    *
    * ⚠ `content` EST la première version (le témoin). `variants` ne porte que

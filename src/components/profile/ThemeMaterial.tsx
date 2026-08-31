@@ -7,10 +7,18 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { isDarkTheme, towardWhite, withAlpha } from '../../theme';
+import { isDarkTheme, towardWhite } from '../../theme';
 import { isReduceMotionEnabled } from '../../hooks/useReduceMotion';
+import {
+  BUDGET,
+  FALLOFF,
+  LAYER,
+  SOURCE_GAINS,
+  SOURCE_RADII,
+  TONE,
+  type ThemeMaterialKind,
+} from './themeBudget';
 
 /**
  * La matière des thèmes de profil — le pendant, à l'échelle de la page, de
@@ -68,7 +76,7 @@ export type ThemeCharacter =
   /** Foyers à contresens : le champ se brasse au lieu de défiler. */
   | 'turbulent';
 
-export type ThemeMaterialKind = 'gradient' | 'glow' | 'mesh';
+export type { ThemeMaterialKind };
 
 /**
  * Un foyer de lumière. `cx/cy/rx/ry` sont exprimés dans le repère 0–100 du
@@ -113,51 +121,26 @@ const SWEEP_MS: Record<ThemeCharacter, number> = {
   turbulent: 9500,
 };
 
-/** Plafond d'opacité. Au-delà le thème cesse d'être un fond et masque le contenu. */
-const cap = (alpha: number) => Math.min(Math.max(alpha, 0), 0.95);
+/**
+ * Le dosage vit dans `themeBudget` — ce fichier ne garde que la GÉOMÉTRIE.
+ *
+ * La séparation n'est pas cosmétique. Les opacités étaient dispersées ici
+ * (une dans le tableau des foyers, une dans un JSX, deux dans des `<Stop>`),
+ * multipliées par des facteurs de thème déclarés ailleurs. Personne ne
+ * pouvait les additionner sans les chercher une par une — et personne ne l'a
+ * fait pendant quatre sessions, jusqu'à ce qu'une capture montre un profil
+ * entièrement rose : les cinq couches composaient à 0,93 d'accent plein.
+ *
+ * Regroupées, elles sont additionnables, et `tests/profile-theme-budget`
+ * les additionne à chaque `npm test`.
+ */
 
 /**
- * Le dosage de la lumière dépend du FOND sur lequel elle est posée.
- *
- * Une seule série de valeurs ne peut pas servir les deux thèmes, et le
- * compromis qu'on avait servait mal les deux :
- *
- * - **En sombre**, une teinte à 0,2 d'opacité sur du `#0A0A0A` est presque
- *   invisible, et un reflet presque blanc — qui serait pourtant magnifique là
- *   — était bridé au niveau du clair.
- * - **En clair**, l'inverse : tout ce qui tire vers le blanc se dissout dans
- *   la page, donc la lumière doit rester DANS la couleur. Un reflet blanc sur
- *   du blanc ne brille pas, il délave.
- *
- * Les valeurs `light` reproduisent exactement le rendu validé à l'écran — les
- * multiplicateurs y valent 1 par construction. **Ne les bouge pas sans une
- * capture sous les yeux** : c'est la seule branche dont on sait qu'elle est
- * bonne. Le sombre, lui, n'a jamais été vu et reste à confirmer.
+ * Plafond d'opacite d'UNE couche. Valait 0,95 : chaque couche pouvait monter
+ * seule jusqu'au quasi-opaque, ce qui n'a aucun sens pour un fond. Ramene au
+ * budget total, qu'aucune couche seule n'a de raison d'atteindre.
  */
-const TONE = {
-  dark: {
-    /** Part de couleur gardée au cœur d'un foyer. Plus bas = plus lumineux. */
-    core: 0.5,
-    /** Multiplicateur des opacités des foyers. */
-    gain: 1.25,
-    /** Multiplicateur des opacités de l'assise. */
-    assise: 1.5,
-    /** Le reflet peut être franchement blanc, et vif : il a du noir à mordre. */
-    sheenKeep: 0.3,
-    sheen: 1.8,
-    rimKeep: 0.45,
-    rim: 1.5,
-  },
-  light: {
-    core: 0.7,
-    gain: 1,
-    assise: 1,
-    sheenKeep: 0.55,
-    sheen: 1,
-    rimKeep: 0.62,
-    rim: 1,
-  },
-} as const;
+const cap = (alpha: number) => Math.min(Math.max(alpha, 0), BUDGET);
 
 const toneOf = () => (isDarkTheme() ? TONE.dark : TONE.light);
 
@@ -188,8 +171,8 @@ function fieldOf(
       return {
         character: 'halo',
         sources: [
-          { cx: 50, cy: seam, rx: 52, ry: 22, color: accent, gain: 0.62, lane: 0, ms: 6800, scaleTo: 1.14 },
-          { cx: 50, cy: seam + 16, rx: 78, ry: 38, color: secondary, gain: 0.3, lane: 0, ms: 9200, scaleTo: 1.07 },
+          { cx: 50, cy: seam, rx: SOURCE_RADII.glow[0][0], ry: SOURCE_RADII.glow[0][1], color: accent, gain: SOURCE_GAINS.glow[0], lane: 0, ms: 6800, scaleTo: 1.14 },
+          { cx: 50, cy: seam + 12, rx: SOURCE_RADII.glow[1][0], ry: SOURCE_RADII.glow[1][1], color: secondary, gain: SOURCE_GAINS.glow[1], lane: 0, ms: 9200, scaleTo: 1.07 },
         ],
       };
 
@@ -202,9 +185,9 @@ function fieldOf(
       return {
         character: 'turbulent',
         sources: [
-          { cx: 4, cy: seam * 0.4, rx: 50, ry: 30, color: accent, gain: 0.58, lane: 1, ms: 12000, scaleTo: 1.08 },
-          { cx: 100, cy: seam, rx: 48, ry: 28, color: secondary, gain: 0.58, lane: -1, ms: 9400, scaleTo: 1.1 },
-          { cx: 50, cy: seam + 24, rx: 46, ry: 24, color: accent, gain: 0.36, lane: 1, ms: 15500, scaleTo: 1.06 },
+          { cx: 12, cy: seam * 0.6, rx: SOURCE_RADII.mesh[0][0], ry: SOURCE_RADII.mesh[0][1], color: accent, gain: SOURCE_GAINS.mesh[0], lane: 1, ms: 12000, scaleTo: 1.08 },
+          { cx: 88, cy: seam, rx: SOURCE_RADII.mesh[1][0], ry: SOURCE_RADII.mesh[1][1], color: secondary, gain: SOURCE_GAINS.mesh[1], lane: -1, ms: 9400, scaleTo: 1.1 },
+          { cx: 50, cy: seam + 12, rx: SOURCE_RADII.mesh[2][0], ry: SOURCE_RADII.mesh[2][1], color: accent, gain: SOURCE_GAINS.mesh[2], lane: 1, ms: 15500, scaleTo: 1.06 },
         ],
       };
 
@@ -217,8 +200,8 @@ function fieldOf(
       return {
         character: 'drift',
         sources: [
-          { cx: 50, cy: seam * 0.6, rx: 72, ry: 40, color: accent, gain: 0.52, lane: 1, ms: 21000, scaleTo: 1.05 },
-          { cx: 50, cy: seam + 20, rx: 84, ry: 36, color: secondary, gain: 0.36, lane: -1, ms: 26000, scaleTo: 1.04 },
+          { cx: 50, cy: seam * 0.8, rx: SOURCE_RADII.gradient[0][0], ry: SOURCE_RADII.gradient[0][1], color: accent, gain: SOURCE_GAINS.gradient[0], lane: 1, ms: 21000, scaleTo: 1.05 },
+          { cx: 50, cy: seam + 12, rx: SOURCE_RADII.gradient[1][0], ry: SOURCE_RADII.gradient[1][1], color: secondary, gain: SOURCE_GAINS.gradient[1], lane: -1, ms: 26000, scaleTo: 1.04 },
         ],
       };
   }
@@ -345,10 +328,17 @@ function Source({
                 rayon de 600 px, ce n'est plus un reflet, c'est du brouillard :
                 le champ vire au lait et toute la gradation disparaît. La
                 couleur pleine doit avoir repris la main à 10 %. */}
-            <Stop offset={0} stopColor={core} stopOpacity={cap(gain * factor)} />
-            <Stop offset={0.1} stopColor={source.color} stopOpacity={cap(gain * 0.92 * factor)} />
-            <Stop offset={0.46} stopColor={source.color} stopOpacity={cap(gain * 0.34 * factor)} />
-            <Stop offset={0.84} stopColor={source.color} stopOpacity={0} />
+            {FALLOFF.map(([offset, keep], i) => (
+              <Stop
+                key={offset}
+                offset={offset}
+                // Seul le tout premier arret porte le coeur eclairci : un
+                // point de lumiere est un POINT. Etale, il vire au lait et
+                // toute la gradation disparait.
+                stopColor={i === 0 ? core : source.color}
+                stopOpacity={keep === 0 ? 0 : cap(gain * keep * factor)}
+              />
+            ))}
           </RadialGradient>
         </Defs>
         <Rect x={0} y={0} width={100} height={100} fill={`url(#${id})`} />
@@ -426,8 +416,8 @@ function Specular({
             ry={20}
             gradientUnits="userSpaceOnUse"
           >
-            <Stop offset={0} stopColor={sheen} stopOpacity={cap(0.09 * tone.sheen * factor)} />
-            <Stop offset={0.55} stopColor={sheen} stopOpacity={cap(0.03 * tone.sheen * factor)} />
+            <Stop offset={0} stopColor={sheen} stopOpacity={cap(LAYER.sheen * tone.sheen * factor)} />
+            <Stop offset={0.55} stopColor={sheen} stopOpacity={cap(LAYER.sheen * 0.34 * tone.sheen * factor)} />
             <Stop offset={1} stopColor={sheen} stopOpacity={0} />
           </RadialGradient>
         </Defs>
@@ -475,27 +465,20 @@ export default function ThemeMaterial({
 
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.root]}>
-      {/* 1 — L'assise. Fixe : c'est la masse, et une masse ne dérive pas.
-          Elle descend jusqu'aux trois quarts du champ pour que la couleur
-          tienne jusque sous les onglets.
+      {/* 1 — L'assise a ete SUPPRIMEE le 2026-08-31.
 
-          Volontairement DISCRÈTE. C'est la seule couche qui couvre tout de
-          façon uniforme : montée trop haut, elle noie l'écart entre les
-          foyers et le reste, et il ne reste qu'un filtre coloré posé sur la
-          page. La gradation doit venir des foyers, pas d'elle. */}
-      <LinearGradient
-        colors={[
-          withAlpha(secondary, cap(0.2 * tone.assise * factor)),
-          withAlpha(secondary, cap(0.12 * tone.assise * factor)),
-          withAlpha(secondary, cap(0.05 * tone.assise * factor)),
-          withAlpha(secondary, cap(0.015 * tone.assise * factor)),
-          'transparent',
-        ]}
-        locations={[0, 0.26, 0.48, 0.66, 0.84]}
-        start={{ x: 0.48, y: 0 }}
-        end={{ x: 0.52, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+          C'etait la seule couche a couvrir la page uniformement, et c'est
+          elle, seule, qui produisait le « fond colorie ». Une couche
+          uniforme ne peut pas se lire comme une lumiere : une lumiere vient
+          de quelque part. Elle a ete essayee a 0,30 (criard, profil
+          entierement rose) puis a 0,03 (delave, « 0 sur 20 ») — les deux
+          refuses a l'ecran, parce que le defaut n'etait pas sa valeur mais
+          son existence.
+
+          Le thema ne descend donc plus jusqu'aux onglets, et c'est voulu :
+          le bas du profil doit revenir au fond d'app neutre. C'est le
+          contraste entre un haut eclaire et un bas neutre qui fait exister
+          la lumiere — un degrade qui couvre tout n'eclaire rien. */}
 
       {/* 2 — Les foyers. */}
       {sources.map((source, index) => (
@@ -544,7 +527,7 @@ export default function ThemeMaterial({
               <Stop
                 offset={0}
                 stopColor={towardWhite(accent, tone.rimKeep)}
-                stopOpacity={cap(0.24 * tone.rim * factor)}
+                stopOpacity={cap(LAYER.rim * tone.rim * factor)}
               />
               <Stop offset={1} stopColor={accent} stopOpacity={0} />
             </RadialGradient>

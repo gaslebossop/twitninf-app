@@ -18,7 +18,7 @@ import {
 } from '../utils/responsive';
 import { colors as _colors } from './colors';
 
-export { colors, withAlpha, towardWhite, gradients, default as palette } from './colors';
+export { colors, withAlpha, towardWhite, towardBlack, gradients, default as palette } from './colors';
 export {
   applyThemePalette,
   isDarkTheme,

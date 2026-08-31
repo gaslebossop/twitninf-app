@@ -20,7 +20,7 @@ import Svg, {
   RadialGradient as SvgRadialGradient,
   Stop,
 } from 'react-native-svg';
-import { colors, fonts, isDarkTheme, towardWhite, withAlpha } from '../theme';
+import { colors, fonts, isDarkTheme, towardBlack, towardWhite, withAlpha } from '../theme';
 import AvatarMaterial, { type MaterialCharacter } from './profile/AvatarMaterial';
 import ThemeMaterial from './profile/ThemeMaterial';
 import {
@@ -545,6 +545,14 @@ const DEFAULT_NAME_FONT_SIZE = 21;
  */
 const NAME_GLOW_MAX_RADIUS = 36;
 
+/**
+ * Marge ouverte autour du nom pour que sa lueur ne soit pas rognée.
+ *
+ * Calée sur le rayon le plus large réellement produit (~24 px sur un nom de
+ * 21), avec un peu de rab. Voir `styles.nameWrap` pour le mécanisme.
+ */
+const NAME_GLOW_BLEED = 28;
+
 function nameGlowHaloFor(style?: StyleProp<TextStyle>) {
   const flat = StyleSheet.flatten(style) as TextStyle | undefined;
   const fontSize = typeof flat?.fontSize === 'number' ? flat.fontSize : DEFAULT_NAME_FONT_SIZE;
@@ -585,8 +593,23 @@ function NameHalo({
   // Le filament. En clair, un blanc-chaud sur une page blanche ne rayonne
   // pas : on garde alors bien plus de couleur pour qu'il reste quelque chose.
   const hot = towardWhite(color, isDarkTheme() ? 0.25 : 0.6);
+  /**
+   * La teinte de la couche atmosphérique.
+   *
+   * `edge` vaut la couleur SECONDAIRE du profil — et `decorationColors`
+   * retombe sur la principale quand aucune secondaire n'est choisie, ce qui
+   * est le cas par défaut de tous les comptes. Les trois couches recevaient
+   * donc la même teinte, et ce fichier dit lui-même deux paragraphes plus
+   * haut que « trois couches de la même teinte donnent une brume plate ».
+   * C'est exactement ce qu'on voyait à l'écran : du rose sur du rose.
+   *
+   * À défaut de seconde couleur, on en fabrique une en assombrissant : c'est
+   * l'ÉCART entre le cœur clair et la périphérie profonde qui fait le tube,
+   * pas la teinte elle-même.
+   */
+  const atmosphere = edge && edge !== color ? edge : towardBlack(color, 0.62);
   const hueOf = (hue: GlowHue) =>
-    hue === 'hot' ? hot : hue === 'edge' ? edge || color : color;
+    hue === 'hot' ? hot : hue === 'edge' ? atmosphere : color;
 
   return (
     <>
@@ -599,7 +622,22 @@ function NameHalo({
             styles.nameGlowLayer,
             extraStyle,
             {
-              color: hueOf(layer.hue),
+              /**
+               * Le corps du glyphe est TRANSPARENT : la couche ne peint que
+               * son ombre.
+               *
+               * Il était peint en plein, sur l'idée qu'une ombre iOS dérive
+               * de ce qui est dessiné et qu'un alpha 0 ne rayonnerait donc
+               * pas. Les anciens presets (`NEON_PRESETS`, toujours dans le
+               * dépôt) prouvent le contraire : ils tournent avec
+               * `fill: 'rgba(0,0,0,0)'` depuis toujours.
+               *
+               * Ce que coûtait le plein : quatre corps de lettres opaques et
+               * saturés empilés sous le cœur, donc un contour dur et plat au
+               * ras des glyphes au lieu d'une lueur qui s'éteint. C'est ce
+               * qui faisait lire « texte cerné de rose » plutôt que « tube ».
+               */
+              color: 'transparent',
               textShadowColor: hueOf(layer.hue),
               textShadowRadius: layer.radius,
               opacity: pulse.interpolate({
@@ -1466,8 +1504,26 @@ export function AvatarDecorationOrnament({
 const styles = StyleSheet.create({
   center: { position: 'absolute', top: 0, left: 0 },
 
-  /** `flex-start` : le bloc doit se serrer sur le texte, pas sur la colonne. */
-  nameWrap: { alignSelf: 'flex-start', position: 'relative' },
+  /**
+   * `flex-start` : le bloc doit se serrer sur le texte, pas sur la colonne.
+   *
+   * Le couple `padding` / `margin` négatif donne à la lueur de la place pour
+   * déborder SANS bouger le nom d'un pixel. C'est nécessaire parce qu'une
+   * ombre de texte ne se comporte pas comme en CSS : `text-shadow` peint
+   * librement hors de l'élément, alors qu'Android la rasterise dans les
+   * bornes de la vue de texte et la coupe net au-delà. Sans marge, la lueur
+   * la plus large — 24 px sur un nom de 21 — était tranchée en rectangle
+   * autour du nom.
+   *
+   * Les deux valeurs doivent rester opposées : le padding ouvre le cadre, le
+   * margin le remet en place. En changer une seule décale le pseudo.
+   */
+  nameWrap: {
+    alignSelf: 'flex-start',
+    position: 'relative',
+    padding: NAME_GLOW_BLEED,
+    margin: -NAME_GLOW_BLEED,
+  },
   /** Seule l'alpha du masque compte — la couleur est arbitraire mais opaque. */
   nameMask: { color: '#000', backgroundColor: 'transparent' },
   nameGhost: { opacity: 0 },

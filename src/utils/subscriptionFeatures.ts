@@ -261,6 +261,24 @@ export const ULTRA_ONLY_FEATURES: SubscriptionFeature[] = [
     text: '300 requêtes d\'écriture par minute au lieu de 20, pour les apps que tu connectes.',
     minTier: 'pro',
   },
+  /**
+   * Existait dans l'app depuis toujours (`ContractsScreen`, `creatorContractService`
+   * côté API) et n'était vendu nulle part : le seul avantage Ultra vraiment
+   * TANGIBLE — celui qu'on utilise avec les doigts — n'apparaissait pas dans
+   * l'argumentaire.
+   */
+  {
+    icon: 'briefcase',
+    title: 'Marketplace des créateurs',
+    text: 'Tu apparais dans l\'annuaire des créateurs réservables, avec ton prix indicatif, et tu reçois les propositions de collaboration.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'megaphone-outline',
+    title: 'Notifier tes abonnés',
+    text: 'À la publication, préviens tes abonnés avec ton propre message — ou n\'en préviens aucun.',
+    minTier: 'pro',
+  },
 ];
 
 export const TRUST_POINTS: { icon: string; text: string }[] = [

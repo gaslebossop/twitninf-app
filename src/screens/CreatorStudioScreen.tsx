@@ -320,6 +320,8 @@ export default function CreatorStudioScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('CreatorContracts')}
           />
 
+          {isUltra ? <UltraPerksCard /> : null}
+
           <Text style={styles.sectionLabel}>Audience</Text>
 
           <VisitorsCard
@@ -888,6 +890,42 @@ function CustomTweetGenerator({
   );
 }
 
+/**
+ * Ce qu'Ultra fait pour toi sans que ça se voie nulle part.
+ *
+ * Quatre des six avantages Ultra sont des comportements SERVEUR : recherche
+ * prioritaire, antifraude assoupli, immunité aux restrictions automatiques,
+ * quota d'API. Ils sont réels et actifs, et l'abonné n'avait aucun moyen de
+ * les voir ni de vérifier qu'il les avait — il payait, ouvrait l'app, et elle
+ * était identique. Un avantage imperceptible n'a aucune valeur perçue.
+ *
+ * C'est un RELEVÉ, pas un argumentaire : des états constatés, chacun sur une
+ * ligne, séparés par des filets. Le seul endroit de l'app où ces protections
+ * peuvent se lire.
+ */
+function UltraPerksCard() {
+  return (
+    <View style={styles.perksCard}>
+      <View style={styles.perksHead}>
+        <Ionicons name="shield-checkmark" size={15} color={colors.gold} />
+        <Text style={styles.perksTitle}>Actif sur ton compte</Text>
+      </View>
+
+      {[
+        { label: 'Recherche prioritaire', state: 'À pertinence égale, tes tweets passent devant' },
+        { label: 'Portée automatique', state: 'Jamais réduite — les restrictions auto ne t\'atteignent pas' },
+        { label: 'Antifraude', state: 'Assoupli : tes transferts inhabituels ne sont pas bloqués' },
+        { label: 'Quota d\'API', state: '300 écritures/min au lieu de 20' },
+      ].map((perk, index) => (
+        <View key={perk.label} style={[styles.perkRow, index > 0 && styles.perkRowRule]}>
+          <Text style={styles.perkLabel}>{perk.label}</Text>
+          <Text style={styles.perkState}>{perk.state}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function StudioCard({
   icon, title, subtitle, onPress, badge, value, trailing, tone = 'magenta',
 }: {
@@ -1081,6 +1119,30 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     marginBottom: 9,
   },
+
+  /* ── Relevé des protections Ultra ─────────────────────────────────────
+     Des filets et du rythme vertical, pas des tuiles : ce sont des états
+     constatés, pas des actions. Rien n'est tapable ici, donc rien ne doit
+     ressembler à un bouton. */
+  perksCard: {
+    paddingVertical: 4, paddingHorizontal: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: withAlpha(colors.gold, 0.22),
+    marginBottom: 9,
+  },
+  perksHead: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingTop: 12, paddingBottom: 4,
+  },
+  perksTitle: {
+    color: colors.gold, fontSize: 10.5,
+    fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase',
+  },
+  perkRow: { paddingVertical: 11 },
+  perkRowRule: { borderTopWidth: 1, borderTopColor: colors.border },
+  perkLabel: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  perkState: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   cardIcon: {
     width: 34, height: 34, borderRadius: 11,

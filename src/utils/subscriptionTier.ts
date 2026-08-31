@@ -45,6 +45,31 @@ export const SUBSCRIPTION_PRO_EXTRAS: { icon: string; text: string }[] = [
   { icon: 'flame', text: 'Le pack visuel le plus complet de TwitNinf' },
 ];
 
+/**
+ * Avantages Ultra, en une phrase chacun.
+ *
+ * Cette liste n'existait pas — Plus et Pro avaient la leur, Ultra non. L'écran
+ * d'upsell ne pouvait donc littéralement rien dire d'Ultra, et le catalogue
+ * détaillé (`ULTRA_ONLY_FEATURES` de `subscriptionFeatures`) n'était lu que par
+ * la feuille de paiement, c'est-à-dire APRÈS que la décision d'acheter soit
+ * prise.
+ *
+ * Volontairement formulée en avantages CONSTATABLES. Quatre des six avantages
+ * Ultra sont des comportements serveur qu'on ne voit jamais (recherche
+ * prioritaire, antifraude assoupli, immunité, quota d'API) : les vendre sans
+ * jamais les montrer, c'est vendre du vide. Ceux-là sont désormais affichés
+ * en clair dans le Studio créateur — c'est le seul endroit où ils peuvent se
+ * constater.
+ */
+export const SUBSCRIPTION_ULTRA_EXTRAS: { icon: string; text: string }[] = [
+  { icon: 'megaphone', text: 'Crédit publicitaire de 100 € versé à chaque activation' },
+  { icon: 'briefcase', text: 'Marketplace des créateurs : sois réservable, fixe ton prix' },
+  { icon: 'notifications', text: 'Notifie tes abonnés à la publication, avec ton propre message' },
+  { icon: 'flag', text: 'Strikes de diffusion, immédiats et sans revue' },
+  { icon: 'search', text: 'Recherche prioritaire à pertinence égale' },
+  { icon: 'shield-checkmark', text: 'Portée jamais réduite automatiquement' },
+];
+
 export function normalizedTier(raw?: string | null): SubscriptionTier {
   if (raw === 'plus' || raw === 'pro' || raw === 'ultra') return raw;
   return 'free';
