@@ -1038,12 +1038,13 @@ function AbTestCard({
               </View>
             )}
 
-            {/* Des PERSONNES, jamais `impressions` : ce compteur-la n'est pas
-                deduplique (129 evenements pour 8 lecteurs, mesure en prod) et
-                il est disjoint des interactions — les afficher cote a cote
-                donnait « 1 vue · 5 interactions ». */}
+            {/* Les trois nombres que le pourcentage utilise, dans l'ordre ou
+                on les lit : combien de gens, combien de fois montre, combien
+                de reactions. Le taux affiche est interactions / expositions —
+                il doit se retrouver a la main depuis cette ligne, sinon il
+                n'inspire pas confiance. */}
             <Text style={styles.abCounts}>
-              {v.reach} personne{v.reach > 1 ? 's' : ''} · {v.interactions} interaction{v.interactions > 1 ? 's' : ''}
+              {v.reach} personne{v.reach > 1 ? 's' : ''} · {v.impressions} exposition{v.impressions > 1 ? 's' : ''} · {v.interactions} interaction{v.interactions > 1 ? 's' : ''}
             </Text>
           </View>
         );

@@ -14,14 +14,13 @@ import { apiService } from './api';
  * 8 personnes**, parce que le même lecteur recompte à chaque fois que le tweet
  * repasse dans son fil.
  *
- * Et `impressions` / `interactions` sont DISJOINTS côté moteur : seul un
- * événement `View` incrémente les impressions, tout le reste part dans les
- * interactions. Leur rapport n'est donc pas un taux — le dénominateur ne
- * contient pas le numérateur. C'est ce qui affichait « 1 vue · 5 interactions »,
- * lu à juste titre comme impossible.
+ * `impressions` compte une EXPOSITION par événement reçu (correction du
+ * 2026-09-01 dans le moteur Rust). Avant, seul un `View` l'incrémentait et
+ * tout le reste allait dans `interactions` : les deux étaient disjoints, leur
+ * rapport n'était pas un taux, et l'écran affichait « 1 vue · 5 interactions ».
  *
- * **Ne jamais afficher `impressions` comme un nombre de vues.** Il est gardé
- * dans le type parce qu'il existe, pas parce qu'il se montre.
+ * **Ne jamais appeler `impressions` des « vues ».** Ce sont des expositions :
+ * une même personne en produit plusieurs en faisant défiler son fil.
  *
  * ── Ce que le serveur refuse de calculer, et pourquoi ────────────────────
  *
@@ -54,10 +53,10 @@ export interface AbVariantResult {
   moderation_status: 'pending' | 'approved' | 'rejected';
   /** Personnes réellement servies. LA mesure d'audience. */
   reach: number;
-  /** Événements `View` bruts, non dédupliqués — ne pas afficher. Voir l'en-tête. */
+  /** Expositions : une par événement reçu. Non dédupliquées par personne. */
   impressions: number;
   interactions: number;
-  /** `interactions / reach`, ou `null` tant que le seuil n'est pas atteint. */
+  /** `interactions / impressions`, ou `null` tant que le seuil n'est pas atteint. */
   engagement_rate: number | null;
   /** Assez de monde pour qu'un taux veuille dire quelque chose ? */
   sufficient: boolean;
