@@ -6,13 +6,30 @@ import { apiService } from './api';
  * Miroir de `listAuthorExperiments` (`api/src/services/tweetAbTestService.js`)
  * et de `GET /api/tweets/ab-tests/mine`.
  *
+ * ── La portée se compte en PERSONNES ─────────────────────────────────────
+ *
+ * `reach` — le nombre de personnes réellement servies — est la seule mesure
+ * d'audience à utiliser. `impressions` compte les événements `View` sans
+ * déduplication : une variante affichait en production **129 impressions pour
+ * 8 personnes**, parce que le même lecteur recompte à chaque fois que le tweet
+ * repasse dans son fil.
+ *
+ * Et `impressions` / `interactions` sont DISJOINTS côté moteur : seul un
+ * événement `View` incrémente les impressions, tout le reste part dans les
+ * interactions. Leur rapport n'est donc pas un taux — le dénominateur ne
+ * contient pas le numérateur. C'est ce qui affichait « 1 vue · 5 interactions »,
+ * lu à juste titre comme impossible.
+ *
+ * **Ne jamais afficher `impressions` comme un nombre de vues.** Il est gardé
+ * dans le type parce qu'il existe, pas parce qu'il se montre.
+ *
  * ── Ce que le serveur refuse de calculer, et pourquoi ────────────────────
  *
  * `engagement_rate` vaut `null` tant que la variante n'a pas atteint le seuil
- * d'impressions de son expérience. Ce n'est pas une donnée manquante : c'est
- * le serveur qui refuse de produire un chiffre trompeur.
+ * de son expérience. Ce n'est pas une donnée manquante : c'est le serveur qui
+ * refuse de produire un chiffre trompeur.
  *
- * Sur vingt impressions, un écart « B : 12 % · A : 8 % » est du bruit — une
+ * Sur vingt personnes, un écart « B : 12 % · A : 8 % » est du bruit — une
  * seule interaction de plus fait basculer le classement. Mais un pourcentage
  * affiché se lit comme un résultat, et l'auteur écrirait ses tweets suivants
  * en suivant du hasard.
@@ -35,11 +52,14 @@ export interface AbVariantResult {
   /** La formulation d'origine du tweet — celle à battre. */
   is_control: boolean;
   moderation_status: 'pending' | 'approved' | 'rejected';
+  /** Personnes réellement servies. LA mesure d'audience. */
+  reach: number;
+  /** Événements `View` bruts, non dédupliqués — ne pas afficher. Voir l'en-tête. */
   impressions: number;
   interactions: number;
-  /** `null` tant que le seuil n'est pas atteint. Voir l'en-tête. */
+  /** `interactions / reach`, ou `null` tant que le seuil n'est pas atteint. */
   engagement_rate: number | null;
-  /** La variante a-t-elle assez de vues pour qu'un taux veuille dire quelque chose ? */
+  /** Assez de monde pour qu'un taux veuille dire quelque chose ? */
   sufficient: boolean;
 }
 
@@ -58,6 +78,7 @@ export interface AbExperimentResult {
   variants: AbVariantResult[];
   /** Vrai seulement si TOUTES les variantes ont franchi le seuil. */
   comparable: boolean;
+  total_reach: number;
   total_impressions: number;
   total_interactions: number;
 }

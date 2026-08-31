@@ -1001,7 +1001,7 @@ function AbTestCard({
         <View style={[styles.abDot, live && styles.abDotLive]} />
         <Text style={styles.abStatus}>{statusLabel}</Text>
         <Text style={styles.abTotals}>
-          {experiment.total_impressions} vue{experiment.total_impressions > 1 ? 's' : ''}
+          {experiment.total_reach} personne{experiment.total_reach > 1 ? 's' : ''}
         </Text>
       </View>
 
@@ -1017,7 +1017,7 @@ function AbTestCard({
               {rate ? (
                 <Text style={[styles.abRate, isLeader && styles.abRateLeader]}>{rate}</Text>
               ) : (
-                <Text style={styles.abPending}>pas encore assez de vues</Text>
+                <Text style={styles.abPending}>pas encore assez de monde</Text>
               )}
             </View>
 
@@ -1038,8 +1038,12 @@ function AbTestCard({
               </View>
             )}
 
+            {/* Des PERSONNES, jamais `impressions` : ce compteur-la n'est pas
+                deduplique (129 evenements pour 8 lecteurs, mesure en prod) et
+                il est disjoint des interactions — les afficher cote a cote
+                donnait « 1 vue · 5 interactions ». */}
             <Text style={styles.abCounts}>
-              {v.impressions} vue{v.impressions > 1 ? 's' : ''} · {v.interactions} interaction{v.interactions > 1 ? 's' : ''}
+              {v.reach} personne{v.reach > 1 ? 's' : ''} · {v.interactions} interaction{v.interactions > 1 ? 's' : ''}
             </Text>
           </View>
         );
@@ -1049,7 +1053,7 @@ function AbTestCard({
           on ne peut pas encore trancher, personne ne se détache, ou X mène. */}
       <Text style={styles.abVerdict}>
         {!experiment.comparable
-          ? `Il faut ${experiment.min_impressions_per_variant} vues par version pour comparer`
+          ? `Il faut ${experiment.min_impressions_per_variant} personnes par version pour comparer`
           : leader
             ? `${leader.label} mène`
             : 'Aucune version ne se détache'}

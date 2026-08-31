@@ -30,8 +30,8 @@ export const PATCH_NOTES: PatchNote[] = [
     date: '1er septembre 2026',
     title: 'Tes tests A/B, en direct',
     items: [
-      'Suis tes tests A/B depuis le Studio créateur : vues, interactions et version en tête, mises à jour à chaque passage',
-      'Tant qu’une version n’a pas assez de vues, aucun pourcentage n’est affiché — un écart sur vingt vues ne veut rien dire',
+      'Suis tes tests A/B depuis le Studio créateur : personnes touchées, interactions et version en tête, mis à jour à chaque passage',
+      'Tant qu’une version n’a pas touché assez de monde, aucun pourcentage n’est affiché — un écart sur vingt personnes ne veut rien dire',
     ],
   },
   {
