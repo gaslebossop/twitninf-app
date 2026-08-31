@@ -26,6 +26,15 @@ export interface PatchNote {
  */
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '1.3.0',
+    date: '1er septembre 2026',
+    title: 'Tes tests A/B, en direct',
+    items: [
+      'Suis tes tests A/B depuis le Studio créateur : vues, interactions et version en tête, mises à jour à chaque passage',
+      'Tant qu’une version n’a pas assez de vues, aucun pourcentage n’est affiché — un écart sur vingt vues ne veut rien dire',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '1er septembre 2026',
     title: 'Tes abonnés savent quand tu publies',

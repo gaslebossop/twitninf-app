@@ -45,6 +45,12 @@ import {
 } from '../services/insightsService';
 import { fetchMyMarket, type MyMarket } from '../services/usernameMarketService';
 import {
+  fetchMyAbTests,
+  leadingVariant,
+  formatRate,
+  type AbExperimentResult,
+} from '../services/abTestResultsService';
+import {
   fetchTweetGeneratorStatus,
   generateCustomTweet,
   type GeneratedCustomTweet,
@@ -95,6 +101,7 @@ interface Summary {
   nicheTweets: NicheTrendingTweet[];
   market: MyMarket | null;
   generator: TweetGeneratorStatus | null;
+  abTests: AbExperimentResult[];
 }
 
 interface InsightFailures {
@@ -107,6 +114,7 @@ const EMPTY: Summary = {
   earnings: null, sales: null, queue: [], bestHours: [],
   visitors: null, incognito: false, alerts: [], rising: [], nicheTweets: [], market: null,
   generator: null,
+  abTests: [],
 };
 
 const NO_INSIGHT_FAILURES: InsightFailures = {
@@ -155,6 +163,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       fetchNicheTrendingTweets({ days: 7, limit: 3 }),
       fetchMyMarket(),
       hasInsights ? fetchTweetGeneratorStatus() : Promise.resolve(null),
+      fetchMyAbTests(10),
     ]);
 
     setSummary({
@@ -171,6 +180,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       generator: results[10].status === 'fulfilled' && (results[10].value as any)?.ok
         ? (results[10].value as any).data
         : null,
+      abTests: settled<AbExperimentResult[]>(results[11], []),
     });
     setInsightFailures({
       impersonation: failure(results[6]),
@@ -321,6 +331,19 @@ export default function CreatorStudioScreen({ navigation }: Props) {
           />
 
           {isUltra ? <UltraPerksCard /> : null}
+
+          {summary.abTests.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>Tes tests A/B</Text>
+              {summary.abTests.map((exp) => (
+                <AbTestCard
+                  key={exp.id}
+                  experiment={exp}
+                  onOpen={() => navigation.navigate('TweetDetail', { tweetId: exp.tweet_id })}
+                />
+              ))}
+            </>
+          )}
 
           <Text style={styles.sectionLabel}>Audience</Text>
 
@@ -926,6 +949,115 @@ function UltraPerksCard() {
   );
 }
 
+
+/**
+ * Résultats en direct d'un test A/B.
+ *
+ * ── L'objet du monde réel : un DÉPOUILLEMENT, pas un tableau de bord ─────
+ *
+ * On compte des voix. Chaque variante est une ligne : sa lettre, son texte,
+ * ses vues, ses interactions, et son taux quand il veut dire quelque chose.
+ * Des filets entre les lignes, pas des tuiles — ce sont des candidats à
+ * comparer, et une grille de cartes empêche justement de comparer.
+ *
+ * ── Ce que cet écran refuse de faire ────────────────────────────────────
+ *
+ * Afficher un taux sur trop peu de vues. Le serveur renvoie `null` dans ce
+ * cas et on écrit « pas encore assez de vues » plutôt qu'un pourcentage.
+ * Sur vingt impressions, « B : 12 % · A : 8 % » est du bruit qu'une seule
+ * interaction fait basculer — mais un pourcentage se lit comme un verdict, et
+ * l'auteur écrirait ses tweets suivants en suivant du hasard.
+ *
+ * Et tant que TOUTES les variantes n'ont pas le volume, aucune n'est
+ * désignée en tête : c'est l'écart qui intéresse, pas un chiffre isolé.
+ */
+function AbTestCard({
+  experiment,
+  onOpen,
+}: {
+  experiment: AbExperimentResult;
+  onOpen: () => void;
+}) {
+  const leader = leadingVariant(experiment);
+  const live = experiment.status === 'active';
+
+  // La barre est relative à la MEILLEURE variante, pas à 100 % : des taux de
+  // 3 % et 4 % donneraient deux barres invisibles et indistinguables sur une
+  // échelle absolue, alors que c'est exactement l'écart qu'on vient lire.
+  const best = Math.max(
+    ...experiment.variants.map((v) => v.engagement_rate ?? 0),
+    0.0001,
+  );
+
+  const statusLabel =
+    experiment.status === 'active' ? 'En cours'
+      : experiment.status === 'completed' ? 'Terminé'
+        : experiment.status === 'cancelled' ? 'Annulé'
+          : 'En attente';
+
+  return (
+    <TouchableOpacity style={styles.abCard} onPress={onOpen} activeOpacity={0.85}>
+      <View style={styles.abHead}>
+        <View style={[styles.abDot, live && styles.abDotLive]} />
+        <Text style={styles.abStatus}>{statusLabel}</Text>
+        <Text style={styles.abTotals}>
+          {experiment.total_impressions} vue{experiment.total_impressions > 1 ? 's' : ''}
+        </Text>
+      </View>
+
+      {experiment.variants.map((v, index) => {
+        const rate = formatRate(v.engagement_rate);
+        const isLeader = leader?.id === v.id;
+        return (
+          <View key={v.id} style={[styles.abRow, index > 0 && styles.abRowRule]}>
+            <View style={styles.abRowTop}>
+              <Text style={[styles.abLabel, isLeader && styles.abLabelLeader]}>{v.label}</Text>
+              {v.is_control && <Text style={styles.abControl}>version d’origine</Text>}
+              <View style={{ flex: 1 }} />
+              {rate ? (
+                <Text style={[styles.abRate, isLeader && styles.abRateLeader]}>{rate}</Text>
+              ) : (
+                <Text style={styles.abPending}>pas encore assez de vues</Text>
+              )}
+            </View>
+
+            <Text style={styles.abContent} numberOfLines={2}>{v.content}</Text>
+
+            {/* La barre n'apparaît que quand le taux existe : une barre à zéro
+                se lit comme « mauvais résultat », alors que ça veut dire
+                « pas encore mesuré ». */}
+            {v.engagement_rate !== null && (
+              <View style={styles.abBarTrack}>
+                <View
+                  style={[
+                    styles.abBarFill,
+                    { width: `${Math.max(3, (v.engagement_rate / best) * 100)}%` },
+                    isLeader && styles.abBarFillLeader,
+                  ]}
+                />
+              </View>
+            )}
+
+            <Text style={styles.abCounts}>
+              {v.impressions} vue{v.impressions > 1 ? 's' : ''} · {v.interactions} interaction{v.interactions > 1 ? 's' : ''}
+            </Text>
+          </View>
+        );
+      })}
+
+      {/* Une seule phrase de conclusion, et elle dit la vérité des trois cas :
+          on ne peut pas encore trancher, personne ne se détache, ou X mène. */}
+      <Text style={styles.abVerdict}>
+        {!experiment.comparable
+          ? `Il faut ${experiment.min_impressions_per_variant} vues par version pour comparer`
+          : leader
+            ? `${leader.label} mène`
+            : 'Aucune version ne se détache'}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function StudioCard({
   icon, title, subtitle, onPress, badge, value, trailing, tone = 'magenta',
 }: {
@@ -1118,6 +1250,74 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.border,
     marginBottom: 9,
+  },
+
+  /* ── Dépouillement d'un test A/B ──────────────────────────────────────
+     Des filets et du rythme vertical : ce sont des candidats a comparer, et
+     une grille de tuiles empeche justement de les comparer. */
+  abCard: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    marginBottom: 9,
+  },
+  abHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 },
+  abDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: colors.textMuted,
+  },
+  abDotLive: { backgroundColor: colors.success },
+  abStatus: {
+    color: colors.textSecondary, fontSize: 12.5, fontWeight: '700',
+  },
+  abTotals: {
+    flex: 1, textAlign: 'right',
+    color: colors.textMuted, fontSize: 12.5,
+    fontVariant: ['tabular-nums'],
+  },
+
+  abRow: { paddingVertical: 11 },
+  abRowRule: { borderTopWidth: 1, borderTopColor: colors.border },
+  abRowTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  abLabel: {
+    color: colors.textSecondary, fontSize: 15, fontWeight: '800',
+    minWidth: 16,
+  },
+  abLabelLeader: { color: colors.accent },
+  abControl: { color: colors.textMuted, fontSize: 12 },
+  abRate: {
+    color: colors.textSecondary, fontSize: 15, fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  abRateLeader: { color: colors.accent },
+  // Volontairement en corps de texte normal et non en petit gris illisible :
+  // « pas encore assez de vues » est une information, pas une note de bas de
+  // page — c'est elle qui empeche de lire un classement dans du bruit.
+  abPending: { color: colors.textMuted, fontSize: 13 },
+  abContent: {
+    color: colors.textPrimary, fontSize: 14, lineHeight: 19, marginTop: 4,
+  },
+  abBarTrack: {
+    height: 4, borderRadius: 2, marginTop: 8,
+    backgroundColor: withAlpha(colors.textPrimary, 0.08),
+    overflow: 'hidden',
+  },
+  abBarFill: {
+    height: '100%', borderRadius: 2,
+    backgroundColor: withAlpha(colors.textSecondary, 0.5),
+  },
+  abBarFillLeader: { backgroundColor: colors.accent },
+  abCounts: {
+    color: colors.textMuted, fontSize: 12.5, marginTop: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  abVerdict: {
+    color: colors.textSecondary, fontSize: 13, fontWeight: '600',
+    borderTopWidth: 1, borderTopColor: colors.border,
+    paddingTop: 10, paddingBottom: 11,
   },
 
   /* ── Relevé des protections Ultra ─────────────────────────────────────
