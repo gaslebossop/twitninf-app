@@ -119,6 +119,7 @@ import ConversationThreadScreen2B from '../screens/ConversationThreadScreen2B';
 import FollowRequestsScreen from '../screens/FollowRequestsScreen';
 import UserConnectionsScreen from '../screens/UserConnectionsScreen';
 import BookmarksScreen from '../screens/BookmarksScreen';
+import WeeklyVoteScreen from '../screens/WeeklyVoteScreen';
 import BlockedAccountsScreen from '../screens/BlockedAccountsScreen';
 import TwoFactorScreen from '../screens/TwoFactorScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
@@ -253,6 +254,7 @@ export type MainStackParamList = {
   };
   FollowRequests: undefined;
   Bookmarks: undefined;
+  WeeklyVote: undefined;
   BlockedAccounts: undefined;
   TwoFactor: undefined;
   UserConnections: {
@@ -1144,6 +1146,11 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="Bookmarks"
         component={BookmarksScreen}
+        options={{ presentation: 'card', headerShown: false }}
+      />
+      <MainStack.Screen
+        name="WeeklyVote"
+        component={WeeklyVoteScreen}
         options={{ presentation: 'card', headerShown: false }}
       />
       <MainStack.Screen

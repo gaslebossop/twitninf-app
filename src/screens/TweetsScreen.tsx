@@ -66,6 +66,7 @@ import { trackingService } from '../services/trackingService';
 import { useTweetScreenTracking } from '../hooks/useBehaviorTracking';
 import { useEventStyles } from '../hooks/useEventStyles';
 import EventStrip from '../components/events/EventStrip';
+import WeeklyVoteStrip from '../components/feed/WeeklyVoteStrip';
 import ReportSheet from '../components/ReportSheet';
 import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
 import PromotedAccountCard from '../components/feed/PromotedAccountCard';
@@ -2347,6 +2348,10 @@ export default function TweetsScreen() {
           empilés ici et annonçaient la même fête deux fois dès que les deux
           systèmes étaient actifs — c'est-à-dire dans le cas nominal. */}
       <EventStrip />
+
+      {/* Entrée vers le vote communautaire du tweet de la semaine — idée
+          retenue sur La Forge. Permanent, contrairement à `EventStrip`. */}
+      <WeeklyVoteStrip />
 
       {/* Signalement depuis le fil — la feuille se charge de tout le parcours. */}
       <ReportSheet
