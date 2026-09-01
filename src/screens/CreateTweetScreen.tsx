@@ -59,11 +59,16 @@ import VoiceWaveform, {
 import VoiceRecorderPanel from '../components/ui/VoiceRecorderPanel';
 import { useVoicePlayback } from '../hooks/useVoicePlayback';
 
-/** Plafond du modèle `Tweet` côté API (`media_urls` : 4 maximum). */
+/**
+ * Plafond de `media_urls` côté API, par palier
+ * (`tweetImageService.MAX_IMAGES_PER_TWEET` / `_ULTRA`).
+ */
 const MAX_TWEET_IMAGES = 4;
+const MAX_TWEET_IMAGES_ULTRA = 8;
 
-/** Aligné avec `tweetAudioService.MAX_DURATION_SECONDS` côté API. */
+/** Aligné avec `tweetAudioService.MAX_DURATION_SECONDS` / `_ULTRA` côté API. */
 const MAX_VOICE_SECONDS = 120;
+const MAX_VOICE_SECONDS_ULTRA = 300;
 
 /** En dessous, c'est un appui malheureux sur le micro, pas un message. */
 const MIN_VOICE_MS = 800;
@@ -82,12 +87,36 @@ interface CreateTweetScreenProps {
 }
 
 
+/**
+ * Longueur max du message envoye aux abonnes.
+ *
+ * Doit rester alignee sur `MESSAGE_MAX` de `api/src/services/
+ * authorBroadcastService.js` et sur le validateur de `POST /api/tweets`.
+ * Au-dela, le serveur tronque en silence : le compteur mentirait.
+ */
+/** ⚠ Aligné sur `authorBroadcastService.MESSAGE_MAX` côté API (280). */
+const NOTIFY_MESSAGE_MAX = 280;
+
 export default function CreateTweetScreen({ navigation, route }: CreateTweetScreenProps) {
   const { height: windowHeight } = useWindowDimensions();
   const { top: headerTopInset } = useHeaderMetrics();
 
   const [content, setContent] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  /**
+   * Prevenir ses abonnes (Ultra).
+   *
+   * Par defaut ACTIVE : notifier ses abonnes quand on publie est le
+   * comportement attendu, pas une option a aller chercher. Ce qu'Ultra ouvre,
+   * ce sont les deux ecarts au defaut — se taire, ou choisir ses mots.
+   *
+   * `notifyMessage` vide = le message par defaut (« @auteur a publie »), ecrit
+   * par le serveur. On ne le pre-remplit pas dans le champ : un texte deja la
+   * se lit comme quelque chose a effacer, alors que c'est le comportement
+   * normal. Il est donc en placeholder.
+   */
+  const [notifyFollowers, setNotifyFollowers] = useState(true);
+  const [notifyMessage, setNotifyMessage] = useState('');
   const [isSensitive, setIsSensitive] = useState(false);
   /** « Traduction (bêta) » — réservée aux abonnés Pro actifs (revalidé par l'API). */
   const [translationEnabled, setTranslationEnabled] = useState(false);
@@ -184,6 +213,17 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const isExtendedLimit = MAX_CHARS > TWEET_MAX_CHARS_FREE;
 
   /**
+   * Deux autres bornes suivent le palier : le nombre d'images et la durée du
+   * vocal. Comme pour les caractères, la valeur n'est là que pour cadrer la
+   * saisie — le serveur retranche de toute façon au moment de publier.
+   */
+  const isUltraAuthor =
+    authorTier === 'ultra' &&
+    isSubscriptionActiveFor(authorTier, currentUser?.subscription_expires_at);
+  const maxImages = isUltraAuthor ? MAX_TWEET_IMAGES_ULTRA : MAX_TWEET_IMAGES;
+  const maxVoiceSeconds = isUltraAuthor ? MAX_VOICE_SECONDS_ULTRA : MAX_VOICE_SECONDS;
+
+  /**
    * Traduction automatique : option Pro, et Pro seulement — un abonné Plus ne
    * doit pas voir un bouton que le serveur refusera (403). L'expiration compte
    * autant que le palier, sinon un Pro expiré verrait l'option jusqu'au
@@ -191,6 +231,18 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
    */
   const canUseTranslation =
     canUseFeature(authorTier, 'pro') &&
+    isSubscriptionActiveFor(authorTier, currentUser?.subscription_expires_at);
+
+  /**
+   * Notifier ses abonnes : Ultra, et Ultra actif seulement.
+   *
+   * Le serveur revérifie et se contente de sauter la notification si le palier
+   * ne l'ouvre pas — il ne refuse PAS la publication. Le contrôle ici n'est
+   * donc pas une sécurité, c'est une question d'honnêteté : afficher un
+   * interrupteur qui ne fera rien est pire que ne rien afficher.
+   */
+  const canNotifyFollowers =
+    canUseFeature(authorTier, 'ultra') &&
     isSubscriptionActiveFor(authorTier, currentUser?.subscription_expires_at);
 
   // Brouillons — même population que la limite étendue : c'est l'abonnement
@@ -342,6 +394,40 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
   const canAttachImages = useFlag(FLAGS.TWEET_IMAGES) && !quoteTweetId && !videoUri;
 
   /**
+   * Lancer une expérience A/B depuis le composeur.
+   *
+   * Le drapeau est le MÊME que celui qui décide, côté lecture, si un lecteur
+   * reçoit des variantes : être dans la cohorte A/B, c'est y être des deux
+   * côtés. Deux drapeaux séparés auraient laissé écrire un test que personne
+   * dans sa propre cohorte ne peut voir.
+   *
+   * Les exclusions ne sont pas décoratives — ce sont les refus que l'API
+   * opposerait (voir `services/tweetAbTestService.js`), sauf la dernière :
+   *
+   *   - une réponse ne peut pas porter d'expérience ;
+   *   - une citation non plus (elle passe par la route retweet, qui ne connaît
+   *     pas `ab_test`) ;
+   *   - une publication privée non plus : il n'y a pas d'audience à départager.
+   *   - une pièce jointe, enfin, ne serait PAS reprise par l'écran A/B, qui ne
+   *     compare que des formulations. Proposer le bouton ferait perdre l'image
+   *     qu'on vient d'attacher, en silence.
+   *
+   * Le compte doit aussi être certifié et compter plus de dix abonnés, mais ça,
+   * seul le serveur le sait : le refus arrive alors avec son message, plutôt
+   * qu'un bouton absent sans explication.
+   */
+  const abTestFlag = useFlag(FLAGS.AB_TEST);
+  const canRunAbTest =
+    abTestFlag &&
+    !parentTweetId &&
+    !quoteTweetId &&
+    !isPrivate &&
+    imageUris.length === 0 &&
+    !videoUri &&
+    !audioUri &&
+    !selectedTrack;
+
+  /**
    * Choix des images. `allowsMultipleSelection` avec la limite restante :
    * refuser après coup une sélection de dix images serait une perte de temps
    * pour l'auteur, autant ne pas la lui laisser faire.
@@ -355,7 +441,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
       return;
     }
 
-    const remaining = MAX_TWEET_IMAGES - imageUris.length;
+    const remaining = maxImages - imageUris.length;
     if (remaining <= 0) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -366,7 +452,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     });
 
     if (result.canceled || !result.assets?.length) return;
-    setImageUris((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, MAX_TWEET_IMAGES));
+    setImageUris((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, maxImages));
   }, [imageUris.length]);
 
   const removeImage = useCallback((uri: string) => {
@@ -454,7 +540,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
           if (status.isRecording) recordingSamplesRef.current.push(normalizeMetering(status.metering));
           // Arrêt automatique au plafond serveur : un enregistrement plus long
           // se ferait de toute façon tronquer la durée à la publication.
-          if ((status.durationMillis || 0) >= MAX_VOICE_SECONDS * 1000) {
+          if ((status.durationMillis || 0) >= maxVoiceSeconds * 1000) {
             finishVoiceRecording(true);
           }
         },
@@ -786,6 +872,17 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
         ...(mediaUrls.length > 0 ? { media_urls: mediaUrls } : {}),
         ...(selectedTrack ? { spotify_track: selectedTrack } : {}),
         ...(audioPayload ? { audio_url: audioPayload.url, audio_duration: audioPayload.duration } : {}),
+        // Envoye des que l'option a un sens pour ce tweet, dans les DEUX etats :
+        // le defaut est desormais de notifier, donc `false` porte une decision
+        // (« je me tais ») et ne peut plus etre omis.
+        ...(canNotifyFollowers && !parentTweetId && !isPrivate
+          ? {
+              notify_followers: notifyFollowers,
+              ...(notifyFollowers && notifyMessage.trim()
+                ? { notify_message: notifyMessage.trim() }
+                : {}),
+            }
+          : {}),
       };
 
       // Si c'est une citation, utiliser la route retweet avec commentaire
@@ -1258,7 +1355,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                   <VoiceRecorderPanel
                     samplesRef={recordingSamplesRef}
                     elapsedMsRef={recordingElapsedMsRef}
-                    maxSeconds={MAX_VOICE_SECONDS}
+                    maxSeconds={maxVoiceSeconds}
                     onCancel={() => finishVoiceRecording(false)}
                     onAttach={() => finishVoiceRecording(true)}
                   />
@@ -1323,7 +1420,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
 
                 {/* Options du tweet — chips pleins style segmented */}
                 <View style={styles.tweetOptions}>
-                  {canAttachImages && imageUris.length < MAX_TWEET_IMAGES && (
+                  {canAttachImages && imageUris.length < maxImages && (
                     <TouchableOpacity
                       style={styles.optionChip}
                       onPress={pickImages}
@@ -1387,6 +1484,26 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                     <Text style={styles.optionText}>CONCOURS</Text>
                   </TouchableOpacity>
 
+                  {/* Test A/B : comme le concours, il a son propre écran. Deux
+                      à quatre formulations du même tweet y sont saisies, le
+                      moteur les sert en alternance et garde celle qui prend.
+                      Le texte déjà écrit part avec, comme témoin. */}
+                  {canRunAbTest && (
+                    <TouchableOpacity
+                      style={styles.optionChip}
+                      onPress={() =>
+                        (navigation as any).navigate('CreateTweetABTest', {
+                          prefill: content.trim(),
+                        })
+                      }
+                      activeOpacity={0.8}
+                      accessibilityLabel="Lancer un test A/B"
+                    >
+                      <Ionicons name="flask-outline" size={17} color={colors.textMuted} />
+                      <Text style={styles.optionText}>TEST A/B</Text>
+                    </TouchableOpacity>
+                  )}
+
                   <TouchableOpacity
                     style={[
                       styles.optionChip,
@@ -1428,7 +1545,65 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                       {isSensitive ? 'SENSIBLE' : 'STANDARD'}
                     </Text>
                   </TouchableOpacity>
+
+                  {/* Prevenir ses abonnes — Ultra.
+
+                      Retire sur une reponse et sur un tweet prive : dans les
+                      deux cas le serveur sauterait la notification, et un
+                      interrupteur qu'on peut activer sans effet est un
+                      mensonge d'interface. */}
+                  {canNotifyFollowers && !parentTweetId && !isPrivate && (
+                    <TouchableOpacity
+                      style={[
+                        styles.optionChip,
+                        notifyFollowers && styles.optionChipNotify,
+                      ]}
+                      onPress={() => setNotifyFollowers(!notifyFollowers)}
+                      activeOpacity={0.8}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: notifyFollowers }}
+                      accessibilityLabel="Prevenir mes abonnes de cette publication"
+                    >
+                      <Ionicons
+                        name={notifyFollowers ? 'notifications' : 'notifications-off-outline'}
+                        size={17}
+                        color={notifyFollowers ? colors.onAccent : colors.textMuted}
+                      />
+                      <Text style={[
+                        styles.optionText,
+                        notifyFollowers && { color: colors.onAccent },
+                      ]}>
+                        {notifyFollowers ? 'NOTIF' : 'SANS NOTIF'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+
+                {/* Le message part en notification push : il est lu HORS de
+                    l'app, sans le tweet sous les yeux. D'ou le champ separe —
+                    reprendre le debut du tweet donnerait une notification qui
+                    n'a de sens qu'une fois ouverte. */}
+                {canNotifyFollowers && notifyFollowers && !parentTweetId && !isPrivate && (
+                  <View style={styles.notifyPanel}>
+                    <TextInput
+                      style={styles.notifyInput}
+                      placeholder={`@${currentUser?.username || 'toi'} vient de publier`}
+                      placeholderTextColor={colors.textMuted}
+                      value={notifyMessage}
+                      onChangeText={setNotifyMessage}
+                      maxLength={NOTIFY_MESSAGE_MAX}
+                      multiline
+                    />
+                    <View style={styles.notifyFoot}>
+                      <Text style={styles.notifyHint}>
+                        Une seule notification par tranche de 6 h
+                      </Text>
+                      <Text style={styles.notifyCount}>
+                        {notifyMessage.length}/{NOTIFY_MESSAGE_MAX}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 {/* Recherche Spotify — panneau en ligne, pas de <Modal> (les
                     hôtes toast/confirm ne s'affichent pas sous une fenêtre
@@ -2048,6 +2223,48 @@ const styles = StyleSheet.create({
   },
   optionChipSensitive: {
     backgroundColor: colors.gold,
+  },
+  /* Meme traitement plein que les autres options actives : ce n'est pas un
+     avantage a decorer, c'est un interrupteur dont l'etat doit se lire. */
+  optionChipNotify: {
+    backgroundColor: colors.accent,
+  },
+
+  /* ── Message envoye aux abonnes ──────────────────────────────────────── */
+  notifyPanel: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  notifyInput: {
+    color: colors.textPrimary,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    minHeight: 44,
+    padding: 0,
+    textAlignVertical: 'top',
+  },
+  notifyFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    gap: 12,
+  },
+  notifyHint: {
+    flex: 1,
+    color: colors.textMuted,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+  },
+  notifyCount: {
+    color: colors.textMuted,
+    fontFamily: fonts.mono,
+    fontSize: 13,
   },
   optionText: {
     color: colors.textMuted,

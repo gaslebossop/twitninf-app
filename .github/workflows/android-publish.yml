@@ -125,6 +125,16 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      # Une version sans ses notes ne doit pas pouvoir sortir. `app.config.js`
+      # est reste fige a 1.0.0 pendant un an, et comme `PatchNotesModal`
+      # compare `last_seen_version` a cette valeur, la popup de nouveautes ne
+      # s'est declenchee qu'une seule fois dans la vie de l'app : un an de
+      # notes que personne n'a vues, sans la moindre erreur pour le signaler.
+      # Le controle vit donc ICI, sur le chemin de la publication, pas dans
+      # une bonne intention.
+      - name: Verifie version et notes de version
+        run: node --test tests/app-version.test.js
+
       # Le keystore arrive en base64 : un fichier binaire ne se met pas tel
       # quel dans un secret GitHub.
       - name: Restaure la cle de release

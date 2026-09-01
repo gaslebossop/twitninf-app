@@ -12,6 +12,19 @@ export interface PremiumPurchaseResult {
   subscription_tier?: string;
   duration_days?: number;
   subscription_expires_at?: string;
+  /**
+   * Crédit publicitaire Ultra réellement versé, en NF.
+   *
+   * L'API le verse depuis le trésor dans la transaction d'achat et le renvoie
+   * ici depuis toujours — l'app ne le lisait simplement pas. C'était le seul
+   * avantage Ultra CHIFFRÉ de l'argumentaire (« 100 € »), et il n'apparaissait
+   * nulle part après l'achat : ni confirmation, ni ligne de portefeuille
+   * identifiable. Une promesse chiffrée invérifiable se lit comme un mensonge,
+   * pas comme un avantage.
+   */
+  ad_credit_granted?: number;
+  /** Contrepartie en euros annoncée à la vente, pour pouvoir la reprendre mot pour mot. */
+  ad_credit_eur_equivalent?: number;
 }
 
 interface PremiumPurchaseModalProps {
@@ -79,6 +92,19 @@ export default function PremiumPurchaseModal({
       }
       await refreshCurrentUser();
       await loadWallet();
+
+      // Le crédit publicitaire Ultra est annoncé à la vente (« 100 € ») et
+      // versé pour de bon, mais rien ne le disait après coup : l'acheteur
+      // repartait sans savoir s'il l'avait eu. On le dit, avec le montant NF
+      // réellement crédité — pas le montant promis, celui qui est arrivé.
+      const adCredit = Number((purchase as PremiumPurchaseResult)?.ad_credit_granted) || 0;
+      if (tier === 'ultra' && adCredit > 0) {
+        const eur = (purchase as PremiumPurchaseResult)?.ad_credit_eur_equivalent;
+        toast.reward('Crédit publicitaire versé', {
+          description: `${adCredit} NF${eur ? ` (${eur} €)` : ''} ajoutés à ton portefeuille, prêts à booster tes publications.`,
+        });
+      }
+
       onSuccess?.(purchase as PremiumPurchaseResult);
       onClose();
     } catch (error: any) {

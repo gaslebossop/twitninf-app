@@ -154,15 +154,15 @@ export default function App() {
             return;
           }
 
-          // Utilise le Project ID EAS défini dans app.json
-          const projectId = (Constants as any)?.expoConfig?.extra?.eas?.projectId
-            || (Constants as any)?.easConfig?.projectId
-            || '341da021-111f-4a0c-9f54-0b5f4c9c3965'; // Project ID correct depuis app.json
+          // Le repli code en dur qui trainait ici pointait vers un AUTRE projet
+          // EAS que celui de ce build : il ne pouvait produire aucun jeton
+          // valide, seulement masquer l'absence de config. `resolveProjectId`
+          // lit la config du build et rend `null` s'il n'y en a pas.
 
           // Les rappels LOCAUX ne dépendent en rien du jeton push distant :
           // les enchaîner ne servait à rien.
           const [token] = await Promise.all([
-            registerForPushNotifications(projectId),
+            registerForPushNotifications(),
             setupFranceDailyLocalNotifications(),
           ]);
           console.log("🔔 App - Token de notification obtenu:", token ? 'Oui' : 'Non');

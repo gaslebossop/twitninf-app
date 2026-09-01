@@ -134,10 +134,87 @@ de ce nommage ambigu.
 hauteur via `useContext(BottomTabBarHeightContext)` (rend `undefined` hors
 tab navigator, contrairement à `useBottomTabBarHeight` qui lève une erreur).
 
+## Versions et notes de version — À FAIRE À CHAQUE CHANGEMENT VISIBLE
+
+**Règle : si un utilisateur peut le voir, ça monte la version et ça s'écrit
+dans les notes. Dans le même commit.** Pas de « on notera plus tard » : c'est
+exactement comme ça que quinze sorties ont disparu.
+
+### Ce qui s'est passé quand personne ne le faisait
+
+`app.config.js` est resté à `version: "1.0.0"` **pendant un an**. Ce n'était
+pas cosmétique : `PatchNotesModal` compare `last_seen_version` à `APP_VERSION`
+(qui lit `Constants.expoConfig.version`, donc `app.config.js`) pour décider
+s'il affiche les nouveautés. Une valeur qui ne bouge jamais = **une popup qui
+se déclenche une seule fois dans la vie de l'app**. Un an de notes que
+personne n'a vues, sans la moindre erreur pour le signaler.
+
+Et `package.json` disait `1.1.0` pendant qu'`app.config.js` disait `1.0.0` —
+deux sources, deux réponses.
+
+### La procédure, en trois gestes
+
+1. **Monter `version` dans `app.config.js`** — c'est LA source de vérité.
+   - `MAJEUR` : l'app ne se reconnaît plus au premier coup d'œil.
+   - `MINEUR` : des fonctionnalités en plus. **Le cas courant.**
+   - `CORRECTIF` : que des corrections, rien de nouveau à montrer.
+2. **Aligner `version` dans `package.json`** — même valeur, à l'identique.
+3. **Ajouter une entrée EN TÊTE de `src/data/patchNotes.ts`**, avec le même
+   numéro de version, la date, un titre court et les lignes de contenu.
+
+### Comment écrire les notes
+
+Elles sont lues par des gens, pas par des développeurs. Chaque ligne dit **ce
+que la personne peut faire maintenant**, ou **ce qui ne l'embêtera plus** —
+jamais le nom d'un composant, d'un drapeau ou d'un service.
+
+- ✅ « Les notifications ne se perdent plus si ton téléphone était éteint »
+- ❌ « TTL Web Push porté à 4 semaines dans `webPushService` »
+- ✅ « Recalibre ton algorithme quand tu veux : cinq tours de swipe »
+- ❌ « feat(settings): recalibrate-the-algorithm flow — 5 rounds, manual only »
+
+Trois à cinq lignes par version. Regrouper les correctifs mineurs en une seule
+ligne (« Une dizaine de correctifs sur le fil : … ») plutôt que les énumérer.
+Utiliser l'apostrophe typographique `’` : la droite doit être échappée dans une
+chaîne simple, et l'oubli casse le fichier.
+
+### Ce qui vérifie
+
+```bash
+node --test tests/app-version.test.js
+```
+
+Il refuse : une version qui n'est pas du semver, `package.json` et
+`app.config.js` qui divergent, une version sans son entrée de notes, une note
+sans contenu, un ordre non décroissant. Il tourne aussi **dans les trois
+workflows de publication** (`ios-build`, `android-publish`, `android-build`) :
+on ne peut pas publier une version sans dire ce qu'elle apporte.
+
+### Ne PAS toucher à `runtimeVersion`
+
+Il dit avec quel binaire natif une mise à jour OTA est compatible. Le monter
+en même temps que `version` couperait les installations existantes de toutes
+les mises à jour. Il ne bouge que quand le natif bouge (nouveau module natif,
+changement de config plugin). Le test le vérifie.
+
+### Reconstituer des notes manquantes
+
+Si des sorties n'ont pas été notées, l'historique git les retrouve :
+
+```bash
+git log --since=<date-de-la-derniere-note> --pretty='%ad | %s' --date=short --no-merges
+```
+
+Garder les `feat(` et les `refonte(`, ignorer les `docs(`, `wip(`, `perf(` et
+les correctifs internes. Regrouper par vagues de quelques jours et attribuer
+un `CORRECTIF` par vague, un `MINEUR` quand la vague apporte une vraie
+fonctionnalité. Puis traduire chaque commit en une phrase d'utilisateur.
+
 ## Vérifier avant de push
 
 ```bash
 npm run typecheck   # tsc --noEmit — doit sortir sans erreur
+npm test            # dont tests/app-version : version + notes de version
 ```
 
 Si cette commande échoue avec des erreurs de résolution de module sans

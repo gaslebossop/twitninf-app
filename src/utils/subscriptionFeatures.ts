@@ -219,6 +219,12 @@ export function tierUnlocks(tier: SubscriptionTier, feature: SubscriptionFeature
  * tableau comparatif Gratuit/Plus/Pro ni dans la liste complète montrée à un
  * compte gratuit — ça n'aurait aucun sens pour quelqu'un qui ne peut pas
  * encore l'acheter.
+ *
+ * ⚠ Chaque entrée doit correspondre à une règle RÉELLEMENT appliquée par le
+ * serveur. Les plafonds cités ici (2 500 caractères, 200 en file, 30 jours de
+ * visiteurs, 20 tickets…) sont résolus par palier côté API — voir
+ * `api/src/utils/ultraGate.js` et les constantes `*_ULTRA`. Une ligne ajoutée
+ * ici sans son pendant serveur, et on vend quelque chose qui n'existe pas.
  */
 // `minTier: 'pro'` ici n'a rien à voir avec le palier réel (Ultra n'est
 // jamais confondu avec Pro ailleurs) : c'est un pur drapeau de style, réutilisé
@@ -259,6 +265,252 @@ export const ULTRA_ONLY_FEATURES: SubscriptionFeature[] = [
     icon: 'flash',
     title: 'API 15× plus permissive',
     text: '300 requêtes d\'écriture par minute au lieu de 20, pour les apps que tu connectes.',
+    minTier: 'pro',
+  },
+  /**
+   * Existait dans l'app depuis toujours (`ContractsScreen`, `creatorContractService`
+   * côté API) et n'était vendu nulle part : le seul avantage Ultra vraiment
+   * TANGIBLE — celui qu'on utilise avec les doigts — n'apparaissait pas dans
+   * l'argumentaire.
+   */
+  {
+    icon: 'briefcase',
+    title: 'Marketplace des créateurs',
+    text: 'Tu apparais dans l\'annuaire des créateurs réservables, avec ton prix indicatif, et tu reçois les propositions de collaboration.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'megaphone-outline',
+    title: 'Notifier tes abonnés',
+    text: 'À la publication, préviens tes abonnés avec ton propre message — ou n\'en préviens aucun.',
+    minTier: 'pro',
+  },
+
+  // ── Argent ────────────────────────────────────────────────────
+  /**
+   * Le seul avantage de la liste qui se re-consomme À CHAQUE USAGE plutôt
+   * qu'une fois à la souscription — donc le seul qui pèse encore au moment de
+   * renouveler, l'offre étant sans reconduction automatique.
+   */
+  {
+    icon: 'swap-horizontal',
+    title: 'Virements sans commission',
+    text: 'Zéro frais sur tes transferts, au lieu de 10 % pour un abonné et 20 % sans abonnement.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'lock-open',
+    title: 'Tu gardes 80 % de tes ventes',
+    text: 'La commission tombe de 30 % à 20 %, sur tes contenus verrouillés comme sur tes pseudos vendus.',
+    minTier: 'pro',
+  },
+
+  // ── Écriture ────────────────────────────────────────────────
+  {
+    icon: 'document-text',
+    title: 'Tweets de 2 500 caractères',
+    text: 'Deux fois et demie la limite abonné : de quoi poser un vrai texte sans le couper en fil.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'bulb',
+    title: 'Co-pilote IA débridé',
+    text: '60 reformulations par tranche de 5 minutes au lieu de 12, et sur des brouillons bien plus longs.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'create',
+    title: '10 corrections par tweet',
+    text: 'Deux fois plus de retouches dans la fenêtre de modification — qui reste de 30 minutes pour tout le monde.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'time',
+    title: 'Programmation à six mois',
+    text: 'Prépare 200 publications d\'avance, jusqu\'à 180 jours — au lieu de 50 sur 60 jours.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'git-compare',
+    title: 'Deux tests A/B en parallèle',
+    text: 'Fais tourner deux expériences en même temps au lieu d\'attendre la fin de la première.',
+    minTier: 'pro',
+  },
+
+  // ── Renseignements ──────────────────────────────────────────
+  {
+    icon: 'eye',
+    title: 'Visiteurs sur 30 jours',
+    text: 'Tout l\'historique conservé, au lieu des 7 derniers jours.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'trending-up',
+    title: 'Un an d\'analytics',
+    text: 'Assez de recul pour voir une saisonnalité, là où 4 mois ne montrent qu\'une tendance.',
+    minTier: 'pro',
+  },
+
+  // ── Identité et présence ────────────────────────────────────
+  {
+    icon: 'heart',
+    title: '25 Super Cœurs',
+    text: 'Deux fois et demie la dotation Pro, pour peser sur ce qui remonte dans le Spotlight.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'play-circle',
+    title: 'Stories de 48 heures',
+    text: 'Le double de durée d\'affichage, et des vidéos de 30 secondes au lieu de 15.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'at',
+    title: '20 pseudos réservés',
+    text: 'Quatre fois plus de noms tenus en réserve : de quoi protéger toutes tes variantes.',
+    minTier: 'pro',
+  },
+
+  // ── Support ──────────────────────────────────────────────────
+  /**
+   * Existait depuis toujours (`UltraSupportAgentScreen`, `requireUltra` sur
+   * `/api/support/ai-agent`) et n'était vendu nulle part — exactement le même
+   * oubli que la marketplace des créateurs plus haut.
+   */
+  {
+    icon: 'headset',
+    title: 'Agent de support IA',
+    text: 'Il lit ton compte et agit dessus : corriger ton profil, supprimer un tweet, ouvrir un ticket à ta place.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'chatbubbles',
+    title: '20 tickets ouverts à la fois',
+    text: 'Tes dossiers avancent en parallèle au lieu de faire la queue derrière un seul fil.',
+    minTier: 'pro',
+  },
+
+  // ── Publier ───────────────────────────────────────────────────────────
+  {
+    icon: 'mic',
+    title: 'Vocaux de 5 minutes',
+    text: 'Deux fois et demie la durée habituelle, pour un vrai message parlé.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'images',
+    title: 'Huit images par tweet',
+    text: 'Deux rangées au lieu d\'une, pour une série ou un avant/après complet.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'cloud-upload',
+    title: 'Fichiers jusqu\'à 50 Mo',
+    text: 'Publie tes photos telles que l\'appareil les sort, sans les compresser avant.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'text',
+    title: 'Légendes de story de 500 signes',
+    text: 'Presque le double, pour raconter au lieu de légender.',
+    minTier: 'pro',
+  },
+
+  // ── Toucher son audience ──────────────────────────────────────────────
+  {
+    icon: 'megaphone',
+    title: 'Message de notification de 280 signes',
+    text: 'Le double : tu annonces ta publication au lieu de la résumer.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'flame',
+    title: 'Alerte de décollage plus tôt',
+    text: 'Prévenu dès le double de ton rythme au lieu du triple — le moment où tu peux encore relancer.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'map',
+    title: 'Carte NF en grand',
+    text: 'Un rectangle continental et 500 points servis d\'un coup, au lieu de 200.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'albums',
+    title: 'Archive de stories sur 3 mois',
+    text: 'Pioche dans un trimestre pour composer tes « unes », au lieu de 30 jours.',
+    minTier: 'pro',
+  },
+
+  // ── Tester et vendre ──────────────────────────────────────────────────
+  {
+    icon: 'flask',
+    title: 'Six versions par test A/B',
+    text: 'Et jusqu\'à 1 000 caractères par version, aligné sur ce que tu as le droit de publier.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'pricetag',
+    title: 'Contenus jusqu\'à 5 000 NF',
+    text: 'Dix fois le plafond commun : vends une formation, pas seulement un extrait.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'trophy',
+    title: 'Concours sur un trimestre',
+    text: 'Jusqu\'à 90 jours au lieu de 30, pour une opération qui s\'installe.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'bookmark',
+    title: 'Réservations de pseudo de 90 jours',
+    text: 'Trois fois plus longtemps tenues, au même prix unitaire.',
+    minTier: 'pro',
+  },
+
+  // ── Être protégé et aidé ──────────────────────────────────────────────
+  {
+    icon: 'shield-half',
+    title: 'Surveillance d\'usurpation sur un an',
+    text: 'Les faux comptes créés longtemps à l\'avance sont vus aussi, pas seulement les récents.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'chatbubble-ellipses',
+    title: 'Fils de support de 300 messages',
+    text: 'Un dossier long reste dans un seul fil, avec tout son contexte.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'sparkles',
+    title: 'Agent IA à 200 messages par jour',
+    text: 'Plus du triple : il devient un vrai copilote de compte, pas un dépannage.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'bulb',
+    title: 'Dix idées produit ouvertes',
+    text: 'Remonte ce qui manque sans devoir en fermer une pour en ouvrir une autre.',
+    minTier: 'pro',
+  },
+
+  // ── Identité et présence ──────────────────────────────────────────────
+  {
+    icon: 'heart-circle',
+    title: 'Super Cœurs rechargés tous les 3 jours',
+    text: 'Avec 25 en réserve, c\'est plus de huit par jour contre deux pour un Pro.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'id-card',
+    title: 'Titre de profil de 60 signes',
+    text: 'De quoi tenir un intitulé réel sous ton pseudo.',
+    minTier: 'pro',
+  },
+  {
+    icon: 'sparkles-outline',
+    title: 'Images en haute définition',
+    text: '2 560 px et une compression plus douce : tes photos gardent leur détail sur l\'écran de tes lecteurs.',
     minTier: 'pro',
   },
 ];

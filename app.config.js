@@ -4,9 +4,43 @@ module.exports = ({ config }) => {
     ...config,
     name: "TwitNinf",
     slug: "twitninf-v2",
-    version: "1.0.0",
+    /**
+     * LA version de l'app — source unique.
+     *
+     * C'est elle que lit `Constants.expoConfig.version`, donc `APP_VERSION`
+     * (`services/clientIdentity`), donc l'ecran Reglages, la popup de
+     * nouveautes et l'en-tete envoye a l'API. Rien d'autre ne fait autorite :
+     * le `version` de package.json ne sert qu'a npm et doit simplement rester
+     * aligne (`tests/app-version` le verifie).
+     *
+     * Elle etait figee a 1.0.0 depuis la premiere version, et ce n'etait pas
+     * cosmetique : `PatchNotesModal` compare `last_seen_version` a
+     * `APP_VERSION` pour decider s'il montre les nouveautes. Une valeur qui ne
+     * bouge jamais = une popup qui se declenche UNE SEULE FOIS dans la vie de
+     * l'app. Toutes les notes de version publiees depuis un an n'ont ete vues
+     * par personne l'ayant fermee une fois.
+     *
+     * Ce que chaque cran veut dire :
+     *   MAJEUR — l'app ne se reconnait plus au premier coup d'oeil.
+     *   MINEUR — des fonctionnalites en plus. Le cas courant.
+     *   CORRECTIF — que des corrections, rien de nouveau a montrer.
+     *
+     * A monter EN MEME TEMPS qu'une entree dans `src/data/patchNotes.ts` :
+     * `tests/app-version` refuse une version sans ses notes. Une version qu'on
+     * ne peut pas expliquer aux gens n'a pas de raison d'exister.
+     */
+    version: "1.3.0",
     privacy: "public",
     orientation: "portrait",
+    /**
+     * NE SUIT PAS `version`, et c'est voulu.
+     *
+     * `runtimeVersion` dit avec quel BINAIRE natif une mise a jour OTA est
+     * compatible. Le monter a chaque sortie couperait les installations
+     * existantes de toutes les mises a jour : elles chercheraient un runtime
+     * qu'aucun build livre ne porte. Il ne bouge que quand le natif bouge
+     * (nouveau module, changement de config plugin).
+     */
     runtimeVersion: "1.0.0",
     // Retour de la connexion G (voir services/gAuthLogin.ts). N'existe que
     // dans un build natif — Expo Go possède déjà son propre schéma exp:// et

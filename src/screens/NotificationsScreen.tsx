@@ -81,10 +81,20 @@ function timeAgo(dateStr: string): string {
   return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
-function getActionText(type: string, message?: string, content?: Record<string, any>): string {
+function getActionText(
+  type: string,
+  message?: string,
+  content?: Record<string, any>,
+  kind?: string,
+): string {
   if (content?.entity_type === 'story_like') return 'a aimé votre story';
   if (content?.entity_type === 'story_reply') return 'a répondu à votre story';
   if (content?.entity_type === 'message') return 'vous a envoyé un message';
+  // Un auteur Ultra qui previent ses abonnes : le message est ECRIT PAR LUI,
+  // il ne decrit pas une action faite sur ton compte. Le laisser tomber dans
+  // le `case 'system'` l'affichait comme une notification de la plateforme,
+  // alors que c'est quelqu'un que tu suis qui parle.
+  if (kind === 'author_post') return message || 'vient de publier';
   switch (type) {
     case 'like': return 'a aimé votre Tweet';
     case 'retweet': return 'a retweeté votre Tweet';
@@ -188,7 +198,7 @@ function NotificationItemBase({ notification, onOpen, onDelete }: NotificationIt
               tint={senderBadgeTint}
             />
           )}
-          <Text style={styles.muted}> {getActionText(type, message, content)}</Text>
+          <Text style={styles.muted}> {getActionText(type, message, content, notification.metadata?.kind)}</Text>
           {created_at && (
             <Text style={styles.time}> · {timeAgo(created_at)}</Text>
           )}

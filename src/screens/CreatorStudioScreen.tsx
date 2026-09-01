@@ -45,6 +45,12 @@ import {
 } from '../services/insightsService';
 import { fetchMyMarket, type MyMarket } from '../services/usernameMarketService';
 import {
+  fetchMyAbTests,
+  leadingVariant,
+  formatRate,
+  type AbExperimentResult,
+} from '../services/abTestResultsService';
+import {
   fetchTweetGeneratorStatus,
   generateCustomTweet,
   type GeneratedCustomTweet,
@@ -95,6 +101,7 @@ interface Summary {
   nicheTweets: NicheTrendingTweet[];
   market: MyMarket | null;
   generator: TweetGeneratorStatus | null;
+  abTests: AbExperimentResult[];
 }
 
 interface InsightFailures {
@@ -107,6 +114,7 @@ const EMPTY: Summary = {
   earnings: null, sales: null, queue: [], bestHours: [],
   visitors: null, incognito: false, alerts: [], rising: [], nicheTweets: [], market: null,
   generator: null,
+  abTests: [],
 };
 
 const NO_INSIGHT_FAILURES: InsightFailures = {
@@ -155,6 +163,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       fetchNicheTrendingTweets({ days: 7, limit: 3 }),
       fetchMyMarket(),
       hasInsights ? fetchTweetGeneratorStatus() : Promise.resolve(null),
+      fetchMyAbTests(10),
     ]);
 
     setSummary({
@@ -171,6 +180,7 @@ export default function CreatorStudioScreen({ navigation }: Props) {
       generator: results[10].status === 'fulfilled' && (results[10].value as any)?.ok
         ? (results[10].value as any).data
         : null,
+      abTests: settled<AbExperimentResult[]>(results[11], []),
     });
     setInsightFailures({
       impersonation: failure(results[6]),
@@ -319,6 +329,21 @@ export default function CreatorStudioScreen({ navigation }: Props) {
               : 'Propose une collaboration à un créateur Ultra'}
             onPress={() => navigation.navigate('CreatorContracts')}
           />
+
+          {isUltra ? <UltraPerksCard /> : null}
+
+          {summary.abTests.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>Tes tests A/B</Text>
+              {summary.abTests.map((exp) => (
+                <AbTestCard
+                  key={exp.id}
+                  experiment={exp}
+                  onOpen={() => navigation.navigate('TweetDetail', { tweetId: exp.tweet_id })}
+                />
+              ))}
+            </>
+          )}
 
           <Text style={styles.sectionLabel}>Audience</Text>
 
@@ -888,6 +913,156 @@ function CustomTweetGenerator({
   );
 }
 
+/**
+ * Ce qu'Ultra fait pour toi sans que ça se voie nulle part.
+ *
+ * Quatre des six avantages Ultra sont des comportements SERVEUR : recherche
+ * prioritaire, antifraude assoupli, immunité aux restrictions automatiques,
+ * quota d'API. Ils sont réels et actifs, et l'abonné n'avait aucun moyen de
+ * les voir ni de vérifier qu'il les avait — il payait, ouvrait l'app, et elle
+ * était identique. Un avantage imperceptible n'a aucune valeur perçue.
+ *
+ * C'est un RELEVÉ, pas un argumentaire : des états constatés, chacun sur une
+ * ligne, séparés par des filets. Le seul endroit de l'app où ces protections
+ * peuvent se lire.
+ */
+function UltraPerksCard() {
+  return (
+    <View style={styles.perksCard}>
+      <View style={styles.perksHead}>
+        <Ionicons name="shield-checkmark" size={15} color={colors.gold} />
+        <Text style={styles.perksTitle}>Actif sur ton compte</Text>
+      </View>
+
+      {[
+        { label: 'Recherche prioritaire', state: 'À pertinence égale, tes tweets passent devant' },
+        { label: 'Portée automatique', state: 'Jamais réduite — les restrictions auto ne t\'atteignent pas' },
+        { label: 'Antifraude', state: 'Assoupli : tes transferts inhabituels ne sont pas bloqués' },
+        { label: 'Quota d\'API', state: '300 écritures/min au lieu de 20' },
+      ].map((perk, index) => (
+        <View key={perk.label} style={[styles.perkRow, index > 0 && styles.perkRowRule]}>
+          <Text style={styles.perkLabel}>{perk.label}</Text>
+          <Text style={styles.perkState}>{perk.state}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+
+/**
+ * Résultats en direct d'un test A/B.
+ *
+ * ── L'objet du monde réel : un DÉPOUILLEMENT, pas un tableau de bord ─────
+ *
+ * On compte des voix. Chaque variante est une ligne : sa lettre, son texte,
+ * ses vues, ses interactions, et son taux quand il veut dire quelque chose.
+ * Des filets entre les lignes, pas des tuiles — ce sont des candidats à
+ * comparer, et une grille de cartes empêche justement de comparer.
+ *
+ * ── Ce que cet écran refuse de faire ────────────────────────────────────
+ *
+ * Afficher un taux sur trop peu de vues. Le serveur renvoie `null` dans ce
+ * cas et on écrit « pas encore assez de vues » plutôt qu'un pourcentage.
+ * Sur vingt impressions, « B : 12 % · A : 8 % » est du bruit qu'une seule
+ * interaction fait basculer — mais un pourcentage se lit comme un verdict, et
+ * l'auteur écrirait ses tweets suivants en suivant du hasard.
+ *
+ * Et tant que TOUTES les variantes n'ont pas le volume, aucune n'est
+ * désignée en tête : c'est l'écart qui intéresse, pas un chiffre isolé.
+ */
+function AbTestCard({
+  experiment,
+  onOpen,
+}: {
+  experiment: AbExperimentResult;
+  onOpen: () => void;
+}) {
+  const leader = leadingVariant(experiment);
+  const live = experiment.status === 'active';
+
+  // La barre est relative à la MEILLEURE variante, pas à 100 % : des taux de
+  // 3 % et 4 % donneraient deux barres invisibles et indistinguables sur une
+  // échelle absolue, alors que c'est exactement l'écart qu'on vient lire.
+  const best = Math.max(
+    ...experiment.variants.map((v) => v.engagement_rate ?? 0),
+    0.0001,
+  );
+
+  const statusLabel =
+    experiment.status === 'active' ? 'En cours'
+      : experiment.status === 'completed' ? 'Terminé'
+        : experiment.status === 'cancelled' ? 'Annulé'
+          : 'En attente';
+
+  return (
+    <TouchableOpacity style={styles.abCard} onPress={onOpen} activeOpacity={0.85}>
+      <View style={styles.abHead}>
+        <View style={[styles.abDot, live && styles.abDotLive]} />
+        <Text style={styles.abStatus}>{statusLabel}</Text>
+        <Text style={styles.abTotals}>
+          {experiment.total_reach} personne{experiment.total_reach > 1 ? 's' : ''}
+        </Text>
+      </View>
+
+      {experiment.variants.map((v, index) => {
+        const rate = formatRate(v.engagement_rate);
+        const isLeader = leader?.id === v.id;
+        return (
+          <View key={v.id} style={[styles.abRow, index > 0 && styles.abRowRule]}>
+            <View style={styles.abRowTop}>
+              <Text style={[styles.abLabel, isLeader && styles.abLabelLeader]}>{v.label}</Text>
+              {v.is_control && <Text style={styles.abControl}>version d’origine</Text>}
+              <View style={{ flex: 1 }} />
+              {rate ? (
+                <Text style={[styles.abRate, isLeader && styles.abRateLeader]}>{rate}</Text>
+              ) : (
+                <Text style={styles.abPending}>pas encore assez de monde</Text>
+              )}
+            </View>
+
+            <Text style={styles.abContent} numberOfLines={2}>{v.content}</Text>
+
+            {/* La barre n'apparaît que quand le taux existe : une barre à zéro
+                se lit comme « mauvais résultat », alors que ça veut dire
+                « pas encore mesuré ». */}
+            {v.engagement_rate !== null && (
+              <View style={styles.abBarTrack}>
+                <View
+                  style={[
+                    styles.abBarFill,
+                    { width: `${Math.max(3, (v.engagement_rate / best) * 100)}%` },
+                    isLeader && styles.abBarFillLeader,
+                  ]}
+                />
+              </View>
+            )}
+
+            {/* Les trois nombres que le pourcentage utilise, dans l'ordre ou
+                on les lit : combien de gens, combien de fois montre, combien
+                de reactions. Le taux affiche est interactions / expositions —
+                il doit se retrouver a la main depuis cette ligne, sinon il
+                n'inspire pas confiance. */}
+            <Text style={styles.abCounts}>
+              {v.reach} personne{v.reach > 1 ? 's' : ''} · {v.impressions} exposition{v.impressions > 1 ? 's' : ''} · {v.interactions} interaction{v.interactions > 1 ? 's' : ''}
+            </Text>
+          </View>
+        );
+      })}
+
+      {/* Une seule phrase de conclusion, et elle dit la vérité des trois cas :
+          on ne peut pas encore trancher, personne ne se détache, ou X mène. */}
+      <Text style={styles.abVerdict}>
+        {!experiment.comparable
+          ? `Il faut ${experiment.min_impressions_per_variant} personnes par version pour comparer`
+          : leader
+            ? `${leader.label} mène`
+            : 'Aucune version ne se détache'}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function StudioCard({
   icon, title, subtitle, onPress, badge, value, trailing, tone = 'magenta',
 }: {
@@ -1081,6 +1256,98 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     marginBottom: 9,
   },
+
+  /* ── Dépouillement d'un test A/B ──────────────────────────────────────
+     Des filets et du rythme vertical : ce sont des candidats a comparer, et
+     une grille de tuiles empeche justement de les comparer. */
+  abCard: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    marginBottom: 9,
+  },
+  abHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 },
+  abDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: colors.textMuted,
+  },
+  abDotLive: { backgroundColor: colors.success },
+  abStatus: {
+    color: colors.textSecondary, fontSize: 12.5, fontWeight: '700',
+  },
+  abTotals: {
+    flex: 1, textAlign: 'right',
+    color: colors.textMuted, fontSize: 12.5,
+    fontVariant: ['tabular-nums'],
+  },
+
+  abRow: { paddingVertical: 11 },
+  abRowRule: { borderTopWidth: 1, borderTopColor: colors.border },
+  abRowTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  abLabel: {
+    color: colors.textSecondary, fontSize: 15, fontWeight: '800',
+    minWidth: 16,
+  },
+  abLabelLeader: { color: colors.accent },
+  abControl: { color: colors.textMuted, fontSize: 12 },
+  abRate: {
+    color: colors.textSecondary, fontSize: 15, fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  abRateLeader: { color: colors.accent },
+  // Volontairement en corps de texte normal et non en petit gris illisible :
+  // « pas encore assez de vues » est une information, pas une note de bas de
+  // page — c'est elle qui empeche de lire un classement dans du bruit.
+  abPending: { color: colors.textMuted, fontSize: 13 },
+  abContent: {
+    color: colors.textPrimary, fontSize: 14, lineHeight: 19, marginTop: 4,
+  },
+  abBarTrack: {
+    height: 4, borderRadius: 2, marginTop: 8,
+    backgroundColor: withAlpha(colors.textPrimary, 0.08),
+    overflow: 'hidden',
+  },
+  abBarFill: {
+    height: '100%', borderRadius: 2,
+    backgroundColor: withAlpha(colors.textSecondary, 0.5),
+  },
+  abBarFillLeader: { backgroundColor: colors.accent },
+  abCounts: {
+    color: colors.textMuted, fontSize: 12.5, marginTop: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  abVerdict: {
+    color: colors.textSecondary, fontSize: 13, fontWeight: '600',
+    borderTopWidth: 1, borderTopColor: colors.border,
+    paddingTop: 10, paddingBottom: 11,
+  },
+
+  /* ── Relevé des protections Ultra ─────────────────────────────────────
+     Des filets et du rythme vertical, pas des tuiles : ce sont des états
+     constatés, pas des actions. Rien n'est tapable ici, donc rien ne doit
+     ressembler à un bouton. */
+  perksCard: {
+    paddingVertical: 4, paddingHorizontal: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: withAlpha(colors.gold, 0.22),
+    marginBottom: 9,
+  },
+  perksHead: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingTop: 12, paddingBottom: 4,
+  },
+  perksTitle: {
+    color: colors.gold, fontSize: 10.5,
+    fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase',
+  },
+  perkRow: { paddingVertical: 11 },
+  perkRowRule: { borderTopWidth: 1, borderTopColor: colors.border },
+  perkLabel: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  perkState: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   cardIcon: {
     width: 34, height: 34, borderRadius: 11,

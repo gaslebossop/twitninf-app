@@ -18,7 +18,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Tweet } from '../types/api';
+import { Tweet, AB_TEST_LIMITS, CreateTweetRequest } from '../types/api';
+import { apiService } from '../services/api';
+import { neuralRankService } from '../services/neuralRankService';
 import { wp, hp, fontSize, spacing, borderRadius, iconSize, shadow } from '../utils/responsive';
 import { BackButton } from '../components/ui';
 import { toast } from '../components/ui/Toast';
@@ -39,13 +41,16 @@ const variantLetter = (index: number) => String.fromCharCode(65 + index);
 export default function CreateTweetABTestScreen({ navigation, route }: CreateTweetABTestScreenProps) {
 
   // États pour les versions A/B - maintenant dynamiques
+  const { parentTweetId, replyTo, quoteTweetId, prefill } = route.params || {};
+
+  // Le texte déjà saisi dans le composeur devient le TÉMOIN. Repartir d'une
+  // page blanche après avoir écrit son tweet était le moyen le plus sûr de ne
+  // jamais lancer de test.
   const [versions, setVersions] = useState([
-    { id: 1, content: '', label: 'Original' },
+    { id: 1, content: typeof prefill === 'string' ? prefill : '', label: 'Original' },
     { id: 2, content: '', label: 'Alternative' }
   ]);
   const [loading, setLoading] = useState(false);
-
-  const { parentTweetId, replyTo, quoteTweetId } = route.params || {};
 
   const handleVersionChange = (id: number, text: string) => {
     // Vérification que la version existe avant modification
@@ -63,10 +68,13 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
   };
 
   const handleAddVersion = () => {
-    // Limite maximum de versions pour éviter les performances dégradées
-    if (versions.length >= 10) {
+    // ⚠ Le plafond vient de l'API (`MAX_VARIANTS`), ce n'est pas un choix
+    // d'ergonomie. Cet écran en proposait dix : au-delà de quatre, la
+    // publication partait puis échouait en bloc, après que l'auteur avait
+    // rédigé six versions pour rien.
+    if (versions.length >= AB_TEST_LIMITS.MAX_VERSIONS) {
       toast.error('Limite atteinte', {
-        description: 'Vous ne pouvez pas ajouter plus de 10 versions pour un test A/B optimal.',
+        description: `Une expérience compte ${AB_TEST_LIMITS.MAX_VERSIONS} versions au maximum : au-delà, chacune reçoit trop peu de vues pour qu'on puisse les départager.`,
       });
       return;
     }
@@ -145,35 +153,71 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
   };
 
   const handlePublish = async () => {
-    const filledVersions = versions.filter(version => version.content.trim());
+    const contents = versions
+      .map(version => version.content.trim())
+      .filter(Boolean);
 
-    if (filledVersions.length < 2) {
-      toast.error('Veuillez remplir au moins 2 versions pour un test A/B efficace');
+    // ── Les refus que l'API opposerait, opposés ICI ───────────────────
+    //
+    // Chacun de ces contrôles existe côté serveur (voir
+    // `api/src/services/tweetAbTestService.js`) et c'est lui qui fait foi. Les
+    // rejouer ici n'est pas de la défiance : sans eux, l'auteur découvre le
+    // problème APRÈS l'aller-retour, sur un écran qui a déjà refermé le
+    // clavier, avec un message écrit pour une API et non pour lui.
+    if (contents.length < AB_TEST_LIMITS.MIN_VERSIONS) {
+      toast.error('Il faut au moins deux versions', {
+        description: "Un test A/B compare des formulations : avec une seule, il n'y a rien à comparer.",
+      });
+      return;
+    }
+    if (contents.length > AB_TEST_LIMITS.MAX_VERSIONS) {
+      toast.error(`${AB_TEST_LIMITS.MAX_VERSIONS} versions au maximum`);
+      return;
+    }
+    if (contents.some(c => c.length > AB_TEST_LIMITS.MAX_CONTENT_LENGTH)) {
+      toast.error('Une version dépasse la limite', {
+        description: `Chaque version tient en ${AB_TEST_LIMITS.MAX_CONTENT_LENGTH} caractères.`,
+      });
+      return;
+    }
+    if (new Set(contents).size !== contents.length) {
+      toast.error('Deux versions sont identiques', {
+        description: 'Comparer un texte à lui-même ne peut rien départager.',
+      });
       return;
     }
 
     try {
       setLoading(true);
 
-      // Préparer les données pour l'API
-      const testData = {
-        versions: filledVersions.map(version => ({
-          id: version.id,
-          label: version.label,
-          content: version.content.trim()
-        })),
-        metadata: {
-          parentTweetId,
-          quoteTweetId,
-          timestamp: new Date().toISOString()
-        }
+      // ⚠ `content` EST la première version, le témoin ; `ab_test.variants` ne
+      // porte que les AUTRES. Recopier le témoin dans `variants` ferait échouer
+      // la publication sur « les versions doivent être différentes ».
+      const [temoin, ...autres] = contents;
+      const payload: CreateTweetRequest = {
+        content: temoin,
+        language: 'fr',
+        is_private: false,
+        ab_test: { variants: autres, strategy: 'adaptive' },
       };
 
-      // Ici vous pouvez implémenter la logique de publication A/B avec l'API
-      console.log('📊 Données du test A/B:', testData);
+      const response = await apiService.createTweet(payload);
 
-      toast.success(`${filledVersions.length} versions créées`, {
-        description: 'Le test A/B est lancé.',
+      if (!response.success) {
+        // Le message vient du serveur : compte non certifié, moins de onze
+        // abonnés, cohorte fermée, deux expériences déjà en cours. Le
+        // reformuler ici le rendrait faux dès que la règle bouge.
+        toast.error('Test A/B non lancé', {
+          description: response.message || 'La publication a échoué.',
+        });
+        return;
+      }
+
+      const newTweetId = (response as any).data?.tweet?.id || (response as any).data?.id;
+      if (newTweetId) neuralRankService.onPublish(String(newTweetId));
+
+      toast.success(`${contents.length} versions en test`, {
+        description: 'Le moteur sert les variantes et gardera celle qui performe le mieux.',
       });
       navigation.goBack();
     } catch (error) {
@@ -240,9 +284,15 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
                   placeholderTextColor={colors.textMuted}
                   value={version.content}
                   onChangeText={(text) => handleVersionChange(version.id, text)}
+                  maxLength={AB_TEST_LIMITS.MAX_CONTENT_LENGTH}
                   multiline
                   textAlignVertical="top"
                 />
+                {version.content.length > 0 && (
+                  <Text style={styles.charCount}>
+                    {version.content.length} / {AB_TEST_LIMITS.MAX_CONTENT_LENGTH}
+                  </Text>
+                )}
               </View>
             </View>
             );
@@ -250,15 +300,17 @@ export default function CreateTweetABTestScreen({ navigation, route }: CreateTwe
 
           {/* Boutons */}
           <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.btnSecondary}
-              onPress={handleAddVersion}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add" size={18} color={colors.textPrimary} />
-              <Text style={styles.btnSecondaryText}>Ajouter une version</Text>
-            </TouchableOpacity>
+            {versions.length < AB_TEST_LIMITS.MAX_VERSIONS && (
+              <TouchableOpacity
+                style={styles.btnSecondary}
+                onPress={handleAddVersion}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={18} color={colors.textPrimary} />
+                <Text style={styles.btnSecondaryText}>Ajouter une version</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.btnPrimary}
@@ -377,6 +429,14 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
+  },
+  // Aligné à droite sous le champ, dans la teinte discrète : il informe quand
+  // on le cherche et ne se met pas en travers de la rédaction.
+  charCount: {
+    alignSelf: 'flex-end',
+    marginTop: spacing.xs,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
   },
   inputText: {
     fontSize: fontSize.md,
