@@ -54,6 +54,12 @@ export default function SubscriptionScreen({ navigation }: Props) {
   const [busy, setBusy] = useState(false);
   /** Vrai dès que la page a dit « prête » : avant, pousser ne sert à rien. */
   const readyRef = useRef(false);
+  /**
+   * Le dernier état poussé. Une ref et non un `useState` : il ne déclenche
+   * aucun rendu — l'écran est une WebView, il n'affiche rien lui-même — et la
+   * confirmation du mandat a besoin du prix qui vient d'en être calculé.
+   */
+  const stateRef = useRef<SubscriptionViewState | null>(null);
 
   /**
    * Assemble l'état et l'envoie à la page.
@@ -65,15 +71,33 @@ export default function SubscriptionScreen({ navigation }: Props) {
    */
   const push = useCallback(async () => {
     try {
-      const [pricing, wallet] = await Promise.all([
+      const [pricing, wallet, mandate] = await Promise.all([
         subscriptionPricingService.get(),
         NewEconomyService.getNfWallet().catch(() => null),
+        // Le mandat est facultatif : une base où la migration n'a pas encore
+        // été jouée répond 503, et la page doit s'afficher quand même — sans
+        // l'interrupteur, mais entière.
+        //
+        // L'échec est JOURNALISÉ, pas avalé. Une première version se contentait
+        // d'un `.catch(() => null)` muet : une erreur SQL côté serveur faisait
+        // disparaître l'interrupteur sans le moindre signe, et rien, ni dans
+        // l'app ni à l'écran, ne distinguait « pas encore disponible » de
+        // « cassé ». Un repli silencieux sur une fonctionnalité absente est
+        // exactement le genre de panne qu'on ne trouve qu'en la cherchant.
+        apiService
+          .request('/api/users/subscription-mandate', { requiresAuth: true })
+          .then((r: any) => r?.data || null)
+          .catch((error: any) => {
+            console.warn('[abonnement] mandat illisible :', error?.message || error);
+            return null;
+          }),
       ]);
-      const state: SubscriptionViewState = buildSubscriptionViewState({
+      const state: SubscriptionViewState = stateRef.current = buildSubscriptionViewState({
         tier: effectiveSubscriptionTier(!!user?.premium, user?.subscription_tier),
         expiresAt: user?.subscription_expires_at,
         balanceNf: Number(wallet?.wallet?.balance || 0),
         pricing,
+        mandate,
         theme: isDarkTheme() ? 'dark' : 'light',
         insets: { top: insets.top, bottom: insets.bottom },
       });
@@ -112,8 +136,8 @@ export default function SubscriptionScreen({ navigation }: Props) {
         title: `Passer à ${label} ?`,
         message:
           tier === 'ultra'
-            ? 'Le montant sera débité de ton portefeuille NF. Sans reconduction automatique.'
-            : 'Le montant sera débité de ton portefeuille NF, au cours du moment. Sans reconduction automatique.',
+            ? 'Le montant sera débité de ton portefeuille NF. La reconduction automatique reste à activer si tu la veux.'
+            : 'Le montant sera débité de ton portefeuille NF, au cours du moment. La reconduction automatique reste à activer si tu la veux.',
         confirmLabel: `Passer à ${label}`,
         icon: 'diamond',
       });
@@ -179,6 +203,72 @@ export default function SubscriptionScreen({ navigation }: Props) {
     [busy, refreshCurrentUser, push],
   );
 
+  /**
+   * Le renouvellement automatique.
+   *
+   * Même règle que l'achat : la page DEMANDE, l'app confirme et exécute avec
+   * son jeton. La différence est qu'ici rien n'est débité tout de suite — on
+   * engage le compte pour les échéances À VENIR, ce que la confirmation doit
+   * dire clairement, montant et périodicité compris.
+   */
+  const setMandate = useCallback(
+    async (enabled: boolean) => {
+      if (busy) return;
+
+      const price = stateRef.current?.mandate?.priceNf;
+      const every = stateRef.current?.plans?.[0]?.durationDays ?? 5;
+      const ok = await confirmAsync(
+        enabled
+          ? {
+              title: 'Activer le renouvellement ?',
+              message:
+                `Ton abonnement se reconduira tout seul${price ? ` pour ${price} NF` : ''} ` +
+                `tous les ${every} jours, prélevés sur ton portefeuille NF. ` +
+                'Tu peux le désactiver quand tu veux.',
+              confirmLabel: 'Activer',
+              icon: 'refresh',
+            }
+          : {
+              title: 'Désactiver le renouvellement ?',
+              message:
+                'Ton abonnement ira au bout de la période déjà payée, puis s’arrêtera. ' +
+                'Rien ne sera prélevé d’ici là.',
+              confirmLabel: 'Désactiver',
+              icon: 'close-circle',
+              destructive: true,
+            },
+      );
+      if (!ok) return;
+
+      setBusy(true);
+      try {
+        const result = await apiService.request('/api/users/subscription-mandate', {
+          method: enabled ? 'POST' : 'DELETE',
+          requiresAuth: true,
+        });
+        if (result?.success !== true) {
+          throw new Error(result?.message || 'Opération refusée.');
+        }
+        toast.success(
+          enabled ? 'Renouvellement activé' : 'Renouvellement désactivé',
+          { description: result?.message },
+        );
+        // La bascule change `subscription_expires_at` en base (NULL à
+        // l'activation, la date de fin au retrait) : sans ce rafraîchissement,
+        // tout le reste de l'app garderait l'ancienne valeur.
+        await refreshCurrentUser?.();
+        await push();
+      } catch (error: any) {
+        toast.error('Opération impossible', {
+          description: error?.message || 'Réessaie dans quelques instants.',
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, refreshCurrentUser, push],
+  );
+
   const handleMessage = useCallback(
     (event: WebViewMessageEvent) => {
       let message: any;
@@ -200,13 +290,18 @@ export default function SubscriptionScreen({ navigation }: Props) {
             void purchase(message.tier);
           }
           return;
+        case 'set-mandate':
+          if (typeof message.enabled === 'boolean') {
+            void setMandate(message.enabled);
+          }
+          return;
         case 'close':
           navigation.goBack();
           return;
         default:
       }
     },
-    [push, purchase, navigation],
+    [push, purchase, setMandate, navigation],
   );
 
   /**

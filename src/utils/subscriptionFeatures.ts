@@ -515,8 +515,13 @@ export const ULTRA_ONLY_FEATURES: SubscriptionFeature[] = [
   },
 ];
 
+// ⚠ Ces phrases sont des ENGAGEMENTS affichés au moment de payer. « Sans
+// reconduction automatique » y figurait ; depuis que le mandat existe, la
+// reconduction est possible — mais elle reste un choix, jamais un défaut, et
+// c'est ce que dit la ligne qui l'a remplacée. Toute évolution du mandat doit
+// repasser par ici, sinon la page promet le contraire de ce qu'elle fait.
 export const TRUST_POINTS: { icon: string; text: string }[] = [
   { icon: 'shield-checkmark', text: 'Prix verrouillé au moment de l\'achat' },
-  { icon: 'calendar-outline', text: 'Sans reconduction automatique' },
+  { icon: 'calendar-outline', text: 'Reconduction facultative, résiliable à tout moment' },
   { icon: 'flash', text: 'Tous les avantages actifs immédiatement' },
 ];

@@ -53,6 +53,25 @@ interface Plan {
   groups: Group[];
 }
 
+/**
+ * Le renouvellement automatique, tel que la page l'affiche.
+ *
+ * `available` est faux tant que la table `subscription_mandates` n'a pas été
+ * posée en base : l'interrupteur est alors masqué, plutôt que de proposer une
+ * bascule qui échouerait.
+ */
+export interface MandateView {
+  available: boolean;
+  enabled: boolean;
+  state: 'ACTIVE' | 'DUNNING' | 'GRACE' | 'DEFAULTED' | null;
+  /** Déjà formatée : la page ne manipule aucune date. */
+  nextChargeLabel: string | null;
+  /** Prix de la prochaine échéance, en NF, au cours du moment. */
+  priceNf: number | null;
+  /** Vrai quand un prélèvement a échoué : la page le dit explicitement. */
+  unpaid: boolean;
+}
+
 export interface SubscriptionViewState {
   currentTier: Tier;
   expiresAt: string | null;
@@ -60,6 +79,7 @@ export interface SubscriptionViewState {
   plans: Plan[];
   comparisons: { label: string; values: Partial<Record<Tier, string>> }[];
   trust: { icon: string; text: string }[];
+  mandate: MandateView;
   palette: Record<string, string>;
   theme: 'dark' | 'light';
   insets: { top: number; bottom: number };
@@ -199,15 +219,40 @@ function priceOf(tier: Exclude<Tier, 'free'>, pricing: SubscriptionPricing) {
   return { label: entry.live ? `${entry.eur} €` : '—', nf: null };
 }
 
+/** L'état brut du mandat, tel que `GET /api/users/subscription-mandate` le rend. */
+export interface MandatePayload {
+  available?: boolean;
+  enabled?: boolean;
+  state?: string | null;
+  nextChargeAt?: string | null;
+  priceNf?: number | null;
+}
+
+/**
+ * « Se renouvelle le 6 septembre ».
+ *
+ * Un compte sous mandat a `subscription_expires_at = null`, ce que
+ * `subscriptionRemainingLabel` traduit par « Sans échéance sur ce compte ».
+ * C'est exact mais illisible : ce qui intéresse la personne, c'est la date du
+ * prochain prélèvement, qui vit dans le mandat et nulle part ailleurs.
+ */
+function nextChargeLabel(iso?: string | null): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return `Se renouvelle le ${date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`;
+}
+
 export function buildSubscriptionViewState(params: {
   tier: SubscriptionTier;
   expiresAt?: string | Date | null;
   balanceNf: number;
   pricing: SubscriptionPricing;
+  mandate?: MandatePayload | null;
   theme: 'dark' | 'light';
   insets: { top: number; bottom: number };
 }): SubscriptionViewState {
-  const { tier, expiresAt, balanceNf, pricing, theme, insets } = params;
+  const { tier, expiresAt, balanceNf, pricing, mandate, theme, insets } = params;
   const active = isSubscriptionActiveFor(tier, expiresAt) ? (tier as Tier) : 'free';
 
   const plusFeatures = SUBSCRIPTION_FEATURES.filter((f) => f.minTier === 'plus');
@@ -228,15 +273,32 @@ export function buildSubscriptionViewState(params: {
     };
   });
 
+  const mandateEnabled = !!mandate?.enabled && active !== 'free';
+  const renewLabel = mandateEnabled ? nextChargeLabel(mandate?.nextChargeAt) : null;
+
   return {
     currentTier: active,
     // Déjà formatée : la page ne manipule aucune date, et le format reste
-    // celui que le reste de l'app emploie.
-    expiresAt: active === 'free' ? null : subscriptionRemainingLabel(expiresAt) || null,
+    // celui que le reste de l'app emploie. Sous mandat, la date de fin
+    // n'existe plus — on affiche la prochaine échéance à la place.
+    expiresAt:
+      active === 'free'
+        ? null
+        : renewLabel || subscriptionRemainingLabel(expiresAt) || null,
     balanceNf: Math.round(balanceNf),
     plans,
     comparisons: COMPARISONS,
     trust: TRUST_POINTS,
+    mandate: {
+      // L'interrupteur n'a de sens que sur un abonnement en cours : sur un
+      // compte gratuit, il n'y a rien à reconduire.
+      available: !!mandate?.available && active !== 'free',
+      enabled: mandateEnabled,
+      state: (mandate?.state as SubscriptionViewState['mandate']['state']) || null,
+      nextChargeLabel: renewLabel,
+      priceNf: mandate?.priceNf ?? null,
+      unpaid: mandate?.state === 'DUNNING' || mandate?.state === 'GRACE',
+    },
     palette: palette(),
     theme,
     insets,
