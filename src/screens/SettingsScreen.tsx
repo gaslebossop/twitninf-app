@@ -22,9 +22,9 @@ import { useEvents } from '../contexts/EventContext';
 import { apiService } from '../services';
 import { liveService, RTMP_INGEST_URL } from '../services/liveService';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
-import PremiumProfileCard from '../components/PremiumProfileCard';
+import SubscriptionPanel from '../components/SubscriptionPanel';
+import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import GAuthLinkRewardCard from '../components/GAuthLinkRewardCard';
-import PremiumPurchaseModal from '../components/PremiumPurchaseModal';
 import VerificationButton from '../../components/VerificationButton';
 import VerificationRequestForm from '../../components/VerificationRequestForm';
 import VerificationStyleScreen from './VerificationStyleScreen';
@@ -212,10 +212,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               }
             ]}
           >
-            <PremiumProfileCard
-              isPremium={user?.premium || false}
+            {/* L'abonnement : quel palier, jusqu'a quand, combien d'avantages.
+                `PremiumProfileCard` ne connaissait qu'un booleen `isPremium` —
+                un compte Ultra y ressemblait trait pour trait a un compte Plus. */}
+            <SubscriptionPanel
+              tier={effectiveSubscriptionTier(!!user?.premium, user?.subscription_tier)}
               expiresAt={user?.subscription_expires_at}
-              onUpgrade={() => setShowPremiumPopup(true)}
+              onOpen={() => navigation.navigate('Subscription')}
             />
             <GAuthLinkRewardCard />
           </Animated.View>
@@ -771,18 +774,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         }}
       />
 
-      {/* Modal Premium */}
-      <PremiumPurchaseModal
-        visible={showPremiumPopup}
-        onClose={() => setShowPremiumPopup(false)}
-        onSuccess={(purchase) => {
-          setShowPremiumPopup(false);
-          const days = Number(purchase?.duration_days) || 5;
-          toast.info('Bienvenue dans Premium Pro', {
-            description: `Tous tes avantages sont actifs pour ${days} jour${days > 1 ? 's' : ''}.`,
-          });
-        }}
-      />
+      {/* L'abonnement a son propre ecran : voir le bouton « Passer premium ». */}
 
     </View>
     </ScreenBackground>

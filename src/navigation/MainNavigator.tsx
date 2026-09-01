@@ -48,6 +48,7 @@ import PredictiveAnalyticsScreen from '../screens/PredictiveAnalyticsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import SupportTicketScreen from '../screens/SupportTicketScreen';
 import UltraSupportAgentScreen from '../screens/UltraSupportAgentScreen';
+import SubscriptionScreen from '../screens/SubscriptionScreen';
 import ReportBugScreen from '../screens/ReportBugScreen';
 import BetaScreen from '../screens/BetaScreen';
 import ForgeScreen from '../screens/ForgeScreen';
@@ -270,6 +271,7 @@ export type MainStackParamList = {
   Support: undefined;
   SupportTicket: { ticketId: string };
   UltraSupportAgent: undefined;
+  Subscription: undefined;
   ReportBug: undefined;
   /** Programme beta — candidater, suivre sa place, quitter. */
   Beta: undefined;
@@ -1209,6 +1211,13 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="UltraSupportAgent"
         component={UltraSupportAgentScreen}
+        options={{ headerShown: false }}
+      />
+      {/* Abonnement — page servie par l'API dans une WebView. L'ecran garde la
+          main sur l'achat : la page ne fait que le demander. */}
+      <MainStack.Screen
+        name="Subscription"
+        component={SubscriptionScreen}
         options={{ headerShown: false }}
       />
       {/* Signalement de bug — ouvre un ticket de catégorie « bug ». */}

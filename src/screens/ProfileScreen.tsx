@@ -38,7 +38,6 @@ import ModerationButton from '../components/ModerationButton';
 import PremiumBadge from '../components/PremiumBadge';
 import GAuthLinkRewardCard from '../components/GAuthLinkRewardCard';
 import PremiumDisplayName from '../components/PremiumDisplayName';
-import PremiumCheckoutSheet from '../components/PremiumCheckoutSheet';
 import { useProfileScreenTracking } from '../hooks/useBehaviorTracking';
 import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import NewEconomyService from '../services/newEconomyService';
@@ -342,9 +341,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   };
 
   const handleOpenPremiumModal = () => {
-    // Le palier est choisi dans la feuille elle-même, plus en amont.
-    setShowPremiumModal(true);
-    void loadWalletBalance();
+    // L'abonnement vit desormais dans son propre ecran (page servie par l'API,
+    // voir `SubscriptionScreen`). Le palier s'y choisit, et l'achat s'y fait.
+    navigation.navigate('Subscription');
   };
 
   const handlePurchaseSubscription = async (tier: 'plus' | 'pro' | 'ultra') => {
@@ -1158,20 +1157,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         onStoryDeleted={reloadMyStories}
       />
 
-      {/* ── MODAL PREMIUM ── */}
-      <PremiumCheckoutSheet
-        visible={showPremiumModal}
-        onClose={() => setShowPremiumModal(false)}
-        currentTier={subTier}
-        walletBalance={walletBalance}
-        walletLoading={walletLoading}
-        walletError={walletError}
-        onRetryWallet={loadWalletBalance}
-        loading={premiumLoading}
-        // Le palier vient de la feuille : le figer sur « pro » facturait le
-        // palier haut même quand l'utilisateur avait choisi Plus.
-        onPurchase={(tier) => handlePurchaseSubscription(tier)}
-      />
+      {/* L'abonnement a son propre ecran : voir `handleOpenPremiumModal`. */}
 
     </View>
     </ScreenBackground>

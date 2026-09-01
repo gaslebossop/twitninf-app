@@ -26,6 +26,17 @@ export interface PatchNote {
  */
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '1.4.0',
+    date: '1er septembre 2026',
+    title: 'Ton abonnement, en un seul endroit',
+    items: [
+      'Un nouvel écran d’abonnement : ton palier actif, ce qu’il te donne déjà, et ce que les paliers au-dessus ajoutent',
+      'Les avantages que tu as déjà sont marqués comme tels — tu vois ce que tu paies, pas seulement ce qu’il reste à prendre',
+      'Un comparatif Plus / Pro / Ultra ligne par ligne : frais de virement, taille des tweets, images, vocal, programmation',
+      'Ultra ouvre trente-trois nouveaux plafonds : virements sans commission, 2 500 signes par tweet, huit images, vocaux de cinq minutes',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '1er septembre 2026',
     title: 'Tes tests A/B, en direct',
