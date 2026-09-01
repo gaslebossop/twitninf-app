@@ -29,6 +29,7 @@ import {
   p2pFeeRate,
   P2P_FEE_RATE_FREE,
   P2P_FEE_RATE_SUBSCRIBER,
+  P2P_FEE_RATE_ULTRA,
 } from '../utils/subscriptionTier';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -375,9 +376,21 @@ export default function SendCoinsModal({ visible, onClose, currencyId, symbol, b
 
                 {validAmount && (
                   <View style={styles.feeCard}>
+                    {/* Un Ultra ne paie rien : afficher « Frais (0 %) − 0,0000 »
+                        transformerait son avantage en ligne comptable vide.
+                        C'est le seul endroit où la gratuité se constate, donc
+                        c'est là qu'elle se dit. */}
                     <View style={styles.feeRow}>
-                      <Text style={styles.feeLabel}>Frais ({(feeRate * 100).toFixed(0)} % · trésorerie)</Text>
-                      <Text style={styles.feeValue}>−{fmt(estimatedFee, 4)} {activeSymbol}</Text>
+                      <Text style={styles.feeLabel}>
+                        {feeRate === P2P_FEE_RATE_ULTRA
+                          ? 'Frais de virement'
+                          : `Frais (${(feeRate * 100).toFixed(0)} % · trésorerie)`}
+                      </Text>
+                      <Text style={styles.feeValue}>
+                        {feeRate === P2P_FEE_RATE_ULTRA
+                          ? 'Offerts'
+                          : `−${fmt(estimatedFee, 4)} ${activeSymbol}`}
+                      </Text>
                     </View>
                     <View style={styles.feeDivider} />
                     <View style={styles.feeRow}>

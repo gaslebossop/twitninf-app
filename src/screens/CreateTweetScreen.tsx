@@ -59,11 +59,16 @@ import VoiceWaveform, {
 import VoiceRecorderPanel from '../components/ui/VoiceRecorderPanel';
 import { useVoicePlayback } from '../hooks/useVoicePlayback';
 
-/** Plafond du modèle `Tweet` côté API (`media_urls` : 4 maximum). */
+/**
+ * Plafond de `media_urls` côté API, par palier
+ * (`tweetImageService.MAX_IMAGES_PER_TWEET` / `_ULTRA`).
+ */
 const MAX_TWEET_IMAGES = 4;
+const MAX_TWEET_IMAGES_ULTRA = 8;
 
-/** Aligné avec `tweetAudioService.MAX_DURATION_SECONDS` côté API. */
+/** Aligné avec `tweetAudioService.MAX_DURATION_SECONDS` / `_ULTRA` côté API. */
 const MAX_VOICE_SECONDS = 120;
+const MAX_VOICE_SECONDS_ULTRA = 300;
 
 /** En dessous, c'est un appui malheureux sur le micro, pas un message. */
 const MIN_VOICE_MS = 800;
@@ -89,7 +94,8 @@ interface CreateTweetScreenProps {
  * authorBroadcastService.js` et sur le validateur de `POST /api/tweets`.
  * Au-dela, le serveur tronque en silence : le compteur mentirait.
  */
-const NOTIFY_MESSAGE_MAX = 140;
+/** ⚠ Aligné sur `authorBroadcastService.MESSAGE_MAX` côté API (280). */
+const NOTIFY_MESSAGE_MAX = 280;
 
 export default function CreateTweetScreen({ navigation, route }: CreateTweetScreenProps) {
   const { height: windowHeight } = useWindowDimensions();
@@ -205,6 +211,17 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     !!currentUser?.verified,
   );
   const isExtendedLimit = MAX_CHARS > TWEET_MAX_CHARS_FREE;
+
+  /**
+   * Deux autres bornes suivent le palier : le nombre d'images et la durée du
+   * vocal. Comme pour les caractères, la valeur n'est là que pour cadrer la
+   * saisie — le serveur retranche de toute façon au moment de publier.
+   */
+  const isUltraAuthor =
+    authorTier === 'ultra' &&
+    isSubscriptionActiveFor(authorTier, currentUser?.subscription_expires_at);
+  const maxImages = isUltraAuthor ? MAX_TWEET_IMAGES_ULTRA : MAX_TWEET_IMAGES;
+  const maxVoiceSeconds = isUltraAuthor ? MAX_VOICE_SECONDS_ULTRA : MAX_VOICE_SECONDS;
 
   /**
    * Traduction automatique : option Pro, et Pro seulement — un abonné Plus ne
@@ -424,7 +441,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
       return;
     }
 
-    const remaining = MAX_TWEET_IMAGES - imageUris.length;
+    const remaining = maxImages - imageUris.length;
     if (remaining <= 0) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -435,7 +452,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
     });
 
     if (result.canceled || !result.assets?.length) return;
-    setImageUris((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, MAX_TWEET_IMAGES));
+    setImageUris((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, maxImages));
   }, [imageUris.length]);
 
   const removeImage = useCallback((uri: string) => {
@@ -523,7 +540,7 @@ export default function CreateTweetScreen({ navigation, route }: CreateTweetScre
           if (status.isRecording) recordingSamplesRef.current.push(normalizeMetering(status.metering));
           // Arrêt automatique au plafond serveur : un enregistrement plus long
           // se ferait de toute façon tronquer la durée à la publication.
-          if ((status.durationMillis || 0) >= MAX_VOICE_SECONDS * 1000) {
+          if ((status.durationMillis || 0) >= maxVoiceSeconds * 1000) {
             finishVoiceRecording(true);
           }
         },
@@ -1338,7 +1355,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
                   <VoiceRecorderPanel
                     samplesRef={recordingSamplesRef}
                     elapsedMsRef={recordingElapsedMsRef}
-                    maxSeconds={MAX_VOICE_SECONDS}
+                    maxSeconds={maxVoiceSeconds}
                     onCancel={() => finishVoiceRecording(false)}
                     onAttach={() => finishVoiceRecording(true)}
                   />
@@ -1403,7 +1420,7 @@ Tu peux fixer le prix depuis le menu « … » du tweet.`,
 
                 {/* Options du tweet — chips pleins style segmented */}
                 <View style={styles.tweetOptions}>
-                  {canAttachImages && imageUris.length < MAX_TWEET_IMAGES && (
+                  {canAttachImages && imageUris.length < maxImages && (
                     <TouchableOpacity
                       style={styles.optionChip}
                       onPress={pickImages}

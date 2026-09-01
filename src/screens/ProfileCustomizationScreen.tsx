@@ -36,7 +36,7 @@ import profileCustomizationService, {
   NAME_SIZES,
   PROFILE_EFFECTS,
   PROFILE_THEMES,
-  PROFILE_TITLE_MAX,
+  profileTitleMaxFor,
   THEME_INTENSITIES,
   AvatarDecoration,
   BannerStyle,
@@ -161,6 +161,10 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
   const { user, refreshCurrentUser } = useAuth() as any;
   const [draft, setDraft] = useState<ProfileCustomization>({});
   const [tier, setTier] = useState<'free' | 'plus' | 'pro' | 'ultra'>('free');
+  // Le titre est plus long au palier Ultra (voir `PROFILE_TITLE_MAX_ULTRA`
+  // côté API) : sans ça, le champ coupait à 40 un texte que le serveur aurait
+  // accepté jusqu'à 60.
+  const titleMax = profileTitleMaxFor(tier);
   const [canCustomize, setCanCustomize] = useState(false);
   const [canUseDecorations, setCanUseDecorations] = useState(false);
   const [canUseCertified, setCanUseCertified] = useState(false);
@@ -588,10 +592,10 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                     onChangeText={(value) => update({ profile_title: value })}
                     placeholder="Ex. Dev · Kinshasa"
                     placeholderTextColor={colors.textMuted}
-                    maxLength={PROFILE_TITLE_MAX}
+                    maxLength={titleMax}
                   />
                   <Text style={styles.counter}>
-                    {(draft.profile_title || '').length}/{PROFILE_TITLE_MAX}
+                    {(draft.profile_title || '').length}/{titleMax}
                   </Text>
 
                   {/* Certains titres se GAGNENT et ne s'écrivent pas. On le dit

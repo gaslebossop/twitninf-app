@@ -62,7 +62,10 @@ export const SUBSCRIPTION_PRO_EXTRAS: { icon: string; text: string }[] = [
  * constater.
  */
 export const SUBSCRIPTION_ULTRA_EXTRAS: { icon: string; text: string }[] = [
+  { icon: 'swap-horizontal', text: 'Virements sans aucune commission' },
   { icon: 'megaphone', text: 'Crédit publicitaire de 100 € versé à chaque activation' },
+  { icon: 'lock-open', text: 'Tu gardes 80 % de tes ventes au lieu de 70 %' },
+  { icon: 'headset', text: 'Agent de support IA, qui agit vraiment sur ton compte' },
   { icon: 'briefcase', text: 'Marketplace des créateurs : sois réservable, fixe ton prix' },
   { icon: 'notifications', text: 'Notifie tes abonnés à la publication, avec ton propre message' },
   { icon: 'flag', text: 'Strikes de diffusion, immédiats et sans revue' },
@@ -97,13 +100,14 @@ export function canUseFeature(userTier: SubscriptionTier, required: 'plus' | 'pr
  * Frais sur les virements P2P.
  *
  * ⚠ Doit rester aligné sur `api/src/economy/constants.js`
- * (`P2P_TRANSFER_FEE_RATE` / `P2P_TRANSFER_FEE_RATE_SUBSCRIBER`).
+ * (`P2P_TRANSFER_FEE_RATE` / `_SUBSCRIBER` / `_ULTRA`).
  * Ces valeurs ne servent QU'À L'AFFICHAGE de l'estimation avant envoi : le
  * taux réellement débité est recalculé par le serveur au moment de l'écriture,
  * jamais lu depuis le client.
  */
 export const P2P_FEE_RATE_FREE = 0.2;
 export const P2P_FEE_RATE_SUBSCRIBER = 0.1;
+export const P2P_FEE_RATE_ULTRA = 0;
 
 /**
  * Un abonnement expiré ne donne plus la remise — même règle que
@@ -121,7 +125,10 @@ export function isSubscriptionActiveFor(
 }
 
 export function p2pFeeRate(tier: SubscriptionTier, expiresAt?: string | Date | null): number {
-  return isSubscriptionActiveFor(tier, expiresAt) ? P2P_FEE_RATE_SUBSCRIBER : P2P_FEE_RATE_FREE;
+  if (!isSubscriptionActiveFor(tier, expiresAt)) return P2P_FEE_RATE_FREE;
+  // Ultra est testé en premier : il satisfait aussi la condition « abonné
+  // actif », et l'ordre inverse afficherait 10 % à quelqu'un qui ne paie rien.
+  return tier === 'ultra' ? P2P_FEE_RATE_ULTRA : P2P_FEE_RATE_SUBSCRIBER;
 }
 
 /**
@@ -137,6 +144,7 @@ export function p2pFeeRate(tier: SubscriptionTier, expiresAt?: string | Date | n
  */
 export const TWEET_MAX_CHARS_FREE = 280;
 export const TWEET_MAX_CHARS_SUBSCRIBER = 1000;
+export const TWEET_MAX_CHARS_ULTRA = 2500;
 
 export function tweetCharLimit(
   tier: SubscriptionTier,
@@ -144,7 +152,8 @@ export function tweetCharLimit(
   verified?: boolean,
 ): number {
   if (verified) return TWEET_MAX_CHARS_SUBSCRIBER;
-  return isSubscriptionActiveFor(tier, expiresAt)
-    ? TWEET_MAX_CHARS_SUBSCRIBER
-    : TWEET_MAX_CHARS_FREE;
+  if (!isSubscriptionActiveFor(tier, expiresAt)) return TWEET_MAX_CHARS_FREE;
+  // Ultra avant l'abonné générique, sinon l'éditeur couperait à 1 000 un texte
+  // que le serveur accepterait jusqu'à 2 500.
+  return tier === 'ultra' ? TWEET_MAX_CHARS_ULTRA : TWEET_MAX_CHARS_SUBSCRIBER;
 }

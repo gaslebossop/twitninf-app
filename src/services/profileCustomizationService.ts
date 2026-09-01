@@ -128,6 +128,13 @@ export function ownsCosmetic(
 
 /** Longueur max du titre — alignée sur la validation de l'API. */
 export const PROFILE_TITLE_MAX = 40;
+/** ⚠ Aligné sur `PROFILE_TITLE_MAX_ULTRA` (`api/src/utils/profileCustomization.js`). */
+export const PROFILE_TITLE_MAX_ULTRA = 60;
+
+/** Longueur de titre autorisée pour un palier donné. */
+export function profileTitleMaxFor(tier: string | null | undefined): number {
+  return tier === 'ultra' ? PROFILE_TITLE_MAX_ULTRA : PROFILE_TITLE_MAX;
+}
 
 export interface CustomizationState {
   customization: ProfileCustomization;
