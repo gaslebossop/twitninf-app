@@ -70,6 +70,12 @@ export interface MandateView {
   priceNf: number | null;
   /** Vrai quand un prélèvement a échoué : la page le dit explicitement. */
   unpaid: boolean;
+  /**
+   * Le palier sur lequel le mandat se reconduira. Égal au palier courant en
+   * temps normal ; INFÉRIEUR quand une rétrogradation est programmée à
+   * l'échéance. La page s'en sert pour marquer le palier cible dans les offres.
+   */
+  renewsAs: Tier | null;
 }
 
 export interface SubscriptionViewState {
@@ -224,9 +230,17 @@ export interface MandatePayload {
   available?: boolean;
   enabled?: boolean;
   state?: string | null;
+  /** Palier de reconduction. Peut différer du palier courant (rétrogradation). */
+  tier?: string | null;
   nextChargeAt?: string | null;
   priceNf?: number | null;
 }
+
+const TIER_NAME: Record<Exclude<Tier, 'free'>, string> = {
+  plus: 'Plus',
+  pro: 'Pro',
+  ultra: 'Ultra',
+};
 
 /**
  * « Se renouvelle le 6 septembre ».
@@ -236,11 +250,26 @@ export interface MandatePayload {
  * C'est exact mais illisible : ce qui intéresse la personne, c'est la date du
  * prochain prélèvement, qui vit dans le mandat et nulle part ailleurs.
  */
-function nextChargeLabel(iso?: string | null): string | null {
+function formatDay(iso?: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return `Se renouvelle le ${date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`;
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+}
+
+function nextChargeLabel(iso?: string | null): string | null {
+  const day = formatDay(iso);
+  return day ? `Se renouvelle le ${day}` : null;
+}
+
+/**
+ * « Passe à Plus le 6 septembre » — quand une rétrogradation est programmée.
+ * On dit le palier cible ET la date : c'est un changement à venir, pas un
+ * simple renouvellement.
+ */
+function downgradeLabel(iso: string | null | undefined, targetName: string): string | null {
+  const day = formatDay(iso);
+  return day ? `Passe à ${targetName} le ${day}` : `Passe bientôt à ${targetName}`;
 }
 
 export function buildSubscriptionViewState(params: {
@@ -274,7 +303,16 @@ export function buildSubscriptionViewState(params: {
   });
 
   const mandateEnabled = !!mandate?.enabled && active !== 'free';
-  const renewLabel = mandateEnabled ? nextChargeLabel(mandate?.nextChargeAt) : null;
+  // Le palier de reconduction. En temps normal égal au palier courant ; plus
+  // bas quand une rétrogradation a été programmée à l'échéance.
+  const renewsAs =
+    mandateEnabled && mandate?.tier && mandate.tier !== 'free' ? (mandate.tier as Tier) : null;
+  const downgradeScheduled = !!renewsAs && RANK[renewsAs] < RANK[active];
+  const renewLabel = !mandateEnabled
+    ? null
+    : downgradeScheduled
+      ? downgradeLabel(mandate?.nextChargeAt, TIER_NAME[renewsAs as Exclude<Tier, 'free'>])
+      : nextChargeLabel(mandate?.nextChargeAt);
 
   return {
     currentTier: active,
@@ -298,6 +336,7 @@ export function buildSubscriptionViewState(params: {
       nextChargeLabel: renewLabel,
       priceNf: mandate?.priceNf ?? null,
       unpaid: mandate?.state === 'DUNNING' || mandate?.state === 'GRACE',
+      renewsAs,
     },
     palette: palette(),
     theme,

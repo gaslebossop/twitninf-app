@@ -269,6 +269,67 @@ export default function SubscriptionScreen({ navigation }: Props) {
     [busy, refreshCurrentUser, push],
   );
 
+  /**
+   * La rétrogradation programmée. Comme l'achat et le mandat : la page DEMANDE,
+   * l'app confirme et exécute avec son jeton. Rien n'est débité maintenant —
+   * on change seulement le palier sur lequel le renouvellement se fera à
+   * l'échéance. Le palier courant tient jusque-là.
+   */
+  const scheduleDowngrade = useCallback(
+    async (tier: 'plus' | 'pro' | 'ultra') => {
+      if (busy) return;
+      const label = tier === 'plus' ? 'Plus' : tier === 'pro' ? 'Pro' : 'Ultra';
+      // Repointer la reconduction sur le palier COURANT = annuler une
+      // rétrogradation déjà programmée. Le message doit alors le dire.
+      const isRevert = stateRef.current?.currentTier === tier;
+      const ok = await confirmAsync(
+        isRevert
+          ? {
+              title: 'Annuler le changement programmé ?',
+              message:
+                `Ton abonnement se reconduira comme avant, en ${label}. ` +
+                'Aucun passage à un palier inférieur n’aura lieu.',
+              confirmLabel: `Rester en ${label}`,
+              icon: 'refresh',
+            }
+          : {
+              title: `Passer à ${label} à l’échéance ?`,
+              message:
+                'Ton palier actuel continue jusqu’à la fin de la période déjà payée, ' +
+                `puis le renouvellement automatique passera à ${label}. ` +
+                'Rien n’est débité maintenant, et tu peux revenir en arrière avant l’échéance.',
+              confirmLabel: `Programmer ${label}`,
+              icon: 'arrow-down-circle',
+            },
+      );
+      if (!ok) return;
+
+      setBusy(true);
+      try {
+        const result = await apiService.request('/api/users/subscription-mandate', {
+          method: 'PATCH',
+          requiresAuth: true,
+          body: { tier },
+        });
+        if (result?.success !== true) {
+          throw new Error(result?.message || 'Changement de palier refusé.');
+        }
+        toast.success('Changement programmé', {
+          description: result?.message,
+        });
+        await refreshCurrentUser?.();
+        await push();
+      } catch (error: any) {
+        toast.error('Changement impossible', {
+          description: error?.message || 'Réessaie dans quelques instants.',
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, refreshCurrentUser, push],
+  );
+
   const handleMessage = useCallback(
     (event: WebViewMessageEvent) => {
       let message: any;
@@ -295,13 +356,18 @@ export default function SubscriptionScreen({ navigation }: Props) {
             void setMandate(message.enabled);
           }
           return;
+        case 'schedule-downgrade':
+          if (message.tier === 'plus' || message.tier === 'pro' || message.tier === 'ultra') {
+            void scheduleDowngrade(message.tier);
+          }
+          return;
         case 'close':
           navigation.goBack();
           return;
         default:
       }
     },
-    [push, purchase, setMandate, navigation],
+    [push, purchase, setMandate, scheduleDowngrade, navigation],
   );
 
   /**
