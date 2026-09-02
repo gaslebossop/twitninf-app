@@ -147,6 +147,46 @@ export type ToneKey = keyof typeof TONE;
  * coloré posé sur la page ». Le commentaire avait raison, la valeur le
  * contredisait — et la baisser n'a pas suffi non plus. Voir ci-dessous.
  */
+/**
+ * ── LA BANDE : LA FORME QUI MANQUAIT ─────────────────────────────────────
+ *
+ * Deux constats à l'écran, le même jour, qui n'en font qu'un :
+ *
+ *  1. Sur un profil AVEC photo de bannière, la couleur était quasi
+ *     invisible. La crête ne manquait pourtant pas de force (`peakOf` rend
+ *     0,72) : elle était peinte au-dessus de la couture, donc DERRIÈRE la
+ *     photo, qui masque tout ce qui s'y trouve. Il ne restait qu'une traînée
+ *     sous la bannière.
+ *  2. Sans photo, « c'est juste un rond, c'est pas Discord ».
+ *
+ * Les deux disent la même chose : des foyers RONDS sont le mauvais objet.
+ * Discord ne peint pas des taches, il peint **un dégradé vertical qui part
+ * du bas de la bannière et descend** — pleine largeur, donc sans forme
+ * reconnaissable, donc sans « rond ».
+ *
+ * C'est ce que fait la bande. Elle porte désormais l'essentiel de la
+ * couleur ; les foyers restent, mais en second plan, pour donner la matière
+ * (avec le bruit du shader) plutôt que la masse — leurs gains sont donc
+ * abaissés d'autant.
+ *
+ * ── Pourquoi ce n'est PAS l'assise supprimée le 2026-08-31 ───────────────
+ *
+ * L'assise couvrait la page UNIFORMÉMENT, du haut jusque sous les onglets :
+ * quelle que soit sa valeur, elle donnait une page teintée. La bande, elle,
+ * est bornée — elle démarre à la couture et elle est ÉTEINTE avant la
+ * mi-page (`BAND_HEIGHT` 0,30 contre une mi-page à 0,50, et une chute
+ * convexe par-dessus). Le bas du profil revient au fond d'app neutre, et
+ * c'est ce contraste qui fait exister la lumière. `reachOf` la mesure.
+ */
+export const BAND_HEIGHT = 0.3;
+
+/**
+ * Exposant de la chute de la bande. `1` serait linéaire, donc un aplat
+ * dégradé ; au-dessus de 1 la chute est raide au début puis longue, ce qui
+ * se lit comme une source et non comme une peinture.
+ */
+export const BAND_CURVE = 1.8;
+
 export const LAYER = {
   /**
    * L'assise est SUPPRIMÉE — c'est elle, et elle seule, le « fond coloré ».
@@ -163,6 +203,11 @@ export const LAYER = {
    * avec le haut éclairé qui fait exister la lumière.
    */
   assise: 0,
+  /**
+   * La bande verticale, sous la couture. C'est elle qui porte la couleur
+   * maintenant — d'où une valeur bien plus haute que tout le reste.
+   */
+  band: 0.42,
   /** Le repère fixe. Serré, c'est un repère, pas un éclairage. */
   rim: 0.1,
   /** La nappe spéculaire qui traverse. */
@@ -181,15 +226,15 @@ export const LAYER = {
  */
 export const SOURCE_GAINS = {
   /** Un foyer serré sur la couture, un second plus large et plus doux. */
-  glow: [0.5, 0.14],
+  glow: [0.3, 0.09],
   /**
    * Trois foyers qui se croisent, donc chacun plus faible : c'est le
    * croisement qui fait le nuage, et trois couches composent plus vite que
    * deux.
    */
-  mesh: [0.3, 0.3, 0.16],
+  mesh: [0.15, 0.15, 0.09],
   /** Un foyer large et haut, un second plus bas en couleur secondaire. */
-  gradient: [0.42, 0.14],
+  gradient: [0.25, 0.09],
 } as const;
 
 /**
@@ -245,6 +290,7 @@ export function peakOf(
   return composite([
     ...SOURCE_GAINS[kind].map((gain) => clamp(gain * tone.gain * factor)),
     clamp(LAYER.assise * tone.assise * factor),
+    clamp(LAYER.band * tone.gain * factor),
     clamp(LAYER.rim * tone.rim * factor),
     clamp(LAYER.sheen * tone.sheen * factor),
   ]);
@@ -300,6 +346,11 @@ export function reachOf(
     // L'assise, si elle existait, serait encore pleine à mi-page : c'est
     // précisément ce qui la rend incompatible avec une lecture « lumière ».
     clamp(LAYER.assise * tone.assise * factor) * 0.6,
+    // La bande, à mi-page. `t` dépasse 1 dès que la mi-page est sous elle,
+    // et la puissance l'éteint alors complètement — c'est la borne qui la
+    // distingue de l'assise supprimée.
+    clamp(LAYER.band * tone.gain * factor)
+      * Math.pow(Math.max(0, 1 - (50 - seam) / (BAND_HEIGHT * 100)), BAND_CURVE),
     clamp(LAYER.sheen * tone.sheen * factor) * falloffAt(1),
   ]);
 }

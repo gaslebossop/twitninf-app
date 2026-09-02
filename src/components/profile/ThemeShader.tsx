@@ -4,6 +4,8 @@ import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import { colors, isDarkTheme, towardWhite } from '../../theme';
 import { isReduceMotionEnabled } from '../../hooks/useReduceMotion';
 import {
+  BAND_CURVE,
+  BAND_HEIGHT,
   BUDGET,
   FALLOFF,
   LAYER,
@@ -187,6 +189,10 @@ uniform vec3 u_srcCore[${MAX_SOURCES}];
 uniform vec4 u_srcMove[${MAX_SOURCES}];   // gain, lane, period, scaleTo
 
 // Le repere IMMOBILE, et la nappe speculaire.
+uniform vec4  u_band;
+uniform vec3  u_bandTop;
+uniform vec3  u_bandBottom;
+
 uniform vec4 u_rim;
 uniform vec3 u_rimCol;
 uniform vec3 u_rimCore;
@@ -273,6 +279,20 @@ void main() {
   float t = u_time;
 
   vec3 c = u_base;
+
+  // ── LA BANDE ────────────────────────────────────────────────────────────
+  // Pleine largeur, ancree sous la couture, eteinte avant la mi-page. C'est
+  // la FORME de Discord : un degrade vertical qui part du bas de la banniere
+  // et descend — donc rien de rond, rien qui se lise comme une tache.
+  //
+  // Peinte AVANT les foyers : elle porte la masse de couleur, les foyers ne
+  // font plus que la matiere par-dessus.
+  {
+    float bt = clamp((uv.y - u_band.x) / max(u_band.y, 0.0001), 0.0, 1.0);
+    // Chute convexe : lineaire, on lirait un aplat degrade ; raide puis
+    // longue, on lit une source.
+    c = over(c, mix(u_bandTop, u_bandBottom, bt), u_band.w * pow(1.0 - bt, u_band.z));
+  }
 
   for (int i = 0; i < ${MAX_SOURCES}; i++) {
     c = light(c, uv, u_src[i], u_srcCol[i], u_srcCore[i], u_srcMove[i], t);
@@ -414,6 +434,9 @@ export default function ThemeShader({
       u_srcCol: srcCol,
       u_srcCore: srcCore,
       u_srcMove: srcMove,
+      u_band: [seam, BAND_HEIGHT, BAND_CURVE, cap(LAYER.band * tone.gain * factor)],
+      u_bandTop: rgb(accent),
+      u_bandBottom: rgb(secondary),
       u_rim: [0.5, seam, 0.34, 0.12],
       u_rimCol: rgb(accent),
       u_rimCore: rgb(towardWhite(accent, tone.rimKeep)),
@@ -480,6 +503,9 @@ export default function ThemeShader({
         u_srcCol: (v) => gl.uniform3fv(loc('u_srcCol'), v),
         u_srcCore: (v) => gl.uniform3fv(loc('u_srcCore'), v),
         u_srcMove: (v) => gl.uniform4fv(loc('u_srcMove'), v),
+        u_band: (v) => gl.uniform4fv(loc('u_band'), v),
+        u_bandTop: (v) => gl.uniform3fv(loc('u_bandTop'), v),
+        u_bandBottom: (v) => gl.uniform3fv(loc('u_bandBottom'), v),
         u_rim: (v) => gl.uniform4fv(loc('u_rim'), v),
         u_rimCol: (v) => gl.uniform3fv(loc('u_rimCol'), v),
         u_rimCore: (v) => gl.uniform3fv(loc('u_rimCore'), v),

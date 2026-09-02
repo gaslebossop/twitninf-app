@@ -7,10 +7,12 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { isDarkTheme, towardWhite } from '../../theme';
 import { isReduceMotionEnabled } from '../../hooks/useReduceMotion';
 import {
+  BAND_CURVE,
+  BAND_HEIGHT,
   BUDGET,
   FALLOFF,
   LAYER,
@@ -348,6 +350,67 @@ function Source({
 }
 
 /**
+ * La bande — la forme, celle qui manquait.
+ *
+ * Pleine largeur, ancrée sous la couture, éteinte avant la mi-page : le
+ * dégradé vertical de Discord, qui part du bas de la bannière et descend.
+ * Elle porte la masse de couleur ; les foyers ne font plus que la matière
+ * par-dessus, d'où leurs gains abaissés dans `themeBudget`.
+ *
+ * Elle ne bouge pas, et c'est volontaire : une masse de couleur qui dérive
+ * se lit comme un fond qui glisse. Ce qui bouge, ce sont les foyers et le
+ * reflet, par-dessus elle.
+ *
+ * Les arrêts échantillonnent `pow(1 - t, BAND_CURVE)` — SVG n'interpole
+ * qu'en ligne droite entre deux `<Stop>`, et une chute linéaire se lirait
+ * comme un aplat dégradé, exactement ce qu'on cherche à éviter.
+ */
+function Band({
+  accent,
+  secondary,
+  factor,
+  seam,
+  id,
+}: {
+  accent: string;
+  secondary: string;
+  factor: number;
+  seam: number;
+  id: string;
+}) {
+  const tone = toneOf();
+  const gain = cap(LAYER.band * tone.gain * factor);
+  const height = BAND_HEIGHT * 100;
+  const stops = [0, 0.2, 0.4, 0.6, 0.8, 1];
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        style={StyleSheet.absoluteFill}
+      >
+        <Defs>
+          <LinearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+            {stops.map((t) => (
+              <Stop
+                key={t}
+                offset={t}
+                stopColor={t < 0.5 ? accent : secondary}
+                stopOpacity={gain * Math.pow(1 - t, BAND_CURVE)}
+              />
+            ))}
+          </LinearGradient>
+        </Defs>
+        <Rect x={0} y={seam} width={100} height={height} fill={`url(#${id})`} />
+      </Svg>
+    </View>
+  );
+}
+
+/**
  * La nappe spéculaire : elle traverse, elle ne stationne pas.
  *
  * C'est une ELLIPSE, pas une bande. Une bande a quatre arêtes, et une arête
@@ -479,6 +542,15 @@ export default function ThemeMaterial({
           le bas du profil doit revenir au fond d'app neutre. C'est le
           contraste entre un haut eclaire et un bas neutre qui fait exister
           la lumiere — un degrade qui couvre tout n'eclaire rien. */}
+
+      {/* 1 bis — La bande, sous tout le reste : elle porte la couleur. */}
+      <Band
+        accent={accent}
+        secondary={secondary}
+        factor={factor}
+        seam={seam}
+        id={`tm-${salt}-band`}
+      />
 
       {/* 2 — Les foyers. */}
       {sources.map((source, index) => (

@@ -5,6 +5,8 @@ import { colors, isDarkTheme, towardWhite } from '../../theme';
 import { isReduceMotionEnabled } from '../../hooks/useReduceMotion';
 import { skia } from './skiaRuntime';
 import {
+  BAND_CURVE,
+  BAND_HEIGHT,
   BUDGET,
   FALLOFF,
   LAYER,
@@ -129,6 +131,10 @@ uniform half3  u_srcCol[${MAX_SOURCES}];
 uniform half3  u_srcCore[${MAX_SOURCES}];
 uniform float4 u_srcMove[${MAX_SOURCES}];
 
+uniform float4 u_band;
+uniform half3  u_bandTop;
+uniform half3  u_bandBottom;
+
 uniform float4 u_rim;
 uniform half3  u_rimCol;
 uniform half3  u_rimCore;
@@ -202,6 +208,20 @@ half4 main(float2 xy) {
   float cloud = fbm(uv * float2(2.6, 1.5) + float2(t * 0.014, t * 0.008)) - 0.5;
 
   half3 c = u_base;
+
+  // ── LA BANDE ────────────────────────────────────────────────────────────
+  // Pleine largeur, ancree sous la couture, eteinte avant la mi-page. C'est
+  // la FORME de Discord : un degrade vertical qui part du bas de la banniere
+  // et descend — donc rien de rond, rien qui se lise comme une tache.
+  //
+  // Peinte AVANT les foyers : elle porte la masse de couleur, les foyers ne
+  // font plus que la matiere par-dessus.
+  {
+    float bt = clamp((uv.y - u_band.x) / max(u_band.y, 0.0001), 0.0, 1.0);
+    // Chute convexe : lineaire, on lirait un aplat degrade ; raide puis
+    // longue, on lit une source.
+    c = over(c, mix(u_bandTop, u_bandBottom, half(bt)), u_band.w * pow(1.0 - bt, u_band.z));
+  }
 
   for (int i = 0; i < ${MAX_SOURCES}; i++) {
     float gain = u_srcMove[i].x;
@@ -321,6 +341,9 @@ export default function ThemeSkia({
       u_srcCol: srcCol,
       u_srcCore: srcCore,
       u_srcMove: srcMove,
+      u_band: [seam, BAND_HEIGHT, BAND_CURVE, cap(LAYER.band * tone.gain * factor)],
+      u_bandTop: rgb(accent),
+      u_bandBottom: rgb(secondary),
       u_rim: [0.5, seam, 0.34, 0.12],
       u_rimCol: rgb(accent),
       u_rimCore: rgb(towardWhite(accent, tone.rimKeep)),

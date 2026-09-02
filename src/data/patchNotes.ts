@@ -30,6 +30,7 @@ export const PATCH_NOTES: PatchNote[] = [
     date: '2 septembre 2026',
     title: 'Correctifs du profil',
     items: [
+      'La couleur de ton thème se voit enfin : un dégradé pleine largeur part du bas de ta bannière au lieu d’une tache ronde à moitié cachée derrière elle',
       'La lueur autour du nom était devenue une tache : elle redevient un halo qui s’éteint',
       'La pastille d’abonnement ne part plus seule à la ligne sous un nom long',
       'Plus de point de séparation isolé après la ville quand la date d’inscription manque',
