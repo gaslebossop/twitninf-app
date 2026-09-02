@@ -26,6 +26,16 @@ export interface PatchNote {
  */
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '1.6.0',
+    date: '3 septembre 2026',
+    title: 'Une page qui se met à jour sans mise à jour',
+    items: [
+      'Nouvel écran « Quoi de neuf » dans tes réglages : ce qui a changé récemment, expliqué simplement',
+      'Son contenu arrive par le réseau — une correction ou une annonce apparaît le jour même, sans passer par le store',
+      'Il reste lisible hors ligne : la dernière version reçue est gardée sur ton téléphone',
+    ],
+  },
+  {
     version: '1.5.2',
     date: '2 septembre 2026',
     title: 'Nom du profil',

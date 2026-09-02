@@ -446,6 +446,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               () => navigation.navigate('ReportBug')
             )}
 
+            {renderActionButton(
+              'Quoi de neuf',
+              'Ce qui a changé récemment dans l’app',
+              'sparkles-outline',
+              () => navigation.navigate('Nouveautes')
+            )}
+
             {/* Toujours visible, membre ou pas : c'est la seule porte d'entree
                 pour qui n'est pas encore dedans. Le sous-titre, lui, change. */}
             {renderActionButton(

@@ -51,6 +51,7 @@ import UltraSupportAgentScreen from '../screens/UltraSupportAgentScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
 import ReportBugScreen from '../screens/ReportBugScreen';
 import BetaScreen from '../screens/BetaScreen';
+import NouveautesScreen from '../screens/NouveautesScreen';
 import ForgeScreen from '../screens/ForgeScreen';
 import ForgeReviewScreen from '../screens/ForgeReviewScreen';
 import CreatorStudioScreen from '../screens/CreatorStudioScreen';
@@ -276,6 +277,7 @@ export type MainStackParamList = {
   ReportBug: undefined;
   /** Programme beta — candidater, suivre sa place, quitter. */
   Beta: undefined;
+  Nouveautes: undefined;
   Forge: undefined;
   ForgeReview: undefined;
 
@@ -1236,6 +1238,14 @@ function MainNavigatorInner() {
       <MainStack.Screen
         name="Beta"
         component={BetaScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Quoi de neuf — le seul ecran dont le contenu ne vient pas du build :
+          il est ecrit dans le panneau Lex et arrive par le reseau. */}
+      <MainStack.Screen
+        name="Nouveautes"
+        component={NouveautesScreen}
         options={{ headerShown: false }}
       />
 
