@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, fonts, fontSize, radius, spacing } from '../theme';
 import { AppHeader, Card, EmptyState, ErrorState, ScreenBackground, Skeleton } from '../components/ui';
 import lexService, { LexTexts } from '../services/lexService';
@@ -37,6 +38,16 @@ import lexService, { LexTexts } from '../services/lexService';
  * ── Pourquoi aucune animation d'entrée ────────────────────────────────────
  * Règle du repo : un écran est prêt, il ne se dévoile pas. Les squelettes
  * couvrent l'attente réseau, et le contenu les remplace sans transition.
+ *
+ * ── En direct, et seulement quand l'écran est là ──────────────────────────
+ * Tant que l'écran est visible, il écoute le serveur : une correction faite
+ * dans le panneau apparaît ici en moins d'une seconde, sans rien tirer.
+ *
+ * La connexion ne survit ni à la navigation vers un autre écran, ni au
+ * passage en arrière-plan. Un socket ouvert derrière un écran que personne
+ * ne regarde coûte de la batterie pour rien — et iOS le coupe de toute
+ * façon en arrière-plan, sans le dire. Au retour, l'écran redemande : ce
+ * qui a changé pendant l'absence est rattrapé là.
  */
 
 /**
@@ -71,9 +82,19 @@ export default function NouveautesScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  /**
+   * La version affichée, lue par la connexion en direct.
+   *
+   * Dans une ref et pas dans l'état : elle est consultée par un rappel qui
+   * vit aussi longtemps que le socket, et une dépendance d'effet de plus
+   * rouvrirait la connexion à chaque changement de catalogue.
+   */
+  const shownVersion = useRef<number | null>(null);
+
   const load = useCallback(async () => {
     const received = await lexService.fetchTexts(LEX_SCREEN);
     setTexts(received);
+    shownVersion.current = received?.version ?? null;
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -86,6 +107,29 @@ export default function NouveautesScreen({ navigation }: Props) {
     setRefreshing(true);
     load();
   }, [load]);
+
+  /* Le direct — ouvert tant que l'écran est regardé, fermé sinon. */
+  useFocusEffect(
+    useCallback(() => {
+      const stopWatching = lexService.watchTexts((version) => {
+        // La poignée de main annonce la version courante : elle sert donc
+        // aussi à rattraper une mise en ligne survenue pendant l'absence.
+        if (shownVersion.current !== null && version === shownVersion.current) return;
+        load();
+      });
+
+      // iOS coupe les sockets en arrière-plan sans prévenir : au retour, la
+      // seule certitude est qu'on ne sait plus, donc on redemande.
+      const subscription = AppState.addEventListener('change', (next) => {
+        if (next === 'active') load();
+      });
+
+      return () => {
+        stopWatching();
+        subscription.remove();
+      };
+    }, [load]),
+  );
 
   const text = texts?.text ?? {};
   const entries = lexService.groupEntries(text, 'nouveautes.entree', ENTRY_FIELDS);

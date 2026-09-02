@@ -26,6 +26,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * ── Hors ligne ────────────────────────────────────────────────────────────
  * La dernière réponse reçue est gardée. Un métro, un avion, un serveur
  * qu'on redémarre : l'écran montre ce qu'il avait, jamais une page vide.
+ *
+ * ── En direct ─────────────────────────────────────────────────────────────
+ * Le serveur prévient quand le catalogue change : une correction faite dans
+ * le panneau atteint l'écran ouvert en moins d'une seconde, sans que
+ * personne ne tire pour rafraîchir. C'est la moitié de l'intérêt de Lex —
+ * sans elle, un texte corrigé attend la prochaine ouverture de l'écran.
  */
 
 /** Le serveur de textes. Public : il ne sert que du texte à lire. */
@@ -134,6 +140,81 @@ async function readCache(hash: string): Promise<LexTexts | null> {
 }
 
 /**
+ * Prévient quand le catalogue change.
+ *
+ * Le serveur envoie la version courante dès la connexion, puis une à chaque
+ * mise en ligne. `onVersion` reçoit les deux sans distinction : l'appelant
+ * compare avec ce qu'il affiche et redemande si ça diffère.
+ *
+ * Traiter la poignée de main comme le reste n'est pas une simplification —
+ * c'est ce qui rattrape le cas où le téléphone dormait pendant une mise en
+ * ligne. Ignorer le premier message ferait manquer exactement ça.
+ *
+ * La connexion se rétablit seule, en espaçant les tentatives. Un téléphone
+ * qui s'endort ou un tunnel coupent le socket : c'est la vie normale d'une
+ * connexion mobile, pas une erreur à remonter.
+ *
+ * Renvoie de quoi la fermer.
+ */
+export function watchTexts(onVersion: (version: number) => void): () => void {
+  let socket: WebSocket | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+  let delay = 1_000;
+
+  const open = () => {
+    if (closed) return;
+
+    try {
+      socket = new WebSocket(`${LEX_URL.replace(/^http/, 'ws')}/live`);
+    } catch {
+      // Même un constructeur qui échoue mérite une nouvelle tentative :
+      // c'est en général l'absence de réseau au moment précis du montage.
+      schedule();
+      return;
+    }
+
+    socket.onopen = () => {
+      // Seule une connexion réellement ouverte remet le compteur à zéro.
+      // Sinon un serveur qui accepte puis raccroche serait harcelé une fois
+      // par seconde, indéfiniment.
+      delay = 1_000;
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const update = JSON.parse(String(event.data)) as { v?: number };
+        if (typeof update.v === 'number') onVersion(update.v);
+      } catch {
+        // Un message illisible ne justifie pas de fermer la connexion.
+      }
+    };
+
+    socket.onclose = () => schedule();
+    socket.onerror = () => socket?.close();
+  };
+
+  const schedule = () => {
+    if (closed || timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      open();
+    }, delay);
+    delay = Math.min(delay * 2, 60_000);
+  };
+
+  open();
+
+  return () => {
+    closed = true;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    socket?.close();
+    socket = null;
+  };
+}
+
+/**
  * Regroupe les clés d'un joker en entrées ordonnées.
  *
  * L'écran demande `nouveautes.entree.*` : le serveur renvoie tout ce qui
@@ -172,4 +253,4 @@ export function groupEntries(
     .map(([, entry]) => entry);
 }
 
-export default { fetchTexts, groupEntries, LEX_URL };
+export default { fetchTexts, watchTexts, groupEntries, LEX_URL };
