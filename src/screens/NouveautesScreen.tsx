@@ -132,7 +132,7 @@ export default function NouveautesScreen({ navigation }: Props) {
   );
 
   const text = texts?.text ?? {};
-  const entries = lexService.groupEntries(text, 'nouveautes.entree', ENTRY_FIELDS);
+  const entries = lexService.groupEntries(text, 'nouveautes.entree', ENTRY_FIELDS, true);
 
   return (
     <ScreenBackground>
