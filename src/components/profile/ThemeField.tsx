@@ -62,13 +62,18 @@ export interface ThemeFieldProps {
 
 export default function ThemeField(props: ThemeFieldProps) {
   const [glFailed, setGlFailed] = useState(false);
-  const onUnavailable = useCallback(() => setGlFailed(true), []);
+  const [skiaFailed, setSkiaFailed] = useState(false);
+  const onGlUnavailable = useCallback(() => setGlFailed(true), []);
+  const onSkiaUnavailable = useCallback(() => setSkiaFailed(true), []);
 
-  // Skia d'abord : c'est le seul moteur qui ait du bruit, et il n'a pas de
-  // mode d'échec à l'exécution — soit le module natif est là, soit il ne
-  // l'est pas, et `hasSkia` le sait avant le premier rendu.
-  if (hasSkia() && Platform.OS !== 'web') {
-    return <ThemeSkia {...props} />;
+  /**
+   * Skia d'abord — mais il a bien un mode d'échec, et il est SILENCIEUX :
+   * `RuntimeEffect.Make` rend `null` sur une erreur de compilation au lieu de
+   * lever. Sans ce repli, un shader refusé donnait un profil sans aucun
+   * thème, sans message, sur les seuls appareils concernés.
+   */
+  if (hasSkia() && Platform.OS !== 'web' && !skiaFailed) {
+    return <ThemeSkia {...props} onUnavailable={onSkiaUnavailable} />;
   }
 
   if (Platform.OS === 'web' || glFailed) {
@@ -84,5 +89,5 @@ export default function ThemeField(props: ThemeFieldProps) {
     );
   }
 
-  return <ThemeShader {...props} onUnavailable={onUnavailable} />;
+  return <ThemeShader {...props} onUnavailable={onGlUnavailable} />;
 }

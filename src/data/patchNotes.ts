@@ -30,6 +30,7 @@ export const PATCH_NOTES: PatchNote[] = [
     date: '2 septembre 2026',
     title: 'Nom du profil',
     items: [
+      'Ton fond de thème n’est plus un dégradé : la couleur s’enroule en veines, comme de l’encre dans l’eau',
       'Ton nom n’apparaît plus en double quand il tient sur deux lignes',
       'Le badge de certification et la pastille d’abonnement se rangent contre ton nom, plus dans le vide à côté',
     ],
