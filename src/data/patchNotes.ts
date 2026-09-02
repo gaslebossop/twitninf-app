@@ -26,6 +26,15 @@ export interface PatchNote {
  */
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '1.5.2',
+    date: '2 septembre 2026',
+    title: 'Nom du profil',
+    items: [
+      'Ton nom n’apparaît plus en double quand il tient sur deux lignes',
+      'Le badge de certification et la pastille d’abonnement se rangent contre ton nom, plus dans le vide à côté',
+    ],
+  },
+  {
     version: '1.5.1',
     date: '2 septembre 2026',
     title: 'Correctifs du profil',

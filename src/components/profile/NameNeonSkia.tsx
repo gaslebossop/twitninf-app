@@ -147,14 +147,33 @@ export function useNeonParagraphs(
       paragraphs.forEach((p: any) => p.layout(NO_WRAP));
 
       /**
+       * ── LA GARDE, ET POURQUOI ELLE DOIT ÉCHOUER DU BON CÔTÉ ────────────
+       *
+       * Vu à l'écran : le nom écrit DEUX FOIS. React Native l'avait passé à
+       * la ligne (« Kosp et » / « Caramel ») pendant que ce paragraphe, mis
+       * en page sans contrainte de largeur, le gardait sur une seule ligne.
+       * La lueur de « Caramel » se retrouvait donc en haut, là où le texte
+       * net n'était pas — un mot fantôme flou à côté du vrai.
+       *
+       * La garde existait déjà. Elle n'a pas tiré parce qu'elle faisait
+       * `getLongestLine?.() ?? 0` : quand la mesure n'est pas disponible,
+       * elle valait zéro, zéro tient dans n'importe quelle largeur, et on
+       * passait. Une valeur par défaut OPTIMISTE sur une mesure de sécurité
+       * est toujours le mauvais choix.
+       *
+       * Sans mesure exploitable, on rend donc la main. Et la condition ne
+       * dépend plus de `numberOfLines` : même limité à une ligne, React
+       * Native COUPE un nom trop long avec des points de suspension, que ce
+       * paragraphe-ci ne reproduirait pas.
+       *
        * La largeur disponible n'est pas connue ici — le nom vit dans une
-       * rangée qui porte aussi les sceaux. L'estimation est VOLONTAIREMENT
+       * rangée qui porte aussi les sceaux. L'estimation reste VOLONTAIREMENT
        * pessimiste : se tromper vers le repli ne coûte que la finesse du
-       * flou, se tromper dans l'autre sens laisserait la seconde ligne sans
-       * la moindre lueur.
+       * flou, se tromper dans l'autre sens réécrit le nom.
        */
-      const width = paragraphs[0]?.getLongestLine?.() ?? 0;
-      if (numberOfLines > 1 && width > screenWidth - 32 - 72) return null;
+      const width = paragraphs[0]?.getLongestLine?.();
+      if (typeof width !== 'number' || !Number.isFinite(width) || width <= 0) return null;
+      if (width > screenWidth - 32 - 72) return null;
 
       return paragraphs;
     } catch {

@@ -718,7 +718,15 @@ const S = StyleSheet.create({
    * se lisait comme un élément égaré. C'est le nom qui cède la place — il a
    * `flexShrink` pour ça, et X comme Instagram font pareil.
    */
-  nameRow: { flexDirection: 'row', alignItems: 'center', overflow: 'visible' },
+  /**
+   * Alignement en BAS, et pas au centre.
+   *
+   * Vu à l'écran sur un nom en taille « Géant » passé sur deux lignes : les
+   * sceaux se calaient au milieu du bloc, donc dans le vide entre les deux
+   * lignes, à droite de rien. Un sceau certifie le NOM — il doit toucher sa
+   * dernière ligne, quel que soit le nombre de lignes.
+   */
+  nameRow: { flexDirection: 'row', alignItems: 'flex-end', overflow: 'visible' },
   nameSlot: { flexShrink: 1, minWidth: 0, marginRight: 4, overflow: 'visible' },
   name: {
     fontFamily: fonts.bold,
@@ -727,7 +735,9 @@ const S = StyleSheet.create({
     letterSpacing: -0.5,
     color: colors.textPrimary,
   },
-  seal: { marginLeft: 5 },
+  // Remonté de la profondeur des jambages : aligné sur le bas de la boîte
+  // de texte, le sceau paraît glisser sous la ligne.
+  seal: { marginLeft: 5, marginBottom: 5 },
 
   handleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 8 },
   handleTap: { flexDirection: 'row', alignItems: 'center', minHeight: 28, flexShrink: 1 },
