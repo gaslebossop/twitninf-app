@@ -8,10 +8,22 @@
  * chargement du module, avant même le premier rendu, et sur un écran aussi
  * central que le profil ça veut dire une app inutilisable en développement.
  *
- * On l'importe donc dans un `try`, une seule fois, et tout le reste de l'app
- * interroge `hasSkia`. Metro résout bien le paquet à l'empaquetage (il est
- * dans `node_modules`), c'est l'accès au module natif au moment de
- * l'exécution qui échoue — et c'est exactement ce que ce `try` attrape.
+ * On l'importe donc tard, une seule fois, et tout le reste de l'app interroge
+ * `hasSkia`. Deux protections, pas une :
+ *
+ *  1. **Dans Expo Go, on ne tente rien.** Le `require` vit dans le corps
+ *     d'une fonction, donc Metro ne l'évalue jamais tout seul ; on ne
+ *     l'appelle pas, et le code de Skia ne tourne pas une seule fois.
+ *  2. **Ailleurs, le `require` est dans un `try`** — une installation
+ *     partielle ou un binaire construit sans le module natif ne doit pas
+ *     emporter l'écran de profil.
+ *
+ * ⚠️ Ce fichier ne protège PAS l'empaquetage. Metro résout
+ * `@shopify/react-native-skia` statiquement, avant qu'une ligne de ce code
+ * ne tourne, et le paquet déclare ses SOURCES en point d'entrée React Native
+ * — sources qui ne se résolvent pas. C'est `metro.config.js` qui règle ça,
+ * en pointant le build compilé. Les deux sont nécessaires : celui-ci pour
+ * l'exécution, celui-là pour le bundle.
  *
  * ── La règle qui en découle ──────────────────────────────────────────────
  *
@@ -34,12 +46,40 @@
  *  • **Le dégradé conique**, impossible en SVG et coûteux à écrire à la main.
  */
 
+/**
+ * Sommes-nous dans Expo Go ?
+ *
+ * La question n'est pas rhetorique : dans Expo Go, le module natif de Skia
+ * n'existe pas, et le simple fait d'EVALUER son index JS met en place des
+ * liaisons natives. Un `try` autour attrape ce qui remonte en JavaScript,
+ * mais rien ne garantit qu'une erreur native se laisse attraper — et le
+ * profil est un ecran trop central pour parier dessus.
+ *
+ * On ne tente donc meme pas le chargement. Comme le `require` vit dans le
+ * corps d'une fonction, Metro ne l'evalue jamais : le code de Skia n'est pas
+ * execute une seule fois de la session.
+ */
+function inExpoGo(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+    const Constants = require('expo-constants').default;
+    return (
+      Constants?.executionEnvironment === 'storeClient' ||
+      Constants?.appOwnership === 'expo'
+    );
+  } catch {
+    // Sans reponse, on suppose le cas le plus prudent.
+    return true;
+  }
+}
+
 let mod: any = null;
 let loaded = false;
 
 function load() {
   if (loaded) return;
   loaded = true;
+  if (inExpoGo()) return;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
     mod = require('@shopify/react-native-skia');
