@@ -57,6 +57,7 @@ import CreatorStudioScreen from '../screens/CreatorStudioScreen';
 import PaidContentSalesScreen from '../screens/PaidContentSalesScreen';
 import ScheduledPostsScreen from '../screens/ScheduledPostsScreen';
 import ProfileInsightsScreen from '../screens/ProfileInsightsScreen';
+import RetrospectiveScreen from '../screens/RetrospectiveScreen';
 import UsernameMarketScreen from '../screens/UsernameMarketScreen';
 import ContractsScreen from '../screens/ContractsScreen';
 import ContractDetailScreen from '../screens/ContractDetailScreen';
@@ -286,6 +287,8 @@ export type MainStackParamList = {
   ProfileInsights: {
     tab?: 'visitors' | 'impersonation' | 'rising' | 'niche' | 'velocity';
   } | undefined;
+  /** `year` : annee couverte. Par defaut, celle que sert le serveur. */
+  Retrospective: { year?: number } | undefined;
   UsernameMarket: undefined;
   CreatorContracts: undefined;
   ContractDetail: { contractId: string };
@@ -1271,6 +1274,12 @@ function MainNavigatorInner() {
         name="ProfileInsights"
         component={ProfileInsightsScreen}
         options={{ headerShown: false }}
+      />
+      {/* Retrospective annuelle en stories : plein ecran, sans en-tete. */}
+      <MainStack.Screen
+        name="Retrospective"
+        component={RetrospectiveScreen}
+        options={{ headerShown: false, presentation: 'card', animation: 'fade' }}
       />
       <MainStack.Screen
         name="UsernameMarket"
