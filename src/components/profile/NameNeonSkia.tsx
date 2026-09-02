@@ -69,8 +69,17 @@ const FONT_SOURCES: Record<string, any> = { ...coreFontAssets, ...displayNameFon
 const NO_WRAP = 100000;
 
 export interface NeonLayer {
-  /** Rayon de flou, en px. */
-  radius: number;
+  /**
+   * Écart-type de la gaussienne, en px — et non un rayon d'ombre.
+   *
+   * Les deux unités ne se comparent pas : la première version passait ici le
+   * rayon d'ombre de la version RN divisé par deux, ce qui donnait un sigma
+   * de 18 sur un nom en taille « Géant ». Une gaussienne de sigma 18 sur un
+   * glyphe PLEIN, c'est un nuage de plus de cinquante pixels — la dalle rose
+   * vue à l'écran. L'appelant fournit désormais un sigma calibré pour ce
+   * rendu-ci (`SKIA_NEON_LAYERS`).
+   */
+  sigma: number;
   color: string;
   /** Opacité au creux et à la crête de la respiration. */
   min: number;
@@ -169,10 +178,10 @@ export interface NameNeonSkiaProps {
  * que la liste changerait de longueur.
  */
 function GlowLayer({
-  paragraph, radius, min, max, x, y, phase,
+  paragraph, sigma, min, max, x, y, phase,
 }: {
   paragraph: any;
-  radius: number;
+  sigma: number;
   min: number;
   max: number;
   x: number;
@@ -182,7 +191,7 @@ function GlowLayer({
   const opacity = useDerivedValue(() => min + (max - min) * phase.value, [min, max]);
 
   return (
-    <Group layer={<Paint opacity={opacity}><Blur blur={radius / 2} /></Paint>}>
+    <Group layer={<Paint opacity={opacity}><Blur blur={sigma} /></Paint>}>
       <SkParagraph paragraph={paragraph} x={x} y={y} width={NO_WRAP} />
     </Group>
   );
@@ -190,6 +199,15 @@ function GlowLayer({
 
 export default function NameNeonSkia({ paragraphs, layers, bleed }: NameNeonSkiaProps) {
   const clock = K.useClock();
+
+  /**
+   * Le `Canvas` de Skia rogne à ses bords. Une gaussienne porte à environ
+   * trois sigmas : au-delà de `bleed / 3`, la lueur se fait couper au carré
+   * et on voit un rectangle autour du nom au lieu d'un halo. Le plafond est
+   * ici, et pas seulement dans la table d'appel, pour qu'aucun réglage futur
+   * ne puisse produire ce défaut.
+   */
+  const maxSigma = Math.max(1, bleed / 3);
 
   /**
    * Origine de la respiration, en temps mural. La pastille de certification
@@ -213,9 +231,9 @@ export default function NameNeonSkia({ paragraphs, layers, bleed }: NameNeonSkia
     <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
       {paragraphs.map((paragraph: any, i: number) => (
         <GlowLayer
-          key={layers[i].radius}
+          key={layers[i].sigma}
           paragraph={paragraph}
-          radius={layers[i].radius}
+          sigma={Math.min(layers[i].sigma, maxSigma)}
           min={layers[i].min}
           max={layers[i].max}
           x={bleed}

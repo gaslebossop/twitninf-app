@@ -546,19 +546,23 @@ export default function ProfileIdentity(props: ProfileIdentityProps) {
           « Membre depuis sept. 2025 » se suffisent, et deux pictogrammes pour
           deux faits déjà écrits ne feraient qu'ajouter du bruit.
         */}
-        <RNAnimated.View style={[S.issueRow, entrance.line(4)]}>
-          {!!city?.trim() && (
-            <>
+        {(!!city?.trim() || !!joined) && (
+          <RNAnimated.View style={[S.issueRow, entrance.line(4)]}>
+            {!!city?.trim() && (
               <Text style={S.issueText} numberOfLines={1}>{city.trim()}</Text>
-              <Text style={S.issueText}>·</Text>
-            </>
-          )}
-          {!!joined && (
-            <Text style={S.issueText} numberOfLines={1}>
-              Membre depuis <Text style={S.issueStamp}>{joined}</Text>
-            </Text>
-          )}
-        </RNAnimated.View>
+            )}
+            {/* Le point ne sort QUE s'il sépare réellement deux choses. Il
+                restait quand la date manquait, et un profil sans date de
+                création affichait « Jtejureville · », un séparateur qui ne
+                séparait rien. */}
+            {!!city?.trim() && !!joined && <Text style={S.issueText}>·</Text>}
+            {!!joined && (
+              <Text style={S.issueText} numberOfLines={1}>
+                Membre depuis <Text style={S.issueStamp}>{joined}</Text>
+              </Text>
+            )}
+          </RNAnimated.View>
+        )}
 
         {/*
           L'appartenance, écrite plutôt que décorée. Discord met un bijou,
@@ -707,7 +711,14 @@ const S = StyleSheet.create({
 
   // ── Corps ─────────────────────────────────────────────────────────────
   body: { paddingHorizontal: GUTTER, paddingTop: 12, zIndex: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', overflow: 'visible' },
+  /**
+   * PAS de `flexWrap`. Les sceaux certifient le nom : ils doivent rester sur
+   * sa ligne. Avec un retour à la ligne, un nom long (taille « Géant », corps
+   * doublé) poussait la pastille premium seule sur la ligne suivante, où elle
+   * se lisait comme un élément égaré. C'est le nom qui cède la place — il a
+   * `flexShrink` pour ça, et X comme Instagram font pareil.
+   */
+  nameRow: { flexDirection: 'row', alignItems: 'center', overflow: 'visible' },
   nameSlot: { flexShrink: 1, minWidth: 0, marginRight: 4, overflow: 'visible' },
   name: {
     fontFamily: fonts.bold,

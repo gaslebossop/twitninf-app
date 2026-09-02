@@ -560,10 +560,63 @@ const NAME_GLOW_MAX_RADIUS = 36;
 /**
  * Marge ouverte autour du nom pour que sa lueur ne soit pas rognée.
  *
- * Calée sur le rayon le plus large réellement produit (~24 px sur un nom de
- * 21), avec un peu de rab. Voir `styles.nameWrap` pour le mécanisme.
+ * Elle valait 28, calée sur le rayon d'ombre le plus large de la version RN
+ * (~24 px sur un nom de 21). Le rendu Skia change la donne : une gaussienne
+ * porte à environ **trois sigmas**, et surtout son `Canvas` ROGNE à ses
+ * bords — contrairement à `textShadowRadius`, qui débordait librement. Une
+ * lueur plus large que cette marge se coupait donc au carré, ce qui se lit
+ * comme un rectangle sale autour du nom.
+ *
+ * 56 laisse passer un sigma de 18, et `NameNeonSkia` plafonne de toute façon
+ * le sien à `bleed / 3` : la lueur ne peut plus, par construction, dépasser
+ * son cadre.
  */
-const NAME_GLOW_BLEED = 28;
+const NAME_GLOW_BLEED = 56;
+
+/**
+ * Le néon Skia a ses PROPRES nombres, et ce n'est pas une duplication.
+ *
+ * ── L'erreur que ça corrige, vue à l'écran ────────────────────────────────
+ * La première version réutilisait le tableau ci-dessus. Résultat : une dalle
+ * rose opaque à la place du nom. La cause est que les deux rendus ne peignent
+ * pas la même chose. Une couche RN peint UNIQUEMENT l'ombre d'un glyphe
+ * transparent ; une couche Skia floute le glyphe PLEIN. À opacité égale, la
+ * seconde dépose infiniment plus de matière — et c'est exactement le défaut
+ * que ce fichier documente deux paragraphes plus bas, réintroduit par la
+ * bande latérale.
+ *
+ * Deux différences, donc :
+ *
+ *  1. **Les opacités sont divisées par trois environ.** Composées, les trois
+ *     couches plafonnent à ~0,49 au ras du glyphe, et s'éteignent vite.
+ *  2. **La couche la plus serrée est SUPPRIMÉE.** Un glyphe à peine flouté,
+ *     posé sous le cœur que React Native dessine par-dessus, n'ajoute pas de
+ *     lumière : il double les lettres et les rend floues. Le filament, c'est
+ *     le cœur — pas une copie de lui.
+ *
+ * `sigma` est l'écart-type de la gaussienne, en fraction du corps, et non un
+ * rayon d'ombre : les deux unités ne se comparent pas.
+ */
+const SKIA_NEON_LAYERS: ReadonlyArray<{
+  sigma: number;
+  cap: number;
+  min: number;
+  max: number;
+  hue: GlowHue;
+}> = [
+  { sigma: 0.4, cap: 22, min: 0.08, max: 0.16, hue: 'edge' },
+  { sigma: 0.2, cap: 12, min: 0.1, max: 0.2, hue: 'core' },
+  { sigma: 0.09, cap: 6, min: 0.12, max: 0.24, hue: 'core' },
+];
+
+function skiaNeonHaloFor(fontSize: number) {
+  return SKIA_NEON_LAYERS.map((layer) => ({
+    sigma: Math.min(layer.sigma * fontSize, layer.cap),
+    min: layer.min,
+    max: layer.max,
+    hue: layer.hue,
+  }));
+}
 
 function nameGlowHaloFor(style?: StyleProp<TextStyle>) {
   const flat = StyleSheet.flatten(style) as TextStyle | undefined;
@@ -629,15 +682,18 @@ function NameHalo({
    * — c'est exactement la raison pour laquelle « Néon » et « Certifié »
    * partagent déjà ce composant.
    */
+  const flat = StyleSheet.flatten([style, extraStyle]) as TextStyle | undefined;
+  const fontSize = typeof flat?.fontSize === 'number' ? flat.fontSize : DEFAULT_NAME_FONT_SIZE;
+
   const glowLayers = useMemo(
-    () => nameGlowHaloFor(style).map((layer) => ({
-      radius: layer.radius,
+    () => skiaNeonHaloFor(fontSize).map((layer) => ({
+      sigma: layer.sigma,
       color: hueOf(layer.hue),
       min: layer.min,
       max: layer.max,
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [style, color, edge],
+    [fontSize, color, edge],
   );
 
   /**
@@ -649,12 +705,11 @@ function NameHalo({
    * Le hook est appelé sans condition : c'est ce qui garde le compte de hooks
    * stable, que Skia soit là ou non.
    */
-  const flat = StyleSheet.flatten([style, extraStyle]) as TextStyle | undefined;
   const paragraphs = useNeonParagraphs(
     name,
     {
       fontFamily: typeof flat?.fontFamily === 'string' ? flat.fontFamily : undefined,
-      fontSize: typeof flat?.fontSize === 'number' ? flat.fontSize : DEFAULT_NAME_FONT_SIZE,
+      fontSize,
       letterSpacing: typeof flat?.letterSpacing === 'number' ? flat.letterSpacing : 0,
       lineHeight: typeof flat?.lineHeight === 'number' ? flat.lineHeight : undefined,
     },

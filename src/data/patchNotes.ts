@@ -26,6 +26,16 @@ export interface PatchNote {
  */
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '1.5.1',
+    date: '2 septembre 2026',
+    title: 'Correctifs du profil',
+    items: [
+      'La lueur autour du nom était devenue une tache : elle redevient un halo qui s’éteint',
+      'La pastille d’abonnement ne part plus seule à la ligne sous un nom long',
+      'Plus de point de séparation isolé après la ville quand la date d’inscription manque',
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2 septembre 2026',
     title: 'Ton profil, refait',
