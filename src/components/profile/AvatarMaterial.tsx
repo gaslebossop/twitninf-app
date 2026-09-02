@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient, RadialGradient, Stop } from 'react-native-svg';
-import { withAlpha, towardWhite } from '../../theme';
+import { withAlpha, towardBlack, towardWhite } from '../../theme';
 import { isReduceMotionEnabled } from '../../hooks/useReduceMotion';
 
 /**
@@ -74,8 +74,32 @@ interface Props {
 
 /** Durées de base, en ms. Longues : une matière qui s'agite fait nerveux. */
 const BODY_MS = 11000;
-const SPECULAR_MS = 4200;
 const BLOOM_MS = 3400;
+
+/**
+ * Période du reflet, et part de cette période où il PASSE.
+ *
+ * Avant, le spéculaire tournait en continu, à vitesse constante. C'est le
+ * défaut qui fait « bannière » : une brillance qui repasse sans arrêt cesse
+ * d'être un accident de lumière et devient une décoration. Un objet réel
+ * n'accroche la lumière que par instants — le reste du temps, il ne fait que
+ * la contenir.
+ *
+ * Donc : une traversée rapide (0,9 s) puis une longue plage morte. À 6 s de
+ * période, le rapport actif/mort vaut 1:5,7. Pendant la plage morte le reflet
+ * ne disparaît pas complètement (`GLINT_FLOOR`) : il redescend au niveau d'un
+ * simple point brillant, posé au même endroit que le rim light, ce qui le
+ * renforce au lieu de laisser l'anneau tomber à plat.
+ */
+const GLINT_MS: Record<MaterialCharacter, number> = {
+  orbit: 6000,
+  // Une surface instable accroche la lumière plus souvent.
+  turbulent: 4600,
+  // Ce qui doit paraître lourd et précieux brille rarement.
+  still: 8200,
+};
+const GLINT_SWEEP = 0.15;
+const GLINT_FLOOR = 0.1;
 
 /**
  * Un tour de boucle couvre plusieurs révolutions.
@@ -111,6 +135,52 @@ function useSpin(ms: number, reverse = false) {
   return useAnimatedStyle(() => ({
     transform: [{ rotate: `${value.value * 360 * TURNS * direction}deg` }],
   }));
+}
+
+/**
+ * Le reflet : un tour complet en `GLINT_SWEEP` de la période, puis rien.
+ *
+ * Une seule valeur partagée pilote l'angle ET l'opacité — les deux doivent
+ * être d'accord à la frame près, et deux boucles séparées se déphaseraient.
+ * La reprise à zéro ne se voit pas : à cet instant l'arc est revenu à son
+ * point de départ (360° ≡ 0°) et son opacité est au plancher.
+ *
+ * ⚠ La courbe est écrite à la main. `Easing.out` de `theme/motion` est une
+ * fonction JS ordinaire : appelée depuis un worklet, elle tue l'app sans
+ * laisser une seule ligne de log.
+ */
+function useGlint(ms: number, reverse = false) {
+  const value = useSharedValue(0);
+
+  useEffect(() => {
+    if (isReduceMotionEnabled()) {
+      // Au milieu de la traversée : un point brillant fixe, ce qui est
+      // exactement ce qu'on veut voir d'un objet poli qui ne bouge pas.
+      value.value = GLINT_SWEEP * 0.45;
+      return;
+    }
+    value.value = 0;
+    value.value = withRepeat(
+      withTiming(1, { duration: ms, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [ms, value]);
+
+  const direction = reverse ? -1 : 1;
+  return useAnimatedStyle(() => {
+    const raw = Math.min(1, value.value / GLINT_SWEEP);
+    // Sortie en douceur : le reflet ralentit en fin de course au lieu de
+    // s'arrêter net, comme une lumière qui glisse hors de l'arête.
+    const eased = 1 - Math.pow(1 - raw, 3);
+    const passing = value.value < GLINT_SWEEP;
+    return {
+      opacity: passing
+        ? GLINT_FLOOR + (1 - GLINT_FLOOR) * Math.sin(Math.PI * raw)
+        : GLINT_FLOOR,
+      transform: [{ rotate: `${eased * 360 * direction}deg` }],
+    };
+  });
 }
 
 /** Respiration du bloom. Sinusoïde échantillonnée : la boucle se referme sur
@@ -159,10 +229,27 @@ export default function AvatarMaterial({
    */
   const tint = useMemo(
     () => ({
+      /** Le point de lumière : presque blanc, mais TEINTÉ. */
       light: towardWhite(accent, 0.25),
+      /** Le second point, plus bas : un métal a deux reflets, pas un. */
+      light2: towardWhite(accent, 0.52),
       core: accent,
       deep: withAlpha(secondary, 0.95),
-      shadow: withAlpha(secondary, 0.12),
+      /**
+       * Le reflet spéculaire. `#FFFFFF` pur a été remplacé par du presque-blanc
+       * teinté, pour deux raisons : un highlight écrêté à 255 perd toute
+       * structure interne et devient une tache plutôt qu'un reflet, et surtout
+       * un métal renvoie une lumière DE SA COULEUR — un or dont le point haut
+       * est blanc pur se lit « jaune brillant », pas « or ».
+       */
+      glint: towardWhite(accent, 0.06),
+      /**
+       * L'ombre de contact. Elle valait `withAlpha(secondary, 0.12)` : la
+       * couleur de la parure à 12 %, c'est-à-dire un halo coloré, pas une
+       * ombre. Une ombre de contact est SOMBRE et SERRÉE — c'est elle, et
+       * elle seule, qui dit « posé sur » plutôt que « flottant au-dessus ».
+       */
+      shadow: withAlpha(towardBlack(secondary, 0.22), 0.34),
     }),
     [accent, secondary],
   );
@@ -171,7 +258,7 @@ export default function AvatarMaterial({
   const bodyStyle = useSpin(bodyMs);
   // « turbulent » fait tourner le spéculaire à contresens du corps : les deux
   // balayages se croisent, et la surface paraît instable au lieu de défiler.
-  const specularStyle = useSpin(SPECULAR_MS, character === 'turbulent');
+  const specularStyle = useGlint(GLINT_MS[character], character === 'turbulent');
   const bloomStyle = useBreath(BLOOM_MS, 0.34, 0.62);
 
   const ids = useMemo(() => {
@@ -207,11 +294,31 @@ export default function AvatarMaterial({
       <Animated.View style={[StyleSheet.absoluteFill, bodyStyle]}>
         <Svg width={outer} height={outer}>
           <Defs>
-            <LinearGradient id={ids.body} x1="0" y1="0" x2="1" y2="1">
+            {/*
+              La rampe du métal, et c'est ici que se joue le plus gros écart
+              avec un dégradé ordinaire.
+
+              L'ancienne version montait vers un point clair puis redescendait :
+              UNE inversion de luminance, symétrique. C'est la définition d'un
+              dégradé, et l'œil y lit du plastique. Un métal réfléchit son
+              environnement, donc sa luminance change de sens au moins DEUX
+              fois : ciel clair en haut, bande sombre au milieu (le « sol » qui
+              se reflète), second reflet plus bas, arête sombre pour finir.
+
+              C'est la bande sombre à 0,58 qui manquait — sans elle, aucune
+              quantité de blanc ne fait du métal.
+
+              L'axe ne fait pas 45° non plus : un axe strictement vertical se
+              lit comme un fond, un axe à 45° comme un gabarit. Autour de 108°,
+              il se lit comme un objet éclairé.
+            */}
+            <LinearGradient id={ids.body} x1="0.16" y1="0" x2="0.84" y2="1">
               <Stop offset="0" stopColor={tint.deep} />
-              <Stop offset="0.28" stopColor={tint.core} />
-              <Stop offset="0.5" stopColor={tint.light} />
-              <Stop offset="0.72" stopColor={tint.core} />
+              <Stop offset="0.16" stopColor={tint.core} />
+              <Stop offset="0.30" stopColor={tint.light} />
+              <Stop offset="0.44" stopColor={tint.core} />
+              <Stop offset="0.58" stopColor={tint.deep} />
+              <Stop offset="0.76" stopColor={tint.light2} />
               <Stop offset="1" stopColor={tint.deep} />
             </LinearGradient>
           </Defs>
@@ -232,9 +339,9 @@ export default function AvatarMaterial({
         <Svg width={outer} height={outer}>
           <Defs>
             <LinearGradient id={ids.spec} x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0} />
-              <Stop offset="0.5" stopColor="#FFFFFF" stopOpacity={0.85} />
-              <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
+              <Stop offset="0" stopColor={tint.glint} stopOpacity={0} />
+              <Stop offset="0.5" stopColor={tint.glint} stopOpacity={0.9} />
+              <Stop offset="1" stopColor={tint.glint} stopOpacity={0} />
             </LinearGradient>
           </Defs>
           <Circle
@@ -255,9 +362,24 @@ export default function AvatarMaterial({
       <View style={StyleSheet.absoluteFill}>
         <Svg width={outer} height={outer}>
           <Defs>
+            {/*
+              Le rim, et il est ASYMÉTRIQUE. Un contour d'intensité constante
+              se lit comme un trait ; c'est le rapport entre les bords qui se
+              lit comme une ÉPAISSEUR. Rapport haut/flancs : 0,30 / 0,11, soit
+              2,7:1.
+
+              La moitié basse ne s'éteint pas — elle passe au NOIR. C'est la
+              partie que presque personne ne met, et c'est elle qui donne le
+              volume : un objet éclairé par le haut a un dessous plus sombre
+              que son fond, jamais un liseré clair. Le passage par l'alpha zéro
+              au milieu évite que blanc et noir se mélangent en gris sale.
+            */}
             <LinearGradient id={ids.rim} x1="0.5" y1="0" x2="0.5" y2="1">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.55} />
-              <Stop offset="0.45" stopColor="#FFFFFF" stopOpacity={0} />
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.3} />
+              <Stop offset="0.3" stopColor="#FFFFFF" stopOpacity={0.11} />
+              <Stop offset="0.52" stopColor="#FFFFFF" stopOpacity={0} />
+              <Stop offset="0.62" stopColor="#000000" stopOpacity={0} />
+              <Stop offset="1" stopColor="#000000" stopOpacity={0.24} />
             </LinearGradient>
           </Defs>
           <Circle
@@ -275,7 +397,10 @@ export default function AvatarMaterial({
             cy={center}
             r={size / 2}
             stroke={tint.shadow}
-            strokeWidth={Math.max(1, ringW * 0.5)}
+            // Resserrée de moitié : une ombre de contact large devient un
+            // second anneau, et deux anneaux empilés autour d'une photo ont
+            // déjà été refusés. Le contact doit se deviner, pas se compter.
+            strokeWidth={Math.max(1, ringW * 0.34)}
             fill="none"
           />
         </Svg>

@@ -26,6 +26,23 @@ export interface PatchNote {
  */
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '1.5.0',
+    date: '2 septembre 2026',
+    title: 'Ton profil, refait',
+    items: [
+      'Ton nom et ta photo restent en haut de l’écran quand tu fais défiler ton profil — tu sais toujours chez qui tu es',
+      'Tes chiffres sont regroupés à côté de ta photo, alignés et lisibles d’un coup d’œil',
+      'Les onglets Posts, Réponses, Médias et J’aime restent à portée pendant que tu descends dans tes posts',
+      'Ton abonnement est écrit sur ton profil, avec la date jusqu’à laquelle il court',
+      '« Personnaliser » a sa propre place au lieu d’une petite icône ; partage, signets et déconnexion sont regroupés dans le menu ⋯',
+      'Le profil des autres suit exactement la même mise en page que le tien, au pixel près',
+      'Les parures d’avatar accrochent vraiment la lumière : un reflet passe, puis l’anneau se repose — au lieu de tourner sans fin',
+      'Les fonds de profil ne montrent plus de bandes : ils sont calculés pixel par pixel, et rendent pareil sur iPhone et sur Android',
+      'Les fonds de profil ont de la matière : leurs contours ne sont plus des ovales mais des nuages qui se déforment lentement',
+      'Le néon du nom est un vrai tube lumineux, plus une ombre épaisse : la lueur décroît comme une vraie lumière',
+    ],
+  },
+  {
     version: '1.4.0',
     date: '1er septembre 2026',
     title: 'Ton abonnement, en un seul endroit',

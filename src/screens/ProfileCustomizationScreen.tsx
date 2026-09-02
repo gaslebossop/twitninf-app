@@ -295,7 +295,16 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
             couleurs, exactement comme sur un vrai profil. */}
         <View style={styles.previewDock}>
           <View style={styles.previewCard}>
-            <ProfileThemeBackdrop customization={preview} bannerHeight={PREVIEW_BANNER} />
+            {/* `base` : le moteur GLSL du thème peint sa propre couleur de fond (sa
+                surface est opaque par choix, voir `ThemeShader`). Ici le champ
+                est posé sur la carte d'aperçu, pas sur le fond d'écran — sans
+                cette prop il y dessinerait un rectangle plus sombre que la
+                carte. */}
+            <ProfileThemeBackdrop
+              customization={preview}
+              bannerHeight={PREVIEW_BANNER}
+              base={colors.surface}
+            />
             <View style={styles.previewBanner}>
               <LinearGradient
                 colors={['#39414f', '#262b36']}
@@ -322,7 +331,7 @@ export default function ProfileCustomizationScreen({ navigation }: any) {
                 verified={canUseCertified}
                 verificationStyle={verificationStyle}
               />
-              <Text style={[styles.previewHandle, { color: accent }]}>@{user?.username || 'pseudo'}</Text>
+              <Text style={styles.previewHandle} numberOfLines={1}>@{user?.username || 'pseudo'}</Text>
               <ProfileTitleChip customization={preview} />
             </View>
           </View>
@@ -713,11 +722,29 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   previewBanner: { height: PREVIEW_BANNER, backgroundColor: colors.surfaceAlt },
-  previewBody: { paddingHorizontal: 16, paddingBottom: 14, alignItems: 'center' },
+  previewBody: { paddingHorizontal: 14, paddingBottom: 14 },
   /** `relative` : les calques de parure se posent en absolu autour. */
-  previewAvatarWrap: { position: 'relative', marginTop: -32, marginBottom: 8 },
-  previewName: { color: colors.textPrimary, fontSize: 18, fontFamily: fonts.display },
-  previewHandle: { fontSize: 14, marginTop: 2, fontFamily: fonts.semibold },
+  previewAvatarWrap: {
+    position: 'relative',
+    alignSelf: 'flex-start',
+    // Moitie de l'avatar sur la banniere — le meme rapport que sur le profil.
+    marginTop: -PREVIEW_AVATAR / 2,
+    marginBottom: 10,
+  },
+  previewName: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    lineHeight: 24,
+    letterSpacing: -0.4,
+    fontFamily: fonts.display,
+  },
+  previewHandle: {
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+  },
 
   /**
    * La barre des familles. Posée entre l'aperçu et les réglages : c'est la

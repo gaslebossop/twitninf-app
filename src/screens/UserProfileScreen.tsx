@@ -1,33 +1,32 @@
-import { colors, fonts, glow, withAlpha, duration as D, easing as E , statusBarStyle} from '../theme';
+import { colors, fonts, glow, duration as D, easing as E, statusBarStyle } from '../theme';
 import { BackButton, ScreenSkeleton, AppRefreshControl, PullRefreshLogo } from '../components/ui';
 import { usePullRefreshLogo } from '../hooks/usePullRefreshLogo';
 // Alias : ce fichier importe déjà `Animated` du cœur RN plus bas — une
 // `Animated.Value` du cœur passée à une vue Reanimated échoue en silence
 // (voir CLAUDE.md), donc les deux ne doivent jamais partager le même nom.
-import ReanimatedView from 'react-native-reanimated';
-import { useHeaderMetrics } from '../hooks/useHeaderMetrics';
+import ReanimatedView, {
+  useAnimatedReaction,
+  useSharedValue,
+} from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   FlatList,
   StyleSheet,
   Animated,
-  Easing,
   Platform,
   ActivityIndicator,
   StatusBar,
   Share,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { apiService } from '../services';
 import { useAuth } from '../contexts/AuthContext';
 import { Tweet } from '../types/api';
-import Avatar from '../components/Avatar';
 import TweetRow, { type TweetRowAction } from '../components/feed/TweetRow';
 import ReportSheet from '../components/ReportSheet';
 import { showActionSheet, type ActionSheetItem } from '../components/ui/ActionSheet';
@@ -35,42 +34,45 @@ import { webProfileUrl } from '../config/webUrl';
 import ModerationActions from '../components/ModerationActions';
 import { useKosporBirthdayEvent } from '../hooks/useKosporBirthdayEvent';
 import challengeProgressService from '../services/challengeProgressService';
-import VerifiedBadge from '../components/VerifiedBadge';
-import PremiumBadge from '../components/PremiumBadge';
 import IosNativeBadge from '../components/IosNativeBadge';
 import { formatCompactCount } from '../utils/format';
 import { effectiveSubscriptionTier } from '../utils/subscriptionTier';
 import { useProfileBannerHeight } from '../hooks/useProfileBannerHeight';
+import ProfileIdentity from '../components/profile/ProfileIdentity';
+import ProfileTopBar from '../components/profile/ProfileTopBar';
+import ProfileTabs from '../components/profile/ProfileTabs';
+import Tappable from '../components/ui/Tappable';
+import { useHeaderMetrics, HEADER_CONTENT_HEIGHT } from '../hooks/useHeaderMetrics';
 import useForegroundInterval from '../hooks/useForegroundInterval';
-import PremiumDisplayName from '../components/PremiumDisplayName';
 import ProfileStories, { useProfileStories } from '../components/ProfileStories';
-import { STORY_GRADIENT } from '../components/StoryRing';
 import StoryViewer from '../components/StoryViewer';
 import { toast } from '../components/ui/Toast';
 import { confirmAsync } from '../components/ui/ConfirmSheet';
 import { promptAsync } from '../components/ui/PromptSheet';
 import strikeService from '../services/strikeService';
 import {
-  AvatarDecorationLayer,
-  AvatarDecorationOrnament,
-  ProfileBannerImage,
-  ProfileThemeBackdrop,
-  ProfileTitleChip,
-} from '../components/ProfileDecoration';
-import {
   certifiedNameColors,
   decorationColors,
   isPremiumProfile,
-  nameSizeScale,
   nameBadgeSize,
   profileThemeOf,
   type ProfileCustomization,
 } from '../services/profileCustomizationService';
-import {
-  CountUp,
-  ProfileEntranceHalo,
-  useProfileEntrance,
-} from '../components/PremiumProfileEntrance';
+import { useProfileEntrance } from '../components/PremiumProfileEntrance';
+
+type ProfileTabKey = 'tweets' | 'replies' | 'media' | 'likes';
+
+/**
+ * Memes libelles que sur son propre profil : un onglet ne change pas de nom
+ * selon le profil qu'on regarde.
+ */
+const PROFILE_TABS: ReadonlyArray<{ key: ProfileTabKey; label: string }> = [
+  { key: 'tweets', label: 'Posts' },
+  { key: 'replies', label: 'Reponses' },
+  { key: 'media', label: 'Medias' },
+  { key: 'likes', label: "J'aime" },
+];
+
 
 const PROFILE_BODY_BG = colors.bg;
 
@@ -158,7 +160,7 @@ export default function UserProfileScreen() {
    * formule que sur son propre profil : c'est le MÊME nom, il n'a aucune
    * raison d'être flanqué de pastilles différentes selon qui le regarde.
    */
-  const visitedBadgeSize = nameBadgeSize(customization, S.fullName.fontSize);
+  const visitedBadgeSize = nameBadgeSize(customization, 25);
   /**
    * Un profil habillé a droit à une entrée en scène. La condition porte sur
    * `userProfile` et pas sur un état de chargement : tant que la réponse n'est
@@ -744,7 +746,46 @@ export default function UserProfileScreen() {
   // `listRef` remplace l'ancienne `scrollRef` : `useAnimatedRef` expose le
   // même `.current` (donc `scrollToOffset` marche toujours) tout en donnant à
   // `usePullRefreshLogo` de quoi lire la traction sur le thread UI.
-  const { pull, scrollHandler, logoKey, listRef: scrollRef } = usePullRefreshLogo(onRefresh, refreshing);
+  const { pull, scrollY, scrollHandler, logoKey, listRef: scrollRef } = usePullRefreshLogo(onRefresh, refreshing);
+
+  /**
+   * Onglets collants — même mécanique que sur son propre profil, et pour la
+   * même raison : `stickyHeaderIndices` collerait l'en-tête ENTIER (index 0
+   * d'une `FlatList` = `ListHeaderComponent`), donc la bannière avec.
+   */
+  const tabsY = useSharedValue(0);
+  const [tabsPinned, setTabsPinned] = useState(false);
+  const topBarHeight = headerTopInset + HEADER_CONTENT_HEIGHT;
+  const onTabsLayout = useCallback((e: any) => { tabsY.value = e.nativeEvent.layout.y; }, [tabsY]);
+  useAnimatedReaction(
+    () => tabsY.value > 0 && scrollY.value >= tabsY.value - topBarHeight,
+    (pinned, previous) => { if (pinned !== previous) scheduleOnRN(setTabsPinned, pinned); },
+    [topBarHeight],
+  );
+
+  /**
+   * Le menu « ⋯ » de la barre haute : partager, bloquer. Il vivait dans une
+   * pastille de 34 px collée au bouton d'abonnement, où il disparaissait dès
+   * qu'on faisait défiler.
+   */
+  const openProfileMenu = useCallback(() => {
+    if (!userProfile) return;
+    showActionSheet({
+      items: [
+        {
+          label: 'Partager ce compte',
+          icon: 'share-outline',
+          onPress: () => handleShareProfile(userProfile.username),
+        },
+        {
+          label: 'Bloquer ce compte',
+          icon: 'ban-outline',
+          destructive: true,
+          onPress: () => handleBlockToggle(userProfile.id, userProfile.username),
+        },
+      ],
+    });
+  }, [userProfile, handleShareProfile, handleBlockToggle]);
 
   const handleTabChange = (tab: 'tweets' | 'replies' | 'media' | 'likes') => setActiveTab(tab);
 
@@ -825,20 +866,6 @@ export default function UserProfileScreen() {
     <View style={S.container}>
       <StatusBar barStyle={statusBarStyle()} backgroundColor="transparent" translucent />
 
-      {/* ── STICKY HEADER ── */}
-      <View style={[S.stickyHeader, { paddingTop: headerTopInset }]}>
-        <BackButton navigation={navigation} />
-        <View style={S.headerCenter}>
-          <View style={S.headerTitleRow}>
-            <Text style={S.headerName} numberOfLines={1}>{userProfile.full_name}</Text>
-            {userProfile.verified && (
-              <VerifiedBadge verificationStyle={userProfile.verification_style} size={15} animated={true} />
-            )}
-          </View>
-          <Text style={S.headerCount}>{formatCompactCount(userProfile.stats.tweets)} posts</Text>
-        </View>
-      </View>
-
       {/* ── SCROLLABLE BODY ── */}
       {/*
         La scène d'arrivée (fondu + 8 px) enveloppe désormais la liste plutôt
@@ -884,111 +911,81 @@ export default function UserProfileScreen() {
         ListHeaderComponent={
           <>
 
-          <View style={S.profileHero}>
-            {/*
-              Thème premium : un fond peint DERRIÈRE tout le profil (bannière,
-              avatar, nom, bio, stats) et qui déborde sous le hero. Il ne passe
-              jamais par-dessus la bannière — d'où sa place en premier enfant.
-
-              Sur un profil habillé, la scène d'arrivée remplace le fondu interne
-              du calque : `style` est fusionné en dernier, donc il gagne sur les
-              clés qu'il redéfinit (`opacity`, `transform`).
-            */}
-            <ProfileThemeBackdrop
-              customization={customization}
-              bannerHeight={bannerHeight}
-              style={premiumProfile ? entrance.theme : undefined}
-            />
-
-            <View style={{ width: '100%' }} onLayout={onBannerParentLayout}>
-              <Animated.View
-                style={[S.bannerWrap, { height: bannerHeight }, themed && S.bannerWrapThemed, entrance.banner]}
-              >
-                {userProfile.banner ? (
-                  <ProfileBannerImage uri={userProfile.banner} themed={themed} />
-                ) : (
-                  !themed && <View style={S.bannerPlaceholder} />
-                )}
-              </Animated.View>
-            </View>
-
-            <View style={[S.avatarEditRow, { marginTop: -AVATAR_ROW_OVERLAP }]}>
-              <Animated.View style={entrance.avatar}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={S.avatarTouchable}
-                onPress={hasStories ? () => setStoryViewerVisible(true) : undefined}
-              >
-                {/* Le halo d'atterrissage, derrière l'avatar : décor éphémère,
-                    démonté dès la fin de la scène. */}
-                <ProfileEntranceHalo
-                  size={AVATAR_SIZE + AVATAR_BORDER * 2}
-                  customization={customization}
-                  active={entrance.staging}
-                />
-                {hasStories && !isLive && !hasAvatarDecoration && (
-                  <LinearGradient
-                    colors={STORY_GRADIENT as unknown as [string, string, ...string[]]}
-                    start={{ x: 0.85, y: 0.05 }}
-                    end={{ x: 0.15, y: 0.95 }}
-                    style={S.avatarStoryRing}
-                    pointerEvents="none"
-                  />
-                )}
-                {!isLive && (
-                  <AvatarDecorationLayer customization={customization} size={AVATAR_SIZE + AVATAR_BORDER * 2} />
-                )}
-                {isLive ? (
-                  <View style={S.liveRingContainer}>
-                    <LinearGradient
-                      colors={[colors.accent, colors.gold]}
-                      style={[S.liveRing, { width: 90, height: 90, borderRadius: 45 }]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    />
-                    <View style={[S.avatarInner, { width: 90, height: 90, borderRadius: 45 }]}>
-                      <Avatar size={84} username={userProfile.username || 'U'} uri={userProfile.avatar as any} />
-                    </View>
-                    <Animated.View style={[S.liveBadge, { transform: [{ scale: pulseAnim }] }]}>
-                      <Text style={S.liveBadgeText}>LIVE</Text>
-                    </Animated.View>
-                  </View>
-                ) : hasAvatarDecoration ? (
-                  <LinearGradient
-                    colors={[profileAccent, profileSecondary] as [string, string]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={S.avatarRing}
+          <ProfileIdentity
+            displayName={userProfile.full_name}
+            username={userProfile.username}
+            avatarUri={userProfile.avatar as any}
+            bannerUri={userProfile.banner as any}
+            bio={userProfile.bio}
+            city={userProfile.city}
+            createdAt={userProfile.created_at}
+            verified={!!userProfile.verified}
+            verificationStyle={userProfile.verification_style}
+            premium={!!userProfile.premium}
+            tier={premiumTier as any}
+            isPrivate={!!userProfile.is_private_account}
+            isLive={isLive}
+            followers={Number(userProfile.stats?.followers || 0)}
+            following={Number(userProfile.stats?.following || 0)}
+            posts={Number(userProfile.stats?.tweets || 0)}
+            customization={customization}
+            accent={profileAccent}
+            secondary={profileSecondary}
+            themed={themed}
+            hasAvatarDecoration={hasAvatarDecoration}
+            hasStories={hasStories}
+            badgeTint={badgeTint}
+            badgeSize={visitedBadgeSize}
+            entrance={entrance}
+            playEntrance={premiumProfile}
+            scrollY={scrollY}
+            bannerHeight={bannerHeight}
+            onBannerParentLayout={onBannerParentLayout}
+            onPressAvatar={hasStories ? () => setStoryViewerVisible(true) : undefined}
+            onPressFollowers={() => (navigation as any).navigate('UserConnections', {
+              userId: userProfile.id, username: userProfile.username, initialTab: 'followers',
+            })}
+            onPressFollowing={() => (navigation as any).navigate('UserConnections', {
+              userId: userProfile.id, username: userProfile.username, initialTab: 'following',
+            })}
+            handleTrailing={userProfile.is_ios_native ? <IosNativeBadge size={15} /> : undefined}
+            actions={!isOwnProfile ? (
+              <View style={S.actionRow}>
+                {/*
+                  L'abonnement est L'action de cet ecran, et la seule : c'est
+                  donc le seul endroit du profil qui porte l'accent plein. Une
+                  fois abonne, le bouton retombe sur la surface neutre — il ne
+                  reste primaire que tant qu'il reste a faire.
+                */}
+                <Animated.View style={{ transform: [{ scale: followButtonAnim }], flex: 1 }}>
+                  <Tappable
+                    style={[S.followBtn, !!followStatus && S.followBtnDone]}
+                    onPress={handleFollow}
+                    disabled={followLoading}
+                    scaleTo={0.98}
+                    accessibilityRole="button"
                   >
-                    <Avatar
-                      size={AVATAR_SIZE}
-                      username={userProfile.username || 'U'}
-                      uri={userProfile.avatar as any}
-                    />
-                  </LinearGradient>
-                ) : (
-                  <View style={S.avatarRing}>
-                    <Avatar
-                      size={AVATAR_SIZE}
-                      username={userProfile.username || 'U'}
-                      uri={userProfile.avatar as any}
-                    />
-                  </View>
-                )}
-                {/* Après l'avatar : l'ornement doit passer devant lui. */}
-                {!isLive && (
-                  <AvatarDecorationOrnament
-                    customization={customization}
-                    size={AVATAR_SIZE + AVATAR_BORDER * 2}
-                  />
-                )}
-              </TouchableOpacity>
-              </Animated.View>
+                    {followLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={followStatus ? colors.textPrimary : colors.onAccent}
+                      />
+                    ) : (
+                      <Text style={[S.followBtnLabel, !!followStatus && S.followBtnLabelDone]}>
+                        {followStatus === 'active'
+                          ? 'Se desabonner'
+                          : followStatus === 'pending' ? 'Demande' : "S'abonner"}
+                      </Text>
+                    )}
+                  </Tappable>
+                </Animated.View>
 
-              <Animated.View style={[S.headerActions, entrance.action]}>
                 {isLive && (
-                  <TouchableOpacity
-                    style={S.liveBtnHeader}
+                  <Tappable
+                    style={S.actionIconBtn}
+                    scaleTo={0.94}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rejoindre le direct"
                     onPress={() => {
                       const { liveService } = require('../services/liveService');
                       liveService.getLives().then((lives: any[]) => {
@@ -1005,256 +1002,35 @@ export default function UserProfileScreen() {
                         }
                       });
                     }}
-                    activeOpacity={0.85}
                   >
-                    <Ionicons name="videocam" size={15} color={colors.white} />
-                  </TouchableOpacity>
-                )}
-                {!isOwnProfile && (
-                  <Animated.View style={{ transform: [{ scale: followButtonAnim }], flex: 1, maxWidth: '62%' }}>
-                    <TouchableOpacity
-                      style={[
-                        S.followHeaderBtn,
-                        followStatus && S.followHeaderBtnOutline,
-                        themed && {
-                          shadowColor: profileAccent,
-                          shadowOpacity: 0.38,
-                          shadowRadius: 20,
-                          shadowOffset: { width: 0, height: 6 },
-                          elevation: 8,
-                        },
-                        themed && !followStatus && {
-                          borderWidth: 1,
-                          borderColor: '#eff3f4',
-                          backgroundColor: '#eff3f4',
-                        },
-                        themed && followStatus && {
-                          borderColor: withAlpha(profileAccent, 0.55),
-                          backgroundColor: withAlpha(profileAccent, 0.16),
-                        },
-                      ]}
-                      onPress={handleFollow}
-                      disabled={followLoading}
-                      activeOpacity={0.85}
-                    >
-                      {followLoading ? (
-                        <ActivityIndicator size="small" color={followStatus ? colors.textSecondary : colors.white} />
-                      ) : (
-                        <Text
-                          style={[
-                            S.followHeaderBtnText,
-                            themed && !followStatus && { color: '#0b0c0f' },
-                            followStatus && { color: colors.textPrimary },
-                          ]}
-                        >
-                          {followStatus === 'active' ? 'Se désabonner' : followStatus === 'pending' ? 'Demandé' : "S'abonner"}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </Animated.View>
-                )}
-                {/* `blockedState` est toujours nul ici : le retour anticipé plus haut
-                    intercepte tout profil bloqué avant d'atteindre cette mise en page. */}
-                {!isOwnProfile && (
-                  <TouchableOpacity
-                    style={S.profileOptionsBtn}
-                    onPress={() => showActionSheet({
-                      items: [
-                        {
-                          label: 'Partager ce compte',
-                          icon: 'share-outline',
-                          onPress: () => handleShareProfile(userProfile.username),
-                        },
-                        {
-                          label: 'Bloquer ce compte',
-                          icon: 'ban-outline',
-                          destructive: true,
-                          onPress: () => handleBlockToggle(userProfile.id, userProfile.username),
-                        },
-                      ],
-                    })}
-                    activeOpacity={0.85}
-                    aria-label="Plus d'options"
-                  >
-                    <Ionicons name="ellipsis-horizontal" size={17} color={colors.textPrimary} />
-                  </TouchableOpacity>
-                )}
-              </Animated.View>
-            </View>
-
-            <View style={[S.profileOverBanner, { marginTop: 8 }]}>
-              <View style={S.userInfo}>
-                <Animated.View style={[S.nameRow, entrance.name]}>
-                  <View style={{ flexShrink: 1, minWidth: 0, marginRight: 6, overflow: 'visible' }}>
-                    <PremiumDisplayName
-                      text={userProfile.full_name}
-                      baseStyle={{ ...S.fullName, fontSize: S.fullName.fontSize * nameSizeScale(customization) }}
-                      isPremium={!!userProfile.premium}
-                      subscriptionTierRaw={userProfile.subscription_tier}
-                      fontId="system"
-                      effectId="none"
-                      customization={customization}
-                      verified={!!userProfile.verified}
-                      verificationStyle={userProfile.verification_style}
-                    />
-                  </View>
-                  {userProfile.verified && (
-                    <View style={{ marginLeft: 5 }}>
-                      <VerifiedBadge
-                        verificationStyle={userProfile.verification_style}
-                        size={visitedBadgeSize}
-                        animated
-                        tint={badgeTint}
-                      />
-                    </View>
-                  )}
-                  {userProfile.premium && (
-                    <View style={{ marginLeft: 4 }}>
-                      {/* Mêmes sources que la pastille ci-dessus : le badge se
-                          range derrière la certification au lieu d'imposer une
-                          troisième palette sur la ligne du pseudo. */}
-                      <PremiumBadge
-                        type="small"
-                        animated
-                        size={visitedBadgeSize}
-                        subscriptionTier={premiumTier}
-                        tint={userProfile.verified ? certifPalette : null}
-                      />
-                    </View>
-                  )}
-                  {userProfile.is_private_account && (
-                    <View style={{ marginLeft: 4 }}>
-                      <Ionicons name="lock-closed" size={14} color={colors.textSecondary} />
-                    </View>
-                  )}
-                </Animated.View>
-
-                {/* ── La cascade ──
-                    Une ligne monte après l'autre, 50 ms d'écart. Les index sont
-                    fixes et pas dérivés de l'ordre de rendu : le titre, l'« à
-                    propos » et la bio sont facultatifs, et un décalage calculé
-                    ferait glisser toute la suite dès qu'un champ manque. */}
-                <Animated.View style={[S.handleRow, entrance.line(0)]}>
-                  <Text style={[S.handle, { flexShrink: 1 }]} numberOfLines={1}>
-                    @{userProfile.username}
-                  </Text>
-                  <View style={S.badgesInline}>
-                    {userProfile.is_ios_native && <IosNativeBadge size={15} />}
-                  </View>
-                </Animated.View>
-
-                {/* Titre premium : une ligne à soi, sous le pseudo. */}
-                <Animated.View style={entrance.line(1)}>
-                  <ProfileTitleChip customization={customization} />
-                </Animated.View>
-
-                {!!customization?.about_me && (
-                  <Animated.View
-                    style={[
-                      S.aboutBlock,
-                      {
-                        borderLeftColor: profileAccent,
-                        backgroundColor: withAlpha(profileAccent, 0.14),
-                      },
-                      entrance.line(2),
-                    ]}
-                  >
-                    <Text style={S.aboutLabel}>À PROPOS</Text>
-                    <Text style={S.aboutText}>{customization.about_me}</Text>
-                  </Animated.View>
-                )}
-                {!!userProfile.bio?.trim?.() && (
-                  <Animated.Text style={[S.bio, entrance.line(3)]}>
-                    {String(userProfile.bio).trim()}
-                  </Animated.Text>
-                )}
-
-                {(userProfile.created_at || userProfile.city?.trim?.()) ? (
-                  <Animated.View style={[S.metaRow, entrance.line(4)]}>
-                    {!!userProfile.city?.trim?.() && (
-                      <View style={S.metaItem}>
-                        <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-                        <Text style={S.metaText}> {String(userProfile.city).trim()}</Text>
-                      </View>
-                    )}
-                    {userProfile.created_at && (
-                      <View style={S.metaItem}>
-                        <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
-                        <Text style={S.metaText}>
-                          {' '}A rejoint TwitNinf en{' '}
-                          {new Date(userProfile.created_at).toLocaleDateString('fr-FR', {
-                            year: 'numeric',
-                            month: 'long',
-                          })}
-                        </Text>
-                      </View>
-                    )}
-                  </Animated.View>
-                ) : null}
-
-                <Animated.View style={[S.statsRow, entrance.line(5)]}>
-                  <TouchableOpacity style={S.statGroup} activeOpacity={0.7}>
-                    <CountUp value={userProfile.stats.tweets} active={entrance.staging} format={formatCompactCount} style={S.statNum} />
-                    <Text style={S.statLbl}> Posts</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[S.statGroup, { marginLeft: 16 }]}
-                    activeOpacity={0.7}
-                    onPress={() => (navigation as any).navigate('UserConnections', {
-                      userId: userProfile.id,
-                      username: userProfile.username,
-                      initialTab: 'following',
-                    })}
-                  >
-                    <CountUp value={userProfile.stats.following} active={entrance.staging} format={formatCompactCount} style={S.statNum} />
-                    <Text style={S.statLbl}> Abonnements</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[S.statGroup, { marginLeft: 16 }]}
-                    activeOpacity={0.7}
-                    onPress={() => (navigation as any).navigate('UserConnections', {
-                      userId: userProfile.id,
-                      username: userProfile.username,
-                      initialTab: 'followers',
-                    })}
-                  >
-                    <CountUp value={userProfile.stats.followers} active={entrance.staging} format={formatCompactCount} style={S.statNum} />
-                    <Text style={S.statLbl}> Abonnés</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[S.statGroup, { marginLeft: 16 }]} activeOpacity={0.7}>
-                    <CountUp value={userProfile.stats.likes} active={entrance.staging} format={formatCompactCount} style={S.statNum} />
-                    <Text style={S.statLbl}> J&apos;aime</Text>
-                  </TouchableOpacity>
-                </Animated.View>
-
-                {isOwnProfile && (
-                  <TouchableOpacity
-                    style={S.followRequestsLink}
-                    activeOpacity={0.7}
-                    onPress={() => navigation.navigate('FollowRequests' as never)}
-                  >
-                    <Ionicons name="person-add-outline" size={15} color={colors.accent} />
-                    <Text style={S.followRequestsLinkText}>Demandes d&apos;abonnement</Text>
-                  </TouchableOpacity>
+                    <Ionicons name="videocam" size={19} color={colors.onAccent} />
+                  </Tappable>
                 )}
               </View>
-            </View>
-          </View>
+            ) : undefined}
+            footer={isOwnProfile ? (
+              <Tappable
+                style={S.rowLink}
+                onPress={() => navigation.navigate('FollowRequests' as never)}
+                scaleTo={0.98}
+                accessibilityRole="button"
+              >
+                <Ionicons name="person-add-outline" size={18} color={colors.textSecondary} />
+                <Text style={S.rowLinkTitle}>Demandes d&apos;abonnement</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+              </Tappable>
+            ) : undefined}
+          />
 
-          <View style={S.divider} />
           {showBirthdayButton && (
-            <TouchableOpacity style={[S.birthdayBtn, { backgroundColor: colors.gold }, glow(colors.gold, 12)]} onPress={handleWishHappyBirthday} activeOpacity={0.85}>
-              <View style={S.birthdayGradient}>
-                <Ionicons name="gift" size={20} color="#1a1303" />
-                <Text style={S.birthdayText}>Souhaiter bon anniversaire</Text>
-                <Ionicons name="heart" size={18} color="#1a1303" />
-              </View>
-            </TouchableOpacity>
+            <Tappable style={S.birthdayBtn} onPress={handleWishHappyBirthday} scaleTo={0.98}>
+              <Ionicons name="gift" size={20} color="#1a1303" />
+              <Text style={S.birthdayText}>Souhaiter bon anniversaire</Text>
+            </Tappable>
           )}
 
-          {/* Moderation */}
           {!isOwnProfile && (
-            <View style={{ paddingHorizontal: 16, marginBottom: 6 }}>
+            <View style={S.moderationSlot}>
               <ModerationActions
                 targetType="user"
                 targetId={userProfile.id}
@@ -1264,42 +1040,19 @@ export default function UserProfileScreen() {
             </View>
           )}
 
-          {/* Stories à la une du profil */}
           <ProfileStories
             userId={userProfile?.id}
             isOwner={String(currentUser?.id || '') === String(userProfile?.id || '')}
             currentUserId={currentUser?.id ? String(currentUser.id) : null}
           />
 
-          <View style={S.divider} />
-
-          {/* Tabs (underline style) */}
-          <View
-            style={[
-              S.tabsBar,
-              themed && { borderBottomColor: withAlpha(profileAccent, 0.28) },
-            ]}
-          >
-            {([
-              { key: 'tweets', label: 'Posts' },
-              { key: 'replies', label: 'Réponses' },
-              { key: 'media', label: 'Médias' },
-              { key: 'likes', label: "J'aime" },
-            ] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab.key}
-                style={[S.tabItem, activeTab === tab.key && S.tabItemActive]}
-                onPress={() => handleTabChange(tab.key)}
-                activeOpacity={0.85}
-              >
-                <Text style={[S.tabLabel, activeTab === tab.key && S.tabLabelActive]}>
-                  {tab.label}
-                </Text>
-                {activeTab === tab.key && (
-                  <View style={[S.tabUnderline, themed && { backgroundColor: profileAccent }]} />
-                )}
-              </TouchableOpacity>
-            ))}
+          <View onLayout={onTabsLayout}>
+            <ProfileTabs<ProfileTabKey>
+              tabs={PROFILE_TABS}
+              active={activeTab}
+              onChange={handleTabChange}
+              accent={themed ? profileAccent : undefined}
+            />
           </View>
 
           {/* Tweet list */}
@@ -1331,6 +1084,31 @@ export default function UserProfileScreen() {
       />
       </Animated.View>
 
+      <ProfileTopBar
+        scrollY={scrollY}
+        bannerHeight={bannerHeight}
+        topInset={headerTopInset}
+        name={userProfile.full_name}
+        subtitle={`${formatCompactCount(userProfile.stats.tweets)} posts`}
+        verified={!!userProfile.verified}
+        verificationStyle={userProfile.verification_style}
+        avatarUri={userProfile.avatar as any}
+        username={userProfile.username}
+        onOpenMore={openProfileMenu}
+        leading={<BackButton navigation={navigation} />}
+      />
+
+      {tabsPinned && (
+        <View style={[S.tabsPinned, { top: topBarHeight }]}>
+          <ProfileTabs<ProfileTabKey>
+            tabs={PROFILE_TABS}
+            active={activeTab}
+            onChange={handleTabChange}
+            accent={themed ? profileAccent : undefined}
+          />
+        </View>
+      )}
+
       <StoryViewer
         visible={storyViewerVisible}
         groups={[profileStories]}
@@ -1357,6 +1135,63 @@ const S = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+
+  // Rangee d'action, calquee sur ProfileScreen pour que les deux ecrans ne
+  // divergent pas au premier reglage.
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  followBtn: {
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followBtnDone: { backgroundColor: colors.surfaceAlt },
+  followBtnLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    lineHeight: 20,
+    letterSpacing: -0.1,
+    color: colors.onAccent,
+  },
+  followBtnLabelDone: { color: colors.textPrimary },
+  actionIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 52,
+    marginTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+    paddingTop: 14,
+  },
+  rowLinkTitle: {
+    flex: 1,
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.textPrimary,
+  },
+  moderationSlot: { paddingHorizontal: 16, marginTop: 16 },
+  /**
+   * Fond PLEIN : la barre haute au-dessus porte deja le materiau, et deux
+   * verres empiles ne se detachent plus l'un de l'autre.
+   */
+  tabsPinned: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 25,
+    backgroundColor: colors.bg,
   },
   loadingContainer: {
     flex: 1,
@@ -1716,18 +1551,16 @@ const S = StyleSheet.create({
 
   // Birthday
   birthdayBtn: {
-    marginHorizontal: 16,
-    marginVertical: 10,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  birthdayGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
     gap: 10,
+    marginHorizontal: 16,
+    marginTop: 16,
+    minHeight: 52,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    backgroundColor: colors.gold,
   },
   birthdayText: {
     color: '#1a1303',

@@ -53,6 +53,19 @@ export function usePullRefreshLogo(
   const pull = useSharedValue(0);
 
   /**
+   * Position de défilement, en pixels, écrite depuis le MÊME worklet que
+   * `pull` — donc sur le thread UI, à la cadence de la vue native.
+   *
+   * Elle sert aux en-têtes qui se replient (`ProfileTopBar`). Passer par
+   * `onScrollFrame` aurait marché, mais ce chemin repasse par le thread JS
+   * via `scheduleOnRN` : un en-tête piloté par là retarde d'une frame ou deux
+   * dès que la liste virtualise, et ça se voit exactement au moment où on
+   * regarde l'en-tête. Une valeur partagée de plus coûte une écriture par
+   * événement, et rien d'autre.
+   */
+  const scrollY = useSharedValue(0);
+
+  /**
    * ⚠️ Ces trois fonctions DOIVENT garder la même identité d'un rendu à
    * l'autre — c'est ce qui rend `scrollHandler` stable (voir plus bas).
    *
@@ -148,6 +161,7 @@ export function usePullRefreshLogo(
     onScroll: (e) => {
       const over = -e.contentOffset.y;
       pull.value = over > 0 ? over : 0;
+      scrollY.value = e.contentOffset.y;
 
       // Une seule secousse par franchissement : sans ce verrou, `onScroll`
       // en tirerait une par image tant que le doigt reste au-delà du seuil.
@@ -207,7 +221,7 @@ export function usePullRefreshLogo(
     }, [pull]),
   );
 
-  return { pull, scrollHandler, logoKey, listRef };
+  return { pull, scrollY, scrollHandler, logoKey, listRef };
 }
 
 export { PULL_REFRESH_THRESHOLD };

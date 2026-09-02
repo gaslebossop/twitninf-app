@@ -22,7 +22,8 @@ import Svg, {
 } from 'react-native-svg';
 import { colors, fonts, isDarkTheme, towardBlack, towardWhite, withAlpha } from '../theme';
 import AvatarMaterial, { type MaterialCharacter } from './profile/AvatarMaterial';
-import ThemeMaterial from './profile/ThemeMaterial';
+import ThemeField from './profile/ThemeField';
+import NameNeonSkia, { useNeonParagraphs } from './profile/NameNeonSkia';
 import {
   AvatarDecoration,
   NameEffect,
@@ -53,12 +54,21 @@ export function ProfileThemeBackdrop({
   customization,
   bannerHeight,
   style,
+  base,
 }: {
   customization?: ProfileCustomization | null;
   /** Hauteur de la bande bannière : elle fixe où le dégradé bascule vers sa
       descente, donc où le raccord avec la photo se joue. */
   bannerHeight: number;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Couleur sur laquelle le champ est posé. Le moteur GLSL peint sa propre
+   * couleur de fond (sa surface est opaque par choix — voir `ThemeShader`),
+   * donc il doit savoir sur quoi il atterrit. Le profil le laisse par défaut ;
+   * l'aperçu de l'écran de personnalisation, lui, pose ce champ sur une carte
+   * en `colors.surface` et non sur le fond d'écran.
+   */
+  base?: string;
 }) {
   const theme = profileThemeOf(customization);
   // Le thème se DÉPOSE : il n'apparaît qu'une fois la personnalisation
@@ -88,14 +98,16 @@ export function ProfileThemeBackdrop({
     >
       {/* Toute la matière du thème tient dans une seule couche : « Dégradé »,
           « Halo » et « Nébuleuse » ne diffèrent plus que par la géométrie de
-          leurs foyers et leur mouvement. Voir `profile/ThemeMaterial`. */}
-      <ThemeMaterial
+          leurs foyers et leur mouvement. `ThemeField` choisit le moteur :
+          un vrai shader GLSL, ou le repli SVG. */}
+      <ThemeField
         kind={theme === 'glow' || theme === 'mesh' ? theme : 'gradient'}
         accent={accent}
         secondary={secondary}
         factor={factor}
         bannerHeight={bannerHeight}
         height={total}
+        base={base}
       />
       <ProfileAmbience customization={customization} height={total} />
     </Animated.View>
@@ -610,6 +622,51 @@ function NameHalo({
   const atmosphere = edge && edge !== color ? edge : towardBlack(color, 0.62);
   const hueOf = (hue: GlowHue) =>
     hue === 'hot' ? hot : hue === 'edge' ? atmosphere : color;
+
+  /**
+   * Le même halo, décrit une seule fois : rayons, couleurs et bornes de
+   * respiration. Les deux rendus le lisent, donc ils ne peuvent pas diverger
+   * — c'est exactement la raison pour laquelle « Néon » et « Certifié »
+   * partagent déjà ce composant.
+   */
+  const glowLayers = useMemo(
+    () => nameGlowHaloFor(style).map((layer) => ({
+      radius: layer.radius,
+      color: hueOf(layer.hue),
+      min: layer.min,
+      max: layer.max,
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [style, color, edge],
+  );
+
+  /**
+   * Le vrai flou gaussien, quand Skia est dans le binaire ET que la police du
+   * nom est chargée ET que le nom tient sur une ligne. Les trois conditions
+   * vivent dans le hook ; il rend `null` sinon, et on retombe juste en
+   * dessous sur les quatre couches d'ombres — mêmes couleurs, mêmes rayons.
+   *
+   * Le hook est appelé sans condition : c'est ce qui garde le compte de hooks
+   * stable, que Skia soit là ou non.
+   */
+  const flat = StyleSheet.flatten([style, extraStyle]) as TextStyle | undefined;
+  const paragraphs = useNeonParagraphs(
+    name,
+    {
+      fontFamily: typeof flat?.fontFamily === 'string' ? flat.fontFamily : undefined,
+      fontSize: typeof flat?.fontSize === 'number' ? flat.fontSize : DEFAULT_NAME_FONT_SIZE,
+      letterSpacing: typeof flat?.letterSpacing === 'number' ? flat.letterSpacing : 0,
+      lineHeight: typeof flat?.lineHeight === 'number' ? flat.lineHeight : undefined,
+    },
+    glowLayers,
+    numberOfLines,
+  );
+
+  if (paragraphs) {
+    return (
+      <NameNeonSkia paragraphs={paragraphs} layers={glowLayers} bleed={NAME_GLOW_BLEED} />
+    );
+  }
 
   return (
     <>

@@ -29,7 +29,7 @@ module.exports = ({ config }) => {
      * `tests/app-version` refuse une version sans ses notes. Une version qu'on
      * ne peut pas expliquer aux gens n'a pas de raison d'exister.
      */
-    version: "1.4.0",
+    version: "1.5.0",
     privacy: "public",
     orientation: "portrait",
     /**
