@@ -1,5 +1,5 @@
-import React, { useMemo, useRef } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useDerivedValue } from 'react-native-reanimated';
 import { coreFontAssets, displayNameFontAssets } from '../../theme';
 import { LIT_PULSE_CYCLE_MS, litPulseEpoch } from '../../utils/litPulse';
@@ -14,37 +14,37 @@ import { skia } from './skiaRuntime';
  * La version React Native empile quatre `<Text>` transparents dont seule
  * l'ombre est peinte (`textShadowRadius`). La recette est juste — et c'est
  * une IMITATION de flou : une ombre portée n'est pas une convolution. Son
- * noyau diffère d'une plateforme à l'autre (iOS la rend comme un nuage diffus
- * dès ~40 px, d'où le plafond `NAME_GLOW_MAX_RADIUS` de `ProfileDecoration`),
- * elle ne s'additionne pas proprement, et le rayon n'est pas animable.
+ * noyau diffère d'une plateforme à l'autre, elle ne s'additionne pas
+ * proprement, et le rayon n'est pas animable.
  *
  * Ici, chaque couche est le GLYPHE passé dans un vrai flou gaussien, à un
- * rayon différent. C'est la définition d'un tube néon : le gaz s'allume en
- * couleur pure à la paroi, et la lumière décroît selon une vraie gaussienne.
+ * rayon différent. C'est la définition d'un tube néon.
  *
- * ── Ce qu'on ne fait PAS ─────────────────────────────────────────────────
+ * ── LE PIÈGE, ET IL A COÛTÉ DEUX ALLERS-RETOURS ──────────────────────────
  *
- * Le cœur du glyphe reste dessiné par React Native, par-dessus. Le redessiner
- * dans Skia obligerait à reproduire à l'identique la mise en page de RN, et
- * le moindre écart décalerait le nom lui-même. Un halo FLOU, lui, tolère
- * largement un pixel de décalage — c'est ce qui rend ce partage sûr.
+ * Le cœur du nom est dessiné par React Native ; seule la lueur l'est ici. Les
+ * deux doivent donc couper le texte au MÊME endroit, sinon la lueur d'un mot
+ * se pose là où le texte net n'est pas — à l'écran, le nom paraît écrit deux
+ * fois, une fois net et une fois en fantôme flou.
  *
- * ── Pourquoi `Paragraph` et pas `Text` ───────────────────────────────────
+ * Deux tentatives ratées, pour la même raison de fond :
  *
- * L'effet « Néon » écarte les lettres (`neonSpacing`, `letterSpacing: 1.2`).
- * Le `Text` de Skia ne connaît pas l'interlettrage : sur un nom de quinze
- * caractères, la lueur aurait pris presque vingt pixels de retard sur le
- * dernier glyphe. Un halo décalé de vingt pixels ne se rattrape pas au flou,
- * il se voit comme une traîne. `Paragraph` porte `letterSpacing` et
- * `heightMultiplier`, donc il suit exactement le texte de RN.
+ *  1. Mise en page sans contrainte de largeur, avec une garde en `?? 0` : la
+ *     mesure manquante valait zéro, zéro tient partout, on passait.
+ *  2. Garde sur une largeur ESTIMÉE (« l'écran moins les marges et la place
+ *     des sceaux »). Mesuré ensuite sur la capture : le nom faisait 269 pt
+ *     pour une place estimée à 289. L'estimation disait « ça tient », React
+ *     Native passait quand même à la ligne.
  *
- * ── La garde sur le retour à la ligne ────────────────────────────────────
+ * **On ne devine plus rien.** Le composant MESURE sa propre boîte — celle du
+ * texte, à la marge de lueur près — et met le paragraphe en page à cette
+ * largeur-là. S'il en sort sur plus d'une ligne, c'est que React Native aussi,
+ * et on rend la main aux quatre couches d'ombres, qui savent, elles, suivre
+ * le texte sur deux lignes.
  *
- * On force une largeur de mise en page ÉNORME, donc une seule ligne, et on
- * rend la main dès que le nom risquait de ne pas tenir. Laisser `Paragraph`
- * couper tout seul serait pire : rien ne garantit qu'il coupe au même mot que
- * React Native, et une lueur répartie sur d'autres lignes que le texte est le
- * défaut le plus visible qu'on puisse produire ici.
+ * Le repli est rendu PAR CE COMPOSANT (`children`), et non décidé par
+ * l'appelant : la décision dépend d'une mesure qui n'existe qu'ici, après le
+ * premier passage de mise en page.
  */
 
 const K = skia();
@@ -65,19 +65,20 @@ const SkParagraph = K?.Paragraph;
  */
 const FONT_SOURCES: Record<string, any> = { ...coreFontAssets, ...displayNameFontAssets };
 
-/** Largeur de mise en page : assez grande pour qu'aucun nom ne se coupe. */
-const NO_WRAP = 100000;
+/**
+ * Marge de sécurité sur la largeur mesurée.
+ *
+ * Skia et React Native ne composent pas le texte avec le même moteur : à
+ * quelques dixièmes de point près, un nom qui tient tout juste chez l'un peut
+ * passer à la ligne chez l'autre. On exige donc qu'il tienne dans 94 % de la
+ * boîte, pas dans 100 %.
+ */
+const FIT = 0.94;
 
 export interface NeonLayer {
   /**
-   * Écart-type de la gaussienne, en px — et non un rayon d'ombre.
-   *
-   * Les deux unités ne se comparent pas : la première version passait ici le
-   * rayon d'ombre de la version RN divisé par deux, ce qui donnait un sigma
-   * de 18 sur un nom en taille « Géant ». Une gaussienne de sigma 18 sur un
-   * glyphe PLEIN, c'est un nuage de plus de cinquante pixels — la dalle rose
-   * vue à l'écran. L'appelant fournit désormais un sigma calibré pour ce
-   * rendu-ci (`SKIA_NEON_LAYERS`).
+   * Écart-type de la gaussienne, en px — et non un rayon d'ombre. Les deux
+   * unités ne se comparent pas (voir `SKIA_NEON_LAYERS` côté appelant).
    */
   sigma: number;
   color: string;
@@ -93,102 +94,14 @@ export interface NeonTypography {
   lineHeight?: number;
 }
 
-/**
- * La police du nom est-elle chargée ?
- *
- * L'appelant doit le savoir AVANT de rendre : la réponse décide entre deux
- * dessins complets, ce vrai flou ou les quatre couches d'ombres. Un composant
- * qui rendrait `null` en cas d'échec laisserait un nom sans aucune lueur — le
- * pire des trois résultats.
- *
- * Le hook est appelé inconditionnellement pour que le compte de hooks ne bouge
- * pas. Il rend `null` tant que la police n'est pas là (le chargement est
- * asynchrone) et l'appelant garde ses ombres pendant ce temps : le passage de
- * l'une à l'autre est un raffinement du même halo, mêmes couleurs et mêmes
- * rayons, pas une apparition.
- */
-export function useNeonParagraphs(
-  name: string,
-  type: NeonTypography,
-  layers: NeonLayer[],
-  numberOfLines: number,
-): any[] | null {
-  const request = useMemo(() => {
-    const source = type.fontFamily ? FONT_SOURCES[type.fontFamily] : undefined;
-    return source ? { [type.fontFamily as string]: [source] } : {};
-  }, [type.fontFamily]);
-
-  const provider = K ? K.useFonts(request) : null;
-  const ready = !!(K && provider && type.fontFamily && FONT_SOURCES[type.fontFamily]);
-  const { width: screenWidth } = useWindowDimensions();
-
-  return useMemo(() => {
-    if (!ready) return null;
-    try {
-      /**
-       * Un paragraphe par couche : seule la couleur change, et `Paragraph`
-       * porte sa couleur dans son style, pas dans la peinture qui le dessine.
-       */
-      const paragraphs = layers.map((layer) =>
-        K.Skia.ParagraphBuilder.Make({}, provider)
-          .pushStyle({
-            fontFamilies: [type.fontFamily],
-            fontSize: type.fontSize,
-            letterSpacing: type.letterSpacing ?? 0,
-            // Aligne la hauteur de ligne sur celle de React Native : sans lui
-            // la lueur se pose quelques pixels au-dessus ou au-dessous du
-            // texte, et un halo décalé verticalement se lit comme un défaut.
-            heightMultiplier: type.lineHeight ? type.lineHeight / type.fontSize : undefined,
-            color: K.Skia.Color(layer.color),
-          })
-          .addText(name)
-          .build(),
-      );
-      paragraphs.forEach((p: any) => p.layout(NO_WRAP));
-
-      /**
-       * ── LA GARDE, ET POURQUOI ELLE DOIT ÉCHOUER DU BON CÔTÉ ────────────
-       *
-       * Vu à l'écran : le nom écrit DEUX FOIS. React Native l'avait passé à
-       * la ligne (« Kosp et » / « Caramel ») pendant que ce paragraphe, mis
-       * en page sans contrainte de largeur, le gardait sur une seule ligne.
-       * La lueur de « Caramel » se retrouvait donc en haut, là où le texte
-       * net n'était pas — un mot fantôme flou à côté du vrai.
-       *
-       * La garde existait déjà. Elle n'a pas tiré parce qu'elle faisait
-       * `getLongestLine?.() ?? 0` : quand la mesure n'est pas disponible,
-       * elle valait zéro, zéro tient dans n'importe quelle largeur, et on
-       * passait. Une valeur par défaut OPTIMISTE sur une mesure de sécurité
-       * est toujours le mauvais choix.
-       *
-       * Sans mesure exploitable, on rend donc la main. Et la condition ne
-       * dépend plus de `numberOfLines` : même limité à une ligne, React
-       * Native COUPE un nom trop long avec des points de suspension, que ce
-       * paragraphe-ci ne reproduirait pas.
-       *
-       * La largeur disponible n'est pas connue ici — le nom vit dans une
-       * rangée qui porte aussi les sceaux. L'estimation reste VOLONTAIREMENT
-       * pessimiste : se tromper vers le repli ne coûte que la finesse du
-       * flou, se tromper dans l'autre sens réécrit le nom.
-       */
-      const width = paragraphs[0]?.getLongestLine?.();
-      if (typeof width !== 'number' || !Number.isFinite(width) || width <= 0) return null;
-      if (width > screenWidth - 32 - 72) return null;
-
-      return paragraphs;
-    } catch {
-      // Une police introuvable ou un style refusé ne doit pas emporter le
-      // profil : on rend la main et l'appelant garde ses ombres.
-      return null;
-    }
-  }, [ready, provider, layers, type.fontFamily, type.fontSize, type.letterSpacing, type.lineHeight, name, numberOfLines, screenWidth]);
-}
-
 export interface NameNeonSkiaProps {
-  paragraphs: any[];
+  name: string;
   layers: NeonLayer[];
+  type: NeonTypography;
   /** Marge ouverte autour du texte par l'appelant, en px. */
   bleed: number;
+  /** Le repli : les couches d'ombres, rendues si le néon ne peut pas servir. */
+  children: React.ReactNode;
 }
 
 /**
@@ -197,7 +110,7 @@ export interface NameNeonSkiaProps {
  * que la liste changerait de longueur.
  */
 function GlowLayer({
-  paragraph, sigma, min, max, x, y, phase,
+  paragraph, sigma, min, max, x, y, width, phase,
 }: {
   paragraph: any;
   sigma: number;
@@ -205,28 +118,39 @@ function GlowLayer({
   max: number;
   x: number;
   y: number;
+  width: number;
   phase: any;
 }) {
   const opacity = useDerivedValue(() => min + (max - min) * phase.value, [min, max]);
 
   return (
     <Group layer={<Paint opacity={opacity}><Blur blur={sigma} /></Paint>}>
-      <SkParagraph paragraph={paragraph} x={x} y={y} width={NO_WRAP} />
+      <SkParagraph paragraph={paragraph} x={x} y={y} width={width} />
     </Group>
   );
 }
 
-export default function NameNeonSkia({ paragraphs, layers, bleed }: NameNeonSkiaProps) {
-  const clock = K.useClock();
-
+export default function NameNeonSkia({
+  name, layers, type, bleed, children,
+}: NameNeonSkiaProps) {
   /**
-   * Le `Canvas` de Skia rogne à ses bords. Une gaussienne porte à environ
-   * trois sigmas : au-delà de `bleed / 3`, la lueur se fait couper au carré
-   * et on voit un rectangle autour du nom au lieu d'un halo. Le plafond est
-   * ici, et pas seulement dans la table d'appel, pour qu'aucun réglage futur
-   * ne puisse produire ce défaut.
+   * Largeur réelle de la boîte du nom, marge de lueur comprise. Zéro tant que
+   * la mise en page n'a pas eu lieu : on rend le repli pendant ce temps-là,
+   * donc le nom n'est jamais sans lueur.
    */
-  const maxSigma = Math.max(1, bleed / 3);
+  const [box, setBox] = useState(0);
+  const onLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    setBox((prev) => (Math.abs(prev - w) < 0.5 ? prev : w));
+  };
+
+  const request = useMemo(() => {
+    const source = type.fontFamily ? FONT_SOURCES[type.fontFamily] : undefined;
+    return source ? { [type.fontFamily as string]: [source] } : {};
+  }, [type.fontFamily]);
+
+  const provider = K ? K.useFonts(request) : null;
+  const clock = K ? K.useClock() : null;
 
   /**
    * Origine de la respiration, en temps mural. La pastille de certification
@@ -239,27 +163,82 @@ export default function NameNeonSkia({ paragraphs, layers, bleed }: NameNeonSkia
   const still = isReduceMotionEnabled();
 
   const phase = useDerivedValue(() => {
-    if (still) return 0.65;
+    if (still || !clock) return 0.65;
     const elapsed = mountedAt - epoch + clock.value;
     const t = (elapsed % LIT_PULSE_CYCLE_MS) / LIT_PULSE_CYCLE_MS;
     // Onde triangulaire 0 → 1 → 0, exactement celle de `litPulse`.
     return t < 0.5 ? t * 2 : 2 - t * 2;
   }, [still]);
 
+  const available = box - bleed * 2;
+
+  const built = useMemo(() => {
+    const family = type.fontFamily;
+    const usable = !!K && !!provider && !!family && !!FONT_SOURCES[family];
+    if (!usable || available <= 0) return null;
+    try {
+      // Un paragraphe par couche : seule la couleur change, et `Paragraph`
+      // porte sa couleur dans son style, pas dans la peinture qui le dessine.
+      const paragraphs = layers.map((layer) =>
+        K.Skia.ParagraphBuilder.Make({}, provider)
+          .pushStyle({
+            fontFamilies: [family],
+            fontSize: type.fontSize,
+            letterSpacing: type.letterSpacing ?? 0,
+            // Aligne la hauteur de ligne sur celle de React Native : sans lui
+            // la lueur se pose quelques pixels au-dessus ou au-dessous du
+            // texte, et un halo décalé verticalement se lit comme un défaut.
+            heightMultiplier: type.lineHeight ? type.lineHeight / type.fontSize : undefined,
+            color: K.Skia.Color(layer.color),
+          })
+          .addText(name)
+          .build(),
+      );
+
+      // Mise en page à la largeur RÉELLE de la boîte, celle que React Native
+      // a donnée au texte. C'est ce qui remplace toutes les estimations.
+      paragraphs.forEach((p: any) => p.layout(available));
+
+      const longest = paragraphs[0]?.getLongestLine?.();
+      if (typeof longest !== 'number' || !Number.isFinite(longest) || longest <= 0) return null;
+
+      // Une seule ligne, et avec de la marge. Au-delà, les deux moteurs
+      // peuvent couper à des endroits différents, et une lueur posée sur une
+      // autre ligne que le texte est le pire défaut possible ici.
+      if (longest > available * FIT) return null;
+
+      return paragraphs;
+    } catch {
+      // Une police introuvable ou un style refusé ne doit pas emporter le
+      // profil : on rend la main et l'appelant garde ses ombres.
+      return null;
+    }
+  }, [
+    provider, layers, type.fontFamily, type.fontSize, type.letterSpacing,
+    type.lineHeight, name, available,
+  ]);
+
   return (
-    <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-      {paragraphs.map((paragraph: any, i: number) => (
-        <GlowLayer
-          key={layers[i].sigma}
-          paragraph={paragraph}
-          sigma={Math.min(layers[i].sigma, maxSigma)}
-          min={layers[i].min}
-          max={layers[i].max}
-          x={bleed}
-          y={bleed}
-          phase={phase}
-        />
-      ))}
-    </Canvas>
+    <View style={StyleSheet.absoluteFill} onLayout={onLayout} pointerEvents="none">
+      {built ? (
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          {built.map((paragraph: any, i: number) => (
+            <GlowLayer
+              key={layers[i].sigma}
+              paragraph={paragraph}
+              sigma={Math.min(layers[i].sigma, Math.max(1, bleed / 3))}
+              min={layers[i].min}
+              max={layers[i].max}
+              x={bleed}
+              y={bleed}
+              width={available}
+              phase={phase}
+            />
+          ))}
+        </Canvas>
+      ) : (
+        children
+      )}
+    </View>
   );
 }

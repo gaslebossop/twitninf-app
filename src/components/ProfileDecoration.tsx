@@ -23,7 +23,8 @@ import Svg, {
 import { colors, fonts, isDarkTheme, towardBlack, towardWhite, withAlpha } from '../theme';
 import AvatarMaterial, { type MaterialCharacter } from './profile/AvatarMaterial';
 import ThemeField from './profile/ThemeField';
-import NameNeonSkia, { useNeonParagraphs } from './profile/NameNeonSkia';
+import NameNeonSkia from './profile/NameNeonSkia';
+import { hasSkia } from './profile/skiaRuntime';
 import {
   AvatarDecoration,
   NameEffect,
@@ -696,34 +697,7 @@ function NameHalo({
     [fontSize, color, edge],
   );
 
-  /**
-   * Le vrai flou gaussien, quand Skia est dans le binaire ET que la police du
-   * nom est chargée ET que le nom tient sur une ligne. Les trois conditions
-   * vivent dans le hook ; il rend `null` sinon, et on retombe juste en
-   * dessous sur les quatre couches d'ombres — mêmes couleurs, mêmes rayons.
-   *
-   * Le hook est appelé sans condition : c'est ce qui garde le compte de hooks
-   * stable, que Skia soit là ou non.
-   */
-  const paragraphs = useNeonParagraphs(
-    name,
-    {
-      fontFamily: typeof flat?.fontFamily === 'string' ? flat.fontFamily : undefined,
-      fontSize,
-      letterSpacing: typeof flat?.letterSpacing === 'number' ? flat.letterSpacing : 0,
-      lineHeight: typeof flat?.lineHeight === 'number' ? flat.lineHeight : undefined,
-    },
-    glowLayers,
-    numberOfLines,
-  );
-
-  if (paragraphs) {
-    return (
-      <NameNeonSkia paragraphs={paragraphs} layers={glowLayers} bleed={NAME_GLOW_BLEED} />
-    );
-  }
-
-  return (
+  const shadows = (
     <>
       {nameGlowHaloFor(style).map((layer) => (
         <Animated.Text
@@ -763,6 +737,33 @@ function NameHalo({
         </Animated.Text>
       ))}
     </>
+  );
+
+  /**
+   * Le vrai flou gaussien quand Skia est dans le binaire. Le composant décide
+   * ensuite lui-même s'il peut servir : il MESURE la boîte du nom et rend le
+   * repli (`shadows`) si le paragraphe n'y tient pas sur une ligne.
+   *
+   * La décision ne peut pas être prise ici — elle dépend d'une largeur qui
+   * n'existe qu'après la mise en page. C'est précisément l'estimation faite à
+   * cet endroit qui a laissé passer un nom écrit deux fois.
+   */
+  if (!hasSkia()) return shadows;
+
+  return (
+    <NameNeonSkia
+      name={name}
+      layers={glowLayers}
+      bleed={NAME_GLOW_BLEED}
+      type={{
+        fontFamily: typeof flat?.fontFamily === 'string' ? flat.fontFamily : undefined,
+        fontSize,
+        letterSpacing: typeof flat?.letterSpacing === 'number' ? flat.letterSpacing : 0,
+        lineHeight: typeof flat?.lineHeight === 'number' ? flat.lineHeight : undefined,
+      }}
+    >
+      {shadows}
+    </NameNeonSkia>
   );
 }
 
