@@ -30,6 +30,8 @@ import {
   Easing,
   PanResponder,
   Pressable,
+  Modal,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -53,6 +55,7 @@ import { toast } from '../components/ui/Toast';
 import Avatar from '../components/Avatar';
 import { quantizedDegreesPerPixel, quantizedLatitudeCosine } from '../utils/mapCluster';
 import { buildMapMarkers, coordinatesOf, type MarkerRole } from '../utils/mapMarkers';
+import { PIN_ANCHOR_Y, personPinUrl } from '../utils/mapPinUrl';
 import NfMapCanvas, {
   MAX_ZOOM,
   type MapBounds,
@@ -331,6 +334,9 @@ export default function NfMapScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<NfMapPerson | null>(null);
+  /** Les Twitninf du jour visibles dans la zone, et celui dont l'aperçu est ouvert. */
+  const [moments, setMoments] = useState<NfMapMoment[]>([]);
+  const [momentPreview, setMomentPreview] = useState<NfMapMoment | null>(null);
   /**
    * Le groupe ouvert, s'il y en a un.
    *
@@ -413,8 +419,11 @@ export default function NfMapScreen() {
     const request = nearbyRequest.current + 1;
     nearbyRequest.current = request;
 
-    const fresh = await nfMapService.nearby(queryableBounds(window));
+    const area = queryableBounds(window);
+    const [fresh, daily] = await Promise.all([nfMapService.nearby(area), nfMapService.moments(area)]);
     if (request !== nearbyRequest.current) return;
+    // Remplacé en bloc : une photo n'a pas de « dernière position » à conserver.
+    setMoments(daily.moments);
     if (fresh.length === 0) return;
 
     setPeople((current) => {
@@ -610,6 +619,10 @@ export default function NfMapScreen() {
     (marker: MapMarker<MarkerRole>) => {
       const role = marker.data;
       if (role.kind === 'self') return;
+      if (role.kind === 'moment') {
+        setMomentPreview(role.moment);
+        return;
+      }
 
       /*
        * Un groupe OUVRE SA LISTE, il ne fait plus que zoomer.
@@ -702,6 +715,27 @@ export default function NfMapScreen() {
       selected,
     ]
   );
+
+  /** Les Twitninf du jour : un marqueur orange chacun, hors regroupement. */
+  const momentMarkers = useMemo<Array<MapMarker<MarkerRole>>>(
+    () =>
+      moments.map((moment) => ({
+        id: `moment:${moment.id}`,
+        latitude: moment.latitude,
+        longitude: moment.longitude,
+        image: personPinUrl(PIN_ORIGIN, {
+          id: moment.user.id,
+          avatar: moment.user.avatar,
+          variant: 'moment',
+          label: moment.is_me ? 'Toi' : moment.user.username,
+        }),
+        anchorY: PIN_ANCHOR_Y,
+        zIndex: 5,
+        data: { kind: 'moment', moment },
+      })),
+    [moments]
+  );
+  const allMarkers = useMemo(() => [...markers, ...momentMarkers], [markers, momentMarkers]);
 
   /**
    * Les trois rappels passés à la carte, STABLES d'un rendu à l'autre.
@@ -934,9 +968,37 @@ export default function NfMapScreen() {
   return (
     <View style={styles.screen}>
       <View style={StyleSheet.absoluteFill}>
+        <Modal visible={!!momentPreview} transparent animationType="fade" onRequestClose={() => setMomentPreview(null)}>
+          <Pressable style={styles.momentBackdrop} onPress={() => setMomentPreview(null)}>
+            {momentPreview && (
+              <Pressable style={styles.momentCard} onPress={() => undefined}>
+                <Image
+                  source={{ uri: momentPreview.photo_url }}
+                  style={[styles.momentPhoto, { aspectRatio: momentPreview.width && momentPreview.height ? momentPreview.width / momentPreview.height : 3 / 4 }]}
+                  resizeMode="cover"
+                />
+                <View style={styles.momentMeta}>
+                  <Avatar size={36} username={momentPreview.user.username} uri={momentPreview.user.avatar || undefined} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.momentName} numberOfLines={1}>
+                      {momentPreview.is_me ? 'Ton Twitninf du jour' : momentPreview.user.full_name || momentPreview.user.username}
+                    </Text>
+                    <Text style={styles.momentSub} numberOfLines={1}>
+                      {[momentPreview.place, `${momentPreview.reaction_count} réaction${momentPreview.reaction_count > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => setMomentPreview(null)} hitSlop={12} accessibilityLabel="Fermer l'aperçu">
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </Pressable>
+                </View>
+                {!!momentPreview.caption && <Text style={styles.momentCaption}>{momentPreview.caption}</Text>}
+              </Pressable>
+            )}
+          </Pressable>
+        </Modal>
         <NfMapCanvas
           camera={camera}
-          markers={markers}
+          markers={allMarkers}
           onMarkerPress={onMarkerPress}
           // Toucher le fond referme ce qui est ouvert : c'est le geste qu'on
           // essaie d'abord, avant de chercher une croix.
@@ -1393,6 +1455,13 @@ const floating = {
 };
 
 const styles = StyleSheet.create({
+  momentBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  momentCard: { width: '100%', maxWidth: 420, borderRadius: 18, overflow: 'hidden', backgroundColor: '#111' },
+  momentPhoto: { width: '100%', backgroundColor: '#222' },
+  momentMeta: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
+  momentName: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  momentSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  momentCaption: { color: '#fff', fontSize: 15, paddingHorizontal: 14, paddingBottom: 14 },
   screen: { flex: 1, backgroundColor: colors.bg },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
 

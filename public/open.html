@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="robots" content="noindex">
+<title>TwitNinf</title>
+<!--
+  Relais du clic sur une notification web : ouvre l'app native sur la même
+  page (tweet, profil, conversation, notifications). Sans l'app, ou sur un
+  ordinateur, on continue sur le site au même endroit.
+  Fichier statique hors du bundle : il ne dépend pas du build du site.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0A0A0A; color: #fff;
+    font: 16px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+  main { min-height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; text-align: center; padding: 24px; box-sizing: border-box; }
+  p { margin: 0; color: #a8a8a8; }
+  a { color: #a8a8a8; text-decoration: none; font-weight: 600; }
+  .btn { display: block; width: 100%; max-width: 320px; box-sizing: border-box; padding: 16px;
+    border-radius: 14px; background: #FE2C55; color: #fff; font-size: 17px; }
+</style>
+</head>
+<body>
+<main>
+  <img src="/icon-192.png" alt="" width="72" height="72" style="border-radius:18px">
+  <a id="app" class="btn" href="twitninf://notifications">Ouvrir dans l'app</a>
+  <a id="web" href="/notifications">Continuer sur le site</a>
+</main>
+<script>
+(function () {
+  var to = new URLSearchParams(location.search).get('to') || '/notifications';
+  // Chemin du site uniquement : jamais d'URL absolue ni d'autre domaine.
+  if (to.charAt(0) !== '/' || to.charAt(1) === '/') to = '/notifications';
+  var web = new URL(to, location.origin);
+  var webPath = web.pathname + web.search;
+  document.getElementById('web').href = webPath;
+
+  var m, app = null, p = web.pathname;
+  if ((m = p.match(/^\/tweet\/([^/]+)/))) app = 'twitninf://tweet/' + m[1];
+  else if ((m = p.match(/^\/profile\/([^/]+)/))) app = 'twitninf://profile/' + m[1];
+  else if ((m = p.match(/^\/messages\/([^/]+)/))) app = 'twitninf://conversation/' + m[1];
+  else if (/^\/notifications/.test(p)) app = 'twitninf://notifications';
+  else if (/^\/moment/.test(p)) {
+    // Notification du Twitninf du jour : son envoi (`n`) compte le clic
+    // pour le test A/B, ici puis dans l'app (une seule fois au total).
+    var n = web.searchParams.get('n');
+    app = 'twitninf://moment';
+    if (n && /^[0-9a-f-]{36}$/i.test(n)) {
+      app += '?n=' + n;
+      var hit = 'https://api.twitninf.fr/api/moment-push/' + n + '/click?source=web';
+      try { navigator.sendBeacon(hit) || fetch(hit, { method: 'POST', mode: 'no-cors', keepalive: true }); } catch (e) {}
+    }
+  }
+  else if (/^\/places/.test(p)) app = 'twitninf://passes';
+  else if (/^\/evenement/.test(p)) app = 'twitninf://event';
+  else if (/^\/restauration/.test(p)) app = 'twitninf://restauration';
+
+  var mobile = /iPad|iPhone|iPod|Android/.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  if (!app || !mobile) { location.replace(webPath); return; }
+
+  // Bouton = vrai toucher : c'est ce qui marche toujours. Dans une web app
+  // ajoutée à l'écran d'accueil, iOS ignore souvent l'ouverture automatique
+  // d'un lien vers une app ; on la tente quand même, sans repartir vers le
+  // site, pour que le bouton reste là si elle est bloquée.
+  document.getElementById('app').href = app;
+  try { location.href = app; } catch (e) {}
+})();
+</script>
+</body>
+</html>

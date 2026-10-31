@@ -88,6 +88,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useFlag } from '../contexts/FeatureFlagContext';
+import { FLAGS } from '../config/featureFlagKeys';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 
 import {
@@ -173,10 +175,13 @@ type Row =
 const SearchField = memo(function SearchField({
   seed,
   onSubmit,
+  onOpenMap,
 }: {
   /** Requête poussée de l'extérieur : lien profond, appui sur un hashtag, effacement. */
   seed: string;
   onSubmit: (query: string) => void;
+  /** Ouvre la Carte NF. Absent : pas d'icône (fonctionnalité fermée pour ce compte). */
+  onOpenMap?: () => void;
 }) {
   const [draft, setDraft] = useState(seed);
 
@@ -218,6 +223,17 @@ const SearchField = memo(function SearchField({
           accessibilityLabel="Effacer la recherche"
         >
           <Ionicons name="close" size={ps(20)} color={paper.inkSoft} />
+        </TouchableOpacity>
+      )}
+      {onOpenMap && (
+        <TouchableOpacity
+          onPress={onOpenMap}
+          style={S.fieldMap}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir la Carte NF"
+        >
+          <Ionicons name="map-outline" size={ps(22)} color={paper.ink} />
         </TouchableOpacity>
       )}
     </View>
@@ -522,6 +538,11 @@ const RowsSkeleton = memo(function RowsSkeleton() {
 
 export default function SearchScreen() {
   const navigation = useNavigation();
+  // Même drapeau que l'onglet Carte NF : l'API répond 404 hors du palier.
+  const nfMapEnabled = useFlag(FLAGS.NF_MAP);
+  const openMap = useCallback(() => {
+    (navigation as any).navigate('NfMap');
+  }, [navigation]);
   const route = useRoute<SearchRouteProp>();
   const { user } = useAuth();
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? FALLBACK_TAB_BAR_HEIGHT;
@@ -1391,7 +1412,7 @@ export default function SearchScreen() {
             ligne d'écriture, le second ferme le sommaire. Ils délimitent deux
             bandes de nature différente — ce n'est pas la même règle répétée. */}
         <View style={S.masthead}>
-          <SearchField seed={searchQuery} onSubmit={handleSubmitQuery} />
+          <SearchField seed={searchQuery} onSubmit={handleSubmitQuery} onOpenMap={nfMapEnabled ? openMap : undefined} />
           {/* Les rubriques n'existent que s'il y a quelque chose à filtrer. */}
           {hasQuery && <RubricBar active={activeFilter} onChange={handleFilterChange} />}
         </View>
@@ -1455,6 +1476,12 @@ const S = StyleSheet.create({
     fontSize: ps(25),
     letterSpacing: ps(-0.5),
     color: paper.ink,
+  },
+  fieldMap: {
+    width: ps(30),
+    height: ps(30),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fieldClear: {
     width: ps(24),

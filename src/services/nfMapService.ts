@@ -58,6 +58,25 @@ export interface NfMapPerson {
   shared_at: string;
 }
 
+/** Un Twitninf du jour posé sur la carte. Le serveur ne l'envoie qu'à qui a le droit de le voir. */
+export interface NfMapMoment {
+  id: string;
+  latitude: number;
+  longitude: number;
+  place: string | null;
+  caption: string | null;
+  photo_url: string;
+  blur_url: string | null;
+  width: number | null;
+  height: number | null;
+  created_at: string;
+  streak: number;
+  is_me: boolean;
+  reaction_count: number;
+  comment_count: number;
+  user: { id: string; username: string; full_name: string; avatar: string | null; verified: boolean; premium: boolean };
+}
+
 const BASE = '/api/nf-map';
 
 
@@ -114,6 +133,25 @@ export const nfMapService = {
    * refusée par le serveur : on rend une liste vide plutôt qu'une erreur, la
    * carte se remplira au prochain déplacement.
    */
+  /**
+   * Les Twitninf du jour posés dans le rectangle. Tant qu'on n'a pas posté le sien, le
+   * serveur n'envoie que les siens (`locked`) : même règle que l'écran Twitninf.
+   */
+  async moments(bounds: { north: number; south: number; east: number; west: number }): Promise<{ moments: NfMapMoment[]; locked: boolean }> {
+    try {
+      const response = await apiService.get(`${BASE}/moments`, {
+        north: String(bounds.north),
+        south: String(bounds.south),
+        east: String(bounds.east),
+        west: String(bounds.west),
+      });
+      if (!response?.success) return { moments: [], locked: false };
+      return { moments: response.data?.pins || [], locked: !!response.data?.locked };
+    } catch {
+      return { moments: [], locked: false };
+    }
+  },
+
   async nearby(bounds: { north: number; south: number; east: number; west: number }): Promise<NfMapPerson[]> {
     const response = await apiService.get(`${BASE}/nearby`, {
       north: String(bounds.north),

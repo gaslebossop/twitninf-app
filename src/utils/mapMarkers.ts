@@ -38,7 +38,7 @@ import {
   type PinOrigin,
 } from './mapPinUrl';
 import type { MapBounds, MapCoordinate, MapMarker } from '../components/map/NfMapCanvas';
-import type { NfMapPerson } from '../services/nfMapService';
+import type { NfMapMoment, NfMapPerson } from '../services/nfMapService';
 
 /**
  * Ce qu'un marqueur MONTRE à un instant donné.
@@ -48,6 +48,8 @@ import type { NfMapPerson } from '../services/nfMapService';
  */
 export type MarkerRole =
   | { kind: 'self'; ghost: boolean }
+  /** Le Twitninf du jour de quelqu'un, posé là où il a été pris. Jamais regroupé. */
+  | { kind: 'moment'; moment: NfMapMoment }
   | { kind: 'solo'; person: NfMapPerson; selected: boolean }
   | {
       kind: 'head';

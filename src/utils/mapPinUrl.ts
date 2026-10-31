@@ -17,7 +17,7 @@
  * runtime natif derrière eux.
  */
 
-export type PinVariant = 'precise' | 'city' | 'selected' | 'self' | 'ghost';
+export type PinVariant = 'precise' | 'city' | 'selected' | 'self' | 'ghost' | 'moment';
 
 /**
  * Ancrage vertical des deux sortes d'épingles.
