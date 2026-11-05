@@ -101,6 +101,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { io } from 'socket.io-client';
+import tokenStore from '../services/tokenStore';
 import { paperFonts, ps, isPaperDark } from '../theme/paper2b';
 import { AppStatusBar, ScreenSkeleton } from '../components/ui';
 import apiService from '../services/api';
@@ -2014,7 +2015,16 @@ export default function ConversationThreadScreen({ navigation, route }: any) {
 
   useEffect(() => {
     if (!myId || !conversationId) return;
-    const socket = io(API_CONFIG.BASE_URL, { transports: ['websocket'], query: { userId: myId } });
+    const socket = io(API_CONFIG.BASE_URL, {
+      transports: ['websocket'],
+      // Le serveur identifie la socket par le jeton, plus par `userId`.
+      auth: (cb) => {
+        tokenStore
+          .getAccessToken()
+          .then((token) => cb({ token: token || '' }))
+          .catch(() => cb({ token: '' }));
+      },
+    });
     socketRef.current = socket;
     socket.emit('join_user', myId);
     socket.emit('join_conversation', conversationId);
